@@ -10,6 +10,7 @@ import { getProviderSchema } from '../src/renderer/src/provider-schema'
 
 const calls: Array<{ command: string; payload: unknown }> = []
 let nextSequence = 1
+let providerOverrides: Record<string, unknown> = {}
 
 function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
   return { ok: true, value } as CommandOutcome<C>
@@ -168,6 +169,7 @@ function providerSummary(overrides: Record<string, unknown> = {}): Record<string
 beforeEach(() => {
   calls.length = 0
   nextSequence = 1
+  providerOverrides = {}
   window.localStorage.clear()
   const api: EvoHimeApiV1 = {
     apiVersion: 1,
@@ -191,7 +193,7 @@ beforeEach(() => {
         })
       }
       if (command === 'chat.appendPrompt') return ok(null)
-      if (command === 'provider.get') return ok(providerSummary())
+      if (command === 'provider.get') return ok(providerSummary(providerOverrides))
       if (command === 'provider.select') {
         return ok({ summary: providerSummary({ provider: 'ollama', model: 'llama3.2', tier: 'free' }), restarted: true })
       }
@@ -1389,6 +1391,29 @@ describe('hive dashboard', () => {
       })
       expect(screen.getByText(/API-ключ Улья сохранён/)).toBeTruthy()
     })
+  })
+
+  it('ui_hides_api_key_when_configured', async () => {
+    providerOverrides = { hiveApiKeyConfigured: true }
+    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+
+    expect(within(dialog).queryByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeNull()
+    expect(within(dialog).getByText('API-ключ сохранен ✓')).toBeTruthy()
+    expect(within(dialog).getByRole('button', { name: 'Изменить' })).toBeTruthy()
+  })
+
+  it('ui_shows_api_key_input_when_editing', async () => {
+    providerOverrides = { hiveApiKeyConfigured: true }
+    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Изменить' }))
+
+    expect(within(dialog).getByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeTruthy()
   })
 
   it('ui_can_save_hive_fallback_provider_and_api_key', async () => {

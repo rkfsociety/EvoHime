@@ -1550,6 +1550,7 @@ export function HiveDashboard({
   const [hiveProviderBusy, setHiveProviderBusy] = useState(false)
   const [hiveProviderError, setHiveProviderError] = useState<string | null>(null)
   const [hiveApiKeyDraft, setHiveApiKeyDraft] = useState('')
+  const [isEditingMainKey, setIsEditingMainKey] = useState(false)
   const [hiveApiKeyBusy, setHiveApiKeyBusy] = useState(false)
   const [hiveApiKeyError, setHiveApiKeyError] = useState<string | null>(null)
   const [hiveFallbackProviderProfile, setHiveFallbackProviderProfile] = useState('')
@@ -1562,6 +1563,7 @@ export function HiveDashboard({
   const [hiveFallbackProviderError, setHiveFallbackProviderError] = useState<string | null>(null)
   const [hiveFallbackProviderSaved, setHiveFallbackProviderSaved] = useState(false)
   const [hiveFallbackApiKeyDraft, setHiveFallbackApiKeyDraft] = useState('')
+  const [isEditingFallbackKey, setIsEditingFallbackKey] = useState(false)
   const [hiveFallbackApiKeyBusy, setHiveFallbackApiKeyBusy] = useState(false)
   const [hiveFallbackApiKeyError, setHiveFallbackApiKeyError] = useState<string | null>(null)
   const [hiveFallbackApiKeySaved, setHiveFallbackApiKeySaved] = useState(false)
@@ -2463,7 +2465,9 @@ export function HiveDashboard({
         return
       }
       setHiveApiKeyDraft('')
+      setIsEditingMainKey(false)
       setHiveApiKeySaved(true)
+      setProvider((current) => current ? { ...current, hiveApiKeyConfigured: hiveApiKeyDraft.trim().length > 0 } : current)
       requestSnapshot()
     } catch {
       setHiveApiKeyError('Не удалось сохранить API-ключ Улья: Core не ответил.')
@@ -2518,7 +2522,9 @@ export function HiveDashboard({
         return
       }
       setHiveFallbackApiKeyDraft('')
+      setIsEditingFallbackKey(false)
       setHiveFallbackApiKeySaved(true)
+      setProvider((current) => current ? { ...current, hiveFallbackApiKeyConfigured: hiveFallbackApiKeyDraft.trim().length > 0 } : current)
       requestSnapshot()
     } catch {
       setHiveFallbackApiKeyError('Не удалось сохранить резервный API-ключ Улья: Core не ответил.')
@@ -3437,31 +3443,38 @@ export function HiveDashboard({
                 ) : hiveProviderSaved ? (
                   <small role="status" className="hive-settings-hint">✓ {translate('Провайдер и модель Улья сохранены')}</small>
                 ) : null}
-                <label className="hive-provider" htmlFor="hive-api-key-input">
-                  <span>{translate('API-ключ Улья (обязателен для работы Улья)')}</span>
-                  <div className="hive-settings-modal__row">
-                    <input
-                      id="hive-api-key-input"
-                      type="password"
-                      aria-label={translate('API-ключ Улья (обязателен для работы Улья)')}
-                      value={hiveApiKeyDraft}
-                      disabled={!connected || hiveApiKeyBusy}
-                      onChange={(changeEvent) => {
-                        setHiveApiKeyDraft(changeEvent.target.value)
-                        setHiveApiKeyError(null)
-                        setHiveApiKeySaved(false)
-                      }}
-                      placeholder="sk-..."
-                    />
-                    <button
-                      type="button"
-                      disabled={!connected || hiveApiKeyBusy}
-                      onClick={() => void saveHiveApiKey()}
-                    >
-                      {translate(hiveApiKeyBusy ? 'Сохранение…' : 'Сохранить ключ')}
-                    </button>
+                {provider?.hiveApiKeyConfigured && !isEditingMainKey ? (
+                  <div className="hive-provider">
+                    <span>{translate('API-ключ Улья (обязателен для работы Улья)')}</span>
+                    <div className="hive-settings-modal__row">
+                      <small role="status" className="hive-settings-hint hive-settings-hint--success">{translate('API-ключ сохранен ✓')}</small>
+                      <button type="button" disabled={!connected} onClick={() => setIsEditingMainKey(true)}>{translate('Изменить')}</button>
+                    </div>
                   </div>
-                </label>
+                ) : (
+                  <label className="hive-provider" htmlFor="hive-api-key-input">
+                    <span>{translate('API-ключ Улья (обязателен для работы Улья)')}</span>
+                    <div className="hive-settings-modal__row">
+                      <input
+                        id="hive-api-key-input"
+                        type="password"
+                        aria-label={translate('API-ключ Улья (обязателен для работы Улья)')}
+                        value={hiveApiKeyDraft}
+                        disabled={!connected || hiveApiKeyBusy}
+                        onChange={(changeEvent) => {
+                          setHiveApiKeyDraft(changeEvent.target.value)
+                          setHiveApiKeyError(null)
+                          setHiveApiKeySaved(false)
+                        }}
+                        placeholder="sk-..."
+                      />
+                      <button type="button" disabled={!connected || hiveApiKeyBusy} onClick={() => void saveHiveApiKey()}>
+                        {translate(hiveApiKeyBusy ? 'Сохранение…' : 'Сохранить ключ')}
+                      </button>
+                      {isEditingMainKey ? <button type="button" disabled={hiveApiKeyBusy} onClick={() => { setHiveApiKeyDraft(''); setIsEditingMainKey(false) }}>{translate('Отмена')}</button> : null}
+                    </div>
+                  </label>
+                )}
                 {hiveApiKeyError ? (
                   <p role="alert" className="hive-console__error">{translate(hiveApiKeyError)}</p>
                 ) : hiveApiKeySaved ? (
@@ -3561,31 +3574,38 @@ export function HiveDashboard({
                 ) : hiveFallbackProviderSaved ? (
                   <small role="status" className="hive-settings-hint">✓ {translate('Резервный провайдер и модель Улья сохранены')}</small>
                 ) : null}
-                <label className="hive-provider" htmlFor="hive-fallback-api-key-input">
-                  <span>{translate('Резервный API-ключ Улья')}</span>
-                  <div className="hive-settings-modal__row">
-                    <input
-                      id="hive-fallback-api-key-input"
-                      type="password"
-                      aria-label={translate('Резервный API-ключ Улья')}
-                      value={hiveFallbackApiKeyDraft}
-                      disabled={!connected || hiveFallbackApiKeyBusy}
-                      onChange={(changeEvent) => {
-                        setHiveFallbackApiKeyDraft(changeEvent.target.value)
-                        setHiveFallbackApiKeyError(null)
-                        setHiveFallbackApiKeySaved(false)
-                      }}
-                      placeholder="sk-..."
-                    />
-                    <button
-                      type="button"
-                      disabled={!connected || hiveFallbackApiKeyBusy}
-                      onClick={() => void saveHiveFallbackApiKey()}
-                    >
-                      {translate(hiveFallbackApiKeyBusy ? 'Сохранение…' : 'Сохранить резервный ключ')}
-                    </button>
+                {provider?.hiveFallbackApiKeyConfigured && !isEditingFallbackKey ? (
+                  <div className="hive-provider">
+                    <span>{translate('Резервный API-ключ Улья')}</span>
+                    <div className="hive-settings-modal__row">
+                      <small role="status" className="hive-settings-hint hive-settings-hint--success">{translate('Резервный API-ключ сохранен ✓')}</small>
+                      <button type="button" disabled={!connected} onClick={() => setIsEditingFallbackKey(true)}>{translate('Изменить')}</button>
+                    </div>
                   </div>
-                </label>
+                ) : (
+                  <label className="hive-provider" htmlFor="hive-fallback-api-key-input">
+                    <span>{translate('Резервный API-ключ Улья')}</span>
+                    <div className="hive-settings-modal__row">
+                      <input
+                        id="hive-fallback-api-key-input"
+                        type="password"
+                        aria-label={translate('Резервный API-ключ Улья')}
+                        value={hiveFallbackApiKeyDraft}
+                        disabled={!connected || hiveFallbackApiKeyBusy}
+                        onChange={(changeEvent) => {
+                          setHiveFallbackApiKeyDraft(changeEvent.target.value)
+                          setHiveFallbackApiKeyError(null)
+                          setHiveFallbackApiKeySaved(false)
+                        }}
+                        placeholder="sk-..."
+                      />
+                      <button type="button" disabled={!connected || hiveFallbackApiKeyBusy} onClick={() => void saveHiveFallbackApiKey()}>
+                        {translate(hiveFallbackApiKeyBusy ? 'Сохранение…' : 'Сохранить резервный ключ')}
+                      </button>
+                      {isEditingFallbackKey ? <button type="button" disabled={hiveFallbackApiKeyBusy} onClick={() => { setHiveFallbackApiKeyDraft(''); setIsEditingFallbackKey(false) }}>{translate('Отмена')}</button> : null}
+                    </div>
+                  </label>
+                )}
                 {hiveFallbackApiKeyError ? (
                   <p role="alert" className="hive-console__error">{translate(hiveFallbackApiKeyError)}</p>
                 ) : hiveFallbackApiKeySaved ? (

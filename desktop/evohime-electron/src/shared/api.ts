@@ -784,6 +784,10 @@ export interface ProviderSummary {
   readonly compatibleProfiles?: Readonly<Partial<Record<ProviderProfileId, ProviderProfileSummary>>>
   readonly freeAccessRoutingMode?: FreeAccessRoutingMode
   readonly allowPaidFallback?: boolean
+  /** Whether the isolated primary Hive API key is stored in provider.json. */
+  readonly hiveApiKeyConfigured: boolean
+  /** Whether the isolated fallback Hive API key is stored in provider.json. */
+  readonly hiveFallbackApiKeyConfigured: boolean
   readonly requestPacing?: RequestPacingSettings
   readonly modelRateLimits?: ProviderModelRateLimits
 }

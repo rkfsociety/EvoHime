@@ -276,6 +276,8 @@ export class ProviderStore {
       ...(active.accountId ? { accountId: active.accountId } : {}),
       freeAccessRoutingMode: document.freeAccessRoutingMode,
       allowPaidFallback: document.allowPaidFallback,
+      hiveApiKeyConfigured: document.hiveApiKeySecret.trim().length > 0,
+      hiveFallbackApiKeyConfigured: document.hiveFallbackApiKeySecret.trim().length > 0,
       requestPacing: active.requestPacing,
       modelRateLimits: active.modelRateLimits,
       profiles: Object.fromEntries(PROVIDER_KINDS.map((kind) => (

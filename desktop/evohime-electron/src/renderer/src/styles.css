@@ -9124,6 +9124,10 @@ body {
   line-height: 1.35;
 }
 
+.hive-settings-hint--success {
+  color: var(--success, #4ade80);
+}
+
 .hive-watched-repos {
   display: flex;
   flex-direction: column;
