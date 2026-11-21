@@ -613,7 +613,7 @@ impl IpcBridge {
             None => return unavailable_pulse_status_payload(),
         };
         if let Some(obj) = value.as_object_mut() {
-            let rate_limits = evohime_model_gateway::active_rate_limits();
+            let rate_limits = evohime_model_gateway::rate_limit_signal::active_rate_limits();
             obj.insert("rate_limits".into(), serde_json::to_value(rate_limits)?);
         }
         serde_json::to_vec(&value)
@@ -625,12 +625,13 @@ impl IpcBridge {
         event_type: &str,
         payload: &[u8],
     ) -> Result<Vec<u8>, String> {
-        use evohime_hive_contract::HiveJournalProvider as _;
-
-        match self
-            .journal
-            .record_audit(task_id, event_type, payload)
-            .await
+        match evohime_hive_contract::HiveJournalProvider::record_audit(
+            &self.journal,
+            task_id,
+            event_type,
+            payload,
+        )
+        .await
         {
             Ok(()) => serde_json::to_vec(&serde_json::json!({
                 "accepted": true,
@@ -664,22 +665,19 @@ impl IpcBridge {
         &self,
         request: &generated::GetHiveModelUsageCommand,
     ) -> Result<Vec<u8>, String> {
-        use evohime_hive_contract::HiveJournalProvider as _;
-
-        let rate_limits = evohime_model_gateway::active_rate_limits();
+        let rate_limits = evohime_model_gateway::rate_limit_signal::active_rate_limits();
         match request.operation.as_str() {
             "dispatch_windows" => {
-                match self
-                    .journal
-                    .model_dispatch_windows(
-                        &request.provider,
-                        &request.model,
-                        request.now_ms,
-                        request.minute_window_ms,
-                        request.hour_window_ms,
-                        request.day_window_ms,
-                    )
-                    .await
+                match evohime_hive_contract::HiveJournalProvider::model_dispatch_windows(
+                    &self.journal,
+                    &request.provider,
+                    &request.model,
+                    request.now_ms,
+                    request.minute_window_ms,
+                    request.hour_window_ms,
+                    request.day_window_ms,
+                )
+                .await
                 {
                     Ok(windows) => serde_json::to_vec(&serde_json::json!({
                         "ok": true,
@@ -696,10 +694,13 @@ impl IpcBridge {
                 }
             }
             "model_usage" => {
-                match self
-                    .journal
-                    .model_usage_since(request.start_ms, &request.provider, &request.model)
-                    .await
+                match evohime_hive_contract::HiveJournalProvider::model_usage_since(
+                    &self.journal,
+                    request.start_ms,
+                    &request.provider,
+                    &request.model,
+                )
+                .await
                 {
                     Ok(usage) => serde_json::to_vec(&serde_json::json!({
                         "ok": true,
@@ -716,10 +717,12 @@ impl IpcBridge {
                 }
             }
             "route_tokens" => {
-                match self
-                    .journal
-                    .route_tokens_since(request.start_ms, &request.route_scope)
-                    .await
+                match evohime_hive_contract::HiveJournalProvider::route_tokens_since(
+                    &self.journal,
+                    request.start_ms,
+                    &request.route_scope,
+                )
+                .await
                 {
                     Ok(tokens) => serde_json::to_vec(&serde_json::json!({
                         "ok": true,
@@ -777,7 +780,12 @@ impl IpcBridge {
                 .map_err(|error| error.to_string())
             }
             "has_active_run" => {
-                let active = self.journal.has_active_workflow_run(&request.task_id).await;
+                let active =
+                    evohime_hive_contract::HiveJournalProvider::has_active_workflow_run(
+                        &self.journal,
+                        &request.task_id,
+                    )
+                    .await;
                 serde_json::to_vec(&serde_json::json!({
                     "accepted": true,
                     "active": active,
@@ -825,6 +833,6 @@ fn unavailable_pulse_status_payload() -> Result<Vec<u8>, serde_json::Error> {
         "status": "unavailable",
         "enabled": false,
         "next_wake_at_ms": null,
-        "rate_limits": evohime_model_gateway::active_rate_limits(),
+        "rate_limits": evohime_model_gateway::rate_limit_signal::active_rate_limits(),
     }))
 }
