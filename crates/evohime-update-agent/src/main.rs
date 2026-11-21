@@ -484,15 +484,20 @@ fn validate_compatible_manifest(manifest: &CompatibleManifest) -> Result<(), Str
         || manifest.architecture != "x64"
         || !is_valid_semver(&manifest.updater.minimum_version)
         || manifest.components.is_empty()
-        || manifest.components.len() != MODULE_IDS.len()
     {
         return Err("updater: некорректный манифест совместимого комплекта".to_owned());
     }
     let mut ids = std::collections::HashSet::new();
     for component in &manifest.components {
-        if !MODULE_IDS.contains(&component.id.as_str()) || !ids.insert(component.id.as_str()) {
+        // Если компонент неизвестен этой версии updater (например, новый "hive"),
+        // мы его игнорируем, чтобы обеспечить прямую совместимость и позволить
+        // старому updater обновить самого себя.
+        if !MODULE_IDS.contains(&component.id.as_str()) {
+            continue;
+        }
+        if !ids.insert(component.id.as_str()) {
             return Err(format!(
-                "updater: некорректный компонент совместимого комплекта: {}",
+                "updater: дублирующийся компонент: {}",
                 component.id
             ));
         }
