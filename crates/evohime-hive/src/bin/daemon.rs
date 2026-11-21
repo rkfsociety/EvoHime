@@ -41,10 +41,13 @@ impl<S> CoreIpcSession<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    async fn connect(stream: S, context: &session::LaunchContext) -> Result<Self, HiveContractError> {
-        context
-            .validate()
-            .map_err(|error| HiveContractError::Unavailable(format!("invalid launch context: {error}")))?;
+    async fn connect(
+        stream: S,
+        context: &session::LaunchContext,
+    ) -> Result<Self, HiveContractError> {
+        context.validate().map_err(|error| {
+            HiveContractError::Unavailable(format!("invalid launch context: {error}"))
+        })?;
         let client_id = format!("hive-{}", uuid::Uuid::new_v4());
         let mut session = Self {
             stream,
@@ -277,15 +280,14 @@ impl CoreIpcClient {
 
     async fn set_eva_workspace_path(&self, path: &str) -> Result<(), HiveContractError> {
         let mut session = self.session.lock().await;
-        let command = session.command_envelope(
-            generated::command_envelope::Command::SetEvaWorkspacePath(
+        let command =
+            session.command_envelope(generated::command_envelope::Command::SetEvaWorkspacePath(
                 generated::SetEvaWorkspacePathCommand {
                     schema_version: 1,
                     request_id: uuid::Uuid::new_v4().to_string(),
                     path: path.to_owned(),
                 },
-            ),
-        );
+            ));
         session.write_command(command).await?;
         let _ = session.wait_for_event_type("hive_settings.saved").await?;
         Ok(())
@@ -399,11 +401,12 @@ impl HiveJournalProvider for IpcJournalProvider {
         settings: &'a serde_json::Value,
     ) -> BoxFuture<'a, Result<(), HiveContractError>> {
         Box::pin(async move {
-            let parsed: HiveSettings = serde_json::from_value(settings.clone()).map_err(|error| {
-                HiveContractError::Serialization(format!(
-                    "invalid HiveSettings JSON payload: {error}"
-                ))
-            })?;
+            let parsed: HiveSettings =
+                serde_json::from_value(settings.clone()).map_err(|error| {
+                    HiveContractError::Serialization(format!(
+                        "invalid HiveSettings JSON payload: {error}"
+                    ))
+                })?;
             let path = parsed.eva_workspace_path.as_deref().unwrap_or("");
             self.client.set_eva_workspace_path(path).await
         })
