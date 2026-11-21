@@ -47,6 +47,13 @@ describe('responsive shell layout contract', () => {
     expect(stylesheet).not.toContain('min-width: 960px;')
   })
 
+  it('responds to the usable content width after the shell sidebar', () => {
+    expect(stylesheet).toContain('container-type: inline-size;')
+    expect(stylesheet).toContain('@container (max-width: 1180px)')
+    expect(stylesheet).toContain('.hive-console__workspace {\n    grid-template-columns: minmax(0, 1fr);')
+    expect(stylesheet).toContain('.hive-queen {\n    grid-column: 1 / -1;')
+  })
+
   it('reduces sidebar pressure at the supported minimum window width', () => {
     expect(stylesheet).toContain('@media (max-width: 1080px) {\n  :root {\n    --sidebar-width: 200px;')
   })

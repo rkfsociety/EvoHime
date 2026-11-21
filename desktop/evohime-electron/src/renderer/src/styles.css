@@ -1268,6 +1268,7 @@ body {
   flex: 1;
   min-height: 0;
   min-width: 0;
+  container-type: inline-size;
   overflow-x: hidden;
   overflow-y: auto;
   padding: 20px;
@@ -7494,6 +7495,11 @@ body {
   align-items: stretch;
 }
 
+.hive-console__grid > *,
+.hive-console__workspace > * {
+  min-width: 0;
+}
+
 .hive-console__grid {
   display: grid;
   flex: 1 1 0;
@@ -7512,6 +7518,12 @@ body {
   border: 1px solid var(--hive-line);
   border-radius: 13px;
   background: var(--hive-panel-bg);
+}
+
+.hive-panel--metrics,
+.hive-budget-card,
+.hive-budget-card > * {
+  min-width: 0;
 }
 
 .hive-panel.hive-panel--departments {
@@ -8256,11 +8268,13 @@ body {
   margin: 0;
   color: var(--fg-muted);
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .hive-budget-card small {
   color: var(--fg-faint);
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .hive-budget-card__notice {
@@ -8811,6 +8825,62 @@ body {
 
   .hive-departments {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/*
+ * The shell sidebar consumes part of the viewport, so viewport media queries
+ * miss the point at which Hive becomes cramped. Use the actual scroll
+ * container width as the breakpoint for the desktop shell as well.
+ */
+@container (max-width: 1180px) {
+  .main__scroll:has(> .hive-console) {
+    overflow-y: auto;
+  }
+
+  .hive-console {
+    height: auto;
+  }
+
+  .hive-console__workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hive-console__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, .8fr);
+  }
+
+  .hive-queen {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .hive-departments {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 900px) {
+  .hive-console__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hive-departments {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 560px) {
+  .hive-console__header {
+    padding: 14px;
+  }
+
+  .hive-departments {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hive-queen__footer {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
