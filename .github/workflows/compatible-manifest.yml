@@ -40,6 +40,11 @@ jobs:
       - name: Validate manifest integrity
         shell: pwsh
         run: ./scripts/validate-manifest-integrity.ps1 -ManifestPath "$env:RUNNER_TEMP/evohime.compatible.json"
+      - name: Validate manifest bootstrap compatibility
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/validate-manifest-bootstrap.ps1 -ManifestPath "$env:RUNNER_TEMP/evohime.compatible.json"
       - name: Publish fixed compatible manifest
         shell: pwsh
         env:
