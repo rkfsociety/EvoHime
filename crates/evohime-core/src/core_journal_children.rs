@@ -347,7 +347,9 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
                     task_id: record.task_id,
                     event_type: record.event_type,
                     payload: record.payload,
-                    created_at_ms: record.created_at_ms,
+                    created_at_ms: chrono::DateTime::parse_from_rfc3339(&record.created_at)
+                        .map(|value| value.timestamp_millis())
+                        .unwrap_or(0),
                 })
                 .collect())
         })
@@ -363,6 +365,7 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
         Box::pin(async move {
             self.record_audit(task_id, event_type, payload)
                 .await
+                .map(|_| ())
                 .map_err(|error| {
                     evohime_hive_contract::HiveContractError::Storage(error.to_string())
                 })
@@ -558,9 +561,9 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
                     evohime_hive_contract::HiveContractError::Storage(error.to_string())
                 })?;
             Ok(evohime_hive_contract::HiveDispatchWindows {
-                last_minute: windows.last_minute,
-                last_hour: windows.last_hour,
-                last_day: windows.last_day,
+                last_minute: u32::try_from(windows.last_minute).unwrap_or(u32::MAX),
+                last_hour: u32::try_from(windows.last_hour).unwrap_or(u32::MAX),
+                last_day: u32::try_from(windows.last_day).unwrap_or(u32::MAX),
                 oldest_minute_ms: windows.oldest_minute_ms,
                 oldest_hour_ms: windows.oldest_hour_ms,
                 oldest_day_ms: windows.oldest_day_ms,
@@ -620,6 +623,7 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
     ) -> evohime_hive_contract::BoxFuture<'_, ()> {
         Box::pin(async move {
             let database = self.database().lock().await;
+            let task_id = request.task_id.clone();
             let record = evohime_local_storage::domains::workflow::TaskWorktreeRecord {
                 worktree_id: request.worktree_id,
                 task_id: request.task_id,
@@ -631,7 +635,7 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
                 base_commit: request.base_commit,
                 state: "ready".into(),
                 version: 1,
-                idempotency_key: format!("hive-worktree:{}", request.task_id),
+                idempotency_key: format!("hive-worktree:{task_id}"),
                 updated_at_ms: crate::task_memory::now_millis() as i64,
             };
             let _ =

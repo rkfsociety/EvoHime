@@ -256,6 +256,7 @@ struct DaemonState {
     enabled: bool,
     status: &'static str,
     next_wake_at_ms: Option<i64>,
+    #[allow(dead_code)]
     cycles: u64,
     reason: &'static str,
 }
@@ -1643,6 +1644,7 @@ pub(crate) struct CoordinatorPulseTaskSink {
 
 impl CoordinatorPulseTaskSink {
     /// Creates a sink bound to the coordinator and the allowed route name.
+    #[allow(dead_code)]
     pub(crate) fn new(
         coordinator: Arc<dyn HiveCoordinator>,
         primary_route: Option<String>,
