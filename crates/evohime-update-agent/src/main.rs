@@ -370,6 +370,7 @@ const MODULE_IDS: &[&str] = &[
     "transaction",
     "updater",
     "verifier",
+    "hive",
 ];
 const MAX_JSON_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_LOCAL_JSON_BYTES: usize = 256 * 1024;

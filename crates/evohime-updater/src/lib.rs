@@ -915,7 +915,7 @@ impl UpdateTransaction {
     ];
 
     /// Native component paths that may be updated independently.
-    pub const SELECTABLE_COMPONENTS: [&'static str; 8] = [
+    pub const SELECTABLE_COMPONENTS: [&'static str; 9] = [
         "EvoHime.exe",
         "evohime-core.exe",
         "evohime-supervisor.exe",
@@ -924,6 +924,7 @@ impl UpdateTransaction {
         "evohime-listener.exe",
         "evohime-transaction.exe",
         "evohime-verify.exe",
+        "evohime-hive-daemon.exe",
     ];
 
     /// Prepares a transaction covering the required native components.
