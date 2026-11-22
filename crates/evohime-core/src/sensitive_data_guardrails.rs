@@ -651,26 +651,24 @@ fn has_contextual_tax_id(input: &str) -> bool {
     // технический документ в ложное «налоговое» совпадение и поднимала
     // требование приватности до Sensitive, отчего все облачные маршруты
     // отбраковывались как privacy_violation (all_routes_excluded).
-    input
-        .lines()
-        .any(|line| {
-            let lower = line.to_lowercase();
-            let labelled = lower
-                .split(|character: char| !character.is_alphanumeric())
-                .any(|word| match word {
-                    "tax" | "vat" | "inn" | "tin" | "налог" | "инн" => true,
-                    word => {
-                        word.starts_with("tax")
-                            && word["tax".len()..]
-                                .bytes()
-                                .all(|byte| byte.is_ascii_digit())
-                    }
-                });
-            labelled
-                && line
-                    .split(|character: char| !character.is_ascii_digit())
-                    .any(|part| (8..=14).contains(&part.len()))
-        })
+    input.lines().any(|line| {
+        let lower = line.to_lowercase();
+        let labelled = lower
+            .split(|character: char| !character.is_alphanumeric())
+            .any(|word| match word {
+                "tax" | "vat" | "inn" | "tin" | "налог" | "инн" => true,
+                word => {
+                    word.starts_with("tax")
+                        && word["tax".len()..]
+                            .bytes()
+                            .all(|byte| byte.is_ascii_digit())
+                }
+            });
+        labelled
+            && line
+                .split(|character: char| !character.is_ascii_digit())
+                .any(|part| (8..=14).contains(&part.len()))
+    })
 }
 
 /// Validates a policy and computes its versioned integrity digest.

@@ -1635,8 +1635,8 @@ mod tests {
             estimated_input_tokens: 0,
             quality_delta: 0.05,
         };
-        let decision = select_route_snapshot(&request, &snapshot, &overlay, None, 0, 1_050)
-            .expect("decision");
+        let decision =
+            select_route_snapshot(&request, &snapshot, &overlay, None, 0, 1_050).expect("decision");
         assert_eq!(decision.selected_route, None);
         assert_eq!(decision.reason_code, "all_routes_excluded");
         assert_eq!(

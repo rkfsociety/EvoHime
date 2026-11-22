@@ -1503,12 +1503,11 @@ impl ModelGateway {
                 }
             }
             trace.set_result(RunResult::RouteExhausted);
-            return Err(last_error
-                .unwrap_or_else(|| {
-                    // Routes were empty: surface every per-candidate reject
-                    // reason so the configuration error explains itself.
-                    ProviderError::Config(crate::excluded_candidates_summary(&decision))
-                }));
+            return Err(last_error.unwrap_or_else(|| {
+                // Routes were empty: surface every per-candidate reject
+                // reason so the configuration error explains itself.
+                ProviderError::Config(crate::excluded_candidates_summary(&decision))
+            }));
         }
         let runtime = self
             .plan_route(mode, request, RuntimeLimits::default())
