@@ -564,41 +564,68 @@ function buildIslandView(
   const columns = Math.max(1, Math.min(BUILDING_MAX_COLUMNS, Math.ceil(Math.sqrt(quarter.length))))
   const rows = Math.ceil(quarter.length / columns)
   const reserveCenter = island.role === 'capital'
+  /** Радиус самого внешнего кольца радиальной застройки столицы. */
+  let outerRingRadius = CAPITAL_TOWER_INNER_RADIUS + 0.8
 
-  quarter.forEach((building, index) => {
-    const column = index % columns
-    const row = Math.floor(index / columns)
-    const seed = `${island.id}/${building.id}`
-    const jitterX = (mixSeed(seed, 1) - 0.5) * 0.9
-    const jitterZ = (mixSeed(seed, 2) - 0.5) * 0.9
-    let bx = (column - (columns - 1) / 2) * BUILDING_CELL + jitterX
-    let bz = (row - (rows - 1) / 2) * BUILDING_CELL * 0.8 + jitterZ
-    if (reserveCenter) {
-      // Кварталы проекта не заходят во внутреннюю зону столицы: там башня
-      // Королевы и кольцо домов работников.
-      const distance = Math.hypot(bx, bz)
-      if (distance < CAPITAL_TOWER_INNER_RADIUS) {
-        const direction = distance < 0.001 ? 1 / CAPITAL_TOWER_INNER_RADIUS : 1 / distance
-        bx = bx * direction * CAPITAL_TOWER_INNER_RADIUS
-        bz = bz * direction * CAPITAL_TOWER_INNER_RADIUS
+  if (reserveCenter && quarter.length > 0) {
+    // Радиальная застройка столицы: кольца кварталов вокруг внутреннего
+    // двора Королевы. Каждое следующее кольцо повёрнуто, поэтому застройка
+    // читается как упорядоченные «звёздные» ряды, а не смятая сетка.
+    const ringStart = CAPITAL_TOWER_INNER_RADIUS + 0.8
+    const ringStep = 2.3
+    let ringIndex = 0
+    let indexOnRing = 0
+    let ringRadius = ringStart
+    for (const building of quarter) {
+      const seed = `${island.id}/${building.id}`
+      const capacity = Math.max(6, Math.floor((2 * Math.PI * ringRadius) / ringStep))
+      const baseAngle =
+        (2 * Math.PI * indexOnRing) / capacity + ringIndex * (Math.PI / capacity)
+      const jitterAngle = (mixSeed(seed, 3) - 0.5) * (2 * Math.PI / capacity) * 0.3
+      const jitterRadius = (mixSeed(seed, 4) - 0.5) * 0.7
+      const angle = baseAngle + jitterAngle
+      const radiusOnRing = ringRadius + jitterRadius
+      buildings.push({
+        building,
+        x: Math.cos(angle) * radiusOnRing,
+        z: Math.sin(angle) * radiusOnRing,
+        height: Math.max(0.15, building.height_weight_bp / 1000),
+        isEdgeTarget: false
+      })
+      indexOnRing += 1
+      if (indexOnRing >= capacity) {
+        indexOnRing = 0
+        ringIndex += 1
+        ringRadius += ringStep
       }
     }
-    buildings.push({
-      building,
-      x: bx,
-      z: bz,
-      height: Math.max(0.15, building.height_weight_bp / 1000),
-      isEdgeTarget: false
+    outerRingRadius = ringRadius
+  } else {
+    quarter.forEach((building, index) => {
+      const column = index % columns
+      const row = Math.floor(index / columns)
+      const seed = `${island.id}/${building.id}`
+      const jitterX = (mixSeed(seed, 1) - 0.5) * 0.9
+      const jitterZ = (mixSeed(seed, 2) - 0.5) * 0.9
+      const bx = (column - (columns - 1) / 2) * BUILDING_CELL + jitterX
+      const bz = (row - (rows - 1) / 2) * BUILDING_CELL * 0.8 + jitterZ
+      buildings.push({
+        building,
+        x: bx,
+        z: bz,
+        height: Math.max(0.15, building.height_weight_bp / 1000),
+        isEdgeTarget: false
+      })
     })
-  })
+  }
 
   const layoutRadius = Math.max(
     3.6,
     2.2 * Math.sqrt(Math.max(1, buildings.length)),
     (Math.max(columns, rows) * BUILDING_CELL) / 2 + 1.2,
-    reserveCenter ? CAPITAL_TOWER_INNER_RADIUS + 1.0 : 0
+    reserveCenter ? outerRingRadius + 1.6 : 0
   )
-  const radius = Math.min(12, layoutRadius)
+  const radius = Math.min(reserveCenter ? 14 : 12, layoutRadius)
 
   return { island, x, z, radius, buildings, phase }
 }

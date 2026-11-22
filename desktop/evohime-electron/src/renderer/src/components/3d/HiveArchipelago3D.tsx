@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type ReactNode
+} from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 
@@ -39,15 +47,6 @@ function towerDisplayHeight(heightWeight: number): number {
   return Math.max(0.9, heightWeight * 3.8)
 }
 
-/** Дисплейная высота башни Королевы в центре столицы (island units). */
-const QUEEN_TOWER_DISPLAY_HEIGHT = 5.2
-
-/** Высота башни в 3D: цитадель Королевы всегда доминирует над кварталами. */
-function towerHeight3D(kind: string, heightWeight: number): number {
-  if (kind === 'citadel') return Math.max(towerDisplayHeight(heightWeight), QUEEN_TOWER_DISPLAY_HEIGHT)
-  return towerDisplayHeight(heightWeight)
-}
-
 export interface HiveArchipelago3DProps {
   readonly capital: CityIslandView
   readonly satellites: readonly CityIslandView[]
@@ -69,51 +68,189 @@ export interface HiveArchipelago3DProps {
   readonly onContextLost: () => void
 }
 
-/** Shared materials for one island, disposed on unmount. */
-function useIslandMaterials(accentHue: number, statusReady: boolean): {
-  readonly body: THREE.MeshStandardMaterial
-  readonly accent: THREE.MeshStandardMaterial
-  readonly ground: THREE.MeshBasicMaterial
-} {
-  const materials = useMemo(() => {
-    const body = new THREE.MeshStandardMaterial({
-      color: new THREE.Color().setHSL(0, 0, 0.34),
-      emissive: new THREE.Color().setHSL(accentHue / 360, 0.8, 0.12),
-      roughness: 0.62,
-      metalness: 0.18
-    })
-    const accent = new THREE.MeshStandardMaterial({
-      color: new THREE.Color().setHSL(accentHue / 360, 0.7, 0.34),
-      emissive: new THREE.Color().setHSL(accentHue / 360, 0.9, 0.34),
-      roughness: 0.4,
-      metalness: 0.3
-    })
-    const ground = new THREE.MeshBasicMaterial({
-      color: new THREE.Color().setHSL(accentHue / 360, 0.7, 0.2),
-      transparent: true,
-      opacity: statusReady ? 0.32 : 0.08
-    })
-    return { body, accent, ground }
-  }, [accentHue, statusReady])
+/**
+ * Единый «кожный» набор города: сланцевые фасады с процедурными светящимися
+ * окнами (CanvasTexture как `map` + `emissiveMap`), тёмная кровля, плита-
+ * основание и позолота Королевы. Материалы разделяются всеми островами и
+ * освобождаются при размонтировании Canvas. Окна — детерминированные
+ * (`fnv1a32`), поэтому картинка стабильна между перерисовками.
+ */
+const FACADE_VARIANTS = 4
 
-  useEffect(() => {
-    return () => {
-      materials.body.dispose()
-      materials.accent.dispose()
-      materials.ground.dispose()
+interface FacadeSet {
+  readonly material: THREE.MeshStandardMaterial
+  readonly albedo: THREE.CanvasTexture
+  readonly emissive: THREE.CanvasTexture
+}
+
+function createFacadeSet(variant: number): FacadeSet {
+  const width = 128
+  const height = 256
+  const columns = 6
+  const rows = 14
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  const emissiveCanvas = document.createElement('canvas')
+  emissiveCanvas.width = width
+  emissiveCanvas.height = height
+  const emissiveContext = emissiveCanvas.getContext('2d')
+  if (context !== null && emissiveContext !== null) {
+    const bases = ['#262e4d', '#232946', '#2a3153', '#252b44']
+    context.fillStyle = bases[variant % bases.length] ?? '#262e4d'
+    context.fillRect(0, 0, width, height)
+    emissiveContext.fillStyle = '#000000'
+    emissiveContext.fillRect(0, 0, width, height)
+    const litColors = ['#ffca7a', '#ffb45e', '#ffe3ae', '#ffd98a']
+    const cellWidth = width / columns
+    const cellHeight = height / rows
+    for (let row = 0; row < rows; row += 1) {
+      for (let column = 0; column < columns; column += 1) {
+        const seed = fnv1a32(`facade-${variant}-${row}-${column}`)
+        if (seed % 100 < 40) {
+          const color = litColors[(seed >>> 7) % litColors.length] ?? '#ffca7a'
+          context.fillStyle = color
+          emissiveContext.fillStyle = color
+        } else {
+          context.fillStyle = '#0d1124'
+          emissiveContext.fillStyle = '#000000'
+        }
+        context.fillRect(column * cellWidth + cellWidth * 0.25, row * cellHeight + cellHeight * 0.28, cellWidth * 0.5, cellHeight * 0.44)
+        emissiveContext.fillRect(column * cellWidth + cellWidth * 0.25, row * cellHeight + cellHeight * 0.28, cellWidth * 0.5, cellHeight * 0.44)
+      }
     }
-  }, [materials])
+  }
+  const albedo = new THREE.CanvasTexture(canvas)
+  albedo.colorSpace = THREE.SRGBColorSpace
+  const emissive = new THREE.CanvasTexture(emissiveCanvas)
+  emissive.colorSpace = THREE.SRGBColorSpace
+  const material = new THREE.MeshStandardMaterial({
+    map: albedo,
+    emissive: new THREE.Color('#ffffff'),
+    emissiveMap: emissive,
+    emissiveIntensity: 1.0,
+    roughness: 0.72,
+    metalness: 0.2
+  })
+  return { material, albedo, emissive }
+}
 
-  return materials
+/** Shared per-canvas materials of the whole archipelago. */
+interface CitySkin {
+  readonly facades: readonly FacadeSet[]
+  readonly roof: THREE.MeshStandardMaterial
+  readonly plinth: THREE.MeshStandardMaterial
+  readonly gold: THREE.MeshStandardMaterial
+}
+
+function createCitySkin(): CitySkin {
+  return {
+    facades: Array.from({ length: FACADE_VARIANTS }, (_, index) => createFacadeSet(index)),
+    roof: new THREE.MeshStandardMaterial({ color: '#151b30', roughness: 0.85, metalness: 0.1 }),
+    plinth: new THREE.MeshStandardMaterial({ color: '#1a2138', roughness: 0.9, metalness: 0.08 }),
+    gold: new THREE.MeshStandardMaterial({
+      color: new THREE.Color('#e8c874'),
+      emissive: new THREE.Color('#e8b34a'),
+      emissiveIntensity: 0.45,
+      roughness: 0.3,
+      metalness: 0.65
+    })
+  }
+}
+
+const CitySkinContext = createContext<CitySkin | null>(null)
+
+function CitySkinProvider({ children }: { children: ReactNode }): React.JSX.Element {
+  const skin = useMemo(() => createCitySkin(), [])
+  useEffect(() => () => {
+    for (const facade of skin.facades) {
+      facade.albedo.dispose()
+      facade.emissive.dispose()
+      facade.material.dispose()
+    }
+    skin.roof.dispose()
+    skin.plinth.dispose()
+    skin.gold.dispose()
+  }, [skin])
+  return <CitySkinContext.Provider value={skin}>{children}</CitySkinContext.Provider>
+}
+
+function useCitySkin(): CitySkin {
+  const contextSkin = useContext(CitySkinContext)
+  // Страховка для рендера вне провайдера (тесты): набор не освобождается,
+  // но контекст всегда смонтирован над реальным Canvas-режимом.
+  return useMemo(() => contextSkin ?? createCitySkin(), [contextSkin])
+}
+
+/** Акцентный свет материалов острова: тонкие световые пояса зданий и кромка плиты. */
+function useIslandAccent(hue: number): THREE.MeshStandardMaterial {
+  const material = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setHSL(hue / 360, 0.55, 0.5),
+        emissive: new THREE.Color().setHSL(hue / 360, 0.75, 0.5),
+        emissiveIntensity: 0.7,
+        roughness: 0.4,
+        metalness: 0.3
+      }),
+    [hue]
+  )
+  useEffect(() => () => material.dispose(), [material])
+  return material
+}
+
+/** Верхняя плита острова: тёмный градиент, на столице — двор и радиальные улицы. */
+function createStreetsTexture(view: CityIslandView): THREE.CanvasTexture {
+  const size = 512
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const context = canvas.getContext('2d')
+  if (context !== null) {
+    const gradient = context.createRadialGradient(size / 2, size / 2, 24, size / 2, size / 2, size / 2)
+    gradient.addColorStop(0, '#182142')
+    gradient.addColorStop(0.55, '#131936')
+    gradient.addColorStop(1, '#0d1226')
+    context.fillStyle = gradient
+    context.fillRect(0, 0, size, size)
+    if (view.island.role === 'capital') {
+      const centre = size / 2
+      const ringRadius = (CAPITAL_TOWER_INNER_RADIUS / view.radius) * centre
+      // Мягкая площадь под дворцом Королевы.
+      context.fillStyle = 'rgba(232, 200, 116, 0.06)'
+      context.beginPath()
+      context.arc(centre, centre, ringRadius * 0.42, 0, Math.PI * 2)
+      context.fill()
+      // Магистрали: лучи от площади до кольца кварталов.
+      const spokeTotal = 24
+      context.strokeStyle = 'rgba(126, 168, 255, 0.14)'
+      context.lineWidth = 5
+      for (let index = 0; index < spokeTotal; index += 1) {
+        const angle = (Math.PI * 2 * index) / spokeTotal
+        context.beginPath()
+        context.moveTo(centre + Math.cos(angle) * ringRadius * 0.3, centre + Math.sin(angle) * ringRadius * 0.3)
+        context.lineTo(centre + Math.cos(angle) * ringRadius, centre + Math.sin(angle) * ringRadius)
+        context.stroke()
+      }
+      // Кольцо двора работников.
+      context.strokeStyle = 'rgba(232, 200, 116, 0.22)'
+      context.lineWidth = 4
+      context.beginPath()
+      context.arc(centre, centre, ringRadius, 0, Math.PI * 2)
+      context.stroke()
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  return texture
 }
 
 function IslandGround({
   view,
-  material,
   onSelect
 }: {
   view: CityIslandView
-  material: THREE.MeshBasicMaterial
   onSelect: () => void
 }) {
   const ref = useRef<THREE.Group>(null)
@@ -122,6 +259,45 @@ function IslandGround({
     if (!group) return
     group.position.set(view.x, 0, view.z)
   }, [view])
+
+  const accentHue = displayIslandHue(view.island.id, view.island.role)
+  const streets = useMemo(() => createStreetsTexture(view), [view])
+  useEffect(() => () => streets.dispose(), [streets])
+  const top = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        map: streets
+      }),
+    [streets]
+  )
+  const side = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setHSL(accentHue / 360, 0.35, 0.12),
+        roughness: 0.9,
+        metalness: 0.1
+      }),
+    [accentHue]
+  )
+  const rim = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color().setHSL(accentHue / 360, 0.6, 0.55),
+        transparent: true,
+        opacity: 0.7
+      }),
+    [accentHue]
+  )
+  const rockMaterial = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: '#151a2b', roughness: 0.95, metalness: 0.05 }),
+    []
+  )
+  useEffect(() => () => {
+    top.dispose()
+    side.dispose()
+    rim.dispose()
+    rockMaterial.dispose()
+  }, [top, side, rim, rockMaterial])
 
   // Скальное основание под плитой: остров читается как парящий осколок
   // земли, а не плоский ромб.
@@ -143,30 +319,29 @@ function IslandGround({
 
   return (
     <group ref={ref}>
-      {/* Плита города: шестиугольная, с фаской-кромкой. */}
+      {/* Плита города: шестиугольная, верхняя поверхность с улицами. */}
       <mesh
-        material={material}
+        position={[0, -0.35, 0]}
+        material={[side, top, side]}
         onPointerDown={(event: ThreeEvent<PointerEvent>) => {
           event.stopPropagation()
           onSelect()
         }}
       >
-        <cylinderGeometry args={[view.radius, view.radius * 0.92, 0.5, 6]} />
+        <cylinderGeometry args={[view.radius, view.radius * 0.92, 0.7, 6]} />
       </mesh>
-      <mesh position={[0, 0.29, 0]} scale={[view.radius * 1.05, 0.05, view.radius * 1.05]}>
+      {/* Тонкая светящаяся кромка по верхнему краю. */}
+      <mesh position={[0, 0.02, 0]} scale={[view.radius * 1.02, 0.035, view.radius * 1.02]} material={rim}>
         <cylinderGeometry args={[1, 1, 1, 6]} />
-        <meshBasicMaterial color={material.color} transparent opacity={0.5} />
       </mesh>
       {/* Скальное основание: перевёрнутая усечённая пирамида. */}
-      <mesh position={[0, -0.7 - view.radius * 0.22, 0]} rotation={[Math.PI, 0, 0]}>
+      <mesh position={[0, -0.7 - view.radius * 0.22, 0]} rotation={[Math.PI, 0, 0]} material={rockMaterial}>
         <cylinderGeometry args={[view.radius * 0.25, view.radius * 0.88, view.radius * 0.75, 6]} />
-        <meshStandardMaterial color="#181c2c" roughness={0.95} metalness={0.05} />
       </mesh>
       <group ref={rockRefs}>
         {rocks.map((rock, index) => (
-          <mesh key={index} position={[rock.x, rock.y, rock.z]} rotation={[rock.rotation, rock.rotation * 0.7, 0]}>
+          <mesh key={index} position={[rock.x, rock.y, rock.z]} rotation={[rock.rotation, rock.rotation * 0.7, 0]} material={rockMaterial}>
             <dodecahedronGeometry args={[rock.size, 0]} />
-            <meshStandardMaterial color="#12141f" roughness={1} />
           </mesh>
         ))}
       </group>
@@ -256,7 +431,8 @@ function ConnectingBridges({
 function BuildingComplex3D({
   view,
   item,
-  materials,
+  skin,
+  accent,
   selected,
   hovered,
   onSelectBuilding,
@@ -264,7 +440,8 @@ function BuildingComplex3D({
 }: {
   view: CityIslandView
   item: CityBuildingView
-  materials: { readonly body: THREE.MeshStandardMaterial; readonly accent: THREE.MeshStandardMaterial }
+  skin: CitySkin
+  accent: THREE.MeshStandardMaterial
   selected: boolean
   hovered: boolean
   onSelectBuilding: (islandId: string, buildingId: string) => void
@@ -330,6 +507,9 @@ function BuildingComplex3D({
     onSelectBuilding(view.island.id, item.building.id)
   }
   const lit = selected || hovered
+  const facade = skin.facades[variant % skin.facades.length]?.material ?? skin.roof
+  // Материалы бокса: боковые грани — фасад с окнами, крыша — тёмная.
+  const wallWithRoof = useMemo(() => [facade, facade, skin.roof, skin.roof, facade, facade], [facade, skin.roof])
 
   return (
     <group
@@ -346,7 +526,7 @@ function BuildingComplex3D({
         <mesh
           key={index}
           position={[layer.dx, layer.y, 0]}
-          material={layer.accent ? materials.accent : materials.body}
+          material={layer.accent ? accent : wallWithRoof}
           rotation={[0, layer.rot, 0]}
           scale={[layer.w, layer.h, layer.w]}
         >
@@ -354,9 +534,9 @@ function BuildingComplex3D({
         </mesh>
       ))}
       {lit ? (
-        <mesh position={[0, height / 2, 0]}>
-          <boxGeometry args={[width * 1.5, height + 0.4, width * 1.5]} />
-          <meshBasicMaterial color="#ffe9b0" wireframe transparent opacity={0.55} />
+        <mesh position={[0, height / 2 + 0.05, 0]}>
+          <boxGeometry args={[width * 1.24, height + 0.3, width * 1.24]} />
+          <meshBasicMaterial color="#ffd98a" wireframe transparent opacity={0.35} />
         </mesh>
       ) : null}
     </group>
@@ -366,14 +546,16 @@ function BuildingComplex3D({
 /** Башни одного острова: артикулированные комплексы по детерминированным силуэтам. */
 function IslandTowers({
   view,
-  materials,
+  skin,
+  accent,
   selectedBuildingId,
   hoveredBuildingId,
   onSelectBuilding,
   onHoverBuilding
 }: {
   view: CityIslandView
-  materials: { readonly body: THREE.MeshStandardMaterial; readonly accent: THREE.MeshStandardMaterial }
+  skin: CitySkin
+  accent: THREE.MeshStandardMaterial
   selectedBuildingId: string | null
   hoveredBuildingId: string | null
   onSelectBuilding: (islandId: string, buildingId: string) => void
@@ -389,7 +571,8 @@ function IslandTowers({
           key={`${view.island.id}/${item.building.id}`}
           view={view}
           item={item}
-          materials={materials}
+          skin={skin}
+          accent={accent}
           selected={selectedBuildingId === item.building.id}
           hovered={activeId === item.building.id}
           onSelectBuilding={onSelectBuilding}
@@ -476,7 +659,7 @@ function DepartmentHouse3D({
   const position = useMemo<[number, number, number]>(() => {
     const x = view.x + Math.cos(angle) * ringRadius
     const z = view.z + Math.sin(angle) * ringRadius
-    return [x, 0.34, z]
+    return [x, 0.05, z]
   }, [angle, ringRadius, view.x, view.z])
   const body = lot.active ? houseMaterials.activeBody : houseMaterials.idleBody
   const roof = lot.active ? houseMaterials.activeRoof : houseMaterials.idleRoof
@@ -498,9 +681,9 @@ function DepartmentHouse3D({
         onSelectDepartment(lot.departmentKey)
       }}
     >
-      <mesh position={[0, 0.04, 0]}>
-        <boxGeometry args={[1.7, 0.08, 1.7]} />
-        <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.28 : 0.1} />
+      <mesh position={[0, 0.03, 0]}>
+        <boxGeometry args={[1.35, 0.06, 1.35]} />
+        <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.16 : 0.07} />
       </mesh>
       <mesh material={body}>
         <boxGeometry args={[1.05, 0.68, 1.05]} />
@@ -645,81 +828,82 @@ function DepartmentHouses3D({
   )
 }
 
-/** Дворец Королевы: ярусный силуэт с ротондой, позолоченной короной и маяком. */
-function QueenTower3D({ view }: { view: CityIslandView }) {
-  const towerRef = useRef<THREE.Group>(null)
+/**
+ * Шпиль Королевы: восьмигранные ярусы со светящимися фасадами, золотые пояса,
+ * конус-корона, кристалл-маяк с пульсом и вертикальный луч света. Доминирует
+ * над кварталами, но не превращается в цветное пятно: тело — сланец, золото —
+ * только пояса и корона.
+ */
+function QueenTower3D({ view, skin }: { view: CityIslandView; skin: CitySkin }) {
   const beaconRef = useRef<THREE.Mesh>(null)
   const haloRef = useRef<THREE.Mesh>(null)
-  const materials = useMemo(() => ({
-    body: new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#2a2438'),
-      emissive: new THREE.Color('#8d82e8'),
-      emissiveIntensity: 0.14,
-      roughness: 0.5,
-      metalness: 0.35
-    }),
-    gilded: new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#e8c874'),
-      emissive: new THREE.Color('#e8b34a'),
-      emissiveIntensity: 0.5,
-      roughness: 0.3,
-      metalness: 0.6
-    })
-  }), [])
-  useEffect(() => () => {
-    materials.body.dispose()
-    materials.gilded.dispose()
-  }, [materials])
+  const beamRef = useRef<THREE.Mesh>(null)
+  const facade = skin.facades[0]?.material ?? skin.roof
+  const tierMaterials = useMemo<[THREE.Material, THREE.Material, THREE.Material]>(
+    () => [facade, skin.roof, skin.roof],
+    [facade, skin.roof]
+  )
 
-  // Пульс маяка: дыхание короны и гало, останавливается на паузе.
+  const plan = useMemo(() => {
+    const citadel = view.buildings.find((item) => item.building.kind === 'citadel')
+    return { x: view.x + (citadel?.x ?? 0), z: view.z + (citadel?.z ?? 0) }
+  }, [view])
+
+  // Пульс маяка: дыхание кристалла, гало и луча, останавливается на паузе.
   useFrame((state) => {
     const t = state.clock.elapsedTime
     if (beaconRef.current) {
-      beaconRef.current.scale.setScalar(0.32 + 0.05 * Math.sin(t * 2.1))
+      beaconRef.current.scale.setScalar(1 + 0.14 * Math.sin(t * 2.1))
     }
     if (haloRef.current) {
       haloRef.current.scale.setScalar(1 + 0.08 * Math.sin(t * 1.3))
     }
+    if (beamRef.current) {
+      const material = beamRef.current.material as THREE.MeshBasicMaterial
+      material.opacity = 0.1 + 0.05 * Math.sin(t * 1.7)
+    }
   })
-
-  const plan = useMemo(() => {
-    const citadel = view.buildings.find((item) => item.building.kind === 'citadel')
-    const height = towerHeight3D('citadel', citadel?.height ?? 1)
-    return { x: view.x + (citadel?.x ?? 0), z: view.z + (citadel?.z ?? 0), height }
-  }, [view])
-
-  // Ярусы: стилобат → тело → ротонда; выше — корона с маяком.
-  const tierGuide = plan.height
-  const tiers = [
-    { w: 2.3, h: tierGuide * 0.16, rot: 0, mat: 'body' as const },
-    { w: 1.75, h: tierGuide * 0.25, rot: Math.PI / 8, mat: 'body' as const },
-    { w: 1.3, h: tierGuide * 0.23, rot: 0, mat: 'body' as const },
-    { w: 0.95, h: tierGuide * 0.25, rot: Math.PI / 4, mat: 'gilded' as const }
-  ]
-  let cursor = 0
-  const placed = tiers.map((tier) => {
-    const entry = { ...tier, y: cursor + tier.h / 2 }
-    cursor += tier.h
-    return entry
-  })
-  const crownBase = cursor
 
   return (
-    <group ref={towerRef} position={[plan.x, 0, plan.z]}>
-      {placed.map((tier, index) => (
-        <mesh key={index} position={[0, tier.y, 0]} material={materials[tier.mat]} rotation={[0, tier.rot, 0]} scale={[tier.w, tier.h, tier.w]}>
-          <boxGeometry args={[1, 1, 1]} />
-        </mesh>
-      ))}
-      <mesh position={[0, crownBase + 0.18, 0]} material={materials.gilded}>
-        <coneGeometry args={[0.55, 0.36, 6]} />
+    <group position={[plan.x, 0, plan.z]}>
+      {/* Шестиугольный стилобат с золотым ободом. */}
+      <mesh position={[0, 0.25, 0]} material={skin.plinth}>
+        <cylinderGeometry args={[2.3, 2.4, 0.5, 6]} />
       </mesh>
-      <mesh ref={beaconRef} position={[0, crownBase + 0.62, 0]} material={materials.gilded}>
-        <sphereGeometry args={[1, 12, 12]} />
+      <mesh position={[0, 0.53, 0]} rotation={[Math.PI / 2, 0, 0]} material={skin.gold}>
+        <torusGeometry args={[1.62, 0.05, 8, 32]} />
       </mesh>
-      <mesh ref={haloRef} position={[0, crownBase + 0.62, 0]}>
-        <sphereGeometry args={[0.85, 14, 14]} />
-        <meshBasicMaterial color="#ffe9b0" transparent opacity={0.2} />
+      {/* Три восьмигранных яруса, сужающихся кверху. */}
+      <mesh position={[0, 1.6, 0]} rotation={[0, Math.PI / 8, 0]} material={tierMaterials}>
+        <cylinderGeometry args={[1.35, 1.62, 2.2, 8]} />
+      </mesh>
+      <mesh position={[0, 2.72, 0]} rotation={[Math.PI / 2, 0, 0]} material={skin.gold}>
+        <torusGeometry args={[1.28, 0.045, 8, 32]} />
+      </mesh>
+      <mesh position={[0, 3.62, 0]} rotation={[0, Math.PI / 8, 0]} material={tierMaterials}>
+        <cylinderGeometry args={[1.05, 1.22, 1.8, 8]} />
+      </mesh>
+      <mesh position={[0, 4.54, 0]} rotation={[Math.PI / 2, 0, 0]} material={skin.gold}>
+        <torusGeometry args={[1.0, 0.04, 8, 32]} />
+      </mesh>
+      <mesh position={[0, 5.28, 0]} rotation={[0, Math.PI / 8, 0]} material={tierMaterials}>
+        <cylinderGeometry args={[0.8, 0.98, 1.5, 8]} />
+      </mesh>
+      {/* Корона: золотой конус и кристалл-маяк. */}
+      <mesh position={[0, 6.08, 0]} material={skin.gold}>
+        <coneGeometry args={[0.72, 1.1, 8]} />
+      </mesh>
+      <mesh ref={beaconRef} position={[0, 6.95, 0]}>
+        <icosahedronGeometry args={[0.3, 0]} />
+        <meshBasicMaterial color="#ffe9b0" />
+      </mesh>
+      <mesh ref={haloRef} position={[0, 6.95, 0]}>
+        <sphereGeometry args={[0.7, 14, 14]} />
+        <meshBasicMaterial color="#ffe9b0" transparent opacity={0.16} depthWrite={false} />
+      </mesh>
+      <mesh ref={beamRef} position={[0, 9.4, 0]}>
+        <cylinderGeometry args={[0.09, 0.14, 4.6, 6, 1, true]} />
+        <meshBasicMaterial color="#ffd98a" transparent opacity={0.12} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
     </group>
   )
@@ -835,8 +1019,8 @@ function IslandGroup3D({
   onHoverBuilding: (buildingId: string | null) => void
 }) {
   const groupRef = useRef<THREE.Group>(null)
-  const accentHue = displayIslandHue(view.island.id, view.island.role)
-  const materials = useIslandMaterials(accentHue, view.island.status === 'ready')
+  const skin = useCitySkin()
+  const accent = useIslandAccent(displayIslandHue(view.island.id, view.island.role))
 
   const targetScale = scaleForPhase(view.phase)
   useFrame((_, delta) => {
@@ -858,17 +1042,18 @@ function IslandGroup3D({
 
   return (
     <group ref={groupRef}>
-      <IslandGround view={view} material={materials.ground} onSelect={() => onSelectIsland(view.island.id)} />
+      <IslandGround view={view} onSelect={() => onSelectIsland(view.island.id)} />
       <IslandTowers
         view={view}
-        materials={materials}
+        skin={skin}
+        accent={accent}
         selectedBuildingId={selectedIsland ? selectedBuildingId : null}
         hoveredBuildingId={view.island.status === 'ready' ? hoveredBuildingId : null}
         onSelectBuilding={onSelectBuilding}
         onHoverBuilding={onHoverBuilding}
       />
       {view.buildings.some((item) => item.building.kind === 'citadel') ? (
-        <QueenTower3D view={view} />
+        <QueenTower3D view={view} skin={skin} />
       ) : (
         <BeaconGlow3D view={view} />
       )}
@@ -945,15 +1130,17 @@ export function HiveArchipelago3D({
         }}
       >
         <color attach="background" args={['#070812']} />
-        <ambientLight intensity={0.42} />
-        <hemisphereLight args={['#4a5aa8', '#0b0d18', 0.55]} />
-        <directionalLight position={[30, 40, 10]} intensity={1.15} color="#ffe2b0" />
-        <directionalLight position={[-24, 18, -16]} intensity={0.35} color="#7aa0ff" />
+        <ambientLight intensity={0.3} />
+        <hemisphereLight args={['#4b5da0', '#0a0c16', 0.5]} />
+        {/* Холодное «лунное» освещение: тепло дают только окна и золото. */}
+        <directionalLight position={[26, 38, 14]} intensity={1.0} color="#dfe8ff" />
+        <directionalLight position={[-20, 16, -18]} intensity={0.3} color="#7aa0ff" />
         {/* Тёплый источник над дворцом Королевы: город читается объёмом. */}
-        <pointLight position={[0, 9, 0]} intensity={60} distance={60} decay={1.8} color="#ffd98a" />
+        <pointLight position={[0, 12, 0]} intensity={40} distance={50} decay={1.6} color="#ffd98a" />
         <CameraRig focus={focus} paused={paused} />
         <Starfield />
 
+        <CitySkinProvider>
         <FloatingCityGroup
           capital={capital}
           satellites={visibleSatellites}
@@ -968,6 +1155,7 @@ export function HiveArchipelago3D({
           onSelectBuilding={onSelectBuilding}
           onHoverBuilding={onHoverBuilding}
         />
+        </CitySkinProvider>
 
         <ConnectingBridges satellites={visibleSatellites} paused={paused} />
         <AgentDrones count={droneCount} paused={paused} />
