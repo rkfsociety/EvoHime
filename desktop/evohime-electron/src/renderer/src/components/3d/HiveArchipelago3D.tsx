@@ -633,6 +633,293 @@ function IslandNameplate({ view }: { view: CityIslandView }) {
   )
 }
 
+/** Плоский отрезок дороги на плите острова: тонкий бокс, выровненный по прямой. */
+function GroundSegment({
+  from,
+  to,
+  material,
+  width = 0.18
+}: {
+  from: readonly [number, number]
+  to: readonly [number, number]
+  material: THREE.Material
+  width?: number
+}) {
+  const dx = to[0] - from[0]
+  const dz = to[1] - from[1]
+  const length = Math.hypot(dx, dz)
+  if (length < 0.05) return <></>
+  const angle = Math.atan2(dz, dx)
+  return (
+    <mesh
+      position={[(from[0] + to[0]) / 2, 0.035, (from[1] + to[1]) / 2]}
+      rotation={[0, -angle, 0]}
+      material={material}
+    >
+      <boxGeometry args={[length, 0.035, width]} />
+    </mesh>
+  )
+}
+
+interface InfoPacket {
+  readonly color: string
+  /** 0 = старт, 1 = финиш; направление зашито в позиционной формуле. */
+  readonly speed: number
+  readonly phase: number
+  readonly lot: number
+  readonly kind: 'to-queen' | 'from-queen' | 'ring'
+}
+
+/**
+ * Дороги столицы и движение информации: лучи от двора Королевы к домам
+ * агентов, кольцевая дорога между домами и светящиеся пакеты, бегающие в обе
+ * стороны (агент → Королева, Королева → агент, агент → агент).
+ */
+function QueenRoads3D({
+  view,
+  lots,
+  paused
+}: {
+  view: CityIslandView
+  lots: readonly HiveCityHouseLot[]
+  paused: boolean
+}) {
+  const ringRadius = Math.min(
+    capitalHouseRingRadius(lots[0]?.total ?? 0),
+    CAPITAL_TOWER_INNER_RADIUS - 1.2
+  )
+  const spokeRoadMaterial = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: '#f0d088',
+        transparent: true,
+        opacity: 0.4,
+        depthWrite: false
+      }),
+    []
+  )
+  const ringRoadMaterial = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: '#f0d088',
+        transparent: true,
+        opacity: 0.3,
+        depthWrite: false
+      }),
+    []
+  )
+  useEffect(() => () => {
+    spokeRoadMaterial.dispose()
+    ringRoadMaterial.dispose()
+  }, [spokeRoadMaterial, ringRoadMaterial])
+
+  const packets = useMemo<readonly InfoPacket[]>(() => {
+    const list: InfoPacket[] = []
+    lots.forEach((lot, lotIndex) => {
+      const seed = fnv1a32(`${view.island.id}/road-${lot.departmentKey}-${lot.slot}`)
+      list.push({
+        color: lot.accent,
+        speed: 0.18 + (seed % 100) / 1000,
+        phase: (seed % 997) / 997,
+        lot: lotIndex,
+        kind: 'to-queen'
+      })
+      const backSeed = fnv1a32(`${view.island.id}/road-${lot.departmentKey}-${lot.slot}-back`)
+      list.push({
+        color: '#ffe9b0',
+        speed: 0.18 + (backSeed % 100) / 1000,
+        phase: (backSeed % 997) / 997,
+        lot: lotIndex,
+        kind: 'from-queen'
+      })
+      const ringSeed = fnv1a32(`${view.island.id}/road-${lot.departmentKey}-${lot.slot}-ring`)
+      list.push({
+        color: lot.accent,
+        speed: 0.1 + (ringSeed % 60) / 1000,
+        phase: (ringSeed % 997) / 997,
+        lot: lotIndex,
+        kind: 'ring'
+      })
+    })
+    return list
+  }, [lots, view.island.id])
+
+  const houseAngles = useMemo(
+    () =>
+      lots.map((lot) => (lot.slot / Math.max(1, lot.total)) * Math.PI * 2),
+    [lots]
+  )
+
+  const meshRef = useRef<THREE.InstancedMesh>(null)
+  const instanceColor = useMemo(() => new THREE.Color(), [])
+  useLayoutEffect(() => {
+    const mesh = meshRef.current
+    if (!mesh) return
+    packets.forEach((packet, index) => {
+      instanceColor.set(packet.color)
+      mesh.setColorAt(index, instanceColor)
+    })
+    if (mesh.instanceColor !== null) mesh.instanceColor.needsUpdate = true
+  }, [packets, instanceColor])
+
+  useFrame((state) => {
+    const mesh = meshRef.current
+    if (!mesh) return
+    const time = paused ? 0 : state.clock.elapsedTime
+    const dummy = FRAME_DUMMY
+    packets.forEach((packet, index) => {
+      if (index >= mesh.count) return
+      const angle = houseAngles[packet.lot]
+      if (angle === undefined) return
+      let x: number
+      let z: number
+      const progress = paused ? packet.phase : (packet.phase + time * packet.speed) % 1
+      if (packet.kind === 'ring') {
+        const nextAngle =
+          ((packet.lot + 1 < lots.length ? houseAngles[packet.lot + 1] : (houseAngles[0] ?? angle) + Math.PI * 2) ?? angle)
+        const target = nextAngle > angle ? nextAngle : nextAngle + Math.PI * 2
+        const current = angle + (target - angle) * progress
+        x = view.x + Math.cos(current) * ringRadius
+        z = view.z + Math.sin(current) * ringRadius
+        dummy.scale.setScalar(0.13)
+      } else {
+        const roadStart = 2.5
+        const outward = packet.kind === 'from-queen' ? progress : 1 - progress
+        const radius = roadStart + outward * (ringRadius - roadStart)
+        x = view.x + Math.cos(angle) * radius
+        z = view.z + Math.sin(angle) * radius
+        dummy.scale.setScalar(0.17)
+      }
+      dummy.position.set(x, 0.22, z)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(index, dummy.matrix)
+    })
+    mesh.instanceMatrix.needsUpdate = true
+  })
+
+  if (lots.length === 0) return <></>
+
+  return (
+    <group>
+      {/* Лучи от двора к каждому дому агента. */}
+      {lots.map((lot, index) => {
+        const angle = houseAngles[index]
+        if (angle === undefined) return null
+        return (
+          <GroundSegment
+            key={`road-${lot.departmentKey}-${lot.slot}`}
+            from={[view.x + Math.cos(angle) * 2.5, view.z + Math.sin(angle) * 2.5]}
+            to={[view.x + Math.cos(angle) * ringRadius, view.z + Math.sin(angle) * ringRadius]}
+            material={spokeRoadMaterial}
+          />
+        )
+      })}
+      {/* Кольцевая дорога между домами агентов. */}
+      <mesh position={[view.x, 0.035, view.z]} rotation={[Math.PI / 2, 0, 0]} material={ringRoadMaterial}>
+        <torusGeometry args={[ringRadius, 0.05, 6, 48]} />
+      </mesh>
+      {/* Пакеты информации вдоль лучей и кольца. */}
+      <instancedMesh ref={meshRef} args={[undefined, undefined, Math.max(1, packets.length)]} visible={packets.length > 0} frustumCulled={false}>
+        <sphereGeometry args={[1, 6, 6]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.9} />
+      </instancedMesh>
+    </group>
+  )
+}
+
+/** Шоссе между зданиями модулей: связи данных острова как дороги с пакетами. */
+function ModuleRoads3D({
+  view,
+  paused
+}: {
+  view: CityIslandView
+  paused: boolean
+}) {
+  const roads = useMemo(() => {
+    const byId = new Map(view.buildings.map((item) => [item.building.id, item]))
+    const edges = [...view.island.edges]
+      .sort((left, right) => right.weight - left.weight)
+      .slice(0, 40)
+    const segments: Array<{ from: [number, number]; to: [number, number]; width: number }> = []
+    for (const edge of edges) {
+      const from = byId.get(edge.from_id)
+      const to = byId.get(edge.to_id)
+      if (from === undefined || to === undefined) continue
+      segments.push({
+        from: [view.x + from.x, view.z + from.z],
+        to: [view.x + to.x, view.z + to.z],
+        width: 0.07 + (edge.weight / 100) * 0.13
+      })
+    }
+    return segments
+  }, [view])
+
+  const roadMaterial = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: '#9db4e8',
+        transparent: true,
+        opacity: 0.3,
+        depthWrite: false
+      }),
+    []
+  )
+  useEffect(() => () => roadMaterial.dispose(), [roadMaterial])
+
+  const meshRef = useRef<THREE.InstancedMesh>(null)
+  const pulseMaterial = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.85 }),
+    []
+  )
+  useEffect(() => () => pulseMaterial.dispose(), [pulseMaterial])
+
+  useFrame((state) => {
+    const mesh = meshRef.current
+    if (!mesh) return
+    const time = paused ? 0 : state.clock.elapsedTime
+    const dummy = FRAME_DUMMY
+    roads.forEach((road, index) => {
+      if (index >= mesh.count) return
+      const seed = fnv1a32(`${view.island.id}/pulse-${index}`)
+      const speed = 0.14 + (seed % 80) / 1000
+      const progress = paused ? ((seed % 997) / 997) : ((seed % 997) / 997 + time * speed) % 1
+      dummy.position.set(
+        road.from[0] + (road.to[0] - road.from[0]) * progress,
+        0.14,
+        road.from[1] + (road.to[1] - road.from[1]) * progress
+      )
+      dummy.scale.setScalar(0.11)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(index, dummy.matrix)
+    })
+    mesh.instanceMatrix.needsUpdate = true
+  })
+
+  if (roads.length === 0) return <></>
+
+  return (
+    <group>
+      {roads.map((road, index) => (
+        <GroundSegment
+          key={`module-road-${index}`}
+          from={road.from}
+          to={road.to}
+          material={roadMaterial}
+          width={road.width}
+        />
+      ))}
+      <instancedMesh
+        ref={meshRef}
+        args={[undefined, pulseMaterial, Math.max(1, roads.length)]}
+        visible={roads.length > 0}
+        frustumCulled={false}
+      >
+        <sphereGeometry args={[1, 6, 6]} />
+      </instancedMesh>
+    </group>
+  )
+}
+
 /** One worker house on the ring around the queen tower; lit when active. */
 function DepartmentHouse3D({
   view,
@@ -1043,6 +1330,11 @@ function IslandGroup3D({
   return (
     <group ref={groupRef}>
       <IslandGround view={view} onSelect={() => onSelectIsland(view.island.id)} />
+      {/* Дороги под застройкой: связи модулей и двор Королевы. */}
+      <ModuleRoads3D view={view} paused={paused} />
+      {departmentHouses !== undefined && departmentHouses.length > 0 ? (
+        <QueenRoads3D view={view} lots={departmentHouses} paused={paused} />
+      ) : null}
       <IslandTowers
         view={view}
         skin={skin}
