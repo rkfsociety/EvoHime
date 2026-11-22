@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { HiveCityMapSnapshot } from '../src/shared/hive-city-map'
 import { HiveCityScene, type HiveCityDepartmentPin } from '../src/renderer/src/components/3d'
 
 describe('HiveCityScene', () => {
@@ -75,5 +76,220 @@ describe('HiveCityScene', () => {
 
     await user.click(researchPin)
     expect(onSelectDepartment).toHaveBeenCalledWith('research')
+  })
+})
+
+const satelliteIsland = (id: string, name: string) => ({
+  id,
+  name,
+  role: 'satellite' as const,
+  source: 'live_workspace' as const,
+  status: 'ready' as const,
+  reason: null,
+  ecosystem: 'rust' as const,
+  structure_hash: 'a'.repeat(16),
+  revision_hash: 'b'.repeat(16),
+  accent_hue: 212,
+  districts: [{ id: `${id}-core`, label: 'Ядро', kind: 'core' as const }],
+  buildings: [
+    {
+      id: `${id}/src/main.rs`,
+      name: 'main.rs',
+      district_id: `${id}-core`,
+      kind: 'worker' as const,
+      relative_path: 'src/main.rs',
+      file_count: 3,
+      line_count: 300,
+      height_weight_bp: 320,
+      language: 'rust'
+    }
+  ],
+  edges: [],
+  total_files: 3,
+  total_lines: 300
+})
+
+const capitalIsland = {
+  id: 'capital-evohime',
+  name: 'Столица Евы',
+  role: 'capital' as const,
+  source: 'live_workspace' as const,
+  status: 'ready' as const,
+  reason: null,
+  ecosystem: 'rust' as const,
+  structure_hash: 'c'.repeat(16),
+  revision_hash: 'd'.repeat(16),
+  accent_hue: 42,
+  districts: [{ id: 'capital-core', label: 'Цитадель', kind: 'core' as const }],
+  buildings: [
+    {
+      id: 'crates/evohime-core',
+      name: 'evohime-core',
+      district_id: 'capital-core',
+      kind: 'citadel' as const,
+      relative_path: 'crates/evohime-core',
+      file_count: 40,
+      line_count: 9000,
+      height_weight_bp: 1000,
+      language: 'rust'
+    }
+  ],
+  edges: [],
+  total_files: 40,
+  total_lines: 9000
+}
+
+const archipelagoSnapshot: HiveCityMapSnapshot = {
+  schema_version: 1,
+  generated_at_ms: 1_700_000_000_000,
+  revision_hash: 'd'.repeat(32),
+  capital: capitalIsland,
+  satellites: [satelliteIsland('sat-alpha', 'Альфа')]
+}
+
+describe('HiveCityScene — живой архипелаг (план 199.3)', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('в jsdom рендерит архипелаг в 2D-режиме с чипами и башнями', () => {
+    render(
+      <HiveCityScene
+        status="observing"
+        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
+      />
+    )
+
+    const scene = screen.getByTestId('hive-city-scene')
+    expect(scene.getAttribute('data-mode')).toBe('2d')
+    expect(screen.getByTestId('hive-archipelago-2d')).toBeTruthy()
+    // Чипы: столица + спутник.
+    expect(screen.getByTestId('hive-archipelago-chip-capital-evohime').textContent).toContain('Столица Евы')
+    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').textContent).toContain('Альфа')
+    // Башни зданий из детерминированной раскладки.
+    expect(screen.getByTestId('hive-tower-crates/evohime-core')).toBeTruthy()
+    expect(screen.getByTestId('hive-tower-sat-alpha/src/main.rs')).toBeTruthy()
+    // Архипелаг дополняет панораму, HUD-виньетка не рисуется в архиве 2D.
+    expect(screen.queryByTestId('hive-city-scene-art')).toBeNull()
+  })
+
+  it('клик по башне открывает инспектор, Escape и кнопка закрывают', async () => {
+    const user = userEvent.setup()
+    render(
+      <HiveCityScene
+        status="observing"
+        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
+      />
+    )
+
+    expect(screen.queryByTestId('hive-archipelago-inspector')).toBeNull()
+    fireEvent.pointerDown(screen.getByTestId('hive-tower-sat-alpha/src/main.rs'))
+
+    const inspector = screen.getByTestId('hive-archipelago-inspector')
+    expect(inspector.getAttribute('role')).toBe('dialog')
+    // Инспектор показывает модуль здания: имя, тип, относительный путь.
+    expect(inspector.textContent).toContain('main.rs')
+    expect(inspector.textContent).toContain('src/main.rs')
+
+    // Спутник в фокусе: чип альфа нажат.
+    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('true')
+
+    await user.click(screen.getByTestId('hive-archipelago-inspector-close'))
+    expect(screen.queryByTestId('hive-archipelago-inspector')).toBeNull()
+    // Фокус снят после закрытия инспектора? Нет: Escape нужен для возврата обзора.
+    fireEvent.keyDown(screen.getByTestId('hive-city-scene'), { key: 'Escape' })
+    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('клик по чипу-спутнику выделяет остров, повторный клик и фон снимают фокус', async () => {
+    const user = userEvent.setup()
+    render(
+      <HiveCityScene
+        status="observing"
+        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
+      />
+    )
+
+    await user.click(screen.getByTestId('hive-archipelago-chip-sat-alpha'))
+    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('true')
+
+    // Клик по фону SVG (по воде) возвращает общий обзор.
+    const svg = screen.getByTestId('hive-archipelago-2d')
+    fireEvent.pointerDown(svg, { target: svg })
+    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('недоступный демон сохраняет панораму и показывает статус', () => {
+    render(
+      <HiveCityScene
+        status="observing"
+        cityMap={{ available: false, snapshot: null }}
+      />
+    )
+    const scene = screen.getByTestId('hive-city-scene')
+    expect(scene.getAttribute('data-mode')).toBe('panorama')
+    expect(screen.getByTestId('hive-city-scene-art')).toBeTruthy()
+    expect(screen.getByTestId('hive-city-unavailable')).toBeTruthy()
+  })
+
+  it('чипы ограничены 13 островами (столица + до 12 спутников)', () => {
+    const fullSnapshot: HiveCityMapSnapshot = {
+      ...archipelagoSnapshot,
+      satellites: Array.from({ length: 14 }, (_, index) =>
+        satelliteIsland(`sat-${index}`, `Спутник ${index}`)
+      )
+    }
+    render(
+      <HiveCityScene
+        status="observing"
+        cityMap={{ available: true, snapshot: fullSnapshot }}
+      />
+    )
+    const chips = screen.getAllByTestId(/^hive-archipelago-chip-/)
+    expect(chips).toHaveLength(13)
+  })
+
+  it('жизненный цикл спутника: entering → active → exiting → размонтирование', () => {
+    vi.useFakeTimers()
+    try {
+      const { rerender } = render(
+        <HiveCityScene status="observing" cityMap={{ available: true, snapshot: archipelagoSnapshot }} />
+      )
+
+      // Добавляем спутник: фаза entering.
+      const withTwo: HiveCityMapSnapshot = {
+        ...archipelagoSnapshot,
+        satellites: [satelliteIsland('sat-alpha', 'Альфа'), satelliteIsland('sat-beta', 'Бета')]
+      }
+      rerender(
+        <HiveCityScene status="observing" cityMap={{ available: true, snapshot: withTwo }} />
+      )
+
+      const betaIsland = screen.getByTestId('hive-tower-sat-beta/src/main.rs').closest('[data-island]')
+      expect(betaIsland?.getAttribute('class')).toContain('hive-archipelago__island--entering')
+
+      act(() => {
+        vi.advanceTimersByTime(700)
+      })
+      const betaIslandAfter = screen.getByTestId('hive-tower-sat-beta/src/main.rs').closest('[data-island]')
+      expect(betaIslandAfter?.getAttribute('class'))
+        .toContain('hive-archipelago__island--active')
+
+      // Убираем спутники Бета: exiting, затем размонтирование.
+      rerender(
+        <HiveCityScene status="observing" cityMap={{ available: true, snapshot: archipelagoSnapshot }} />
+      )
+      expect(screen.getByTestId('hive-tower-sat-beta/src/main.rs').closest('[data-island]')?.getAttribute('class'))
+        .toContain('hive-archipelago__island--exiting')
+
+      act(() => {
+        vi.advanceTimersByTime(800)
+      })
+      expect(screen.queryByTestId('hive-tower-sat-beta/src/main.rs')).toBeNull()
+      // Альфа осталась активной.
+      expect(screen.getByTestId('hive-tower-sat-alpha/src/main.rs')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

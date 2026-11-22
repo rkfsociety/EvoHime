@@ -6,6 +6,7 @@ import type {
   RendererCommand,
   ShellState
 } from '../src/shared/api'
+import type { ShellBridgeOptions } from '../src/main/shell-bridge'
 import type { ProviderUpdate } from '../src/main/provider-store'
 import type { ListenerRuntimeStatus } from '../src/shared/listener-runtime'
 import type { OllamaRuntimeStatus } from '../src/shared/ollama-runtime'
@@ -266,26 +267,11 @@ function invoke(command: string, payload?: unknown): unknown {
   return handler({}, command, payload)
 }
 
-beforeEach(() => {
-  handlers.clear()
-  sent.length = 0
-  clipboardWrites.length = 0
-  openedUrls.length = 0
-  enqueueResult = 'queued'
-  workspacePermissionMode = 'ask'
-  providerSummary = {
-    provider: 'literouter',
-    model: '',
-    baseUrl: '',
-    tier: 'free',
-    configured: false,
-    hiveApiKeyConfigured: false,
-    hiveFallbackApiKeyConfigured: false,
-    profiles: emptyProviderProfiles()
-  }
-  providerWrites.length = 0
-  restarts.length = 0
-  registerShellBridge({
+/** Common bridge fixture; extra options override the defaults (e.g. hiveDaemon). */
+function shellBridgeOptions(
+  extra: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
     client: client as never,
     workspaces: workspaces as never,
     providers: providers as never,
@@ -316,8 +302,32 @@ beforeEach(() => {
     setLocale: () => undefined,
     exportDiagnostics: async () => ({ cancelled: false, path: 'C:\\diagnostics.json' }),
     submitDiagnostics: async () => ({ url: 'https://github.com/rkfsociety/EvoHime/issues/2' }),
-    log: () => {}
-  })
+    log: () => {},
+    ...extra
+  }
+}
+
+beforeEach(() => {
+  handlers.clear()
+  sent.length = 0
+  clipboardWrites.length = 0
+  openedUrls.length = 0
+  enqueueResult = 'queued'
+  workspacePermissionMode = 'ask'
+  providerSummary = {
+    provider: 'literouter',
+    model: '',
+    baseUrl: '',
+    tier: 'free',
+    configured: false,
+    hiveApiKeyConfigured: false,
+    hiveFallbackApiKeyConfigured: false,
+    profiles: emptyProviderProfiles()
+  }
+  providerWrites.length = 0
+  restarts.length = 0
+  registerShellBridge(shellBridgeOptions() as unknown as ShellBridgeOptions)
+
   listenerCalls.length = 0
   ollamaCalls.length = 0
   listenerDownloadStatus = listenerRuntimeStatus
@@ -1568,5 +1578,42 @@ describe('Per-chat session isolation bridge (Plan 197.3)', () => {
       provider: 'openai_compatible',
       profileId: 'openrouter'
     })
+  })
+})
+
+describe('hive.getCityMap (direct daemon client, plan 199.3)', () => {
+  it('без hiveDaemon отвечает protocol-error', async () => {
+    const result = await invoke('hive.getCityMap', {}) as { ok: boolean; code?: string }
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('protocol-error')
+  })
+
+  it('с hiveDaemon отдаёт снапшот как ok-значение', async () => {
+    const snapshot = {
+      schema_version: 1,
+      generated_at_ms: 1_700_000_000_000,
+      revision_hash: 'd'.repeat(32),
+      capital: { id: 'capital-evohime' },
+      satellites: []
+    }
+    registerShellBridge(shellBridgeOptions({
+      hiveDaemon: {
+        getCityMap: async () => ({ available: true as const, snapshot })
+      }
+    }) as unknown as ShellBridgeOptions)
+    const result = await invoke('hive.getCityMap', {}) as { ok: boolean; value?: unknown }
+    expect(result).toEqual({ ok: true, value: { available: true, snapshot } })
+  })
+
+  it('отказ клиента демона деградирует до unavailable, а не до ошибки', async () => {
+    registerShellBridge(shellBridgeOptions({
+      hiveDaemon: {
+        getCityMap: async () => {
+          throw new Error('ECONNREFUSED')
+        }
+      }
+    }) as unknown as ShellBridgeOptions)
+    const result = await invoke('hive.getCityMap', {}) as { ok: boolean; value?: unknown }
+    expect(result).toEqual({ ok: true, value: { available: false, snapshot: null } })
   })
 })

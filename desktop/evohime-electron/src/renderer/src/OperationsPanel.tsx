@@ -11,7 +11,7 @@ import { ImageGenerationPanel } from './ImageGenerationPanel'
 import { AnalysisKernelPanel } from './AnalysisKernelPanel'
 import { UiIcon } from './UiIcon'
 import type { UiIconName } from './UiIcon'
-import { HiveCityScene } from './components/3d'
+import { HiveCityScene, type HiveCityMapPayload } from './components/3d'
 import { catalogErrorMessage, safeCatalogErrorCode } from './catalog-error'
 import {
   applyConversationEvents,
@@ -2018,6 +2018,53 @@ export function HiveDashboard({
     return () => window.clearInterval(timer)
   }, [api, connected, preference.intervalMs, requestSnapshot])
 
+  // Карта-архипелаг читается напрямую у evohime-hive-daemon (план 199.3):
+  // демонирующий клиент сам деградирует любой сбой до available:false.
+  const [cityMap, setCityMap] = useState<HiveCityMapPayload | null>(null)
+  const cityMapRef = useRef<HiveCityMapPayload | null>(null)
+  const cityMapRevisionRef = useRef<string | null>(null)
+  const requestCityMap = useCallback((): void => {
+    if (!api) return
+    void api.invoke('hive.getCityMap', {}).then((outcome) => {
+      if (!outcome.ok) return
+      const value = outcome.value
+      cityMapRevisionRef.current = value.available ? value.snapshot.revision_hash : null
+      // Без лишнего перерендера: снапшот с тем же revision_hash не меняет вывод.
+      const previous = cityMapRef.current
+      if (
+        previous !== null &&
+        previous.available === value.available &&
+        (previous.available ? previous.snapshot.revision_hash : null) ===
+          (value.available ? value.snapshot.revision_hash : null)
+      ) {
+        return
+      }
+      cityMapRef.current = value
+      setCityMap(value)
+    }).catch(() => undefined)
+  }, [api])
+
+  // Burst после изменений рабочей папки/списка проектов: пока revision_hash
+  // не сменится (или 12 тиков по 500 ms), перечитываем карту чаще обычного.
+  const startCityMapBurst = useCallback((): void => {
+    const baseline = cityMapRevisionRef.current
+    let ticks = 0
+    const burstTimer = window.setInterval(() => {
+      requestCityMap()
+      ticks += 1
+      if (ticks >= 12 || cityMapRevisionRef.current !== baseline) {
+        window.clearInterval(burstTimer)
+      }
+    }, 500)
+  }, [requestCityMap])
+
+  useEffect(() => {
+    if (!api || !connected) return
+    requestCityMap()
+    const timer = window.setInterval(requestCityMap, preference.intervalMs)
+    return () => window.clearInterval(timer)
+  }, [api, connected, preference.intervalMs, requestCityMap])
+
   useEffect(() => {
     if (!api) {
       setHistoryPrompts([])
@@ -2298,6 +2345,8 @@ export function HiveDashboard({
         setEvaWorkspaceError(outcome.message)
         return
       }
+      requestSnapshot()
+      startCityMapBurst()
       if (submittedPath.length === 0) {
         setEvaWorkspacePath('')
         setEvaWorkspaceDraft('')
@@ -2310,7 +2359,7 @@ export function HiveDashboard({
     } finally {
       setEvaWorkspaceBusy(false)
     }
-  }, [api, evaWorkspaceDraft, events])
+  }, [api, evaWorkspaceDraft, events, requestSnapshot, startCityMapBurst])
 
   const saveDailyBudget = useCallback(async (): Promise<void> => {
     if (!api) return
@@ -2444,12 +2493,13 @@ export function HiveDashboard({
       setWatchedRepositories(nextRepos)
       setNewRepoDraft('')
       requestSnapshot()
+      startCityMapBurst()
     } catch {
       setWatchedReposError('Не удалось добавить проект: Core не ответил.')
     } finally {
       setWatchedReposBusy(false)
     }
-  }, [api, evaWorkspaceDraft, evaWorkspacePath, newRepoDraft, requestSnapshot, watchedRepositories])
+  }, [api, evaWorkspaceDraft, evaWorkspacePath, newRepoDraft, requestSnapshot, startCityMapBurst, watchedRepositories])
 
   const removeWatchedRepository = useCallback(async (targetPath: string): Promise<void> => {
     if (!api) return
@@ -2467,12 +2517,13 @@ export function HiveDashboard({
       }
       setWatchedRepositories(nextRepos)
       requestSnapshot()
+      startCityMapBurst()
     } catch {
       setWatchedReposError('Не удалось удалить проект: Core не ответил.')
     } finally {
       setWatchedReposBusy(false)
     }
-  }, [api, requestSnapshot, watchedRepositories])
+  }, [api, requestSnapshot, startCityMapBurst, watchedRepositories])
 
   const saveHiveProviderSettings = useCallback(async (): Promise<void> => {
     if (!api) return
@@ -2980,6 +3031,8 @@ export function HiveDashboard({
             queenOverlay={queenCenterCard}
             idleDepartmentsLabel={translate('Ожидание')}
             activeDepartmentsLabel={translate('Работает')}
+            cityMap={cityMap}
+            activeAgents={hive?.activeAgents ?? []}
           />
         </section>
 

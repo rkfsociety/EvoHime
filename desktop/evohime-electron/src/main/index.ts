@@ -11,6 +11,7 @@ import { JsonlLogger } from './diagnostics/logger'
 import { buildSupportBundleFiles, claimAutomaticSupportReport, serializeSupportBundle } from './diagnostics/support-bundle'
 import { hasLiveSupervisor, readLaunchContext } from './ipc/launch-context'
 import { CorePipeClient } from './ipc/pipe-client'
+import { createHiveDaemonClient } from './hive-daemon-client'
 import { dataDirectory, logDirectory } from './paths'
 import { ProviderStore } from './provider-store'
 import { RepairService } from './repair-service'
@@ -304,6 +305,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
       updates,
       listenerRuntime: listenerRuntime!,
       ollamaRuntime: ollamaRuntime!,
+      hiveDaemon: createHiveDaemonClient(),
       ambientHotkey: ambientHotkeyStatus,
       setLocale: (locale) => {
         shellLocale = locale

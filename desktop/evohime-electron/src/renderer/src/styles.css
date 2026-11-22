@@ -10009,3 +10009,241 @@ body {
   color: #dc2626;
   background: color-mix(in srgb, #dc2626 15%, transparent);
 }
+
+/* Живой архипелаг Улья (план 199.3): SVG-режим, чипы островов, инспектор. */
+
+.hive-archipelago {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.hive-archipelago svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hive-archipelago--3d {
+  position: absolute;
+  inset: 0;
+}
+
+.hive-archipelago__island {
+  cursor: pointer;
+  transition: opacity 240ms ease;
+}
+
+.hive-archipelago__island--entering {
+  opacity: 0.15;
+}
+
+.hive-archipelago__island--active {
+  opacity: 1;
+}
+
+.hive-archipelago__island--exiting {
+  opacity: 0.08;
+}
+
+.hive-archipelago__tower {
+  cursor: pointer;
+  transition: filter 160ms ease;
+}
+
+.hive-archipelago__tower--lit {
+  filter: drop-shadow(0 0 6px rgb(255 233 176 / 70%));
+}
+
+.hive-archipelago__label {
+  font-size: 14px;
+  font-weight: 600;
+  fill: #c9d1f2;
+  pointer-events: none;
+  user-select: none;
+}
+
+.hive-archipelago__unavailable-status {
+  font-size: 13px;
+  fill: #93a0c7;
+}
+
+/* Кольцо чипов островов под сценой. */
+
+.hive-archipelago__island-chips {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: 92%;
+  z-index: 3;
+}
+
+.hive-archipelago__chip {
+  appearance: none;
+  border: 1px solid rgb(141 130 232 / 35%);
+  background: rgb(7 8 18 / 70%);
+  color: #c9d1f2;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.hive-archipelago__chip:hover {
+  border-color: rgb(141 130 232 / 70%);
+  color: #ffffff;
+}
+
+.hive-archipelago__chip[aria-pressed='true'] {
+  background: rgb(141 130 232 / 25%);
+  border-color: rgb(141 130 232 / 90%);
+  color: #ffffff;
+}
+
+.hive-archipelago__chip:focus-visible {
+  outline: 2px solid #8d82e8;
+  outline-offset: 1px;
+}
+
+/* Инспектор модуля. */
+
+.hive-archipelago__inspector {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 4;
+  width: min(320px, 40%);
+  max-height: calc(100% - 64px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--hive-hud-border, rgb(141 130 232 / 45%));
+  background: rgb(9 10 24 / 92%);
+  color: var(--hive-hud-fg, #e7ebff);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 55%);
+}
+
+.hive-archipelago__inspector-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hive-archipelago__inspector-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8d82e8;
+}
+
+.hive-archipelago__inspector h3 {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+
+.hive-archipelago__inspector-close {
+  appearance: none;
+  border: 1px solid rgb(141 130 232 / 35%);
+  background: transparent;
+  color: #c9d1f2;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.hive-archipelago__inspector-close:hover {
+  border-color: rgb(141 130 232 / 80%);
+  color: #ffffff;
+}
+
+.hive-archipelago__inspector-rows {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 13px;
+}
+
+.hive-archipelago__inspector-rows dt {
+  color: #8f9ac0;
+}
+
+.hive-archipelago__inspector-rows dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.hive-archipelago__inspector-buildings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hive-archipelago__inspector-label {
+  font-size: 12px;
+  color: #8f9ac0;
+}
+
+.hive-archipelago__inspector-muted {
+  font-size: 12px;
+  color: #8f9ac0;
+}
+
+.hive-archipelago__inspector-links,
+.hive-archipelago__inspector-agents {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: #c9d1f2;
+}
+
+.hive-archipelago__inspector-status {
+  margin: 0;
+  font-size: 12px;
+  color: #8f9ac0;
+}
+
+/* Тихий статус «демон недоступен» в панорамном режиме. */
+
+.hive-city-unavailable {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgb(147 160 199 / 35%);
+  background: rgb(7 8 18 / 70%);
+  color: #93a0c7;
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hive-archipelago__island,
+  .hive-archipelago__tower,
+  .hive-archipelago__chip {
+    transition: none;
+  }
+}

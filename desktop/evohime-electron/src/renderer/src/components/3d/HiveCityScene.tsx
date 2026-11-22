@@ -1,4 +1,23 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import {
+  Component,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ErrorInfo,
+  type MouseEvent,
+  type ReactNode
+} from 'react'
+
+import {
+  buildCityMapView,
+  type CityIsland,
+  type HiveCityMapSnapshot
+} from '@shared/hive-city-map'
+import { HiveArchipelago2D } from './HiveArchipelago2D'
+import { HiveArchipelago3D } from './HiveArchipelago3D'
 
 import hiveCityPanoramaUrl from '../../assets/hive-city-panorama.jpg'
 import { UiIcon, type UiIconName } from '../../UiIcon'
@@ -11,6 +30,17 @@ export interface HiveCityDepartmentPin {
   readonly activeCount: number
   readonly maxCapacity: number
 }
+
+/** Эвристический агент для HUD-инспектора здания (только роль/действие). */
+export interface HiveCityAgentHint {
+  readonly id: string
+  readonly role: string
+  readonly currentAction: string
+}
+
+export type HiveCityMapPayload =
+  | { readonly available: true; readonly snapshot: HiveCityMapSnapshot }
+  | { readonly available: false; readonly snapshot: null }
 
 export interface HiveCitySceneProps {
   /** Статус цикла наблюдения Улья (`observing`, `active`, `waiting_for_limits`, `waiting_for_tasks`, `disabled`, `sleeping`). */
@@ -31,6 +61,14 @@ export interface HiveCitySceneProps {
   readonly activeDepartmentsLabel?: string | undefined
   /** Пользовательский рендерер иконок департаментов. */
   readonly departmentIconRenderer?: ((icon: UiIconName) => ReactNode) | undefined
+  /**
+   * Карта-архипелаг напрямую от `evohime-hive-daemon` (plan 199.3).
+   * `undefined`/`null` — панорама как раньше; `available: false` — трекается
+   * статус-индикатором поверх силуэта панорамы; снапшот — живой архипелаг.
+   */
+  readonly cityMap?: HiveCityMapPayload | null | undefined
+  /** Активные агенты Улья: эвристика для дронов и HUD-инспектора. */
+  readonly activeAgents?: readonly HiveCityAgentHint[] | undefined
 }
 
 interface DistrictAnchor {
@@ -41,6 +79,11 @@ interface DistrictAnchor {
 
 const QUEEN_ORBIT_CENTER = { x: 800, y: 245 }
 const CONDUIT_ORIGIN = { x: 800, y: 405 }
+
+/** Длительность анимации сворачивания острова (удержание перед размонтированием). */
+const ISLAND_EXIT_HOLD_MS = 720
+/** Длительность вступительной анимации острова. */
+const ISLAND_ENTER_MS = 650
 
 /**
  * Координаты 8 кварталов в процентах 16:9 полотна города и акцентные цвета их магистралей.
@@ -153,12 +196,327 @@ function useDocumentHidden(): boolean {
   return hidden
 }
 
+/** Детект WebGL для выбора режима: jsdom и сломанные драйверы дают false. */
+function detectWebGl(): boolean {
+  if (typeof document === 'undefined') return false
+  try {
+    const canvas = document.createElement('canvas')
+    return Boolean(canvas.getContext('webgl2') ?? canvas.getContext('webgl'))
+  } catch {
+    return false
+  }
+}
+
+type LifecycleEntry = { readonly phase: 'entering' | 'active' | 'exiting'; readonly since: number }
+type LifecycleRegistry = ReadonlyMap<string, LifecycleEntry>
+
+/**
+ * Реестр жизненного цикла островов (план 199.3): `entering` → `active` →
+ * `exiting` с гарантированным удержанием исчезающего острова в сцене.
+ */
+function useIslandLifecycle(
+  satelliteIds: readonly string[],
+  paused: boolean
+): LifecycleRegistry {
+  const [registry, setRegistry] = useState<LifecycleRegistry>(() => new Map())
+  const timersRef = useRef<number[]>([])
+
+  const clearTimers = useCallback((): void => {
+    for (const timer of timersRef.current) window.clearTimeout(timer)
+    timersRef.current = []
+  }, [])
+
+  useEffect(() => {
+    clearTimers()
+    setRegistry((current) => {
+      const next = new Map<string, LifecycleEntry>()
+      const now = Date.now()
+      // Существующие активные/входящие острова сохраняются.
+      for (const [id, entry] of current) {
+        if (satelliteIds.includes(id)) {
+          next.set(id, entry.phase === 'exiting' ? { phase: 'entering', since: now } : entry)
+        }
+        // exiting-острова без ключа в спутниках вымирают дальше (снизу).
+      }
+      for (const id of satelliteIds) {
+        if (!next.has(id)) {
+          next.set(id, { phase: paused ? 'active' : 'entering', since: now })
+        }
+      }
+      // Исчезнувшие острова держим в сцене на время анимации сворачивания.
+      for (const [id, entry] of current) {
+        if (next.has(id)) continue
+        if (entry.phase === 'exiting') {
+          // Уже умирает: удержание продолжается до записи таймера ниже.
+          next.set(id, entry)
+        } else {
+          next.set(id, { phase: 'exiting', since: now })
+        }
+      }
+      return next
+    })
+  }, [satelliteIds, paused, clearTimers])
+
+  // Завершение вступительных и исходящих анимаций по таймерам.
+  useEffect(() => {
+    clearTimers()
+    const now = Date.now()
+    for (const [id, entry] of registry) {
+      if (entry.phase === 'entering') {
+        const remaining = Math.max(0, ISLAND_ENTER_MS - (now - entry.since))
+        timersRef.current.push(
+          window.setTimeout(() => {
+            setRegistry((current) => {
+              const entryNow = current.get(id)
+              if (entryNow === undefined || entryNow.phase !== 'entering') return current
+              const next = new Map(current)
+              next.set(id, { phase: 'active', since: Date.now() })
+              return next
+            })
+          }, remaining)
+        )
+      } else if (entry.phase === 'exiting') {
+        const remaining = Math.max(0, ISLAND_EXIT_HOLD_MS - (now - entry.since))
+        timersRef.current.push(
+          window.setTimeout(() => {
+            setRegistry((current) => {
+              const entryNow = current.get(id)
+              if (entryNow === undefined || entryNow.phase !== 'exiting') return current
+              const next = new Map(current)
+              next.delete(id)
+              return next
+            })
+          }, remaining)
+        )
+      }
+    }
+    return clearTimers
+  }, [registry, clearTimers])
+
+  useEffect(() => clearTimers, [clearTimers])
+
+  return registry
+}
+
+function phasesView(registry: LifecycleRegistry): Map<string, 'entering' | 'active' | 'exiting'> {
+  const view = new Map<string, 'entering' | 'active' | 'exiting'>()
+  for (const [id, entry] of registry) view.set(id, entry.phase)
+  return view
+}
+
+interface InspectorTarget {
+  readonly islandId: string
+  readonly buildingId: string
+}
+
+/**
+ * ErrorBoundary вокруг WebGL-канвы: любая ошибка контекста или рендера
+ * переключает сцену в SVG-режим без перезагрузки окна (план 199.3).
+ */
+class ArchipelagoErrorBoundary extends Component<
+  { readonly onFallback: () => void; readonly children: ReactNode },
+  { readonly failed: boolean }
+> {
+  override state = { failed: false }
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true }
+  }
+
+  override componentDidCatch(error: unknown, info: ErrorInfo): void {
+    this.props.onFallback()
+    console.error('hive-archipelago 3D render failed, falling back to 2D', error, info.componentStack)
+  }
+
+  override render(): ReactNode {
+    return this.state.failed ? null : this.props.children
+  }
+}
+
+ /** Эвристика связей «здание ↔ агенты»: только подписи ролей/путей, без утверждений о файлах. */
+function agentsForBuilding(
+  agents: readonly HiveCityAgentHint[] | undefined,
+  islandName: string,
+  buildingName: string,
+  relativePath: string
+): readonly HiveCityAgentHint[] {
+  if (!agents || agents.length === 0) return []
+  const pathKey = relativePath.toLowerCase()
+  const buildingKey = buildingName.toLowerCase()
+  const islandKey = islandName.toLowerCase()
+  return agents.filter((agent) => {
+    const role = agent.role.toLowerCase()
+    const action = agent.currentAction.toLowerCase()
+    return action.includes(pathKey) || role === islandKey || role === buildingKey
+  }).slice(0, 8)
+}
+
+const SERVICE_LABELS: Record<string, string> = {
+  citadel: 'Цитадель',
+  service: 'Сервис',
+  library: 'Библиотека',
+  ui: 'Интерфейс',
+  storage: 'Хранилище',
+  gateway: 'Транспорт',
+  worker: 'Фоновый процесс',
+  module: 'Модуль'
+}
+
+function ArchipelagoInspector({
+  islandId,
+  buildingId,
+  snapshot,
+  status,
+  activeAgents,
+  onClose,
+  onSelectBuilding,
+  selectedBuildingId
+}: {
+  islandId: string
+  buildingId: string | null
+  snapshot: HiveCityMapSnapshot
+  status: string
+  activeAgents: readonly HiveCityAgentHint[] | undefined
+  onClose: () => void
+  onSelectBuilding: (islandId: string, buildingId: string) => void
+  selectedBuildingId: string | null
+}): React.JSX.Element {
+  const island = snapshot.capital.id === islandId
+    ? snapshot.capital
+    : snapshot.satellites.find((item) => item.id === islandId)
+  if (!island) return <></>
+  const building = buildingId === null
+    ? null
+    : island.buildings.find((item) => item.id === buildingId) ?? null
+  const relatedEdges = building === null
+    ? island.edges.slice(0, 12)
+    : island.edges
+        .filter((edge) => edge.from_id === building.id || edge.to_id === building.id)
+        .slice(0, 12)
+  const nameFor = (id: string): string =>
+    island.buildings.find((item) => item.id === id)?.name ?? id
+  const agents = building === null
+    ? (activeAgents ?? []).slice(0, 8)
+    : agentsForBuilding(activeAgents, island.name, building.name, building.relative_path)
+
+  return (
+    <section
+      className="hive-archipelago__inspector"
+      data-testid="hive-archipelago-inspector"
+      role="dialog"
+      aria-label={`Модуль ${building?.name ?? island.name}`}
+    >
+      <header className="hive-archipelago__inspector-head">
+        <div>
+          <p className="hive-archipelago__inspector-eyebrow">
+            {building === null ? `Остров · ${island.name}` : SERVICE_LABELS[building.kind] ?? building.kind}
+          </p>
+          <h3>{building === null ? island.name : building.name}</h3>
+        </div>
+        <button
+          type="button"
+          className="hive-archipelago__inspector-close"
+          aria-label="Закрыть инспектор"
+          data-testid="hive-archipelago-inspector-close"
+          onClick={onClose}
+        >
+          <UiIcon name="x" size={14} />
+        </button>
+      </header>
+      {building !== null ? (
+        <dl className="hive-archipelago__inspector-rows">
+          <div><dt>Путь</dt><dd>{building.relative_path}</dd></div>
+          <div><dt>Язык</dt><dd>{building.language}</dd></div>
+          <div><dt>Файлы</dt><dd>{building.file_count}</dd></div>
+          <div><dt>Строки</dt><dd>{building.line_count}</dd></div>
+        </dl>
+      ) : (
+        <dl className="hive-archipelago__inspector-rows">
+          <div><dt>Экосистема</dt><dd>{island.ecosystem}</dd></div>
+          <div><dt>Файлы</dt><dd>{island.total_files}</dd></div>
+          <div><dt>Строки</dt><dd>{island.total_lines}</dd></div>
+        </dl>
+      )}
+      <div className="hive-archipelago__inspector-links">
+        <p className="hive-archipelago__inspector-label">
+          {building === null ? 'Связи острова' : 'Связи модуля'}
+        </p>
+        {relatedEdges.length === 0 ? (
+          <p className="hive-archipelago__inspector-muted">Связей не найдено</p>
+        ) : (
+          <ul>
+            {relatedEdges.map((edge, index) => {
+              const incoming = edge.to_id === (building?.id ?? island.id)
+              const other = incoming ? edge.from_id : edge.to_id
+              return (
+                <li key={`${edge.kind}-${other}-${index}`}>
+                  <span aria-hidden="true">{incoming ? '←' : '→'}</span> {nameFor(other)}
+                  {' '}
+                  <span className="hive-archipelago__inspector-muted">({edge.kind})</span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+      <div className="hive-archipelago__inspector-agents">
+        <p className="hive-archipelago__inspector-label">Активные агенты</p>
+        {agents.length === 0 ? (
+          <p className="hive-archipelago__inspector-muted">Нет активных агентов</p>
+        ) : (
+          <ul>
+            {agents.map((agent) => (
+              <li key={agent.id}>{agent.role}: {agent.currentAction}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="hive-archipelago__inspector-buildings">
+        <p className="hive-archipelago__inspector-label">Навигация по острову</p>
+        <ul>
+          {island.buildings.slice(0, 24).map((item) => (
+            <li key={item.id}>
+              <button
+                type="button"
+                aria-pressed={selectedBuildingId === item.id}
+                data-testid={`hive-archipelago-building-${item.id}`}
+                aria-label={`${item.name}: ${item.file_count} файлов, ${item.line_count} строк`}
+                onClick={() => onSelectBuilding(islandId, item.id)}
+              >
+                {item.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <p className="hive-archipelago__inspector-status">{status}</p>
+    </section>
+  )
+}
+
+const HiveArchipelago3DBoundary = memo(function HiveArchipelago3DBoundary({
+  onFallback,
+  archipelago
+}: {
+  readonly onFallback: () => void
+  readonly archipelago: React.JSX.Element
+}): React.JSX.Element {
+  return (
+    <ArchipelagoErrorBoundary onFallback={onFallback}>
+      {archipelago}
+    </ArchipelagoErrorBoundary>
+  )
+})
+
 /**
  * Полноэкранная 2.5D-сцена города Улья:
- * - чистый 16:9 арт-город с мягкой HUD-виньеткой;
- * - живой SVG-слой неоновых магистралей, орбит Королевы Евы и парящих частиц;
- * - интерактивные стеклянные пины департаментов и центральная карточка Королевы,
- *   зафиксированные в единой 16:9 координатной системе.
+ * - без `cityMap` — чистый 16:9 арт-город с мягкой HUD-виньеткой (как раньше);
+ * - с `cityMap.available === false` — та же панорама-силуэт плюс статус-индикатор
+ *   недоступности демона;
+ * - со снапшотом карты — кликабельный живой архипелаг (3D WebGL или 2D SVG),
+ *   инспектор модуля, фокус на остров и реестр жизненного цикла островов;
+ * - интерактивные стеклянные пины департаментов и центральная карточка Королевы
+ *   сохраняются как HUD-оверлей во всех режимах.
  */
 export function HiveCityScene({
   status,
@@ -169,11 +527,14 @@ export function HiveCityScene({
   queenOverlay,
   idleDepartmentsLabel = 'Ожидание',
   activeDepartmentsLabel = 'Работает',
-  departmentIconRenderer
+  departmentIconRenderer,
+  cityMap = null,
+  activeAgents
 }: HiveCitySceneProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const rafRef = useRef<number | null>(null)
   const [hoveredDepartment, setHoveredDepartment] = useState<string | null>(null)
+  const [webglBroken, setWebglBroken] = useState(false)
 
   const reducedMotion = useReducedMotionPreference()
   const documentHidden = useDocumentHidden()
@@ -185,6 +546,8 @@ export function HiveCityScene({
     [normalizedStatus, queenWorking]
   )
 
+  const hasInteractiveOverlay = departments.length > 0 || Boolean(queenOverlay)
+
   const positionedDepartments = useMemo(() => {
     let fallbackIndex = 0
     return departments.map((department) => {
@@ -192,13 +555,12 @@ export function HiveCityScene({
       if (mapped) {
         return { department, coord: mapped }
       }
-      const fallback = FALLBACK_COORDS[fallbackIndex % FALLBACK_COORDS.length] ?? { x: 50, y: 66, accent: '#8d82e8' }
+      const fallback =
+        FALLBACK_COORDS[fallbackIndex % FALLBACK_COORDS.length] ?? { x: 50, y: 66, accent: '#8d82e8' }
       fallbackIndex += 1
       return { department, coord: fallback }
     })
   }, [departments])
-
-  const hasInteractiveOverlay = departments.length > 0 || Boolean(queenOverlay)
 
   useEffect(() => {
     return () => {
@@ -240,6 +602,107 @@ export function HiveCityScene({
     updateParallax(0, 0)
   }, [updateParallax])
 
+  // --- Живой архипелаг (plan 199.3) ---------------------------------------
+  const snapshot = cityMap?.available === true ? cityMap.snapshot : null
+  const daemonUnavailable = cityMap?.available === false
+
+  const satelliteIds = useMemo(
+    () => (snapshot ? snapshot.satellites.map((island) => island.id) : []),
+    [snapshot]
+  )
+  const lifecycle = useIslandLifecycle(satelliteIds, animationsPaused)
+
+  const [focusIslandId, setFocusIslandId] = useState<string | null>(null)
+  const [inspector, setInspector] = useState<InspectorTarget | null>(null)
+  const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setFocusIslandId((current) =>
+      current !== null && satelliteIds.includes(current) ? current : null)
+    setInspector(null)
+  }, [satelliteIds])
+
+  // Архив известных островов: умирающий спутник уже не в snapshot.satellites,
+  // но должен дорисовываться на время анимации сворачивания (exiting-hold).
+  const islandArchiveRef = useRef(new Map<string, CityIsland>())
+  useEffect(() => {
+    if (snapshot === null) return
+    islandArchiveRef.current.set(snapshot.capital.id, snapshot.capital)
+    for (const island of snapshot.satellites) {
+      islandArchiveRef.current.set(island.id, island)
+    }
+  }, [snapshot])
+
+  const islandViews = useMemo(() => {
+    if (snapshot === null) return null
+    const phases = phasesView(lifecycle)
+    const heldSatellites: CityIsland[] = []
+    for (const [islandId, entry] of lifecycle) {
+      if (entry.phase !== 'exiting') continue
+      if (snapshot.satellites.some((island) => island.id === islandId)) continue
+      const archived = islandArchiveRef.current.get(islandId)
+      if (archived) heldSatellites.push(archived)
+    }
+    const effectiveSnapshot =
+      heldSatellites.length === 0
+        ? snapshot
+        : { ...snapshot, satellites: [...snapshot.satellites, ...heldSatellites] }
+    return buildCityMapView(effectiveSnapshot, phases)
+  }, [snapshot, lifecycle])
+
+  const handleSelectIsland = useCallback((islandId: string): void => {
+    if (islandId === '') {
+      setFocusIslandId(null)
+      return
+    }
+    setFocusIslandId(islandId)
+  }, [])
+
+  const handleSelectBuilding = useCallback((islandId: string, buildingId: string): void => {
+    setFocusIslandId(islandId)
+    setInspector({ islandId, buildingId })
+  }, [])
+
+  const inspectorIsland = useMemo(() => {
+    if (inspector === null || snapshot === null) return null
+    return snapshot.capital.id === inspector.islandId
+      ? snapshot.capital
+      : snapshot.satellites.find((item) => item.id === inspector.islandId) ?? null
+  }, [inspector, snapshot])
+
+  useEffect(() => {
+    if (inspector !== null && inspectorIsland === null) setInspector(null)
+  }, [inspector, inspectorIsland])
+
+  const inspectorBuildingId = useMemo(() => {
+    if (inspector === null || inspectorIsland === null) return null
+    return inspectorIsland.buildings.some((item) => item.id === inspector.buildingId)
+      ? inspector.buildingId
+      : null
+  }, [inspector, inspectorIsland])
+
+  const droneCount = useMemo(() => {
+    const count = activeAgents?.length ?? 0
+    return Math.min(64, count * 3)
+  }, [activeAgents])
+
+  // Клавиатура: Escape закрывает инспектор, затем возвращает обзор архипелага.
+  const handleKeyDown = useCallback((event: React.KeyboardEvent): void => {
+    if (event.key !== 'Escape') return
+    if (inspector !== null) {
+      setInspector(null)
+      return
+    }
+    if (focusIslandId !== null) {
+      setFocusIslandId(null)
+    }
+  }, [inspector, focusIslandId])
+
+  const showArchipelago = islandViews !== null
+  // WebGL доступен? Детект один раз на монтирование (jsdom → false → SVG-режим).
+  const [webglAvailable] = useState(detectWebGl)
+  const use3D = showArchipelago && !reducedMotion && !webglBroken && webglAvailable
+
   return (
     <div
       ref={containerRef}
@@ -247,193 +710,280 @@ export function HiveCityScene({
       data-testid="hive-city-scene"
       data-status={normalizedStatus}
       data-paused={animationsPaused ? 'true' : 'false'}
+      data-mode={showArchipelago ? (use3D ? '3d' : '2d') : 'panorama'}
       aria-hidden={hasInteractiveOverlay ? undefined : true}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
+      onKeyDown={handleKeyDown}
     >
-      <div className="hive-city-scene__world">
-        <div className="hive-city-scene__backdrop" aria-hidden="true">
-          <img
-            className="hive-city-scene__art"
-            src={hiveCityPanoramaUrl}
-            alt=""
-            draggable={false}
-            data-testid="hive-city-scene-art"
-          />
-          <div className="hive-city-scene__vignette" />
+      {showArchipelago && islandViews !== null && snapshot !== null ? (
+        <div className="hive-city-scene__world hive-city-scene__world--archipelago">
+          <div
+            className="hive-archipelago__frame"
+            data-testid="hive-archipelago-frame"
+          >
+            {use3D ? (
+              <HiveArchipelago3DBoundary
+                onFallback={() => setWebglBroken(true)}
+                archipelago={
+                  <HiveArchipelago3D
+                    capital={islandViews.capital}
+                    satellites={islandViews.satellites}
+                    paused={animationsPaused}
+                    selectedIslandId={focusIslandId}
+                    selectedBuildingId={inspectorBuildingId}
+                    hoveredBuildingId={hoveredBuildingId}
+                    droneCount={droneCount}
+                    onSelectIsland={handleSelectIsland}
+                    onSelectBuilding={handleSelectBuilding}
+                    onHoverBuilding={setHoveredBuildingId}
+                    onBackgroundClick={() => setFocusIslandId(null)}
+                    onContextLost={() => setWebglBroken(true)}
+                  />
+                }
+              />
+            ) : (
+              <HiveArchipelago2D
+                capital={islandViews.capital}
+                satellites={islandViews.satellites}
+                paused={animationsPaused}
+                selectedIslandId={focusIslandId}
+                selectedBuildingId={inspectorBuildingId}
+                hoveredBuildingId={hoveredBuildingId}
+                onSelectIsland={handleSelectIsland}
+                onSelectBuilding={handleSelectBuilding}
+                onHoverBuilding={setHoveredBuildingId}
+              />
+            )}
+          </div>
+
+          {/* Клавиатурные остановки: только острова (≤13), Enter/Space — выбор. */}
+          <div className="hive-archipelago__island-chips" role="list" aria-label="Острова архипелага">
+            {[snapshot.capital, ...snapshot.satellites].slice(0, 13).map((island) => (
+              <button
+                key={island.id}
+                type="button"
+                role="listitem"
+                className="hive-archipelago__chip"
+                data-testid={`hive-archipelago-chip-${island.id}`}
+                aria-pressed={focusIslandId === island.id}
+                aria-label={`${island.name}: ${island.total_files} файлов, ${island.total_lines} строк`}
+                onClick={() => handleSelectIsland(island.id)}
+              >
+                {island.name}
+              </button>
+            ))}
+          </div>
+
+          {inspectorIsland !== null ? (
+            <ArchipelagoInspector
+              islandId={inspectorIsland.id}
+              buildingId={inspector?.buildingId ?? null}
+              snapshot={snapshot}
+              status={normalizedStatus}
+              activeAgents={activeAgents}
+              onClose={() => setInspector(null)}
+              onSelectBuilding={handleSelectBuilding}
+              selectedBuildingId={inspectorBuildingId}
+            />
+          ) : null}
+
+          {daemonUnavailable ? null : null}
         </div>
-
-        <svg
-          className="hive-city-scene__fx"
-          viewBox="0 0 1600 900"
-          preserveAspectRatio="xMidYMid slice"
-          data-testid="hive-city-scene-fx"
-          aria-hidden="true"
-        >
-          <defs>
-            <radialGradient id="hive-queen-core-glow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor={corePalette.primary} stopOpacity="0.46" />
-              <stop offset="52%" stopColor={corePalette.secondary} stopOpacity="0.18" />
-              <stop offset="100%" stopColor="#070812" stopOpacity="0" />
-            </radialGradient>
-            <filter id="hive-conduit-glow" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="4" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-
-          {/* Орбитальное дыхание и аура Королевы Евы */}
-          <g className="hive-city-scene__queen-fx" opacity={corePalette.glowOpacity}>
-            <circle
-              cx={QUEEN_ORBIT_CENTER.x}
-              cy={QUEEN_ORBIT_CENTER.y}
-              r="185"
-              fill="url(#hive-queen-core-glow)"
-              className="hive-city-scene__queen-halo"
+      ) : (
+        <div className="hive-city-scene__world">
+          <div className="hive-city-scene__backdrop" aria-hidden="true">
+            <img
+              className="hive-city-scene__art"
+              src={hiveCityPanoramaUrl}
+              alt=""
+              draggable={false}
+              data-testid="hive-city-scene-art"
             />
-            <ellipse
-              cx={QUEEN_ORBIT_CENTER.x}
-              cy={QUEEN_ORBIT_CENTER.y + 18}
-              rx="144"
-              ry="42"
-              fill="none"
-              stroke={corePalette.primary}
-              strokeOpacity="0.55"
-              strokeWidth="1.4"
-              strokeDasharray="10 14"
-              className="hive-city-scene__orbit hive-city-scene__orbit--outer"
-            />
-            <ellipse
-              cx={QUEEN_ORBIT_CENTER.x}
-              cy={QUEEN_ORBIT_CENTER.y + 20}
-              rx="108"
-              ry="31"
-              fill="none"
-              stroke={corePalette.secondary}
-              strokeOpacity="0.48"
-              strokeWidth="1.2"
-              strokeDasharray="5 9"
-              className="hive-city-scene__orbit hive-city-scene__orbit--inner"
-            />
-          </g>
+            <div className="hive-city-scene__vignette" />
+          </div>
 
-          {/* Магистрали энергии от шпиля Королевы к кварталам */}
-          {positionedDepartments.map(({ department, coord }) => {
-            const tx = (coord.x / 100) * 1600
-            const ty = (coord.y / 100) * 900
-            const pathData = buildConduitPath(tx, ty)
-            const isActive = department.activeCount > 0
-            const isHighlighted = isActive || selectedDepartment === department.key || hoveredDepartment === department.key
-            return (
-              <g key={department.key} className="hive-city-conduit-group">
-                <path
-                  d={pathData}
-                  fill="none"
-                  stroke={coord.accent}
-                  strokeOpacity={isHighlighted ? 0.34 : 0.14}
-                  strokeWidth={isHighlighted ? 3.5 : 1.6}
-                  className="hive-city-conduit__base"
-                />
-                <path
-                  d={pathData}
-                  fill="none"
-                  stroke={coord.accent}
-                  strokeWidth={isActive ? 2.6 : 1.8}
-                  strokeLinecap="round"
-                  filter={isHighlighted ? 'url(#hive-conduit-glow)' : undefined}
-                  className={`hive-city-conduit${isActive ? ' hive-city-conduit--active' : ''}${isHighlighted ? ' hive-city-conduit--highlighted' : ''}`}
-                  data-testid="hive-city-conduit"
-                  data-dept={department.key}
-                  data-active={isActive ? 'true' : 'false'}
-                />
-                <circle
-                  cx={tx}
-                  cy={ty}
-                  r={isHighlighted ? 22 : 12}
-                  fill={coord.accent}
-                  fillOpacity={isHighlighted ? 0.24 : 0.08}
-                  className="hive-city-conduit__beacon"
-                />
-              </g>
-            )
-          })}
-        </svg>
+          <svg
+            className="hive-city-scene__fx"
+            viewBox="0 0 1600 900"
+            preserveAspectRatio="xMidYMid slice"
+            data-testid="hive-city-scene-fx"
+            aria-hidden="true"
+          >
+            <defs>
+              <radialGradient id="hive-queen-core-glow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor={corePalette.primary} stopOpacity="0.46" />
+                <stop offset="52%" stopColor={corePalette.secondary} stopOpacity="0.18" />
+                <stop offset="100%" stopColor="#070812" stopOpacity="0" />
+              </radialGradient>
+              <filter id="hive-conduit-glow" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="4" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
 
-        <div className="hive-city-scene__particles" aria-hidden="true">
-          {AMBIENT_PARTICLES.map((particle, index) => (
-            <span
-              key={index}
-              className={`hive-city-scene__particle hive-city-scene__particle--${particle.tone}`}
-              style={{
-                left: `${particle.left}%`,
-                bottom: `${particle.bottom}%`,
-                width: `${particle.size}px`,
-                height: `${particle.size}px`,
-                animationDuration: `${particle.duration}s`,
-                animationDelay: `${particle.delay}s`
-              }}
-            />
-          ))}
-        </div>
+            {/* Орбитальное дыхание и аура Королевы Евы */}
+            <g className="hive-city-scene__queen-fx" opacity={corePalette.glowOpacity}>
+              <circle
+                cx={QUEEN_ORBIT_CENTER.x}
+                cy={QUEEN_ORBIT_CENTER.y}
+                r="185"
+                fill="url(#hive-queen-core-glow)"
+                className="hive-city-scene__queen-halo"
+              />
+              <ellipse
+                cx={QUEEN_ORBIT_CENTER.x}
+                cy={QUEEN_ORBIT_CENTER.y + 18}
+                rx="144"
+                ry="42"
+                fill="none"
+                stroke={corePalette.primary}
+                strokeOpacity="0.55"
+                strokeWidth="1.4"
+                strokeDasharray="10 14"
+                className="hive-city-scene__orbit hive-city-scene__orbit--outer"
+              />
+              <ellipse
+                cx={QUEEN_ORBIT_CENTER.x}
+                cy={QUEEN_ORBIT_CENTER.y + 20}
+                rx="108"
+                ry="31"
+                fill="none"
+                stroke={corePalette.secondary}
+                strokeOpacity="0.48"
+                strokeWidth="1.2"
+                strokeDasharray="5 9"
+                className="hive-city-scene__orbit hive-city-scene__orbit--inner"
+              />
+            </g>
 
-        {hasInteractiveOverlay ? (
-          <div className="hive-city-scene__pins">
+            {/* Магистрали энергии от шпиля Королевы к кварталам */}
             {positionedDepartments.map(({ department, coord }) => {
+              const tx = (coord.x / 100) * 1600
+              const ty = (coord.y / 100) * 900
+              const pathData = buildConduitPath(tx, ty)
               const isActive = department.activeCount > 0
-              const isSelected = selectedDepartment === department.key
-              const percent = department.maxCapacity > 0
-                ? Math.min(100, Math.round((department.activeCount / department.maxCapacity) * 100))
-                : 0
-              const iconNode = departmentIconRenderer
-                ? departmentIconRenderer(department.icon)
-                : <UiIcon name={department.icon} size={16} />
-
+              const isHighlighted = isActive || selectedDepartment === department.key || hoveredDepartment === department.key
               return (
-                <button
-                  key={department.key}
-                  type="button"
-                  className={`hive-pin${isActive ? ' hive-pin--active' : ''}${isSelected ? ' hive-pin--selected' : ''}`}
-                  data-testid={`hive-pin-${department.key}`}
-                  data-dept={department.key}
-                  data-active={isActive ? 'true' : 'false'}
-                  aria-pressed={isSelected}
-                  style={{
-                    left: `${coord.x}%`,
-                    top: `${coord.y}%`,
-                    ['--pin-accent' as string]: coord.accent
-                  }}
-                  onClick={() => onSelectDepartment?.(department.key)}
-                  onMouseEnter={() => setHoveredDepartment(department.key)}
-                  onMouseLeave={() => setHoveredDepartment((current) => (current === department.key ? null : current))}
-                >
-                  <span className="hive-pin__icon" aria-hidden="true">{iconNode}</span>
-                  <span className="hive-pin__body">
-                    <strong className="hive-pin__title">{department.label}</strong>
-                    <span className="hive-pin__subtitle">{department.subtitle}</span>
-                    <span className="hive-pin__status">
-                      <span className="hive-pin__dot" aria-hidden="true" />
-                      {isActive
-                        ? `${activeDepartmentsLabel} · ${department.activeCount}/${department.maxCapacity}`
-                        : idleDepartmentsLabel}
-                    </span>
-                  </span>
-                  {isActive ? (
-                    <span className="hive-pin__bar" aria-hidden="true">
-                      <span style={{ width: `${percent}%` }} />
-                    </span>
-                  ) : null}
-                </button>
+                <g key={department.key} className="hive-city-conduit-group">
+                  <path
+                    d={pathData}
+                    fill="none"
+                    stroke={coord.accent}
+                    strokeOpacity={isHighlighted ? 0.34 : 0.14}
+                    strokeWidth={isHighlighted ? 3.5 : 1.6}
+                    className="hive-city-conduit__base"
+                  />
+                  <path
+                    d={pathData}
+                    fill="none"
+                    stroke={coord.accent}
+                    strokeWidth={isActive ? 2.6 : 1.8}
+                    strokeLinecap="round"
+                    filter={isHighlighted ? 'url(#hive-conduit-glow)' : undefined}
+                    className={`hive-city-conduit${isActive ? ' hive-city-conduit--active' : ''}${isHighlighted ? ' hive-city-conduit--highlighted' : ''}`}
+                    data-testid="hive-city-conduit"
+                    data-dept={department.key}
+                    data-active={isActive ? 'true' : 'false'}
+                  />
+                  <circle
+                    cx={tx}
+                    cy={ty}
+                    r={isHighlighted ? 22 : 12}
+                    fill={coord.accent}
+                    fillOpacity={isHighlighted ? 0.24 : 0.08}
+                    className="hive-city-conduit__beacon"
+                  />
+                </g>
               )
             })}
+          </svg>
 
-            {queenOverlay ? (
-              <div className="hive-city-scene__queen-anchor">
-                {queenOverlay}
-              </div>
-            ) : null}
+          <div className="hive-city-scene__particles" aria-hidden="true">
+            {AMBIENT_PARTICLES.map((particle, index) => (
+              <span
+                key={index}
+                className={`hive-city-scene__particle hive-city-scene__particle--${particle.tone}`}
+                style={{
+                  left: `${particle.left}%`,
+                  bottom: `${particle.bottom}%`,
+                  width: `${particle.size}px`,
+                  height: `${particle.size}px`,
+                  animationDuration: `${particle.duration}s`,
+                  animationDelay: `${particle.delay}s`
+                }}
+              />
+            ))}
+          </div>
+
+          {daemonUnavailable ? (
+            <p
+              className="hive-archipelago__unavailable-status"
+              data-testid="hive-city-unavailable"
+              role="status"
+              aria-live="polite"
+            >
+              Карта архипелага временно недоступна: демон Улья не отвечает.
+            </p>
+          ) : null}
+        </div>
+      )}
+
+      <div className="hive-city-scene__pins">
+        {positionedDepartments.map(({ department, coord }) => {
+          const isActive = department.activeCount > 0
+          const isSelected = selectedDepartment === department.key
+          const percent = department.maxCapacity > 0
+            ? Math.min(100, Math.round((department.activeCount / department.maxCapacity) * 100))
+            : 0
+          const iconNode = departmentIconRenderer
+            ? departmentIconRenderer(department.icon)
+            : <UiIcon name={department.icon} size={16} />
+
+          return (
+            <button
+              key={department.key}
+              type="button"
+              className={`hive-pin${isActive ? ' hive-pin--active' : ''}${isSelected ? ' hive-pin--selected' : ''}`}
+              data-testid={`hive-pin-${department.key}`}
+              data-dept={department.key}
+              data-active={isActive ? 'true' : 'false'}
+              aria-pressed={isSelected}
+              style={{
+                left: `${coord.x}%`,
+                top: `${coord.y}%`,
+                ['--pin-accent' as string]: coord.accent
+              }}
+              onClick={() => onSelectDepartment?.(department.key)}
+              onMouseEnter={() => setHoveredDepartment(department.key)}
+              onMouseLeave={() => setHoveredDepartment((current) => (current === department.key ? null : current))}
+            >
+              <span className="hive-pin__icon" aria-hidden="true">{iconNode}</span>
+              <span className="hive-pin__body">
+                <strong className="hive-pin__title">{department.label}</strong>
+                <span className="hive-pin__subtitle">{department.subtitle}</span>
+                <span className="hive-pin__status">
+                  <span className="hive-pin__dot" aria-hidden="true" />
+                  {isActive
+                    ? `${activeDepartmentsLabel} · ${department.activeCount}/${department.maxCapacity}`
+                    : idleDepartmentsLabel}
+                </span>
+              </span>
+              {isActive ? (
+                <span className="hive-pin__bar" aria-hidden="true">
+                  <span style={{ width: `${percent}%` }} />
+                </span>
+              ) : null}
+            </button>
+          )
+        })}
+
+        {queenOverlay ? (
+          <div className="hive-city-scene__queen-anchor">
+            {queenOverlay}
           </div>
         ) : null}
       </div>

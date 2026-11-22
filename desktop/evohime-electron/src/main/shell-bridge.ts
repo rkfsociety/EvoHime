@@ -20,6 +20,7 @@ import {
   type RendererCommand,
   type ShellEvent
 } from '@shared/api'
+import type { HiveCityMapClient } from './hive-daemon-client'
 import {
   CLIPBOARD_CHANNEL,
   EVENT_CHANNEL,
@@ -91,6 +92,12 @@ export interface ShellBridgeOptions {
   readonly listenerRuntime: ListenerRuntimeService
   /** Owns the official Ollama installer; renderer only observes and asks. */
   readonly ollamaRuntime: OllamaRuntimeService
+  /**
+   * Прямой read-only клиент к `evohime-hive-daemon` для карты-архипелага
+   * (plan 199.3). Никогда не бросает: недоступный демон — это типизированный
+   * `available: false`, а не ошибка моста.
+   */
+  readonly hiveDaemon?: HiveCityMapClient
   /**
    * Доступен ли глобальный хоткей паузы. Знает только main: комбинацию мог
    * занять другой процесс, и тогда третья точка входа честно объявляется
@@ -1055,6 +1062,19 @@ function dispatch(
 
     case 'core.getHiveState': {
       return accepted(client.send({ hiveState: { schemaVersion: 1, requestId: '' } }))
+    }
+
+    case 'hive.getCityMap': {
+      // Read-only observation data served directly by evohime-hive-daemon;
+      // the client itself degrades every failure to `available: false`.
+      const hiveDaemon = options.hiveDaemon
+      if (!hiveDaemon) {
+        return failure('protocol-error', 'Клиент демона Улья недоступен в этой сборке.')
+      }
+      return hiveDaemon
+        .getCityMap()
+        .then((outcome) => ({ ok: true, value: outcome }))
+        .catch(() => ({ ok: true, value: { available: false, snapshot: null } as const }))
     }
 
     case 'core.getHiveObservationStatus': {

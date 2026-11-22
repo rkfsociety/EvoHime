@@ -8,6 +8,24 @@
 import type { ListenerRuntimeStatus } from './listener-runtime'
 import type { OllamaRuntimeStatus } from './ollama-runtime'
 import type { UpdateStatus } from './update'
+import type { HiveCityMapOutcome } from './hive-city-map'
+
+export type {
+  CityBuilding,
+  CityBuildingKind,
+  CityDistrict,
+  CityDistrictKind,
+  CityEdge,
+  CityEdgeKind,
+  CityEcosystem,
+  CityIsland,
+  CityIslandRole,
+  CityIslandSource,
+  CityIslandStatus,
+  CityIslandUnavailableReason,
+  HiveCityMapOutcome,
+  HiveCityMapSnapshot
+} from './hive-city-map'
 
 export const API_NAMESPACE = 'evohime'
 export const API_VERSION = 1 as const
@@ -1764,7 +1782,8 @@ export const RENDERER_COMMANDS = [
   'automation.getRun',
   'automation.listEvents',
   'automation.cancel',
-  'automation.setScheduleEnabled'
+  'automation.setScheduleEnabled',
+  'hive.getCityMap'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -2404,6 +2423,7 @@ export interface CommandPayloads {
   'automation.listEvents': { runId: string; afterSequence?: number; limit?: number }
   'automation.cancel': { runId: string }
   'automation.setScheduleEnabled': { scheduleId: string; enabled: boolean }
+  'hive.getCityMap': Record<string, never>
 }
 
 export interface CommandResults {
@@ -2786,6 +2806,9 @@ export interface CommandResults {
   'automation.listEvents': { accepted: boolean }
   'automation.cancel': { accepted: boolean }
   'automation.setScheduleEnabled': { accepted: boolean }
+  /** Живая карта-архипелаг напрямую от `evohime-hive-daemon`; `available: false`
+   * при недоступном демоне, таймауте или старом протоколе. */
+  'hive.getCityMap': HiveCityMapOutcome
 }
 
 export type CommandFailureCode =
