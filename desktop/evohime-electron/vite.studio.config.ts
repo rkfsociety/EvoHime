@@ -52,6 +52,8 @@ export default defineConfig({
   },
   server: {
     port: 5178,
-    strictPort: true
+    // Без strictPort: если прошлый запуск стенда ещё держит порт, сервер
+    // молча перейдёт на 5179/5180 и напечатает фактический адрес.
+    strictPort: false
   }
 })
