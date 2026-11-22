@@ -1715,7 +1715,8 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Написать Еве': 'Message Eva',
   'Открыть диалог': 'Open dialogue',
   'Закрыть диалог': 'Close dialogue',
-  'В выбранном департаменте активных агентов нет.': 'No active agents in the selected department.'
+  'В выбранном департаменте активных агентов нет.': 'No active agents in the selected department.',
+  'Центр обновлений': 'Update center'
 }
 
 let activeLocale: AppLocale = 'ru'

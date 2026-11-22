@@ -1,10 +1,10 @@
 import { translate } from './i18n'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 
 import type { UpdaterUiStatus } from '@shared/updater'
 
+import updaterEvaHeroUrl from './assets/updater-eva-hero.jpg'
 import './UpdaterSurface.css'
-import { EvaIcon } from './EvaIcon'
 
 const fallback: UpdaterUiStatus = {
   phase: 'checking',
@@ -137,6 +137,33 @@ function StatusSpinner({ percent }: { readonly percent: number | null }): React.
   )
 }
 
+function UpdaterLotusLogo(): React.JSX.Element {
+  const gradientId = useId()
+  const centerId = `${gradientId}-center`
+  const wingId = `${gradientId}-wing`
+
+  return (
+    <svg viewBox="0 0 48 48" fill="none">
+      <defs>
+        <linearGradient id={centerId} x1="24" y1="7" x2="24" y2="39" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="55%" stopColor="#ddd6fe" />
+          <stop offset="100%" stopColor="#93c5fd" />
+        </linearGradient>
+        <linearGradient id={wingId} x1="8" y1="16" x2="40" y2="38" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#e9d5ff" stopOpacity="0.92" />
+          <stop offset="100%" stopColor="#a7f3d0" stopOpacity="0.72" />
+        </linearGradient>
+      </defs>
+      <path d="M24 7C28.5 14 30 22 24 34C18 22 19.5 14 24 7Z" fill={`url(#${centerId})`} />
+      <path d="M12 16C18.5 18 22 24.5 23.5 34.5C15.5 31.5 11.5 24.5 12 16Z" fill={`url(#${wingId})`} />
+      <path d="M36 16C29.5 18 26 24.5 24.5 34.5C32.5 31.5 36.5 24.5 36 16Z" fill={`url(#${wingId})`} />
+      <path d="M7 25.5C13.5 25.5 18.5 29.5 23 35.5C15 36.5 9.5 32.5 7 25.5Z" fill="#ddd6fe" fillOpacity="0.68" />
+      <path d="M41 25.5C34.5 25.5 29.5 29.5 25 35.5C33 36.5 38.5 32.5 41 25.5Z" fill="#93c5fd" fillOpacity="0.68" />
+    </svg>
+  )
+}
+
 export function UpdaterApp(): React.JSX.Element {
   const [status, setStatus] = useState<UpdaterUiStatus>(fallback)
 
@@ -182,30 +209,11 @@ export function UpdaterApp(): React.JSX.Element {
       <header className="updater-titlebar">
         <div className="updater-titlebar__drag">
           <span className="updater-brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
-              <defs>
-                <linearGradient id="updater-brand-petal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#ffffff" />
-                  <stop offset="100%" stopColor="#d9ccff" />
-                </linearGradient>
-              </defs>
-              <path
-                d="M12 13C10.2 10.6 7.4 8.2 6.8 5.2C6.4 3.5 8 2.6 9.5 3.6C11.1 4.7 11.9 8.2 12 13Z"
-                fill="url(#updater-brand-petal)"
-              />
-              <path
-                d="M12 13C13.8 10.6 16.6 8.2 17.2 5.2C17.6 3.5 16 2.6 14.5 3.6C12.9 4.7 12.1 8.2 12 13Z"
-                fill="url(#updater-brand-petal)"
-              />
-              <path
-                d="M12 13C10.1 15.1 9.4 18.4 10.8 20.3C11.4 21.1 12.6 21.1 13.2 20.3C14.6 18.4 13.9 15.1 12 13Z"
-                fill="url(#updater-brand-petal)"
-              />
-            </svg>
+            <UpdaterLotusLogo />
           </span>
           <span className="updater-brand-copy">
             <strong>EvoHime</strong>
-            <span>AI COMPANION FOR A BRIGHTER YOU</span>
+            <span>{translate('Центр обновлений')}</span>
           </span>
         </div>
         <div className="updater-window-actions">
@@ -216,28 +224,38 @@ export function UpdaterApp(): React.JSX.Element {
 
       <section className={`updater-content updater-content--${status.phase}`} aria-labelledby="updater-heading">
         <div className="updater-hero" aria-hidden="true">
-          <EvaIcon className="updater-hero-art" />
-          <div className="updater-hero-glow updater-hero-glow--left" />
-          <div className="updater-hero-glow updater-hero-glow--right" />
-        </div>
-
-        <div className="updater-status-orbit" aria-hidden="true">
-          <div className="updater-status-orbit__ring" />
-          <div className="updater-status-icon" data-status-phase={status.phase}>
-            {ready ? '✓' : attention ? '!' : <StatusSpinner percent={progressPercent} />}
-          </div>
+          <img
+            className="updater-hero-art"
+            src={updaterEvaHeroUrl}
+            alt=""
+            draggable={false}
+            data-testid="updater-hero-art"
+          />
         </div>
 
         <div className="updater-panel">
-          <h1 id="updater-heading">{translate(status.heading)}</h1>
-          <p className="updater-message" aria-live="polite">{translate(status.message)}</p>
+          <div className="updater-panel__head">
+            <div className="updater-status-icon" data-status-phase={status.phase} aria-hidden="true">
+              {ready ? '✓' : attention ? '!' : <StatusSpinner percent={progressPercent} />}
+            </div>
+            <div className="updater-panel__titles">
+              <h1 id="updater-heading">{translate(status.heading)}</h1>
+              <p className="updater-message" aria-live="polite">{translate(status.message)}</p>
+            </div>
+          </div>
 
           <div className="updater-progress-block">
-            <div className="updater-progress-row">
-              <div className={`updater-progress${progressPercent === null ? ' updater-progress--indeterminate' : ''}`} role="progressbar" aria-label={translate("Прогресс обновления")} {...(progressPercent === null ? {} : { 'aria-valuenow': progressPercent, 'aria-valuemin': 0, 'aria-valuemax': 100 })}>
-                <div className="updater-progress__value" style={progressStyle} />
-              </div>
+            <div className="updater-progress-meta">
+              <span className="updater-progress__badge">{translate(status.badge)}</span>
               <span className="updater-progress__label">{translate(progressLabel)}</span>
+            </div>
+            <div
+              className={`updater-progress${progressPercent === null ? ' updater-progress--indeterminate' : ''}`}
+              role="progressbar"
+              aria-label={translate("Прогресс обновления")}
+              {...(progressPercent === null ? {} : { 'aria-valuenow': progressPercent, 'aria-valuemin': 0, 'aria-valuemax': 100 })}
+            >
+              <div className="updater-progress__value" style={progressStyle} />
             </div>
           </div>
 
