@@ -9622,6 +9622,12 @@ body {
   .hive-dock__card--logs-expanded {
     margin-top: 0;
   }
+
+  /* В узкой раскладке нижний док статичен и лежит за пределами сцены,
+     поэтому чипы островов возвращаются к нижнему краю сцены. */
+  .hive-archipelago__island-chips {
+    bottom: 12px;
+  }
 }
 
 @container (max-width: 860px) {
@@ -10117,11 +10123,16 @@ body {
 
 .hive-archipelago__inspector {
   position: absolute;
-  top: 16px;
+  /* Опускается под верхний HUD-бар, чтобы метрики улья не перекрывали
+     навигацию по острову; --hive-hud-top-height публикует OperationsPanel.
+     Сброс по высоте (182px) оставляет зазор до нижнего дока (12 + 186). */
+  top: calc(16px + var(--hive-hud-top-height, 0px));
   right: 16px;
   z-index: 4;
   width: min(320px, 40%);
-  max-height: calc(100% - 64px);
+  max-height: calc(
+    100% - 64px - var(--hive-hud-top-height, 0px) - 182px
+  );
   overflow: auto;
   display: flex;
   flex-direction: column;

@@ -1660,6 +1660,31 @@ export function HiveDashboard({
   const hiveConversationRef = useRef(createConversationProjection(HIVE_SYSTEM_CHAT_ID))
   const hiveSubscriptionRef = useRef<{ key: string; requestId: string } | null>(null)
   const hiveSeenPagesRef = useRef(new Set<string>())
+
+  // Верхний HUD-бар ложится поверх сцены, а инспектор острова рендерится
+  // внутри сцены в том же углу. Чтобы метрики не перекрывали навигацию по
+  // острову, высота бара публикуется в CSS-переменной сцены (см. стиль
+  // .hive-archipelago__inspector). В узких раскладках бар становится
+  // статичным, то есть сцены больше не перекрывает: переменная сбрасывается в 0.
+  const hiveStageRef = useRef<HTMLDivElement | null>(null)
+  const hudTopRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const stage = hiveStageRef.current
+    const hudTop = hudTopRef.current
+    if (!stage || !hudTop || typeof ResizeObserver === 'undefined') return undefined
+    const publish = (): void => {
+      const overlaysScene = getComputedStyle(hudTop).position === 'absolute'
+      const height = overlaysScene ? Math.ceil(hudTop.getBoundingClientRect().height) : 0
+      stage.style.setProperty('--hive-hud-top-height', `${height}px`)
+    }
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(hudTop)
+    return () => {
+      observer.disconnect()
+      stage.style.removeProperty('--hive-hud-top-height')
+    }
+  }, [])
   const connected = CONNECTED_STATES.includes(connection)
   const hive = useMemo(() => parseHiveState(latest(events, 'hive_state.snapshot')), [events])
   const hasHiveSnapshot = latest(events, 'hive_state.snapshot') !== undefined
@@ -3037,7 +3062,7 @@ export function HiveDashboard({
 
   return (
     <section className="hive-console" aria-label={translate('Улей (Hive)')}>
-      <div className="hive-stage">
+      <div className="hive-stage" ref={hiveStageRef}>
         <section className="hive-stage__departments" aria-label={translate('Департаменты улья')}>
           <HiveCityScene
             status={observationStatus}
@@ -3053,7 +3078,7 @@ export function HiveDashboard({
           />
         </section>
 
-        <header className="hive-hud-top">
+        <header className="hive-hud-top" ref={hudTopRef}>
           <div className="hive-hud-top__brand">
             <p className="hive-console__eyebrow">Hive / Eva</p>
             <h1>{translate('Улей (Hive)')}</h1>
