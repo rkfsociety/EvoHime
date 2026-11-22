@@ -262,12 +262,14 @@ pub const HIVE_OBSERVATION_CONTROL_PIPE_ENV: &str = "EVOHIME_HIVE_CONTROL_PIPE";
 /// Environment variable overriding the Unix socket path for observation control.
 pub const HIVE_OBSERVATION_CONTROL_SOCKET_ENV: &str = "EVOHIME_HIVE_CONTROL_SOCKET";
 
-/// Read-only status query sent from Core to the external `evohime-hive-daemon`.
+/// Control request sent from Core to the external `evohime-hive-daemon`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum HiveObservationControlRequest {
     /// Requests the current `HiveObservationSnapshot`.
     GetObservationStatus,
+    /// Wakes the autonomous observation loop immediately after a settings change.
+    NotifySettingsChanged,
 }
 
 /// Test seam for the observation and dispatch intervals.

@@ -15,7 +15,9 @@ pub use evohime_model_gateway::ProviderLimits;
 use serde::{Deserialize, Serialize};
 
 use crate::observation::{HiveChildState, MinimalChildWorkflowPayload};
-use crate::settings::HiveSettings;
+use crate::settings::{
+    HiveSettings, DEFAULT_LLM_DISPATCH_INTERVAL_SECS, DEFAULT_LOCAL_OBSERVATION_INTERVAL_SECS,
+};
 use evohime_hive_contract::HiveModelUsage;
 
 /// Version of the serialized [`HiveStateSnapshot`] contract.
@@ -405,12 +407,26 @@ pub struct HiveStateSnapshot {
     /// Whether proactive evolution via the autonomous observation cycle is enabled.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
+    /// Interval between Level 1 local observation cycles, in seconds.
+    #[serde(default = "default_snapshot_local_observation_interval_secs")]
+    pub local_observation_interval_secs: u64,
+    /// Interval between Level 2 LLM dispatch cycles, in seconds.
+    #[serde(default = "default_snapshot_llm_dispatch_interval_secs")]
+    pub llm_dispatch_interval_secs: u64,
     /// Autonomous observation cycle status (`observing`, `waiting_for_limits`, `waiting_for_tasks`, `disabled`, or `sleeping` on `observation_failed`).
     #[serde(default, skip_serializing)]
     pub observation_status: String,
     /// Unix milliseconds at which the daemon plans its next observation cycle.
     #[serde(default, skip_serializing)]
     pub next_wake_at_ms: Option<i64>,
+}
+
+fn default_snapshot_local_observation_interval_secs() -> u64 {
+    DEFAULT_LOCAL_OBSERVATION_INTERVAL_SECS
+}
+
+fn default_snapshot_llm_dispatch_interval_secs() -> u64 {
+    DEFAULT_LLM_DISPATCH_INTERVAL_SECS
 }
 
 impl Default for HiveStateSnapshot {
@@ -556,6 +572,8 @@ impl HiveStateSnapshot {
             hive_quota_reset_utc_midnight: settings.hive_quota_reset_utc_midnight,
             hive_fallback_quota_reset_utc_midnight: settings.hive_fallback_quota_reset_utc_midnight,
             proactive_evolution_enabled: settings.proactive_evolution_enabled,
+            local_observation_interval_secs: settings.local_observation_interval_secs,
+            llm_dispatch_interval_secs: settings.llm_dispatch_interval_secs,
             observation_status: observation_status_from(observation),
             next_wake_at_ms: observation.next_observation_at_ms,
         }

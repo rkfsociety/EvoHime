@@ -303,7 +303,11 @@ impl IpcBridge {
                 if should_dispatch {
                     let session_binding = build_session_binding_from_start_task(&start);
                     let preferred_route_hint = if trusted_hive_shell && hive_conversation {
-                        Some("hive".into())
+                        if start.preferred_route_hint.trim() == "hive_fallback" {
+                            Some("hive_fallback".into())
+                        } else {
+                            Some("hive".into())
+                        }
                     } else {
                         start_task_route_hint(&start)
                     };

@@ -466,8 +466,22 @@ impl IpcBridge {
     }
 
     fn notify_observation_settings_changed(&self) {
-        if let Some(HiveObservationHandle::Local(controller)) = self.pulse.as_ref() {
-            controller.notify_settings_changed();
+        match self.pulse.as_ref() {
+            Some(HiveObservationHandle::Local(controller)) => {
+                controller.notify_settings_changed();
+            }
+            Some(HiveObservationHandle::External(proxy)) => {
+                let proxy = std::sync::Arc::clone(proxy);
+                tokio::spawn(async move {
+                    if let Err(error) = proxy.notify_settings_changed().await {
+                        tracing::debug!(
+                            error = %error,
+                            "failed to notify external hive daemon of settings change"
+                        );
+                    }
+                });
+            }
+            None => {}
         }
     }
 

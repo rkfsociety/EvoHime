@@ -6,6 +6,8 @@
 )]
 
 use std::collections::VecDeque;
+use std::fs::{File, OpenOptions};
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, RwLock};
@@ -22,8 +24,8 @@ use evohime_hive::settings::HiveSettings;
 use evohime_hive::state::HiveStateSnapshot;
 use evohime_hive_contract::{
     BoxFuture, HiveContractError, HiveCoordinator, HiveDispatchWindows, HiveEventRecord,
-    HiveJournalProvider, HiveModelUsage, HiveTaskDispatchRequest, HiveWorktreeLeaseRequest,
-    WorkspaceProvider,
+    HiveJournalProvider, HiveModelUsage, HiveTaskDispatchRequest, HiveTelemetrySink,
+    HiveWorktreeLeaseRequest, WorkspaceProvider,
 };
 use evohime_model_gateway::ModelGatewayConfig;
 use prost::Message;
@@ -308,21 +310,7 @@ impl CoreIpcClient {
     ) -> Result<(), HiveContractError> {
         let mut session = self.session.lock().await;
         let command = session.command_envelope(generated::command_envelope::Command::StartTask(
-            generated::StartTask {
-                task_id: request.task_id,
-                prompt: request.prompt,
-                workspace_path: request.workspace_root.unwrap_or_default(),
-                preferred_route_hint: request.preferred_route_hint.unwrap_or_default(),
-                execution_kind: "agent".into(),
-                conversation_id: "hive-system-chat".into(),
-                client_message_id: String::new(),
-                goal_id: String::new(),
-                provider: String::new(),
-                profile_id: String::new(),
-                model: String::new(),
-                permission_mode: String::new(),
-                isolation_mode: String::new(),
-            },
+            build_start_task(request),
         ));
         session.write_command(command).await.map_err(|error| {
             HiveContractError::Dispatch(format!("failed to dispatch task over IPC: {error}"))
@@ -604,8 +592,29 @@ fn sync_rate_limits_from_payload(payload: &serde_json::Value) {
     }
 }
 
+fn build_start_task(request: HiveTaskDispatchRequest) -> generated::StartTask {
+    let client_message_id = request.task_id.clone();
+    generated::StartTask {
+        task_id: request.task_id,
+        prompt: request.prompt,
+        workspace_path: request.workspace_root.unwrap_or_default(),
+        preferred_route_hint: request.preferred_route_hint.unwrap_or_default(),
+        execution_kind: "agent".into(),
+        conversation_id: "hive-system-chat".into(),
+        client_message_id,
+        goal_id: String::new(),
+        provider: String::new(),
+        profile_id: String::new(),
+        model: String::new(),
+        permission_mode: String::new(),
+        isolation_mode: String::new(),
+    }
+}
+
 fn snapshot_to_settings(snapshot: &HiveStateSnapshot) -> HiveSettings {
     HiveSettings {
+        local_observation_interval_secs: snapshot.local_observation_interval_secs,
+        llm_dispatch_interval_secs: snapshot.llm_dispatch_interval_secs,
         daily_budget_usd: snapshot.daily_budget_usd,
         eva_workspace_path: snapshot.eva_workspace_path.clone(),
         watched_repositories: snapshot
@@ -1062,6 +1071,59 @@ impl WorkspaceProvider for IpcWorkspaceProvider {
     }
 }
 
+struct FileHiveTelemetrySink {
+    file: std::sync::Mutex<BufWriter<File>>,
+}
+
+impl FileHiveTelemetrySink {
+    fn open_default() -> Option<Arc<Self>> {
+        let data_dir = std::env::var_os("EVOHIME_DATA_DIR")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("LOCALAPPDATA")
+                    .filter(|value| !value.is_empty())
+                    .map(|value| PathBuf::from(value).join("EvoHime"))
+            })?;
+        let log_path = data_dir.join("logs").join("hive.jsonl");
+        if let Some(parent) = log_path.parent() {
+            if std::fs::create_dir_all(parent).is_err() {
+                return None;
+            }
+        }
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)
+            .ok()?;
+        Some(Arc::new(Self {
+            file: std::sync::Mutex::new(BufWriter::new(file)),
+        }))
+    }
+}
+
+impl HiveTelemetrySink for FileHiveTelemetrySink {
+    fn log_event(&self, level: &str, event: &str, fields: serde_json::Value) {
+        let timestamp_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or_default();
+        let record = serde_json::json!({
+            "timestamp_ms": timestamp_ms,
+            "level": level,
+            "event": event,
+            "fields": fields,
+        });
+        let Ok(mut writer) = self.file.lock() else {
+            return;
+        };
+        if serde_json::to_writer(&mut *writer, &record).is_ok() {
+            let _ = writer.write_all(b"\n");
+            let _ = writer.flush();
+        }
+    }
+}
+
 fn init_tracing() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("evohime_hive=info"));
@@ -1072,6 +1134,7 @@ fn init_tracing() {
 async fn main() -> ExitCode {
     init_tracing();
     tracing::info!("evohime-hive-daemon starting");
+    let file_telemetry = FileHiveTelemetrySink::open_default();
 
     let has_hive_key = std::env::var("HIVE_API_KEY")
         .map(|value| !value.trim().is_empty())
@@ -1080,8 +1143,9 @@ async fn main() -> ExitCode {
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false);
     if !has_hive_key {
-        tracing::error!("HIVE_API_KEY is missing or empty; exiting gracefully");
-        return ExitCode::SUCCESS;
+        tracing::info!(
+            "HIVE_API_KEY is not set; continuing in case a local Hive provider (e.g. ollama) is configured"
+        );
     }
     if !has_fallback_key {
         tracing::warn!("HIVE_FALLBACK_API_KEY is not set; continuing without fallback key");
@@ -1104,6 +1168,13 @@ async fn main() -> ExitCode {
     }
     let Some(client) = client_opt else {
         tracing::error!("failed to connect to Core IPC after retries; exiting");
+        if let Some(sink) = file_telemetry.as_ref() {
+            sink.log_event(
+                "error",
+                "hive.connect_failed",
+                serde_json::json!({ "reason": "core_ipc_unavailable" }),
+            );
+        }
         return ExitCode::FAILURE;
     };
 
@@ -1143,12 +1214,15 @@ async fn main() -> ExitCode {
         }
     };
 
+    let telemetry: Option<Arc<dyn HiveTelemetrySink>> = file_telemetry
+        .as_ref()
+        .map(|sink| Arc::clone(sink) as Arc<dyn HiveTelemetrySink>);
     let daemon = HiveObservationDaemon::start(
         journal,
         gateway_config,
         workspace_provider,
         coordinator,
-        None,
+        telemetry,
     );
     let control_daemon = daemon.clone();
     let control_task = tokio::spawn(async move {
@@ -1162,6 +1236,19 @@ async fn main() -> ExitCode {
         enabled = status.enabled,
         "evohime-hive-daemon started"
     );
+    if let Some(sink) = file_telemetry.as_ref() {
+        sink.log_event(
+            "info",
+            "hive.daemon_started",
+            serde_json::json!({
+                "status": status.status,
+                "enabled": status.enabled,
+                "has_hive_key": has_hive_key,
+                "has_fallback_key": has_fallback_key,
+                "proactive_evolution_enabled": settings.proactive_evolution_enabled,
+            }),
+        );
+    }
 
     if let Err(error) = tokio::signal::ctrl_c().await {
         tracing::warn!(error = %error, "failed to listen for ctrl-c signal");
@@ -1199,6 +1286,10 @@ where
     let controller = HiveObservationController::new(daemon);
     let snapshot = match request {
         HiveObservationControlRequest::GetObservationStatus => controller.snapshot(),
+        HiveObservationControlRequest::NotifySettingsChanged => {
+            controller.notify_settings_changed();
+            controller.snapshot()
+        }
     };
     let response_bytes = match serde_json::to_vec(&snapshot) {
         Ok(bytes) => bytes,
@@ -1292,5 +1383,32 @@ mod tests {
             "rate_limits": {}
         }));
         assert_eq!(evohime_model_gateway::rate_limited_until(model), None);
+    }
+
+    #[test]
+    fn build_start_task_sets_client_message_id_for_hive_conversation() {
+        let start = build_start_task(HiveTaskDispatchRequest {
+            task_id: "eva-pulse-12345678-1234-1234-1234-1234567890ab".into(),
+            prompt: "Run proactive evolution".into(),
+            workspace_root: Some("D:\\github\\EvoHime".into()),
+            preferred_route_hint: Some("hive_fallback".into()),
+        });
+        assert_eq!(start.conversation_id, "hive-system-chat");
+        assert_eq!(
+            start.client_message_id,
+            "eva-pulse-12345678-1234-1234-1234-1234567890ab"
+        );
+        assert_eq!(start.preferred_route_hint, "hive_fallback");
+    }
+
+    #[test]
+    fn snapshot_to_settings_preserves_observation_intervals() {
+        let mut settings = HiveSettings::default();
+        settings.local_observation_interval_secs = 15;
+        settings.llm_dispatch_interval_secs = 600;
+        let snapshot = HiveStateSnapshot::empty(&settings);
+        let restored = snapshot_to_settings(&snapshot);
+        assert_eq!(restored.local_observation_interval_secs, 15);
+        assert_eq!(restored.llm_dispatch_interval_secs, 600);
     }
 }

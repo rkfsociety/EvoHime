@@ -41,6 +41,14 @@ impl ExternalHiveObservationProxy {
             .await
     }
 
+    /// Notifies the external Hive observation daemon that `HiveSettings` changed.
+    pub async fn notify_settings_changed(&self) -> Result<(), String> {
+        let _ = self
+            .send_request(HiveObservationControlRequest::NotifySettingsChanged)
+            .await?;
+        Ok(())
+    }
+
     async fn send_request(
         &self,
         request: HiveObservationControlRequest,
@@ -170,13 +178,16 @@ mod tests {
             let req: HiveObservationControlRequest =
                 serde_json::from_slice(&req_bytes).expect("decode request");
             let snapshot = match req {
-                HiveObservationControlRequest::GetObservationStatus => HiveObservationSnapshot {
-                    schema_version: 1,
-                    owner: "hive_observation".to_owned(),
-                    status: "observing".to_owned(),
-                    enabled: true,
-                    next_wake_at_ms: Some(12345),
-                },
+                HiveObservationControlRequest::GetObservationStatus
+                | HiveObservationControlRequest::NotifySettingsChanged => {
+                    HiveObservationSnapshot {
+                        schema_version: 1,
+                        owner: "hive_observation".to_owned(),
+                        status: "observing".to_owned(),
+                        enabled: true,
+                        next_wake_at_ms: Some(12345),
+                    }
+                }
             };
             let resp_bytes = serde_json::to_vec(&snapshot).expect("encode snapshot");
             transport::write_frame(&mut server, &resp_bytes)
