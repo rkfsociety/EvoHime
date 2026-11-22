@@ -3,7 +3,7 @@
 //! The snapshot is a *projection*, never an authority: it is derived from the
 //! bounded child projections Core already journals, from the validated
 //! [`crate::settings::HiveSettings`], and from committed provider
-//! observations in [`HiveObservation`](crate::state::HiveObservation). It
+//! observations in [`HiveObservation`]. It
 //! never starts, stops, or retargets an
 //! agent, and it never exposes prompts, reports, or tool output.
 //!

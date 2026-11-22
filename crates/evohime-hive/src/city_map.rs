@@ -1,8 +1,8 @@
 //! Read-only architecture scanner behind the Hive city-archipelago map
 //! (plan 199.1).
 //!
-//! The module owns the versioned [`HiveCityMapSnapshot`] contract and a pure
-//! read-only scanner that turns a repository checkout into a [`CityIsland`]:
+//! The module owns the versioned [`HiveCityMapSnapshot`](crate::city_map::HiveCityMapSnapshot) contract and a pure
+//! read-only scanner that turns a repository checkout into a [`CityIsland`](crate::city_map::CityIsland):
 //! districts, buildings, and dependency edges derived from bounded manifest
 //! parsing (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`,
 //! `.sln`/`.csproj`) plus a generic top-level fallback. The scanner never runs
@@ -17,9 +17,9 @@
 //! - Windows path normalization to POSIX view (`\` → `/`, `\\?\` prefix
 //!   stripped, no `..` components);
 //! - absolute OS paths never leak into `relative_path`, `name`, `label`, `id`
-//!   or `reason`; read errors map only to [`CityIslandUnavailableReason`];
+//!   or `reason`; read errors map only to [`CityIslandUnavailableReason`](crate::city_map::CityIslandUnavailableReason);
 //! - hard limits on depth, entries per directory, files, manifests, and
-//!   payload size, with deterministic truncation (see [`fit_snapshot_to_payload`]).
+//!   payload size, with deterministic truncation (see [`fit_snapshot_to_payload`](crate::city_map::fit_snapshot_to_payload)).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -732,7 +732,7 @@ pub fn fit_snapshot_to_payload(mut snapshot: HiveCityMapSnapshot) -> HiveCityMap
 fn prune_satellite_payload(satellites: &mut [CityIsland]) {
     for island in satellites.iter_mut() {
         if !island.edges.is_empty() {
-            island.edges.sort_by(|a, b| a.weight.cmp(&b.weight));
+            island.edges.sort_by_key(|edge| edge.weight);
             let cut = island.edges.len().div_ceil(4).max(1);
             island.edges.drain(..cut);
             continue;
@@ -743,7 +743,7 @@ fn prune_satellite_payload(satellites: &mut [CityIsland]) {
 
 fn reduce_capital_payload(capital: &mut CityIsland) -> bool {
     if !capital.edges.is_empty() {
-        capital.edges.sort_by(|a, b| a.weight.cmp(&b.weight));
+        capital.edges.sort_by_key(|edge| edge.weight);
         let cut = capital.edges.len().div_ceil(4).max(1);
         capital.edges.drain(..cut);
         return true;
@@ -1231,11 +1231,9 @@ pub(crate) fn parse_cargo_manifest_subset(bytes: &[u8]) -> CargoManifest {
             CargoSection::Dependencies => {
                 let dep_name = key.split('.').next().unwrap_or(&key);
                 let property = key.split_once('.').map(|(_, rest)| rest.trim());
-                if property == Some("workspace") && value == "true" {
-                    manifest
-                        .dependency_paths
-                        .push((dep_name.to_owned(), CargoDependencyRef::Workspace));
-                } else if inline_table_contains_workspace(&value) {
+                if (property == Some("workspace") && value == "true")
+                    || inline_table_contains_workspace(&value)
+                {
                     manifest
                         .dependency_paths
                         .push((dep_name.to_owned(), CargoDependencyRef::Workspace));
@@ -2322,7 +2320,7 @@ fn python_module_candidates(
     }];
     if let Ok(read) = fs::read_dir(root) {
         let mut items: Vec<_> = read.flatten().collect();
-        items.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        items.sort_by_key(|item| item.file_name());
         for entry in items.into_iter().take(MAX_ENTRIES_PER_DIR) {
             if entry.file_name().to_string_lossy().starts_with('.') {
                 continue;

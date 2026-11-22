@@ -1757,7 +1757,6 @@ async fn handle_observation_control_connection<S>(
                 let _ = error;
                 tracing::debug!("observation control IPC city-map write failed or timed out");
             }
-            return;
         }
         HiveObservationControlRequest::NotifySettingsChanged => {
             let controller = HiveObservationController::new(daemon);
@@ -1782,7 +1781,6 @@ async fn handle_observation_control_connection<S>(
                 let _ = error;
                 tracing::debug!("observation control IPC write failed or timed out");
             }
-            return;
         }
         HiveObservationControlRequest::GetObservationStatus => {
             let controller = HiveObservationController::new(daemon);
@@ -1803,7 +1801,6 @@ async fn handle_observation_control_connection<S>(
                 let _ = error;
                 tracing::debug!("observation control IPC write failed or timed out");
             }
-            return;
         }
     }
 }
@@ -1912,9 +1909,11 @@ mod tests {
 
     #[test]
     fn snapshot_to_settings_preserves_observation_intervals() {
-        let mut settings = HiveSettings::default();
-        settings.local_observation_interval_secs = 15;
-        settings.llm_dispatch_interval_secs = 600;
+        let settings = HiveSettings {
+            local_observation_interval_secs: 15,
+            llm_dispatch_interval_secs: 600,
+            ..HiveSettings::default()
+        };
         let snapshot = HiveStateSnapshot::empty(&settings);
         let restored = snapshot_to_settings(&snapshot);
         assert_eq!(restored.local_observation_interval_secs, 15);
