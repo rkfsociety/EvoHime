@@ -111,8 +111,9 @@ const BINARY_EXTENSIONS: &[&str] = &[
 ];
 
 /// Top-level source directory names recognized by the generic fallback.
-const FALLBACK_SOURCE_DIR_NAMES: &[&str] =
-    &["src", "app", "lib", "services", "packages", "apps", "cmd", "internal", "server", "client"];
+const FALLBACK_SOURCE_DIR_NAMES: &[&str] = &[
+    "src", "app", "lib", "services", "packages", "apps", "cmd", "internal", "server", "client",
+];
 
 /// Upper bound applied to every free-form string field of the schema.
 const MAX_SCHEMA_STRING_CHARS: usize = 128;
@@ -224,11 +225,13 @@ fn count_file_lines(path: &Path, extension: &str) -> io::Result<Option<u64>> {
     }
     let lines =
         u64::try_from(bytes.iter().filter(|byte| **byte == b'\n').count()).unwrap_or(u64::MAX);
-    Ok(if !bytes.is_empty() && bytes.last().is_some_and(|last| *last != b'\n') {
-        Some(lines + 1)
-    } else {
-        Some(lines)
-    })
+    Ok(
+        if !bytes.is_empty() && bytes.last().is_some_and(|last| *last != b'\n') {
+            Some(lines + 1)
+        } else {
+            Some(lines)
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -500,7 +503,11 @@ pub fn validate_island(island: &CityIsland) -> Result<(), CityMapError> {
         if building.height_weight_bp < 150 || building.height_weight_bp > 1000 {
             return Err(CityMapError::ValueOutOfRange("height_weight_bp"));
         }
-        if !island.districts.iter().any(|d| d.id == building.district_id) {
+        if !island
+            .districts
+            .iter()
+            .any(|d| d.id == building.district_id)
+        {
             return Err(CityMapError::EdgeReference(building.id.clone()));
         }
     }
@@ -526,7 +533,9 @@ pub fn validate_island(island: &CityIsland) -> Result<(), CityMapError> {
 fn saturate_weight(raw: u64, base: u16) -> u16 {
     let encoded = raw.min(u64::from(u16::MAX - 1));
     let base = u64::from(base);
-    u16::try_from(base.saturating_add(encoded % 50)).unwrap_or(100).clamp(1, 100)
+    u16::try_from(base.saturating_add(encoded % 50))
+        .unwrap_or(100)
+        .clamp(1, 100)
 }
 
 fn dedupe_edges(edges: Vec<CityEdge>) -> Vec<CityEdge> {
@@ -546,7 +555,10 @@ fn dedupe_edges(edges: Vec<CityEdge>) -> Vec<CityEdge> {
 }
 
 fn structure_hash_content(island_id: &str, role: CityIslandRole) -> String {
-    format!("schema={};island={};role={:?}", HIVE_CITY_MAP_SCHEMA_VERSION, island_id, role)
+    format!(
+        "schema={};island={};role={:?}",
+        HIVE_CITY_MAP_SCHEMA_VERSION, island_id, role
+    )
 }
 
 /// Sorts collections canonically, saturates weights, normalizes heights and
@@ -555,10 +567,16 @@ fn structure_hash_content(island_id: &str, role: CityIslandRole) -> String {
 fn finalize_island(island: &mut CityIsland) {
     island.districts.sort_by(|a, b| a.id.cmp(&b.id));
     island.districts.dedup_by(|a, b| a.id == b.id);
-    island.buildings.sort_by(|a, b| (a.district_id.as_str(), a.id.as_str()).cmp(&(b.district_id.as_str(), b.id.as_str())));
+    island.buildings.sort_by(|a, b| {
+        (a.district_id.as_str(), a.id.as_str()).cmp(&(b.district_id.as_str(), b.id.as_str()))
+    });
     island.edges = dedupe_edges(std::mem::take(&mut island.edges));
     island.edges.sort_by(|a, b| {
-        (a.from_id.as_str(), a.to_id.as_str(), a.kind).cmp(&(b.from_id.as_str(), b.to_id.as_str(), b.kind))
+        (a.from_id.as_str(), a.to_id.as_str(), a.kind).cmp(&(
+            b.from_id.as_str(),
+            b.to_id.as_str(),
+            b.kind,
+        ))
     });
     // Heights: integer basis points relative to the largest building.
     let max_lines = island
@@ -580,13 +598,14 @@ fn finalize_island(island: &mut CityIsland) {
     for building in &island.buildings {
         content.push_str(&format!(
             ";b:{}:{}:{}",
-            building.id,
-            building.district_id,
-            building.kind as u8
+            building.id, building.district_id, building.kind as u8
         ));
     }
     for edge in &island.edges {
-        content.push_str(&format!(";e:{}>{}:{:?}", edge.from_id, edge.to_id, edge.kind));
+        content.push_str(&format!(
+            ";e:{}>{}:{:?}",
+            edge.from_id, edge.to_id, edge.kind
+        ));
     }
     island.structure_hash = fnv_hex(fnv1a_128(content.as_bytes()));
     island.accent_hue = u16::try_from(fnv1a_128(island.id.as_bytes()) % 360).unwrap_or(0);
@@ -595,17 +614,29 @@ fn finalize_island(island: &mut CityIsland) {
 /// Computes `revision_hash` after the structural content including volatile
 /// metric fields (file/line counts). `generated_at_ms` is never included.
 fn compute_revision_hash(island: &CityIsland) -> String {
-    let mut content = format!("rev={};structure={};files={};lines={}", island.structure_hash, island.status as u8, island.total_files, island.total_lines);
+    let mut content = format!(
+        "rev={};structure={};files={};lines={}",
+        island.structure_hash, island.status as u8, island.total_files, island.total_lines
+    );
     for building in &island.buildings {
-        content.push_str(&format!(";bm:{}:{}:{}", building.id, building.file_count, building.line_count));
+        content.push_str(&format!(
+            ";bm:{}:{}:{}",
+            building.id, building.file_count, building.line_count
+        ));
     }
     fnv_hex(fnv1a_128(content.as_bytes()))
 }
 
 fn compute_snapshot_revision_hash(capital: &CityIsland, satellites: &[CityIsland]) -> String {
-    let mut content = format!("snap={};cap={}", HIVE_CITY_MAP_SCHEMA_VERSION, capital.revision_hash);
+    let mut content = format!(
+        "snap={};cap={}",
+        HIVE_CITY_MAP_SCHEMA_VERSION, capital.revision_hash
+    );
     for satellite in satellites {
-        content.push_str(&format!(";sat={}:{}", satellite.id, satellite.revision_hash));
+        content.push_str(&format!(
+            ";sat={}:{}",
+            satellite.id, satellite.revision_hash
+        ));
     }
     fnv_hex(fnv1a_128(content.as_bytes()))
 }
@@ -614,7 +645,9 @@ fn compute_snapshot_revision_hash(capital: &CityIsland, satellites: &[CityIsland
 /// status consistency) before publishing it.
 pub fn prepare_island(mut island: CityIsland) -> CityIsland {
     if island.status == CityIslandStatus::Unavailable {
-        island.reason.get_or_insert(CityIslandUnavailableReason::RepoUnreadable);
+        island
+            .reason
+            .get_or_insert(CityIslandUnavailableReason::RepoUnreadable);
         island.districts.clear();
         island.buildings.clear();
         island.edges.clear();
@@ -636,7 +669,8 @@ pub fn assemble_snapshot(
             satellite.role = CityIslandRole::Satellite;
         }
     }
-    satellites.sort_by(|a, b| (a.id.as_str(), a.name.as_str()).cmp(&(b.id.as_str(), b.name.as_str())));
+    satellites
+        .sort_by(|a, b| (a.id.as_str(), a.name.as_str()).cmp(&(b.id.as_str(), b.name.as_str())));
     satellites.truncate(MAX_SATELLITES);
     let snapshot = HiveCityMapSnapshot {
         schema_version: HIVE_CITY_MAP_SCHEMA_VERSION,
@@ -662,14 +696,16 @@ pub fn fit_snapshot_to_payload(mut snapshot: HiveCityMapSnapshot) -> HiveCityMap
     let mut satellite_prune_passes = 0u8;
     loop {
         if serialized_len(&snapshot) <= MAX_CITY_MAP_PAYLOAD_BYTES {
-            snapshot.revision_hash = compute_snapshot_revision_hash(&snapshot.capital, &snapshot.satellites);
+            snapshot.revision_hash =
+                compute_snapshot_revision_hash(&snapshot.capital, &snapshot.satellites);
             return snapshot;
         }
         if satellite_prune_passes < 3 {
             prune_satellite_payload(&mut snapshot.satellites);
             satellite_prune_passes = satellite_prune_passes.saturating_add(1);
             if serialized_len(&snapshot) <= MAX_CITY_MAP_PAYLOAD_BYTES {
-                snapshot.revision_hash = compute_snapshot_revision_hash(&snapshot.capital, &snapshot.satellites);
+                snapshot.revision_hash =
+                    compute_snapshot_revision_hash(&snapshot.capital, &snapshot.satellites);
                 return snapshot;
             }
         }
@@ -727,22 +763,26 @@ fn drop_secondary_buildings(island: &mut CityIsland) -> bool {
     if candidates.is_empty() {
         return false;
     }
-    candidates.sort_by(|a, b| {
-        (b.line_count, a.id.as_str()).cmp(&(a.line_count, b.id.as_str()))
-    });
+    candidates.sort_by(|a, b| (b.line_count, a.id.as_str()).cmp(&(a.line_count, b.id.as_str())));
     let cut = candidates.len().div_ceil(4).max(1);
     let remove: BTreeSet<String> = candidates
         .into_iter()
         .take(cut)
         .map(|building| building.id.clone())
         .collect();
-    island.buildings.retain(|building| !remove.contains(&building.id));
-    island.edges.retain(|edge| !remove.contains(&edge.from_id) && !remove.contains(&edge.to_id));
+    island
+        .buildings
+        .retain(|building| !remove.contains(&building.id));
+    island
+        .edges
+        .retain(|edge| !remove.contains(&edge.from_id) && !remove.contains(&edge.to_id));
     true
 }
 
 fn serialized_len(snapshot: &HiveCityMapSnapshot) -> usize {
-    serde_json::to_vec(snapshot).map(|bytes| bytes.len()).unwrap_or(usize::MAX)
+    serde_json::to_vec(snapshot)
+        .map(|bytes| bytes.len())
+        .unwrap_or(usize::MAX)
 }
 
 // ---------------------------------------------------------------------------
@@ -765,7 +805,7 @@ pub fn unavailable_island(
         reason: Some(reason),
         ecosystem: CityEcosystem::Generic,
         structure_hash: String::new(),
-                revision_hash: String::new(),
+        revision_hash: String::new(),
         accent_hue: 0,
         districts: Vec::new(),
         buildings: Vec::new(),
@@ -779,42 +819,171 @@ pub fn unavailable_island(
 /// normalized repository path: `"sat-"` plus the first 16 hex characters of
 /// the FNV-1a 128-bit hash of that path.
 pub fn satellite_id_for(canonical_path: &str) -> String {
-    format!("sat-{}", fnv_hex_short(fnv1a_128(canonical_path.as_bytes()), 16))
+    format!(
+        "sat-{}",
+        fnv_hex_short(fnv1a_128(canonical_path.as_bytes()), 16)
+    )
 }
 
 /// Builds the built-in canonical capital manifest of the EvoHime architecture
 /// (used whenever `eva_workspace_path` is missing, unreadable, or timed out).
 pub fn embedded_capital_island() -> CityIsland {
     let entries: &[(&str, CityBuildingKind, CityDistrictKind, &str)] = &[
-        ("crates/evohime-core", CityBuildingKind::Citadel, CityDistrictKind::Core, "rust"),
-        ("crates/evohime-hive", CityBuildingKind::Citadel, CityDistrictKind::Core, "rust"),
-        ("crates/desktop-ipc", CityBuildingKind::Gateway, CityDistrictKind::Runtime, "rust"),
-        ("crates/evohime-supervisor", CityBuildingKind::Worker, CityDistrictKind::Runtime, "rust"),
-        ("crates/evohime-local-storage", CityBuildingKind::Storage, CityDistrictKind::Memory, "rust"),
-        ("crates/permissions", CityBuildingKind::Library, CityDistrictKind::Core, "rust"),
-        ("crates/tool-runtime", CityBuildingKind::Library, CityDistrictKind::Tools, "rust"),
-        ("crates/model-gateway", CityBuildingKind::Gateway, CityDistrictKind::Core, "rust"),
-        ("crates/evohime-listener", CityBuildingKind::Worker, CityDistrictKind::Voice, "rust"),
-        ("crates/evohime-listener-audio", CityBuildingKind::Library, CityDistrictKind::Voice, "rust"),
-        ("crates/evohime-listener-contract", CityBuildingKind::Library, CityDistrictKind::Voice, "rust"),
-        ("crates/evohime-listener-ipc", CityBuildingKind::Gateway, CityDistrictKind::Voice, "rust"),
-        ("crates/evohime-updater", CityBuildingKind::Worker, CityDistrictKind::App, "rust"),
-        ("crates/evohime-update-agent", CityBuildingKind::Worker, CityDistrictKind::App, "rust"),
-        ("crates/evohime-cli", CityBuildingKind::Service, CityDistrictKind::App, "rust"),
-        ("crates/evohime-cli-contract", CityBuildingKind::Library, CityDistrictKind::App, "rust"),
-        ("crates/evohime-cli-protocol", CityBuildingKind::Library, CityDistrictKind::App, "rust"),
-        ("crates/evohime-hive-contract", CityBuildingKind::Library, CityDistrictKind::Core, "rust"),
-        ("crates/evohime-remote", CityBuildingKind::Library, CityDistrictKind::Core, "rust"),
-        ("crates/evohime-receipts", CityBuildingKind::Library, CityDistrictKind::Core, "rust"),
-        ("crates/evohime-model-provenance", CityBuildingKind::Library, CityDistrictKind::Core, "rust"),
-        ("crates/evohime-eval", CityBuildingKind::Library, CityDistrictKind::Core, "rust"),
-        ("crates/context-budget", CityBuildingKind::Library, CityDistrictKind::Core, "rust"),
-        ("crates/test-stub-exitcode", CityBuildingKind::Library, CityDistrictKind::Other, "rust"),
-        ("desktop/evohime-electron", CityBuildingKind::Ui, CityDistrictKind::Shell, "typescript"),
+        (
+            "crates/evohime-core",
+            CityBuildingKind::Citadel,
+            CityDistrictKind::Core,
+            "rust",
+        ),
+        (
+            "crates/evohime-hive",
+            CityBuildingKind::Citadel,
+            CityDistrictKind::Core,
+            "rust",
+        ),
+        (
+            "crates/desktop-ipc",
+            CityBuildingKind::Gateway,
+            CityDistrictKind::Runtime,
+            "rust",
+        ),
+        (
+            "crates/evohime-supervisor",
+            CityBuildingKind::Worker,
+            CityDistrictKind::Runtime,
+            "rust",
+        ),
+        (
+            "crates/evohime-local-storage",
+            CityBuildingKind::Storage,
+            CityDistrictKind::Memory,
+            "rust",
+        ),
+        (
+            "crates/permissions",
+            CityBuildingKind::Library,
+            CityDistrictKind::Core,
+            "rust",
+        ),
+        (
+            "crates/tool-runtime",
+            CityBuildingKind::Library,
+            CityDistrictKind::Tools,
+            "rust",
+        ),
+        (
+            "crates/model-gateway",
+            CityBuildingKind::Gateway,
+            CityDistrictKind::Core,
+            "rust",
+        ),
+        (
+            "crates/evohime-listener",
+            CityBuildingKind::Worker,
+            CityDistrictKind::Voice,
+            "rust",
+        ),
+        (
+            "crates/evohime-listener-audio",
+            CityBuildingKind::Library,
+            CityDistrictKind::Voice,
+            "rust",
+        ),
+        (
+            "crates/evohime-listener-contract",
+            CityBuildingKind::Library,
+            CityDistrictKind::Voice,
+            "rust",
+        ),
+        (
+            "crates/evohime-listener-ipc",
+            CityBuildingKind::Gateway,
+            CityDistrictKind::Voice,
+            "rust",
+        ),
+        (
+            "crates/evohime-updater",
+            CityBuildingKind::Worker,
+            CityDistrictKind::App,
+            "rust",
+        ),
+        (
+            "crates/evohime-update-agent",
+            CityBuildingKind::Worker,
+            CityDistrictKind::App,
+            "rust",
+        ),
+        (
+            "crates/evohime-cli",
+            CityBuildingKind::Service,
+            CityDistrictKind::App,
+            "rust",
+        ),
+        (
+            "crates/evohime-cli-contract",
+            CityBuildingKind::Library,
+            CityDistrictKind::App,
+            "rust",
+        ),
+        (
+            "crates/evohime-cli-protocol",
+            CityBuildingKind::Library,
+            CityDistrictKind::App,
+            "rust",
+        ),
+        (
+            "crates/evohime-hive-contract",
+            CityBuildingKind::Library,
+            CityDistrictKind::Core,
+            "rust",
+        ),
+        (
+            "crates/evohime-remote",
+            CityBuildingKind::Library,
+            CityDistrictKind::Core,
+            "rust",
+        ),
+        (
+            "crates/evohime-receipts",
+            CityBuildingKind::Library,
+            CityDistrictKind::Core,
+            "rust",
+        ),
+        (
+            "crates/evohime-model-provenance",
+            CityBuildingKind::Library,
+            CityDistrictKind::Core,
+            "rust",
+        ),
+        (
+            "crates/evohime-eval",
+            CityBuildingKind::Library,
+            CityDistrictKind::Core,
+            "rust",
+        ),
+        (
+            "crates/context-budget",
+            CityBuildingKind::Library,
+            CityDistrictKind::Core,
+            "rust",
+        ),
+        (
+            "crates/test-stub-exitcode",
+            CityBuildingKind::Library,
+            CityDistrictKind::Other,
+            "rust",
+        ),
+        (
+            "desktop/evohime-electron",
+            CityBuildingKind::Ui,
+            CityDistrictKind::Shell,
+            "typescript",
+        ),
     ];
     let mut districts: BTreeMap<String, CityDistrict> = BTreeMap::new();
     let mut buildings = Vec::new();
-    for (index, (relative_path, kind, district_kind, language)) in entries.iter().enumerate() {        let district = districts
+    for (index, (relative_path, kind, district_kind, language)) in entries.iter().enumerate() {
+        let district = districts
             .entry(district_kind_label(*district_kind))
             .or_insert_with(|| CityDistrict {
                 id: district_kind_label(*district_kind),
@@ -900,7 +1069,7 @@ pub fn embedded_capital_island() -> CityIsland {
         reason: None,
         ecosystem: CityEcosystem::Mixed,
         structure_hash: String::new(),
-                revision_hash: String::new(),
+        revision_hash: String::new(),
         accent_hue: 0,
         districts: districts.into_values().collect(),
         buildings,
@@ -910,10 +1079,7 @@ pub fn embedded_capital_island() -> CityIsland {
                 from_id: (*from_id).to_owned(),
                 to_id: (*to_id).to_owned(),
                 kind: *kind,
-                weight: saturate_weight(
-                    0,
-                    if *kind == CityEdgeKind::Ipc { 60 } else { 30 },
-                ),
+                weight: saturate_weight(0, if *kind == CityEdgeKind::Ipc { 60 } else { 30 }),
             })
             .collect(),
         total_files: 0,
@@ -1014,7 +1180,10 @@ pub(crate) fn parse_cargo_manifest_subset(bytes: &[u8]) -> CargoManifest {
         if trimmed.is_empty() {
             continue;
         }
-        if let Some(inner) = trimmed.strip_prefix('[').and_then(|rest| rest.strip_suffix(']')) {
+        if let Some(inner) = trimmed
+            .strip_prefix('[')
+            .and_then(|rest| rest.strip_suffix(']'))
+        {
             section = classify_cargo_section(inner);
             if section == CargoSection::Workspace {
                 manifest.is_workspace = true;
@@ -1054,22 +1223,32 @@ pub(crate) fn parse_cargo_manifest_subset(bytes: &[u8]) -> CargoManifest {
             CargoSection::WorkspaceDependencies => {
                 if let Some(path) = inline_table_string(&value, "path") {
                     let dep_name = key.split('.').next().unwrap_or(&key);
-                    manifest.workspace_dependency_paths.push((dep_name.to_owned(), path));
+                    manifest
+                        .workspace_dependency_paths
+                        .push((dep_name.to_owned(), path));
                 }
             }
             CargoSection::Dependencies => {
                 let dep_name = key.split('.').next().unwrap_or(&key);
                 let property = key.split_once('.').map(|(_, rest)| rest.trim());
                 if property == Some("workspace") && value == "true" {
-                    manifest.dependency_paths.push((dep_name.to_owned(), CargoDependencyRef::Workspace));
+                    manifest
+                        .dependency_paths
+                        .push((dep_name.to_owned(), CargoDependencyRef::Workspace));
                 } else if inline_table_contains_workspace(&value) {
-                    manifest.dependency_paths.push((dep_name.to_owned(), CargoDependencyRef::Workspace));
+                    manifest
+                        .dependency_paths
+                        .push((dep_name.to_owned(), CargoDependencyRef::Workspace));
                 } else if let Some(path) = inline_table_string(&value, "path") {
-                    manifest.dependency_paths.push((dep_name.to_owned(), CargoDependencyRef::Path(path)));
+                    manifest
+                        .dependency_paths
+                        .push((dep_name.to_owned(), CargoDependencyRef::Path(path)));
                 } else if !value.trim().is_empty() {
                     // Registry spec (`foo = "1.2"`) or any other non-empty
                     // value: no local path resolution.
-                    manifest.dependency_paths.push((dep_name.to_owned(), CargoDependencyRef::Spec));
+                    manifest
+                        .dependency_paths
+                        .push((dep_name.to_owned(), CargoDependencyRef::Spec));
                 }
             }
         }
@@ -1145,7 +1324,11 @@ fn split_manifest_assignment(line: &str) -> Option<(String, String)> {
             b'=' if depth == 0 => {
                 let key = line[..index].trim().to_owned();
                 let value = line[index + 1..].trim().to_owned();
-                return if key.is_empty() { None } else { Some((key, value)) };
+                return if key.is_empty() {
+                    None
+                } else {
+                    Some((key, value))
+                };
             }
             _ => {}
         }
@@ -1317,9 +1500,10 @@ fn is_manifest_name(file_name: &str) -> bool {
 
 /// Computes the bounded fingerprint of a repository (read-only walk, same
 /// skip rules and limits as the scanner).
-pub fn repository_fingerprint(repo_root: &Path) -> Result<RepoFingerprint, CityIslandUnavailableReason> {
-    let metadata = fs::symlink_metadata(repo_root)
-        .map_err(map_walk_error)?;
+pub fn repository_fingerprint(
+    repo_root: &Path,
+) -> Result<RepoFingerprint, CityIslandUnavailableReason> {
+    let metadata = fs::symlink_metadata(repo_root).map_err(map_walk_error)?;
     if !metadata.is_dir() {
         return Err(CityIslandUnavailableReason::RepoNotFound);
     }
@@ -1330,7 +1514,12 @@ pub fn repository_fingerprint(repo_root: &Path) -> Result<RepoFingerprint, CityI
     Ok(RepoFingerprint { entries })
 }
 
-fn fingerprint_recursive(dir: &Path, relative: &str, depth: usize, out: &mut Vec<RepoFingerprintEntry>) {
+fn fingerprint_recursive(
+    dir: &Path,
+    relative: &str,
+    depth: usize,
+    out: &mut Vec<RepoFingerprintEntry>,
+) {
     if depth > MAX_SCAN_DEPTH {
         return;
     }
@@ -1344,9 +1533,11 @@ fn fingerprint_recursive(dir: &Path, relative: &str, depth: usize, out: &mut Vec
     }
     items.sort_by(|a, b| a.0.cmp(&b.0));
     items.truncate(MAX_ENTRIES_PER_DIR);
-    let dotnet_here = items
-        .iter()
-        .any(|(name, _)| name.to_string_lossy().to_ascii_lowercase().ends_with(".sln"));
+    let dotnet_here = items.iter().any(|(name, _)| {
+        name.to_string_lossy()
+            .to_ascii_lowercase()
+            .ends_with(".sln")
+    });
     for (name, entry) in items.iter() {
         let name_string = name.to_string_lossy();
         if is_skipped_dir_name(
@@ -1359,7 +1550,9 @@ fn fingerprint_recursive(dir: &Path, relative: &str, depth: usize, out: &mut Vec
         // Symlinks (including Windows reparse points for junction directories)
         // are never descended into: the local TOCTOU race is accepted, escape
         // beyond the canonical root is not.
-        let Ok(default_meta) = entry.metadata() else { continue };
+        let Ok(default_meta) = entry.metadata() else {
+            continue;
+        };
         if default_meta.file_type().is_symlink() {
             continue;
         }
@@ -1385,7 +1578,9 @@ fn fingerprint_recursive(dir: &Path, relative: &str, depth: usize, out: &mut Vec
         let file_name = name.to_string_lossy();
         if is_manifest_name(&file_name) {
             let path = dir.join(name);
-            let Ok(meta) = fs::symlink_metadata(&path) else { continue };
+            let Ok(meta) = fs::symlink_metadata(&path) else {
+                continue;
+            };
             if meta.is_symlink() || !meta.is_file() || meta.len() > MAX_MANIFEST_BYTES {
                 continue;
             }
@@ -1474,7 +1669,11 @@ impl EcosystemFlags {
 /// Classification of a module into building kind and district. Deterministic,
 /// name-driven heap of the documented EvoHime domains; unknown modules are
 /// `Library` in `core` (or `Module` in `other` for the generic fallback).
-fn classify_crate(relative_path: &str, package_name: &str, has_bins: bool) -> (CityBuildingKind, CityDistrictKind) {
+fn classify_crate(
+    relative_path: &str,
+    package_name: &str,
+    has_bins: bool,
+) -> (CityBuildingKind, CityDistrictKind) {
     let haystack = format!("{relative_path}|{package_name}");
     if haystack.contains("evohime-core") || haystack.contains("evohime-hive") {
         return (CityBuildingKind::Citadel, CityDistrictKind::Core);
@@ -1511,7 +1710,10 @@ fn classify_crate(relative_path: &str, package_name: &str, has_bins: bool) -> (C
 
 fn classify_node(relative_path: &str, package_name: &str) -> (CityBuildingKind, CityDistrictKind) {
     let haystack = format!("{relative_path}|{package_name}");
-    if haystack.contains("electron") || haystack.contains("renderer") || haystack.contains("preload") {
+    if haystack.contains("electron")
+        || haystack.contains("renderer")
+        || haystack.contains("preload")
+    {
         (CityBuildingKind::Ui, CityDistrictKind::Shell)
     } else {
         (CityBuildingKind::Library, CityDistrictKind::Packages)
@@ -1526,7 +1728,8 @@ struct ScanBudget {
 
 impl ScanBudget {
     fn expired(self) -> bool {
-        self.deadline.is_some_and(|deadline| Instant::now() >= deadline)
+        self.deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
     }
 }
 
@@ -1574,7 +1777,10 @@ pub fn scan_island(
     // 2. Building candidates: explicit manifests first, generic fallback last.
     let root_cargo = read_bounded_file(&canonical.join("Cargo.toml"), MAX_MANIFEST_BYTES)
         .map(|bytes| parse_cargo_manifest_subset(&bytes));
-    if root_cargo.as_ref().is_some_and(|manifest| manifest.is_workspace) {
+    if root_cargo
+        .as_ref()
+        .is_some_and(|manifest| manifest.is_workspace)
+    {
         flags.rust = true;
     }
     let mut candidates = Vec::new();
@@ -1597,7 +1803,10 @@ pub fn scan_island(
         candidates.extend(fallback_module_candidates(&canonical, budget)?);
     }
     candidates.truncate(MAX_BUILDINGS_PER_ISLAND);
-    candidates.sort_by(|a, b| (b.relative_path.len(), a.relative_path.as_str()).cmp(&(a.relative_path.len(), b.relative_path.as_str())));
+    candidates.sort_by(|a, b| {
+        (b.relative_path.len(), a.relative_path.as_str())
+            .cmp(&(a.relative_path.len(), b.relative_path.as_str()))
+    });
 
     // 3. Walk source files once and attribute them to the longest-prefix module.
     let mut walked = Vec::new();
@@ -1612,19 +1821,27 @@ pub fn scan_island(
     }
     for file in &walked {
         total_files += 1;
-        let lines = count_file_lines(&file.absolute_path, &file.extension).ok().flatten().unwrap_or(0);
+        let lines = count_file_lines(&file.absolute_path, &file.extension)
+            .ok()
+            .flatten()
+            .unwrap_or(0);
         total_lines += lines;
         let owner = candidates
             .iter()
             .filter(|candidate| !candidate.relative_path.is_empty())
-            .find(|candidate| file.relative_path.starts_with(&format!("{}/", candidate.relative_path)))
+            .find(|candidate| {
+                file.relative_path
+                    .starts_with(&format!("{}/", candidate.relative_path))
+            })
             .or_else(|| {
                 candidates
                     .iter()
                     .find(|candidate| candidate.relative_path.is_empty())
             });
         if let Some(owner) = owner {
-            let entry = building_stats.entry(owner.relative_path.clone()).or_insert((0, 0));
+            let entry = building_stats
+                .entry(owner.relative_path.clone())
+                .or_insert((0, 0));
             entry.0 += 1;
             entry.1 += lines;
         }
@@ -1665,7 +1882,12 @@ pub fn scan_island(
 
     // 4. Edges between modules (cargo path/workspace deps, node internal deps).
     let mut edges = Vec::new();
-    edges.extend(cargo_edges(root_cargo.as_ref(), &candidates, &canonical, budget)?);
+    edges.extend(cargo_edges(
+        root_cargo.as_ref(),
+        &candidates,
+        &canonical,
+        budget,
+    )?);
     edges.extend(node_edges(&node_dependency_edges, &candidates));
     edges.truncate(MAX_EDGES_PER_ISLAND);
 
@@ -1678,7 +1900,7 @@ pub fn scan_island(
         reason: None,
         ecosystem: flags.resolve(),
         structure_hash: String::new(),
-                revision_hash: String::new(),
+        revision_hash: String::new(),
         accent_hue: 0,
         districts: Vec::new(),
         buildings,
@@ -1702,7 +1924,10 @@ pub fn scan_island(
 
 struct SortedEntries(Vec<(String, PathBuf)>);
 
-fn bounded_sorted_entries(dir: &Path, budget: ScanBudget) -> Result<SortedEntries, CityIslandUnavailableReason> {
+fn bounded_sorted_entries(
+    dir: &Path,
+    budget: ScanBudget,
+) -> Result<SortedEntries, CityIslandUnavailableReason> {
     if budget.expired() {
         return Err(CityIslandUnavailableReason::ScanTimeout);
     }
@@ -1710,7 +1935,10 @@ fn bounded_sorted_entries(dir: &Path, budget: ScanBudget) -> Result<SortedEntrie
     let mut items: Vec<(String, PathBuf)> = Vec::new();
     for entry in read {
         let Ok(entry) = entry else { continue };
-        items.push((entry.file_name().to_string_lossy().trim().to_owned(), entry.path()));
+        items.push((
+            entry.file_name().to_string_lossy().trim().to_owned(),
+            entry.path(),
+        ));
     }
     items.sort_by(|a, b| a.0.cmp(&b.0));
     items.truncate(MAX_ENTRIES_PER_DIR);
@@ -1724,13 +1952,13 @@ fn manifest_exists(entries: &SortedEntries, _root: &Path, name: &str) -> bool {
         .any(|(entry_name, _)| entry_name.eq_ignore_ascii_case(name))
 }
 
-fn bounded_read_and_parse(
-    path: &Path,
-    max_bytes: u64,
-) -> io::Result<Vec<u8>> {
+fn bounded_read_and_parse(path: &Path, max_bytes: u64) -> io::Result<Vec<u8>> {
     let metadata = fs::symlink_metadata(path)?;
     if metadata.is_symlink() || !metadata.is_file() || metadata.len() > max_bytes {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "file size exceeds manifest bound"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "file size exceeds manifest bound",
+        ));
     }
     fs::read(path)
 }
@@ -1819,7 +2047,9 @@ fn resolve_member_path(raw: &str, root: &Path) -> Vec<String> {
     }
     if normalized.contains('*') {
         let (glob_prefix, glob_suffix) = match normalized.split_once('*') {
-            Some((prefix, suffix)) => (prefix.to_owned(), suffix.trim_start_matches('/').to_owned()),
+            Some((prefix, suffix)) => {
+                (prefix.to_owned(), suffix.trim_start_matches('/').to_owned())
+            }
             None => return Vec::new(),
         };
         // Only a trailing `*` (one directory level) is supported.
@@ -1926,16 +2156,14 @@ fn cargo_edges(
                     let joined = resolve_dot_segments(&joined);
                     module_by_path.get(joined.as_str()).copied()
                 }
-                CargoDependencyRef::Workspace => {
-                    root_workspace_paths
-                        .unwrap_or(&[])
-                        .iter()
-                        .find(|(key, _)| key == dep_name)
-                        .and_then(|(_, path)| {
-                            let joined = resolve_dot_segments(&canonical_path_string(path));
-                            module_by_path.get(joined.as_str()).copied()
-                        })
-                }
+                CargoDependencyRef::Workspace => root_workspace_paths
+                    .unwrap_or(&[])
+                    .iter()
+                    .find(|(key, _)| key == dep_name)
+                    .and_then(|(_, path)| {
+                        let joined = resolve_dot_segments(&canonical_path_string(path));
+                        module_by_path.get(joined.as_str()).copied()
+                    }),
                 CargoDependencyRef::Spec => None,
             };
             if let Some(target_index) = target_index {
@@ -1943,7 +2171,9 @@ fn cargo_edges(
                     continue;
                 }
                 let to_candidate = &candidates[target_index];
-                let kind = if dep_name.contains("desktop-ipc") || to_candidate.relative_path.contains("desktop-ipc") {
+                let kind = if dep_name.contains("desktop-ipc")
+                    || to_candidate.relative_path.contains("desktop-ipc")
+                {
                     CityEdgeKind::Ipc
                 } else {
                     CityEdgeKind::Dependency
@@ -2187,9 +2417,10 @@ fn dotnet_module_candidates(
                         continue;
                     }
                     let dir_relative = canonical_path_string(name);
-                    let project_relative = canonical_path_string(&entry.file_name().to_string_lossy())
-                        .trim_end_matches(".csproj")
-                        .to_owned();
+                    let project_relative =
+                        canonical_path_string(&entry.file_name().to_string_lossy())
+                            .trim_end_matches(".csproj")
+                            .to_owned();
                     candidates.push(ModuleCandidate {
                         relative_path: format!("{dir_relative}/{project_relative}"),
                         name: entry
@@ -2218,7 +2449,9 @@ fn fallback_module_candidates(
     let mut candidates = Vec::new();
     for source_dir in FALLBACK_SOURCE_DIR_NAMES {
         let dir = root.join(source_dir);
-        let Ok(meta) = fs::symlink_metadata(&dir) else { continue };
+        let Ok(meta) = fs::symlink_metadata(&dir) else {
+            continue;
+        };
         if meta.is_symlink() || !meta.is_dir() {
             continue;
         }
@@ -2251,7 +2484,9 @@ fn walk_source_files(
         .any(|(name, _)| name.to_ascii_lowercase().ends_with(".sln"));
     let within_src = relative.split('/').any(|part| part == "src");
     for (name, path) in entries.0 {
-        let Ok(meta) = fs::symlink_metadata(&path) else { continue };
+        let Ok(meta) = fs::symlink_metadata(&path) else {
+            continue;
+        };
         if meta.is_symlink() {
             continue;
         }
@@ -2359,20 +2594,35 @@ pub fn build_archipelago_with_budgets(
                     .cached_satellites
                     .get(&id)
                     .cloned()
-                    .unwrap_or_else(|| unavailable_island(id, name, CityIslandRole::Satellite, CityIslandUnavailableReason::ScanTimeout)),
+                    .unwrap_or_else(|| {
+                        unavailable_island(
+                            id,
+                            name,
+                            CityIslandRole::Satellite,
+                            CityIslandUnavailableReason::ScanTimeout,
+                        )
+                    }),
             );
             continue;
         }
         let budget = repo_budget.min(remaining);
         let deadline = Instant::now() + budget;
-        match scan_island(&root, id.clone(), &name, CityIslandRole::Satellite, Some(deadline)) {
+        match scan_island(
+            &root,
+            id.clone(),
+            &name,
+            CityIslandRole::Satellite,
+            Some(deadline),
+        ) {
             Ok(island) => satellites.push(island),
             Err(reason) => satellites.push(
                 inputs
                     .cached_satellites
                     .get(&id)
                     .cloned()
-                    .unwrap_or_else(|| unavailable_island(id, name, CityIslandRole::Satellite, reason)),
+                    .unwrap_or_else(|| {
+                        unavailable_island(id, name, CityIslandRole::Satellite, reason)
+                    }),
             ),
         }
     }
@@ -2471,10 +2721,7 @@ mod tests {
             .expect("CARGO_MANIFEST_DIR is set by cargo");
         // CARGO_MANIFEST_DIR points at crates/evohime-hive; the repository
         // root is two ancestors above it.
-        let repo_root = manifest_dir
-            .ancestors()
-            .nth(2)
-            .expect("repo root ancestor");
+        let repo_root = manifest_dir.ancestors().nth(2).expect("repo root ancestor");
         let bytes = fs::read(repo_root.join("Cargo.toml")).expect("root Cargo.toml exists");
         let manifest = parse_cargo_manifest_subset(&bytes);
         assert!(manifest.is_workspace);
@@ -2528,10 +2775,9 @@ desktop-bridge = { path = "crates/desktop-bridge" }
             .iter()
             .any(|(name, reference)| name == "desktop-bridge"
                 && reference == &CargoDependencyRef::Path("../desktop-bridge".to_owned())));
-        assert!(manifest
-            .dependency_paths
-            .iter()
-            .any(|(name, reference)| name == "serde" && *reference == CargoDependencyRef::Workspace));
+        assert!(manifest.dependency_paths.iter().any(
+            |(name, reference)| name == "serde" && *reference == CargoDependencyRef::Workspace
+        ));
         assert!(manifest
             .workspace_dependency_paths
             .iter()
@@ -2550,9 +2796,15 @@ desktop-bridge = { path = "crates/desktop-bridge" }
             "[package]\nname = \"alpha\"\n\n[dependencies]\nbeta = { path = \"../beta\" }\ngamma = { workspace = true }\n",
         );
         write_file(&root.join("crates/alpha/src/lib.rs"), "pub fn alpha() {}\n");
-        write_file(&root.join("crates/beta/Cargo.toml"), "[package]\nname = \"beta\"\n");
+        write_file(
+            &root.join("crates/beta/Cargo.toml"),
+            "[package]\nname = \"beta\"\n",
+        );
         write_file(&root.join("crates/beta/src/lib.rs"), "pub fn beta() {}\n");
-        write_file(&root.join("crates/gamma/Cargo.toml"), "[package]\nname = \"gamma\"\n");
+        write_file(
+            &root.join("crates/gamma/Cargo.toml"),
+            "[package]\nname = \"gamma\"\n",
+        );
         write_file(&root.join("crates/gamma/src/lib.rs"), "pub fn gamma() {}\n");
 
         let island = scan_island(
@@ -2567,7 +2819,10 @@ desktop-bridge = { path = "crates/desktop-bridge" }
         assert_eq!(island.ecosystem, CityEcosystem::Rust);
         assert_eq!(island.status, CityIslandStatus::Ready);
         assert_eq!(island.buildings.len(), 3);
-        assert!(island.buildings.iter().all(|building| building.file_count >= 1));
+        assert!(island
+            .buildings
+            .iter()
+            .all(|building| building.file_count >= 1));
         // alpha -> beta (path dep) and alpha -> gamma (workspace dep).
         assert_eq!(island.edges.len(), 2);
         let ab = island
@@ -2790,7 +3045,10 @@ desktop-bridge = { path = "crates/desktop-bridge" }
         );
         assert_eq!(snapshot.satellites.len(), 1);
         assert_eq!(snapshot.satellites[0].id, cached_id);
-        assert_eq!(snapshot.satellites[0].source, CityIslandSource::EmbeddedManifest);
+        assert_eq!(
+            snapshot.satellites[0].source,
+            CityIslandSource::EmbeddedManifest
+        );
         // Without cache the timeout reason is explicit.
         let inputs_no_cache = CityMapInputs {
             eva_workspace_path: None,

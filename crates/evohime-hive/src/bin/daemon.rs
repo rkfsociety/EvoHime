@@ -17,9 +17,9 @@ use evohime_desktop_ipc::{generated, session, transport};
 use evohime_hive::city_map::{
     assemble_snapshot, canonical_path_string, embedded_capital_island, offline_snapshot,
     repository_fingerprint, resolve_repo_root, satellite_id_for, scan_island, unavailable_island,
-    CityIsland, CityIslandRole, CityIslandSource, CityIslandUnavailableReason,
-    HiveCityMapSnapshot, RepoFingerprint, CAPITAL_ISLAND_ID, MAX_REPO_SCAN_DURATION,
-    MAX_SATELLITES, MAX_TOTAL_SCAN_DURATION,
+    CityIsland, CityIslandRole, CityIslandSource, CityIslandUnavailableReason, HiveCityMapSnapshot,
+    RepoFingerprint, CAPITAL_ISLAND_ID, MAX_REPO_SCAN_DURATION, MAX_SATELLITES,
+    MAX_TOTAL_SCAN_DURATION,
 };
 #[cfg(unix)]
 use evohime_hive::pulse::HIVE_OBSERVATION_CONTROL_SOCKET_ENV;
@@ -1361,8 +1361,7 @@ fn run_city_map_job(runtime: &CityMapRuntime, job: &CityMapJob) -> Result<(), St
                     );
                 }
             }
-            let reusable =
-                matches!((&capital_fingerprint_entry, &prev_capital_fingerprint, &prev_capital),
+            let reusable = matches!((&capital_fingerprint_entry, &prev_capital_fingerprint, &prev_capital),
                     (Some((key, fp)), Some((prev_key, prev_fp)), Some(island))
                         if prev_key == key && prev_fp == fp
                             && island.source == CityIslandSource::LiveWorkspace);
@@ -1391,8 +1390,7 @@ fn run_city_map_job(runtime: &CityMapRuntime, job: &CityMapJob) -> Result<(), St
             PathBuf::from(canonical),
         ));
     }
-    entries
-        .sort_by(|a, b| (a.0.as_str(), a.1.as_str()).cmp(&(b.0.as_str(), b.1.as_str())));
+    entries.sort_by(|a, b| (a.0.as_str(), a.1.as_str()).cmp(&(b.0.as_str(), b.1.as_str())));
     entries.truncate(MAX_SATELLITES);
 
     let mut satellites: Vec<CityIsland> = Vec::with_capacity(entries.len());
@@ -1430,37 +1428,42 @@ fn run_city_map_job(runtime: &CityMapRuntime, job: &CityMapJob) -> Result<(), St
             continue;
         }
         let deadline = Instant::now() + remaining.min(MAX_REPO_SCAN_DURATION);
-        let (island, fresh_fingerprint) =
-            match scan_island(&root, id.clone(), &name, CityIslandRole::Satellite, Some(deadline)) {
-                Ok(island) => match &fingerprint {
-                    Ok(fp) => (island, Some(fp.clone())),
-                    Err(_) => (island, None),
-                },
-                Err(reason) => {
-                    tracing::warn!(
-                        island = %id,
-                        reason = ?reason,
-                        "city map: satellite scan failed"
-                    );
-                    match prev_satellites.get(&id) {
-                        // Keep the previous structure; the fresh fingerprint is
-                        // recorded so the next unchanged pass reuses it.
-                        Some(prev_island) => match &fingerprint {
-                            Ok(fp) => (prev_island.clone(), Some(fp.clone())),
-                            Err(_) => (prev_island.clone(), None),
-                        },
-                        None => (
-                            unavailable_island(
-                                id.clone(),
-                                name.clone(),
-                                CityIslandRole::Satellite,
-                                reason,
-                            ),
-                            None,
+        let (island, fresh_fingerprint) = match scan_island(
+            &root,
+            id.clone(),
+            &name,
+            CityIslandRole::Satellite,
+            Some(deadline),
+        ) {
+            Ok(island) => match &fingerprint {
+                Ok(fp) => (island, Some(fp.clone())),
+                Err(_) => (island, None),
+            },
+            Err(reason) => {
+                tracing::warn!(
+                    island = %id,
+                    reason = ?reason,
+                    "city map: satellite scan failed"
+                );
+                match prev_satellites.get(&id) {
+                    // Keep the previous structure; the fresh fingerprint is
+                    // recorded so the next unchanged pass reuses it.
+                    Some(prev_island) => match &fingerprint {
+                        Ok(fp) => (prev_island.clone(), Some(fp.clone())),
+                        Err(_) => (prev_island.clone(), None),
+                    },
+                    None => (
+                        unavailable_island(
+                            id.clone(),
+                            name.clone(),
+                            CityIslandRole::Satellite,
+                            reason,
                         ),
-                    }
+                        None,
+                    ),
                 }
-            };
+            }
+        };
         if let Some(fp) = fresh_fingerprint {
             published_fingerprints.insert(canonical.clone(), fp);
         }
@@ -1477,14 +1480,13 @@ fn run_city_map_job(runtime: &CityMapRuntime, job: &CityMapJob) -> Result<(), St
         if let Some(prev_snapshot) = published.as_ref() {
             let same_capital = prev_snapshot.capital.revision_hash == capital.revision_hash
                 && prev_snapshot.capital.source == capital.source;
-            let same_satellites = prev_snapshot.satellites.len() == satellites.len()
-                && prev_snapshot
-                    .satellites
-                    .iter()
-                    .zip(satellites.iter())
-                    .all(|(prev, next)| {
-                        prev.id == next.id && prev.revision_hash == next.revision_hash
-                    });
+            let same_satellites =
+                prev_snapshot.satellites.len() == satellites.len()
+                    && prev_snapshot.satellites.iter().zip(satellites.iter()).all(
+                        |(prev, next)| {
+                            prev.id == next.id && prev.revision_hash == next.revision_hash
+                        },
+                    );
             if same_capital && same_satellites {
                 if let Ok(mut shared) = runtime.shared.lock() {
                     shared.fingerprints = published_fingerprints;
@@ -1746,8 +1748,11 @@ async fn handle_observation_control_connection<S>(
                     return;
                 }
             };
-            if let Err(error) =
-                tokio::time::timeout(OBSERVATION_CONTROL_WRITE_TIMEOUT, transport::write_frame(&mut stream, &response_bytes)).await
+            if let Err(error) = tokio::time::timeout(
+                OBSERVATION_CONTROL_WRITE_TIMEOUT,
+                transport::write_frame(&mut stream, &response_bytes),
+            )
+            .await
             {
                 let _ = error;
                 tracing::debug!("observation control IPC city-map write failed or timed out");
@@ -1967,9 +1972,7 @@ mod tests {
 
     /// Sends one framed control request against an in-memory stream and returns
     /// the framed response; the connection task is joined to surface panics.
-    async fn exchange_control_frame(
-        request: &[u8],
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    async fn exchange_control_frame(request: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let (mut client, server) = tokio::io::duplex(256 * 1024);
         let connection = tokio::spawn(handle_observation_control_connection(
             server,
@@ -1977,11 +1980,9 @@ mod tests {
             CityMapRuntime::default(),
         ));
         transport::write_frame(&mut client, request).await?;
-        let response = tokio::time::timeout(
-            Duration::from_secs(5),
-            transport::read_frame(&mut client),
-        )
-        .await??;
+        let response =
+            tokio::time::timeout(Duration::from_secs(5), transport::read_frame(&mut client))
+                .await??;
         connection.await.expect("connection task");
         Ok(response)
     }
@@ -1998,7 +1999,10 @@ mod tests {
         let first = runtime.current(unix_now_ms());
         run_city_map_job(&runtime, &job).expect("second city map pass");
         let second = runtime.current(unix_now_ms());
-        assert!(Arc::ptr_eq(&first, &second), "unchanged pass must republish the same snapshot instance");
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "unchanged pass must republish the same snapshot instance"
+        );
         assert_eq!(first.revision_hash, second.revision_hash);
         assert_eq!(first.generated_at_ms, second.generated_at_ms);
         assert_eq!(first.capital.id, CAPITAL_ISLAND_ID);
@@ -2047,14 +2051,11 @@ mod tests {
         let response = exchange_control_frame(request.as_bytes())
             .await
             .expect("city map exchange");
-        let value: serde_json::Value =
-            serde_json::from_slice(&response).expect("city map JSON");
+        let value: serde_json::Value = serde_json::from_slice(&response).expect("city map JSON");
         assert!(value.get("error").is_none(), "get_city_map must not error");
-        let snapshot: HiveCityMapSnapshot =
-            serde_json::from_value(value).expect("typed snapshot");
+        let snapshot: HiveCityMapSnapshot = serde_json::from_value(value).expect("typed snapshot");
         assert_eq!(
-            snapshot.capital.id,
-            CAPITAL_ISLAND_ID,
+            snapshot.capital.id, CAPITAL_ISLAND_ID,
             "cold start publishes the embedded capital"
         );
         assert!(snapshot.satellites.is_empty());
@@ -2067,8 +2068,7 @@ mod tests {
         let response = exchange_control_frame(request.as_bytes())
             .await
             .expect("status exchange");
-        let value: serde_json::Value =
-            serde_json::from_slice(&response).expect("status JSON");
+        let value: serde_json::Value = serde_json::from_slice(&response).expect("status JSON");
         for key in [
             "schema_version",
             "owner",
@@ -2088,8 +2088,7 @@ mod tests {
         let response = exchange_control_frame(request.as_bytes())
             .await
             .expect("unknown command exchange");
-        let value: serde_json::Value =
-            serde_json::from_slice(&response).expect("error JSON");
+        let value: serde_json::Value = serde_json::from_slice(&response).expect("error JSON");
         let error = value
             .get("error")
             .and_then(serde_json::Value::as_str)

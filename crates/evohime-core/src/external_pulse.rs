@@ -180,15 +180,13 @@ mod tests {
             let snapshot = match req {
                 HiveObservationControlRequest::GetObservationStatus
                 | HiveObservationControlRequest::NotifySettingsChanged
-                | HiveObservationControlRequest::GetCityMap => {
-                    HiveObservationSnapshot {
-                        schema_version: 1,
-                        owner: "hive_observation".to_owned(),
-                        status: "observing".to_owned(),
-                        enabled: true,
-                        next_wake_at_ms: Some(12345),
-                    }
-                }
+                | HiveObservationControlRequest::GetCityMap => HiveObservationSnapshot {
+                    schema_version: 1,
+                    owner: "hive_observation".to_owned(),
+                    status: "observing".to_owned(),
+                    enabled: true,
+                    next_wake_at_ms: Some(12345),
+                },
             };
             let resp_bytes = serde_json::to_vec(&snapshot).expect("encode snapshot");
             transport::write_frame(&mut server, &resp_bytes)
