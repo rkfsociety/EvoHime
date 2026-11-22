@@ -25,8 +25,11 @@ import {
   HIVE_STUDIO_DEPARTMENTS,
   type HiveStudioDepartmentState
 } from './hive-studio-simulation'
-import './hive-studio.css'
+// Порядок важен: styles.css обязан идти раньше hive-studio.css — CSS
+// переопределения стенда (.hive-stage--studio) имеют ту же специфичность,
+// что классы оболочки, и при обратном порядке импортов проигрывают.
 import './styles.css'
+import './hive-studio.css'
 
 type StudioSource = 'simulation' | 'daemon' | 'panorama'
 

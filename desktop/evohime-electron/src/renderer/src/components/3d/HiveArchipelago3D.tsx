@@ -405,9 +405,14 @@ function DepartmentHouse3D({
   return (
     <group
       position={position}
-      data-testid={`hive-archipelago-house-${lot.departmentKey}-${lot.slot}`}
-      data-dept={lot.departmentKey}
-      data-active={lot.active ? 'true' : 'false'}
+      // R3F трактует dashed-props как вложенные пути (`data-dept` → group.data.dept)
+      // и падает при применении; DOM-атрибуты трёхмерным объектам назначаются
+      // только через userData.
+      userData={{
+        testid: `hive-archipelago-house-${lot.departmentKey}-${lot.slot}`,
+        dept: lot.departmentKey,
+        active: lot.active
+      }}
       onPointerDown={(event: ThreeEvent<PointerEvent>) => {
         if (onSelectDepartment === undefined) return
         event.stopPropagation()
