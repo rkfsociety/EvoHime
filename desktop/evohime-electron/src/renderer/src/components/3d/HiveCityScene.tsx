@@ -717,6 +717,7 @@ export function HiveCityScene({
       onKeyDown={handleKeyDown}
     >
       {showArchipelago && islandViews !== null && snapshot !== null ? (
+        <>
         <div className="hive-city-scene__world hive-city-scene__world--archipelago">
           <div
             className="hive-archipelago__frame"
@@ -757,24 +758,6 @@ export function HiveCityScene({
             )}
           </div>
 
-          {/* Клавиатурные остановки: только острова (≤13), Enter/Space — выбор. */}
-          <div className="hive-archipelago__island-chips" role="list" aria-label="Острова архипелага">
-            {[snapshot.capital, ...snapshot.satellites].slice(0, 13).map((island) => (
-              <button
-                key={island.id}
-                type="button"
-                role="listitem"
-                className="hive-archipelago__chip"
-                data-testid={`hive-archipelago-chip-${island.id}`}
-                aria-pressed={focusIslandId === island.id}
-                aria-label={`${island.name}: ${island.total_files} файлов, ${island.total_lines} строк`}
-                onClick={() => handleSelectIsland(island.id)}
-              >
-                {island.name}
-              </button>
-            ))}
-          </div>
-
           {inspectorIsland !== null ? (
             <ArchipelagoInspector
               islandId={inspectorIsland.id}
@@ -790,6 +773,27 @@ export function HiveCityScene({
 
           {daemonUnavailable ? null : null}
         </div>
+
+        {/* Клавиатурные остановки: только острова (≤13), Enter/Space — выбор.
+            Чипы живут в корне сцены НАД нижним доком: внутри 16:9-контейнера
+            мира с `bottom: 12px` они попадали под dock-карточки и прятались. */}
+        <div className="hive-archipelago__island-chips" role="list" aria-label="Острова архипелага">
+          {[snapshot.capital, ...snapshot.satellites].slice(0, 13).map((island) => (
+            <button
+              key={island.id}
+              type="button"
+              role="listitem"
+              className="hive-archipelago__chip"
+              data-testid={`hive-archipelago-chip-${island.id}`}
+              aria-pressed={focusIslandId === island.id}
+              aria-label={`${island.name}: ${island.total_files} файлов, ${island.total_lines} строк`}
+              onClick={() => handleSelectIsland(island.id)}
+            >
+              {island.name}
+            </button>
+          ))}
+        </div>
+        </>
       ) : (
         <div className="hive-city-scene__world">
           <div className="hive-city-scene__backdrop" aria-hidden="true">
