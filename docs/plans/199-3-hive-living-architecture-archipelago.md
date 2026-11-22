@@ -1,0 +1,59 @@
+# План 199.3 — Прямой клиент Electron main и живая кликабельная изометрическая сцена архипелага
+
+Статус: active implementation contract. Этап следует после 199.2.
+
+## Scope и изменяемые контракты
+1. **Прямой клиент Electron main к `evohime-hive-daemon` (без Core IPC):**
+   - Добавить модуль `desktop/evohime-electron/src/main/hive-daemon-client.ts`, подключающийся напрямую к `\\.\pipe\evohime-hive-observation` (Windows, с учётом `EVOHIME_HIVE_OBSERVATION_CONTROL_PIPE`) или `hive-observation.sock` (Unix, с учётом `EVOHIME_HIVE_OBSERVATION_CONTROL_SOCKET`) через Node.js `net.createConnection`.
+   - Использовать тот же 4-byte LE length-prefixed JSON framing с жёстким таймаутом (≤ `1500 ms`), лимитом входящего фрейма (`MAX_CITY_MAP_FRAME_BYTES = 512 KiB`) и строгой валидацией структуры ответа.
+   - Добавить read-only команду `hive.getCityMap` в `src/shared/api.ts` и обработчик в `src/main/shell-bridge.ts`. Preload ([src/preload/index.ts](../../desktop/evohime-electron/src/preload/index.ts)) не расширяется новыми небезопасными поверхностями.
+2. **Живая кликабельная изометрическая сцена архипелага ([HiveCityScene.tsx](../../desktop/evohime-electron/src/renderer/src/components/3d/HiveCityScene.tsx)):**
+   - Построить процедурный 3D-архипелаг на `three` + `@react-three/fiber` с **фиксированной изометрической камерой без вращения** (без `OrbitControls` rotate):
+     - **Столица Евы** в центре: Цитадель Королевы (`evohime-core` / `evohime-hive`) с неоновым ореолом и голографическим ядром, окружённая реальными кварталами и башнями модулей Евы и светящимися дорогами зависимостей.
+     - **Города-спутники** вокруг Столицы: для каждого острова из `satellites` процедурно раскладывается отдельный остров-город с собственным цветовым акцентом, табличкой имени проекта, башнями-модулями (высота от `height_weight`, форма от `kind`) и внутренними улицами.
+     - **Анимация строительства и сворачивания**: при появлении нового `island.id` башни плавно вырастают из фундамента и загораются магистрали + энергетический мост к Столице; при исчезновении `island.id` остров плавно сворачивается.
+     - **Жизнь города в реальном времени**:
+       - дыхание и цветовая палитра Цитадели от статуса Улья (`observing`, `active`, `waiting_for_limits`, `waiting_for_tasks`, `sleeping`, `disabled`);
+       - бегущие световые импульсы по внутренним дорогам и междугородним мостам;
+       - летающие дроны активных агентов Улья (по числу и ролям из `activeAgents`, с перелётом к соответствующему острову/кварталу при совпадении проекта или роли);
+       - мягкое мерцание окон и фоновые частицы без тяжёлого post-processing (с использованием `InstancedMesh` для экономии GPU/CPU).
+   - **Интерактивность без вращения камеры**:
+     - наведение на здание подсвечивает башню и все её входящие/исходящие связи-дороги;
+     - клик по зданию открывает компактный HUD-инспектор (имя, тип, относительный путь, число файлов/строк, список связей, активные агенты);
+     - клик по острову-спутнику плавно переводит фокус и зум камеры на этот город (сохраняя фиксированный изометрический угол), кнопка/клик по фону возвращает общий вид архипелага.
+   - **Режимы деградации (fallback)**:
+     - если WebGL недоступен, произошла ошибка контекста или включён `prefers-reduced-motion` → автоматический лёгкий 2D SVG/HTML изометрический рендер той же карты `HiveCityMapSnapshot` с сохранением кликабельности;
+     - если `evohime-hive-daemon` недоступен (`hive.getCityMap` → `unavailable`) → отображается аккуратный статус-индикатор и базовый силуэт без падения вкладки.
+3. **Интеграция в [OperationsPanel.tsx](../../desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx):**
+   - Опрос `hive.getCityMap` с тем же уважением к паузе/интервалу (и немедленный перезапрос после изменения `eva_workspace_path` / `watched_repositories`), без лишнего перерендера при неизменном `revision_hash`.
+   - Сохранение существующих HUD-элементов (карточка Королевы, метрики, провайдер/лимиты, активные агенты, проекты под наблюдением, логи Улья) без перекрытия ключевой части сцены.
+
+## Зависимости
+### Блокирующие
+- Этап 199.2 (`GetCityMap` на control pipe `evohime-hive-daemon`).
+- Существующие `three` и `@react-three/fiber` в `desktop/evohime-electron/package.json`.
+
+### Опциональные
+- Нет.
+
+## Recovery и rollback
+- Отказ WebGL (`webglcontextlost` или отсутствие контекста) перехватывается ErrorBoundary/детектором и переключает сцену на 2D-режим без перезагрузки окна.
+- Таймаут или отказ подключения к pipe Улья не влияет на Core IPC и остальные вкладки Electron.
+- Rollback этапа: возврат прежней реализации `HiveCityScene.tsx` и удаление `hive-daemon-client.ts` / команды `hive.getCityMap`.
+
+## Verification
+- Unit-тесты `desktop/evohime-electron`:
+  - `hive-daemon-client`: корректный 4-byte LE framing, таймаут, лимит размера фрейма, обработка `ENOENT`/недоступного pipe и невалидного JSON;
+  - `shell-bridge` / `preload-api`: регистрация `hive.getCityMap`, отсутствие утечки Node/Electron API в renderer;
+  - `hive-city-scene.test.tsx`: рендер Столицы и спутников, добавление/удаление спутника, клик по зданию и открытие инспектора, фокус на город без вращения камеры, 2D-fallback при отсутствии WebGL и `prefers-reduced-motion`.
+- В CI: `npm run check:protocol`, `npm run typecheck`, `npm test`, `npm run build`, `npm run check:bundle`.
+
+## Release evidence
+- Результаты unit/security-тестов Electron, `typecheck` и `check:bundle` из CI.
+- Подтверждение работы 3D-сцены и 2D-fallback при запуске без ошибок консоли.
+
+## Критерии выхода
+- [ ] Electron main читает `HiveCityMapSnapshot` напрямую у `evohime-hive-daemon` без участия Core.
+- [ ] Город-архипелаг живой, кликабельный, без вращения камеры, с анимацией строительства новых городов-спутников.
+- [ ] WebGL/reduced-motion/daemon-unavailable fallback-режимы проверены тестами.
+- [ ] Существующие тесты `hive-city-scene`, `hive-dashboard`, `preload-api` и `check:bundle` зелёные.
