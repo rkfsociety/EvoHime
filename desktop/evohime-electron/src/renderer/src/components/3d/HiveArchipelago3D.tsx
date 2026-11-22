@@ -4,6 +4,7 @@ import * as THREE from 'three'
 
 import {
   CITY_MAP_MAX_SATELLITES,
+  displayIslandHue,
   fnv1a32,
   type CityIslandView
 } from '@shared/hive-city-map'
@@ -20,11 +21,19 @@ import {
 /** Fixed isometric camera offset (angle never changes; only zoom/pan). */
 const CAMERA_OFFSET = new THREE.Vector3(34, 30, 34)
 
-const OVERVIEW_ZOOM = 9
-const FOCUS_ZOOM = 22
+const OVERVIEW_ZOOM = 17
+const FOCUS_ZOOM = 28
 
 /** Reusable per-frame scratch object: no 60 Hz allocations inside useFrame. */
 const FRAME_DUMMY = new THREE.Object3D()
+
+/**
+ * Visual height of a tower: low-weight buildings stay readable instead of
+ * collapsing into flat plates (display-only; the data keeps `height_weight_bp`).
+ */
+function towerDisplayHeight(heightWeight: number): number {
+  return Math.max(0.9, heightWeight * 3.8)
+}
 
 export interface HiveArchipelago3DProps {
   readonly capital: CityIslandView
@@ -63,7 +72,7 @@ function useIslandMaterials(accentHue: number, statusReady: boolean): {
     const ground = new THREE.MeshBasicMaterial({
       color: new THREE.Color().setHSL(accentHue / 360, 0.7, 0.2),
       transparent: true,
-      opacity: statusReady ? 0.24 : 0.08
+      opacity: statusReady ? 0.32 : 0.08
     })
     return { body, accent, ground }
   }, [accentHue, statusReady])
@@ -211,8 +220,9 @@ function IslandTowers({
     const dummy = new THREE.Object3D()
     return view.buildings.map((item) => {
       const width = item.building.kind === 'citadel' ? 1.5 : 1.05
-      dummy.position.set(view.x + item.x, item.height * 1.9, view.z + item.z)
-      dummy.scale.set(width, item.height * 3.8, width)
+      const displayHeight = towerDisplayHeight(item.height)
+      dummy.position.set(view.x + item.x, displayHeight / 2, view.z + item.z)
+      dummy.scale.set(width, displayHeight, width)
       dummy.updateMatrix()
       return dummy.matrix.clone()
     })
@@ -262,8 +272,9 @@ function IslandTowers({
       return
     }
     const width = item.building.kind === 'citadel' ? 1.7 : 1.25
-    outline.position.set(view.x + item.x, item.height * 1.9, view.z + item.z)
-    outline.scale.set(width, item.height * 3.8 + 0.3, width)
+    const displayHeight = towerDisplayHeight(item.height)
+    outline.position.set(view.x + item.x, displayHeight / 2, view.z + item.z)
+    outline.scale.set(width, displayHeight + 0.3, width)
     outline.visible = true
   }, [highlightedIndex, view])
 
@@ -319,12 +330,12 @@ function IslandNameplate({ view }: { view: CityIslandView }) {
         context.beginPath()
         context.roundRect(2, 2, canvas.width - 4, canvas.height - 4, radius)
         context.fill()
-        context.strokeStyle = `hsl(${view.island.accent_hue} 72% 62% / 0.75)`
+        context.strokeStyle = `hsl(${displayIslandHue(view.island.id, view.island.role)} 72% 62% / 0.75)`
         context.lineWidth = 2
         context.stroke()
       } else {
         context.fillRect(0, 0, canvas.width, canvas.height)
-        context.strokeStyle = `hsl(${view.island.accent_hue}, 72%, 62%)`
+        context.strokeStyle = `hsl(${displayIslandHue(view.island.id, view.island.role)}, 72%, 62%)`
         context.lineWidth = 2
         context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4)
       }
@@ -344,7 +355,7 @@ function IslandNameplate({ view }: { view: CityIslandView }) {
     const created = new THREE.CanvasTexture(canvas)
     created.colorSpace = THREE.SRGBColorSpace
     return created
-  }, [view.island.name, view.island.accent_hue])
+  }, [view.island.name, view.island.id, view.island.role])
 
   useEffect(() => () => texture.dispose(), [texture])
 
@@ -382,7 +393,8 @@ function CitadelCore({ view, paused }: { view: CityIslandView; paused: boolean }
 
   const position = useMemo<[number, number, number]>(() => {
     const citadel = view.buildings.find((item) => item.building.kind === 'citadel')
-    return [view.x + (citadel?.x ?? 0), (citadel?.height ?? 0.6) * 3.8 + 1.9, view.z + (citadel?.z ?? 0)]
+    const displayHeight = towerDisplayHeight(citadel?.height ?? 0.6)
+    return [view.x + (citadel?.x ?? 0), displayHeight + 1.9, view.z + (citadel?.z ?? 0)]
   }, [view])
 
   return (
@@ -501,7 +513,8 @@ function IslandGroup3D({
   onHoverBuilding: (buildingId: string | null) => void
 }) {
   const groupRef = useRef<THREE.Group>(null)
-  const materials = useIslandMaterials(view.island.accent_hue, view.island.status === 'ready')
+  const accentHue = displayIslandHue(view.island.id, view.island.role)
+  const materials = useIslandMaterials(accentHue, view.island.status === 'ready')
 
   const targetScale = scaleForPhase(view.phase)
   useFrame((_, delta) => {

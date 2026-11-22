@@ -398,6 +398,21 @@ export function fnv1a32(text: string): number {
   return hash >>> 0
 }
 
+/**
+ * Curated display hues for island accents (deterministic, client-side only).
+ * The raw `accent_hue` from the daemon is a plain hash bucket (0..359) and can
+ * land on muddy yellow-greens that clash with the shell palette; here the
+ * capital always wears the amber of the EVA CORE accent, and satellites pick
+ * from UI-consistent blue/violet/teal hues.
+ */
+const DISPLAY_HUES: readonly number[] = [218, 262, 162, 200, 288, 172]
+
+/** Display accent hue of an island; deterministic per island id and role. */
+export function displayIslandHue(islandId: string, role: string): number {
+  if (role === 'capital') return 42
+  return DISPLAY_HUES[fnv1a32(islandId) % DISPLAY_HUES.length] ?? 218
+}
+
 export interface CityBuildingView {
   readonly building: CityBuilding
   /** Deterministic slot `(x, z)` inside the island, in island units. */

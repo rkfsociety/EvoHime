@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react'
 
 import {
   CITY_MAP_MAX_SATELLITES,
+  displayIslandHue,
   type CityBuilding,
   type CityBuildingView,
   type CityEdge,
@@ -92,11 +93,11 @@ function buildingHalfWidth(kind: CityBuilding['kind']): number {
 }
 
 function islandAccent(island: CityIslandView['island']): string {
-  return `hsl(${island.accent_hue}, 72%, 62%)`
+  return `hsl(${displayIslandHue(island.id, island.role)}, 72%, 62%)`
 }
 
 function islandAccentDeep(island: CityIslandView['island']): string {
-  return `hsl(${island.accent_hue}, 68%, 34%)`
+  return `hsl(${displayIslandHue(island.id, island.role)}, 68%, 34%)`
 }
 
 /** Проецирует центр острова в координаты 16:9-вьюпорта (для HUD-оверлея). */
