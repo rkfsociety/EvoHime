@@ -7789,9 +7789,9 @@ body {
 
 .hive-city-scene__queen-anchor {
   position: absolute;
-  left: 50%;
-  top: 49%;
-  transform: translate(-50%, -50%);
+  left: 22px;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 4;
   pointer-events: none;
 }

@@ -200,3 +200,8 @@ body {
   color: rgba(230, 228, 242, 0.6);
   font-size: 11px;
 }
+
+/* Пульт лежит поверх сцены слева — карточка Королевы не должна прятаться под ним. */
+.hive-stage--studio .hive-city-scene__queen-anchor {
+  left: 316px;
+}
