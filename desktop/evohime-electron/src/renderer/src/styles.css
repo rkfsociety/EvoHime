@@ -1322,6 +1322,8 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  flex: 1;
   max-width: 640px;
   margin: 0 auto;
   padding: 8vh 24px 24px;
@@ -5853,7 +5855,10 @@ body {
 }
 
 .chat--empty {
-  justify-content: center;
+  /* Приветственный блок остаётся по центру доступного места (через
+     центрирование внутри .home), а композер примагничен к нижней границе
+     окна — как поле ввода в обычном чате. */
+  justify-content: flex-end;
   background: radial-gradient(640px 360px at 50% 42%, rgb(141 130 232 / 9%), transparent 70%);
 }
 
@@ -5863,7 +5868,10 @@ body {
 }
 
 .chat--empty .chat__scroll {
-  flex: 0 1 auto;
+  /* Растягиваем доступное место: приветственный блок центрируется внутри,
+     композер остаётся прижатым к низу окна (justify-content: flex-end в
+     .chat--empty). */
+  flex: 1 1 auto;
   padding: 0;
   background: none;
 }
