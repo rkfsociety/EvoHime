@@ -6,7 +6,11 @@
 1. Добавить модуль `crates/evohime-hive/src/city_map.rs` (с полными `///`-доками публичных типов под `-D missing_docs` и без `unwrap`/`expect`/`panic` в production-коде).
 2. Определить версионированный read-only контракт (`HIVE_CITY_MAP_SCHEMA_VERSION = 1`, `#[serde(deny_unknown_fields)]`):
    - `HiveCityMapSnapshot`: `schema_version`, `generated_at_ms`, `revision_hash`, `capital: CityIsland`, `satellites: Vec<CityIsland>`.
-   - `CityIsland`: `id` (стабильный детерминированный идентификатор), `name`, `role` (`capital` | `satellite`), `source` (`live_workspace` | `embedded_manifest` | `unavailable`), `status` (`ready` | `unavailable`), `reason` (bounded диагностическая строка при `unavailable`), `ecosystem` (`rust` | `node` | `python` | `go` | `dotnet` | `mixed` | `generic`), `structure_hash`, `accent_hue`, `districts: Vec<CityDistrict>`, `buildings: Vec<CityBuilding>`, `edges: Vec<CityEdge>`, `total_files`, `total_lines`.
+   - **Детерминизм идентификаторов и `revision_hash`:**
+     - `CityIsland.id`: для Столицы фиксированный `"capital-evohime"`; для каждого спутника — стабильный детерминированный `"sat-<hex-digest>"` от канонического нормализованного пути репозитория (без зависимости от порядка в `watched_repositories` и без добавления новых внешних crypto-крейтов).
+     - `CityBuilding.id`: нормализованный относительный POSIX-путь модуля внутри репозитория (например, `"crates/evohime-hive"`), чтобы фоновые обновления не сбрасывали выделение в инспекторе.
+     - `revision_hash`: вычисляется строго от канонической топологии, состава и статусов островов **без учёта `generated_at_ms`**, поэтому неизменная структура даёт идентичный `revision_hash` между тиками.
+   - `CityIsland`: `id`, `name`, `role` (`capital` | `satellite`), `source` (`live_workspace` | `embedded_manifest` | `unavailable`), `status` (`ready` | `unavailable`), `reason` (bounded диагностическая строка при `unavailable`), `ecosystem` (`rust` | `node` | `python` | `go` | `dotnet` | `mixed` | `generic`), `structure_hash`, `accent_hue`, `districts: Vec<CityDistrict>`, `buildings: Vec<CityBuilding>`, `edges: Vec<CityEdge>`, `total_files`, `total_lines`.
    - `CityDistrict`: `id`, `label`, `kind` (`core` | `shell` | `memory` | `tools` | `voice` | `runtime` | `app` | `packages` | `docs` | `other`).
    - `CityBuilding`: `id`, `name`, `district_id`, `kind` (`citadel` | `service` | `library` | `ui` | `storage` | `gateway` | `worker` | `module`), `relative_path`, `file_count`, `line_count`, `height_weight` (нормированный вес `0.15..=1.0`), `language`.
    - `CityEdge`: `from_id`, `to_id`, `kind` (`dependency` | `ipc` | `runtime`), `weight`.
@@ -17,7 +21,8 @@
    - **Универсальный fallback**: для любого прочего репозитория — группировка по значимым верхнеуровневым каталогам исходников (`src/*`, `app/*`, `lib/*`, `services/*` и т. д.).
    - **Столица Евы**: при валидном `eva_workspace_path` — живое сканирование реального checkout EvoHime (все workspace crates + `desktop/evohime-electron` + явные доменные группы и runtime/IPC-связи); при отсутствии `eva_workspace_path` — встроенный канонический fallback-манифест реальной архитектуры EvoHime (`source = "embedded_manifest"`).
 4. Зафиксировать жёсткие лимиты и инварианты безопасности:
-   - максимумы: до `12` городов-спутников, до `48` зданий на город, до `128` рёбер на город, глубина обхода не более `6`, максимум сканируемых файлов на репозиторий (`4_000`) и размер читаемого манифеста (`256 KiB`), общий размер JSON-снимка строго меньше `MAX_FRAME_BYTES` (целевой бюджет ≤ `256 KiB`).
+   - максимумы: до `12` городов-спутников, до `48` зданий на город, до `128` рёбер на город, глубина обхода не более `6`, максимум сканируемых файлов на репозиторий (`4_000`) и размер читаемого манифеста (`256 KiB`);
+   - жёсткий потолок сериализованного JSON-снимка в Rust — `MAX_CITY_MAP_PAYLOAD_BYTES = 256 KiB` (строго меньше `MAX_FRAME_BYTES = 4 MiB` и меньше лимита приёма `512 KiB` в Electron main из этапа 199.3, с детерминированным усечением низкоприоритетных рёбер/узлов при приближении к потолку).
    - пропуск `.git`, `target`, `node_modules`, `.evohime`, `dist`, `out`, `build`, `.venv`, `__pycache__`, `bin`, `obj`;
    - канонизация корня и проверка каждого посещаемого пути, исключающая symlink escape и path traversal;
    - абсолютные локальные пути ОС не утекают в `CityBuilding.relative_path` (только нормализованные POSIX-подобные относительные пути); для острова хранится безопасное имя проекта и стабильный `id`.
