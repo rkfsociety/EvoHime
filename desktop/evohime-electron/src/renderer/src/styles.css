@@ -5550,6 +5550,12 @@ body {
   line-height: 1.4;
 }
 
+/* Холодный старт: связь ещё не терялась, поэтому без warning-окраски. */
+.chat-rail__connection--connecting {
+  border-color: var(--border);
+  color: var(--fg-faint);
+}
+
 .chat-rail__heading {
   margin-top: 0;
   padding: 0 2px;

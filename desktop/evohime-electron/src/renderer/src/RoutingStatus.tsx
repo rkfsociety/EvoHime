@@ -6,7 +6,7 @@ import { useShellApi } from './shell-api'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 
-export function RoutingStatus({ events, connection }: { readonly events: readonly CoreEvent[]; readonly connection: ConnectionState }): React.JSX.Element | null {
+export function RoutingStatus({ events, connection, everConnected = true }: { readonly events: readonly CoreEvent[]; readonly connection: ConnectionState; readonly everConnected?: boolean }): React.JSX.Element | null {
   const api = useShellApi()
   const [preferred, setPreferred] = useState<RouteId | null>(() => {
     const value = window.localStorage.getItem('evohime.preferred-route')
@@ -28,7 +28,11 @@ export function RoutingStatus({ events, connection }: { readonly events: readonl
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [pending])
-  if (!trace && !pending && !CONNECTED_STATES.includes(connection)) {
+  if (!trace && !pending) {
+    // На холодном старте, до первого успешного подключения, связь ещё не
+    // терялась: аларм «Связь с Core потеряна» был ложным и мигал при каждом
+    // запуске. Фазы «Запуск»/«Подключение» уже показывает пилюля статуса.
+    if (!everConnected || CONNECTED_STATES.includes(connection)) return null
     const retry = async (): Promise<void> => {
       if (!api) { setRetryStatus('Мост оболочки недоступен.'); return }
       const outcome = await api.invoke('shell.requestResync', {})

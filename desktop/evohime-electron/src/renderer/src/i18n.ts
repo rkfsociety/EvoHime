@@ -183,6 +183,7 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Чатов пока нет. Начни с нового чата.': 'No chats yet. Start a new chat.',
   'Мост оболочки недоступен.': 'The shell bridge is unavailable.',
   'Core недоступен, задачи не запускаются.': 'Core is unavailable; tasks cannot be started.',
+  'Подключаемся к Core…': 'Connecting to Core…',
   'GitHub CLI': 'GitHub CLI',
   'git config user.name': 'git config user.name',
   'Обычный диалог без проекта. Выбранная модель ответит на твой вопрос.': 'A regular chat without a project. The selected model will answer your question.',

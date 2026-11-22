@@ -131,6 +131,8 @@ function buildCoreEventKey(event: CoreEvent): string | null {
 
 export interface TaskTimelineProps {
   readonly connection: ConnectionState
+  /** True once Core has been connected at least once in this shell session. */
+  readonly everConnected?: boolean
   readonly events: readonly CoreEvent[]
   /**
    * Workspace owned by the shell. It arrives as a prop rather than being read
@@ -152,6 +154,7 @@ export interface TaskTimelineProps {
 
 export function TaskTimeline({
   connection,
+  everConnected = true,
   events,
   workspace,
   chatId,
@@ -912,7 +915,7 @@ export function TaskTimeline({
         onOpenTask={() => {}}
         showOpenTask={false}
       />
-      <RoutingStatus events={taskEvents} connection={connection} />
+      <RoutingStatus events={taskEvents} connection={connection} everConnected={everConnected} />
       {conversationLog?.historyReady && conversationLog.sync.state === 'gap' ? (
         <p role="alert" className="shell__reason">{translate("История неполна, восстанавливаю пропущенные события…")}</p>
       ) : null}

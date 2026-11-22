@@ -61,6 +61,9 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
+/** Transient startup phases that collapse into the calm «Запуск» pill on a cold start. */
+const COLD_START_PHASES: readonly ConnectionState[] = ['connecting', 'reconnecting', 'replaying', 'resyncing']
+
 type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'hive' | 'listening'
 
 interface ViewDescriptor {
@@ -114,7 +117,16 @@ export function App(): React.JSX.Element {
   const [workbenchVisible, setWorkbenchVisible] = useState(false)
   const [browserVisible, setBrowserVisible] = useState(false)
   const [summaryVisible, setSummaryVisible] = useState(false)
+  // Пока Core ни разу не подключился в этой сессии, холодный запуск показывается
+  // одной спокойной фазой «Запуск»: без чередования «Переподключение» →
+  // «Восстановление событий» → «Синхронизация состояния» и без аларм-баннеров
+  // о «потерянной» связи, которая ещё не устанавливалась.
+  const [everConnected, setEverConnected] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (state === null) return
+    setEverConnected((value) => value || state.connection === 'connected')
+  }, [state])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return
@@ -248,6 +260,9 @@ export function App(): React.JSX.Element {
   }
 
   const connection = state?.connection ?? 'starting'
+  // Фазы до первого подключения в сессии сворачиваются в «Запуск»: пилюля
+  // перестаёт мигать label'ами на каждом шаге стартовой машины состояний.
+  const displayConnection = !everConnected && COLD_START_PHASES.includes(connection) ? 'starting' : connection
   const title = view === 'chat' ? t('Диалог') : t(VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
   const showSummary = chatId !== null || summaryVisible
   const showSidePanels = showSummary || workbenchVisible || browserVisible
@@ -287,6 +302,7 @@ export function App(): React.JSX.Element {
         <div className="sidebar__projects">
           <ProjectSidebar
             connection={connection}
+            everConnected={everConnected}
             workspace={workspace}
             chatId={chatId}
             onWorkspaceChange={changeWorkspace}
@@ -373,7 +389,7 @@ export function App(): React.JSX.Element {
           </button>
           <span className="topbar__divider" aria-hidden="true" />
           <ListeningIndicator events={events} />
-          <span className={`status-pill status-pill--${connection}`}>{t(STATE_LABELS[connection])}</span>
+          <span className={`status-pill status-pill--${displayConnection}`}>{t(STATE_LABELS[displayConnection])}</span>
         </header>
 
         <RecoveryBanner
@@ -392,6 +408,7 @@ export function App(): React.JSX.Element {
               >
                 <TaskTimeline
                   connection={connection}
+                  everConnected={everConnected}
                   events={events}
                   workspace={workspace}
                   chatId={chatId}

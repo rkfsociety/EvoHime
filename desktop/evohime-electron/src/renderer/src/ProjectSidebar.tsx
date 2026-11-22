@@ -18,6 +18,8 @@ const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 
 
 export interface ProjectSidebarProps {
   readonly connection: ConnectionState
+  /** True once Core has been connected at least once in this shell session. */
+  readonly everConnected?: boolean
   readonly workspace: string | null
   readonly chatId: string | null
   readonly onWorkspaceChange: (workspace: string | null) => void
@@ -30,6 +32,7 @@ export interface ProjectSidebarProps {
 
 export function ProjectSidebar({
   connection,
+  everConnected = true,
   workspace,
   chatId,
   onWorkspaceChange,
@@ -131,7 +134,13 @@ export function ProjectSidebar({
 
       {error ? <p role="alert" className="shell__reason">{t(error)}</p> : null}
       {!connected ? (
-        <p className="chat-rail__connection" role="status">{t('Core недоступен, задачи не запускаются.')}</p>
+        everConnected ? (
+          <p className="chat-rail__connection" role="status">{t('Core недоступен, задачи не запускаются.')}</p>
+        ) : (
+          // Холодный старт: Core ещё ни разу не подключился в этой сессии — это
+          // не потеря связи, поэтому плашка спокойная, а не предупреждающая.
+          <p className="chat-rail__connection chat-rail__connection--connecting" role="status">{t('Подключаемся к Core…')}</p>
+        )
       ) : null}
 
       <section className="chat-rail__workspace-switcher" aria-label={t('Рабочая папка')}>
