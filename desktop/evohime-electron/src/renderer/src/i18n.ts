@@ -1128,6 +1128,7 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Повторить установку': 'Retry installation',
   'Установить Ollama': 'Install Ollama',
   'Загрузка': 'Loading',
+  'Скачиваю обновление': 'Downloading the update',
   'Подготовка': 'Preparing',
   'Скачивается…': 'Downloading…',
   'Скачать': 'Download',

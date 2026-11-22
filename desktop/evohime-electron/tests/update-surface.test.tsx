@@ -205,9 +205,11 @@ describe('standalone updater window', () => {
     })))
     render(<UpdaterApp />)
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Устанавливаю обновление' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Скачиваю обновление' })).toBeTruthy())
     expect(document.querySelector('.updater-message')?.textContent).toBe('Скачивание shell-host')
     expect(document.querySelector('.updater-progress__label')?.textContent).toBe('28%')
+    expect(document.querySelector('.updater-progress__badge')?.textContent).toBe('Загрузка')
+    expect(document.querySelector('[data-step-id="download"]')?.getAttribute('data-step-state')).toBe('active')
   })
 
   it('tracks live update steps and updatable module chips without decorative glyphs or footer', async () => {

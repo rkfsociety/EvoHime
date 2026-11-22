@@ -2,6 +2,7 @@ import { translate } from './i18n'
 import { useEffect, useId, useMemo, useState } from 'react'
 
 import type { UpdaterUiStatus } from '@shared/updater'
+import { isDownloadPhaseMessage, isInstallPhaseMessage } from '@shared/updater'
 
 import updaterEvaHeroUrl from './assets/updater-eva-hero.jpg'
 import './UpdaterSurface.css'
@@ -29,14 +30,6 @@ interface UpdaterStep {
   readonly state: UpdaterStepState
 }
 
-function isInstallMessage(message: string): boolean {
-  return /установ|примен|распаков|обновля|перезапуск/i.test(message)
-}
-
-function isDownloadMessage(message: string): boolean {
-  return /скачив|загруз/i.test(message)
-}
-
 function resolveSteps(status: UpdaterUiStatus): readonly UpdaterStep[] {
   const { phase, message, percent, modules } = status
   const hasAvailableModules = modules.some((module) => module.available !== null)
@@ -52,7 +45,7 @@ function resolveSteps(status: UpdaterUiStatus): readonly UpdaterStep[] {
     download = 'active'
   } else if (phase === 'applying') {
     check = 'done'
-    const installing = isInstallMessage(message) || (!isDownloadMessage(message) && percent !== null && percent >= 80)
+    const installing = isInstallPhaseMessage(message) || (!isDownloadPhaseMessage(message) && percent !== null && percent >= 80)
     if (installing) {
       download = 'done'
       install = 'active'
@@ -68,9 +61,9 @@ function resolveSteps(status: UpdaterUiStatus): readonly UpdaterStep[] {
     download = 'done'
     install = 'done'
   } else {
-    if (!hasAvailableModules && percent === null && !isDownloadMessage(message) && !isInstallMessage(message)) {
+    if (!hasAvailableModules && percent === null && !isDownloadPhaseMessage(message) && !isInstallPhaseMessage(message)) {
       check = 'error'
-    } else if (isInstallMessage(message) || (percent !== null && percent >= 80)) {
+    } else if (isInstallPhaseMessage(message) || (percent !== null && percent >= 80)) {
       check = 'done'
       download = 'done'
       install = 'error'

@@ -75,6 +75,23 @@ describe('updaterUiStatus', () => {
     expect(preparing.message).toBe('Подготовка')
   })
 
+  it('labels the download sub-step of the applying phase as download, not install', () => {
+    const download = updaterUiStatus(status({ phase: 'applying', message: 'Скачивание shell-host — 60%' }))
+
+    expect(download.heading).toBe('Скачиваю обновление')
+    expect(download.badge).toBe('Загрузка')
+
+    const install = updaterUiStatus(status({ phase: 'applying', message: 'Установка компонентов — 90%' }))
+
+    expect(install.heading).toBe('Устанавливаю обновление')
+    expect(install.badge).toBe('Установка')
+
+    const preparing = updaterUiStatus(status({ phase: 'applying', message: 'Подготовка' }))
+
+    expect(preparing.heading).toBe('Устанавливаю обновление')
+    expect(preparing.badge).toBe('Установка')
+  })
+
   it('never shows a ready state when the worker supplied an error', () => {
     const view = updaterUiStatus(status({
       phase: 'up-to-date',

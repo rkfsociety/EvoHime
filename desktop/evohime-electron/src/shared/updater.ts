@@ -29,6 +29,16 @@ export interface EvoHimeUpdaterApi {
   minimize(): Promise<void>
 }
 
+/** True when a worker status message describes an artifact download, not a file swap. */
+export function isDownloadPhaseMessage(message: string): boolean {
+  return /скачив|загруз/i.test(message)
+}
+
+/** True when a worker status message describes installing or unpacking files. */
+export function isInstallPhaseMessage(message: string): boolean {
+  return /установ|примен|распаков|обновля|перезапуск/i.test(message)
+}
+
 const MODULE_LABELS: Readonly<Record<string, string>> = {
   'shell-host': 'Оболочка Electron',
   'ui-bundle': 'Интерфейс EvoHime',
@@ -64,10 +74,16 @@ export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
   const rawMessage = status.error ?? status.message
   const message = status.error || phase !== 'applying' ? rawMessage : stripPercentSuffix(rawMessage)
 
+  // The `applying` phase covers both downloading module artifacts and swapping
+  // them on disk. Headings and badges must follow the actual sub-step, same way
+  // the step list already does, otherwise the panel reads "Установка" while
+  // the message says "Скачивание shell-host".
+  const downloading = phase === 'applying' && !isInstallPhaseMessage(rawMessage) && isDownloadPhaseMessage(rawMessage)
+
   return {
     phase,
-    heading: phaseHeading(phase),
-    badge: phaseBadge(phase),
+    heading: downloading ? 'Скачиваю обновление' : phaseHeading(phase),
+    badge: downloading ? 'Загрузка' : phaseBadge(phase),
     message,
     detail: status.detail,
     percent,
