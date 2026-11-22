@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render as rtlRender, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -8,6 +8,10 @@ import { HiveDashboard } from '../src/renderer/src/OperationsPanel'
 import { ProviderStateProvider } from '../src/renderer/src/provider-state'
 import { PROVIDER_PROFILE_LABELS } from '../src/renderer/src/provider-labels'
 import { getProviderSchema } from '../src/renderer/src/provider-schema'
+
+async function openQueenChatDrawer(): Promise<void> {
+  await userEvent.click(await screen.findByRole('button', { name: 'Диалог с Королевой Евой' }))
+}
 
 function render(ui: React.ReactElement): ReturnType<typeof rtlRender> {
   const result = rtlRender(<ProviderStateProvider>{ui}</ProviderStateProvider>)
@@ -743,6 +747,7 @@ describe('hive dashboard', () => {
       />
     )
 
+    await openQueenChatDrawer()
     const input = await screen.findByLabelText('Сообщение Королеве Еве')
     await user.type(input, 'Исправь баг в коде{enter}')
 
@@ -784,6 +789,7 @@ describe('hive dashboard', () => {
       />
     )
 
+    await openQueenChatDrawer()
     const indicator = await screen.findByTestId('queen-typing-indicator')
     expect(indicator.textContent).toContain('Королева печатает')
 
@@ -818,6 +824,7 @@ describe('hive dashboard', () => {
       />
     )
 
+    await openQueenChatDrawer()
     expect(screen.queryByTestId('queen-typing-indicator')).toBeNull()
     expect(screen.queryByText('Обычный пользовательский запрос')).toBeNull()
     expect(screen.queryByText('Чужой ответ')).toBeNull()
@@ -853,6 +860,7 @@ describe('hive dashboard', () => {
       />
     )
 
+    await openQueenChatDrawer()
     const indicator = await screen.findByTestId('queen-typing-indicator')
     expect(indicator.textContent).toContain('Королева печатает')
 
@@ -893,6 +901,7 @@ describe('hive dashboard', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
+    fireEvent.click(screen.getByRole('button', { name: 'Диалог с Королевой Евой' }))
     expect(screen.getByTestId('queen-typing-indicator')).toBeTruthy()
     await act(async () => {
       vi.advanceTimersByTime(60_000)
@@ -907,6 +916,7 @@ describe('hive dashboard', () => {
         events={[event('hive_state.snapshot', snapshot())]}
       />
     )
+    await openQueenChatDrawer()
     const input = await screen.findByRole('textbox', { name: 'Сообщение Королеве Еве' })
     await userEvent.type(input, 'Запрос Улью')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
@@ -938,6 +948,7 @@ describe('hive dashboard', () => {
         ]}
       />
     )
+    await openQueenChatDrawer()
     const input = await screen.findByRole('textbox', { name: 'Сообщение Королеве Еве' })
     await userEvent.type(input, 'Запрос Улью')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
@@ -967,6 +978,7 @@ describe('hive dashboard', () => {
       />
     )
 
+    await openQueenChatDrawer()
     expect(await screen.findByTestId('hive-chat-approval')).toBeTruthy()
     expect(screen.getAllByText('Разрешить push изменений?')).toHaveLength(2)
   })
@@ -1251,6 +1263,7 @@ describe('hive dashboard', () => {
       />
     )
 
+    await openQueenChatDrawer()
     const indicator = await screen.findByTestId('queen-typing-indicator')
     expect(indicator.textContent).toContain('Королева печатает')
 
@@ -1285,6 +1298,7 @@ describe('hive dashboard', () => {
       />
     )
 
+    await openQueenChatDrawer()
     const input = await screen.findByRole('textbox', { name: 'Сообщение Королеве Еве' })
     await userEvent.type(input, 'Статус роя')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
@@ -1952,6 +1966,42 @@ describe('hive dashboard', () => {
 
     expect(within(dialog).queryByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeNull()
     expect(within(dialog).getByText('API-ключ сохранен ✓')).toBeTruthy()
+  })
+
+  it('ui_opens_and_closes_queen_chat_drawer', async () => {
+    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
+
+    expect(screen.queryByRole('textbox', { name: 'Сообщение Королеве Еве' })).toBeNull()
+
+    await openQueenChatDrawer()
+    expect(await screen.findByRole('textbox', { name: 'Сообщение Королеве Еве' })).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Закрыть диалог' }))
+    expect(screen.queryByRole('textbox', { name: 'Сообщение Королеве Еве' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Написать Еве' }))
+    expect(await screen.findByRole('textbox', { name: 'Сообщение Королеве Еве' })).toBeTruthy()
+
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('textbox', { name: 'Сообщение Королеве Еве' })).toBeNull()
+  })
+
+  it('ui_filters_agents_by_department_pin_click', async () => {
+    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
+
+    expect(await screen.findByText('run-1:dev-01')).toBeTruthy()
+    expect(screen.getByText('run-1:worker:hop2')).toBeTruthy()
+
+    const devPin = screen.getByTestId('hive-pin-development')
+    await userEvent.click(devPin)
+
+    expect(devPin.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByText('run-1:dev-01')).toBeTruthy()
+    expect(screen.queryByText('run-1:worker:hop2')).toBeNull()
+
+    await userEvent.click(devPin)
+    expect(devPin.getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByText('run-1:worker:hop2')).toBeTruthy()
   })
 
 })

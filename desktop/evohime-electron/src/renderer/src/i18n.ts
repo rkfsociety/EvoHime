@@ -1699,7 +1699,23 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'в работе': 'in progress',
   'ожидает решения': 'awaiting a decision',
   'ожиданий': 'waiting',
-  'расширений': 'extensions'
+  'расширений': 'extensions',
+  'Центр управления': 'Control center',
+  'Анализ данных': 'Data analysis',
+  'Разработка кода': 'Code development',
+  'Проверка качества': 'Quality assurance',
+  'Планирование задач': 'Task planning',
+  'Поиск решений': 'Solution research',
+  'Инфраструктура и API': 'Infrastructure & API',
+  'База знаний и доки': 'Knowledge & docs',
+  'Помощь и сервис': 'Help & service',
+  'Агент улья': 'Hive agent',
+  'Ожидание': 'Idle',
+  'Работает': 'Active',
+  'Написать Еве': 'Message Eva',
+  'Открыть диалог': 'Open dialogue',
+  'Закрыть диалог': 'Close dialogue',
+  'В выбранном департаменте активных агентов нет.': 'No active agents in the selected department.'
 }
 
 let activeLocale: AppLocale = 'ru'

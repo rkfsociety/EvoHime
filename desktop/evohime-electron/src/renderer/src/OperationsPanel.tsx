@@ -1,5 +1,5 @@
 import { translate } from './i18n'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { HIVE_SYSTEM_CHAT_ID } from '@shared/api'
 import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, ConversationEventProjection, CoreEvent, ModelTier, ProviderLimits, ProviderSummary, RepairStatus } from '@shared/api'
@@ -759,24 +759,26 @@ function latest(events: readonly CoreEvent[], eventType: string): CoreEvent | un
 interface HiveDepartmentCard {
   readonly key: string
   readonly label: string
+  readonly subtitle: string
   readonly icon: UiIconName
   readonly aliases: readonly string[]
 }
 
 const HIVE_DEPARTMENT_CARDS: readonly HiveDepartmentCard[] = [
-  { key: 'analytics', label: 'Аналитика', icon: 'activity', aliases: ['analyst', 'analytics', 'analysis', 'review'] },
-  { key: 'development', label: 'Разработка', icon: 'terminal', aliases: ['developer', 'engineer', 'coder', 'implementer', 'dev'] },
-  { key: 'testing', label: 'Тестирование', icon: 'check-circle', aliases: ['qa', 'tester', 'test', 'verifier', 'validation'] },
-  { key: 'planning', label: 'Планирование', icon: 'compass', aliases: ['planner', 'architect', 'plan'] },
-  { key: 'research', label: 'Исследования', icon: 'target', aliases: ['researcher', 'research', 'scout', 'investigator'] },
-  { key: 'integrations', label: 'Интеграции', icon: 'link', aliases: ['integrator', 'integration', 'connector', 'adapter'] },
-  { key: 'documentation', label: 'Документация', icon: 'folder', aliases: ['documenter', 'documentation', 'docs', 'writer'] },
-  { key: 'support', label: 'Поддержка', icon: 'message', aliases: ['support', 'assistant', 'responder', 'helper'] }
+  { key: 'analytics', label: 'Аналитика', subtitle: 'Анализ данных', icon: 'activity', aliases: ['analyst', 'analytics', 'analysis', 'review'] },
+  { key: 'development', label: 'Разработка', subtitle: 'Разработка кода', icon: 'terminal', aliases: ['developer', 'engineer', 'coder', 'implementer', 'dev'] },
+  { key: 'testing', label: 'Тестирование', subtitle: 'Проверка качества', icon: 'check-circle', aliases: ['qa', 'tester', 'test', 'verifier', 'validation'] },
+  { key: 'planning', label: 'Планирование', subtitle: 'Планирование задач', icon: 'compass', aliases: ['planner', 'architect', 'plan'] },
+  { key: 'research', label: 'Исследования', subtitle: 'Поиск решений', icon: 'target', aliases: ['researcher', 'research', 'scout', 'investigator'] },
+  { key: 'integrations', label: 'Интеграции', subtitle: 'Инфраструктура и API', icon: 'link', aliases: ['integrator', 'integration', 'connector', 'adapter'] },
+  { key: 'documentation', label: 'Документация', subtitle: 'База знаний и доки', icon: 'folder', aliases: ['documenter', 'documentation', 'docs', 'writer'] },
+  { key: 'support', label: 'Поддержка', subtitle: 'Помощь и сервис', icon: 'message', aliases: ['support', 'assistant', 'responder', 'helper'] }
 ]
 
 interface DepartmentView {
   readonly key: string
   readonly label: string
+  readonly subtitle: string
   readonly icon: UiIconName
   readonly activeCount: number
   readonly maxCapacity: number
@@ -817,6 +819,7 @@ function departmentView(departments: HiveStateView['departments']): readonly Dep
     return {
       key: card.key,
       label: card.label,
+      subtitle: card.subtitle,
       icon: card.icon,
       activeCount: bucket?.active ?? 0,
       maxCapacity: bucket?.max ?? 0
@@ -826,6 +829,7 @@ function departmentView(departments: HiveStateView['departments']): readonly Dep
     cards.push({
       key: `role:${department.role}`,
       label: department.role || 'unknown',
+      subtitle: 'Агент улья',
       icon: 'box',
       activeCount: department.activeCount,
       maxCapacity: department.maxCapacity
@@ -1162,6 +1166,48 @@ function EfficiencyRing({ percent }: { readonly percent: number }): React.JSX.El
 
 function HiveSkeleton({ className = '' }: { readonly className?: string }): React.JSX.Element {
   return <span className={`hive-skeleton ${className}`.trim()} aria-hidden="true" />
+}
+
+const HIVE_CONNECTION_LABELS: Record<ConnectionState, string> = {
+  starting: 'Запуск',
+  connecting: 'Подключение к Core',
+  connected: 'Подключено',
+  reconnecting: 'Переподключение',
+  replaying: 'Восстановление событий',
+  resyncing: 'Синхронизация состояния',
+  'state-gap': 'Пробел в состоянии — нужна пересинхронизация',
+  'version-mismatch': 'Несовместимая версия IPC',
+  degraded: 'Ограниченный режим',
+  fatal: 'Критическая ошибка'
+}
+
+/** Векторная эмблема цветка лотоса Улья для карточки Королевы и лаунчера диалога. */
+function HiveLotusMark({ size = 24 }: { readonly size?: number }): React.JSX.Element {
+  const gradientId = useId()
+  const centerId = `${gradientId}-center`
+  const wingId = `${gradientId}-wing`
+
+  return (
+    <svg className="hive-lotus-mark" viewBox="0 0 48 48" width={size} height={size} fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={centerId} x1="24" y1="8" x2="24" y2="40" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#e9d5ff" />
+          <stop offset="55%" stopColor="#8d82e8" />
+          <stop offset="100%" stopColor="#5ea8ff" />
+        </linearGradient>
+        <linearGradient id={wingId} x1="8" y1="16" x2="40" y2="38" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#c084fc" stopOpacity="0.92" />
+          <stop offset="100%" stopColor="#4ec9a4" stopOpacity="0.72" />
+        </linearGradient>
+      </defs>
+      <path d="M24 8C28.5 14.5 30 22 24 34C18 22 19.5 14.5 24 8Z" fill={`url(#${centerId})`} />
+      <path d="M12 16C18.5 18 22 24.5 23.5 34.5C15.5 31.5 11.5 24.5 12 16Z" fill={`url(#${wingId})`} />
+      <path d="M36 16C29.5 18 26 24.5 24.5 34.5C32.5 31.5 36.5 24.5 36 16Z" fill={`url(#${wingId})`} />
+      <path d="M7 25.5C13.5 25.5 18.5 29.5 23 35.5C15 36.5 9.5 32.5 7 25.5Z" fill="#8d82e8" fillOpacity="0.65" />
+      <path d="M41 25.5C34.5 25.5 29.5 29.5 25 35.5C33 36.5 38.5 32.5 41 25.5Z" fill="#5ea8ff" fillOpacity="0.65" />
+      <ellipse cx="24" cy="37.5" rx="11" ry="2.2" fill="#8d82e8" fillOpacity="0.35" />
+    </svg>
+  )
 }
 
 function parseApprovalRequest(event: CoreEvent): ApprovalRequestView | null {
@@ -1596,6 +1642,8 @@ export function HiveDashboard({
   const [proactiveEvolutionBusy, setProactiveEvolutionBusy] = useState(false)
   const [proactiveEvolutionError, setProactiveEvolutionError] = useState<string | null>(null)
   const [hiveSettingsOpen, setHiveSettingsOpen] = useState(false)
+  const [hiveChatOpen, setHiveChatOpen] = useState(false)
+  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
   const [evaWorkspaceValidation, setEvaWorkspaceValidation] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle')
   const [evaWorkspaceValidationMessage, setEvaWorkspaceValidationMessage] = useState<string | null>(null)
   const [observedAt, setObservedAt] = useState<ReadonlyMap<string, string>>(() => new Map())
@@ -2830,310 +2878,365 @@ export function HiveDashboard({
     () => (queenTyping ? queenCurrentActivity(hiveChatEvents) : ''),
     [hiveChatEvents, queenTyping]
   )
+  useEffect(() => {
+    if (!hiveChatOpen || hiveSettingsOpen || typeof window === 'undefined') return undefined
+    const onKeyDown = (keyboardEvent: KeyboardEvent): void => {
+      if (keyboardEvent.key === 'Escape') {
+        setHiveChatOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [hiveChatOpen, hiveSettingsOpen])
+  const departmentPins = useMemo(
+    () =>
+      departments.map((department) => ({
+        key: department.key,
+        label: translate(department.label),
+        subtitle: translate(department.subtitle),
+        icon: department.icon,
+        activeCount: department.activeCount,
+        maxCapacity: department.maxCapacity
+      })),
+    [departments]
+  )
+  const visibleAgents = useMemo(() => {
+    const all = hive?.activeAgents ?? []
+    if (!selectedDepartment) return all
+    return all.filter((agent) => {
+      const matched = matchDepartmentCard(agent.role)
+      return matched?.key === selectedDepartment || `role:${agent.role}` === selectedDepartment
+    })
+  }, [hive?.activeAgents, selectedDepartment])
+  const selectedDepartmentLabel = useMemo(() => {
+    if (!selectedDepartment) return null
+    return departments.find((department) => department.key === selectedDepartment)?.label ?? null
+  }, [departments, selectedDepartment])
+  const toggleDepartmentFilter = useCallback((departmentKey: string): void => {
+    setSelectedDepartment((current) => (current === departmentKey ? null : departmentKey))
+  }, [])
+
+  const queenCenterCard = (
+    <div className="hive-queen-card">
+      <div className="hive-queen-card__head">
+        <div className="hive-queen-card__identity">
+          <span className="hive-queen-card__emblem" aria-hidden="true"><HiveLotusMark size={20} /></span>
+          <div>
+            <p className="hive-queen__eyebrow">Eva core · {hive?.queen.name || 'EvoHime'}</p>
+            <h2>{translate('Королева Ева')}</h2>
+            <p className="hive-queen__role">{translate('Центр управления')}</p>
+          </div>
+        </div>
+        <p className={`hive-queen__status hive-queen__status--${queenActive ? 'active' : 'observing'}`}>
+          <span className="hive-dot" aria-hidden="true" />
+          {translate(queenWorking ? 'Работает' : queenStatusLabel)}
+        </p>
+      </div>
+      <label className="hive-settings-toggle" htmlFor="queen-autonomy-toggle">
+        <span>{translate('Автономность Королевы')}</span>
+        <input
+          id="queen-autonomy-toggle"
+          type="checkbox"
+          role="switch"
+          aria-label={translate('Автономность Королевы')}
+          checked={proactiveEvolutionEnabled}
+          disabled={!connected || proactiveEvolutionBusy}
+          onChange={(changeEvent) => void toggleProactiveEvolution(changeEvent.target.checked)}
+        />
+      </label>
+      {proactiveEvolutionError ? (
+        <p role="alert" className="hive-console__error">{translate(proactiveEvolutionError)}</p>
+      ) : null}
+      <div className="hive-queen-card__foot">
+        <p className="hive-queen__note">
+          {paused
+            ? `${translate(QUEEN_REASON_LABELS[hive?.queen.reason ?? ''] ?? hive?.queen.reason ?? 'лимит провайдера')} · ${formatWakeAt(wakeAtMs, Date.now())}`
+            : queenWorking
+              ? translate(queenActivity)
+              : translate('Координирует агентов и выполняет задачи')}
+        </p>
+        <button
+          type="button"
+          className="hive-queen-card__chat-btn"
+          onClick={() => setHiveChatOpen(true)}
+        >
+          <UiIcon name="message" size={14} />
+          <span>{translate('Написать Еве')}</span>
+        </button>
+      </div>
+    </div>
+  )
 
   return (
     <section className="hive-console" aria-label={translate('Улей (Hive)')}>
-      <header className="hive-console__header">
-        <div className="hive-console__title">
-          <p className="hive-console__eyebrow">Hive / Eva</p>
-          <h1>{translate('Улей (Hive)')}</h1>
-          <p>{translate('Единый центр управления Ульем и Королевой Евой')}</p>
-        </div>
-        <div className="hive-console__controls">
-          <span className={`status-pill status-pill--${connection}`}>{translate(connection)}</span>
-          <div className="hive-switch" aria-live="polite">
-            <span className="hive-switch__label">{translate('Автономность Королевы')}</span>
-            <small className="hive-switch__status">{translate(proactiveEvolutionEnabled ? 'Включена' : 'Отключена')}</small>
-          </div>
-          <button
-            type="button"
-            className="hive-settings-trigger"
-            aria-label={translate('Настройки улья')}
-            title={translate('Настройки улья')}
-            aria-expanded={hiveSettingsOpen}
-            onClick={() => setHiveSettingsOpen(true)}
-          >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-            </svg>
-          </button>
-          <label className="hive-interval">
-            <span>{translate('Обновление')}</span>
-            <select
-              aria-label={translate('Интервал обновления')}
-              value={preference.intervalMs}
-              onChange={(changeEvent) => updatePreference({ ...preference, intervalMs: Number(changeEvent.target.value) })}
-            >
-              {HIVE_INTERVALS.map((value) => (
-                <option key={value} value={value}>{value / 1000}с</option>
-              ))}
-            </select>
-          </label>
-          <button type="button" className="hive-console__refresh" onClick={requestSnapshot} disabled={!connected}>
-            {translate('Обновить сейчас')}
-          </button>
-        </div>
-      </header>
-
-      {effectiveActiveApprovals.map((approval) => (
-        <ApprovalRequest
-          key={approval.approvalId}
-          request={approval}
-          busy={resolvingApprovalIds.has(approval.approvalId)}
-          onResolve={(granted) => void approvalResolved(approval, granted)}
-        />
-      ))}
-      {commandError ? <p role="alert" className="hive-console__error">{translate(commandError)}</p> : null}
-
-      <div className="hive-console__workspace">
-        <div className="hive-console__grid">
-        <section className="hive-panel hive-panel--departments" aria-label={translate('Департаменты улья')}>
-          <section className="hive-watched" aria-label={translate('Проекты под наблюдением')}>
-            <div className="hive-panel__head">
-              <h2>{translate('Проекты под наблюдением')}</h2>
-              <span>{hive?.watchedRepositories.length ?? 0}</span>
-            </div>
-            {hive && hive.watchedRepositories.length > 0 ? (
-              <ul className="hive-watched__list">
-                {hive.watchedRepositories.map((repository) => (
-                  <li key={repository.path} className="hive-watched__item">
-                    <div className="hive-watched__body">
-                      <strong title={repository.path}>{shortRepositoryPath(repository.path)}</strong>
-                      {repository.currentTask ? <small>{translate(repository.currentTask)}</small> : null}
-                    </div>
-                    <span className={`hive-watched__status hive-watched__status--${repository.status}`}>{translate(repository.status)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="hive-empty">{translate('Нет отслеживаемых проектов')}</p>
-            )}
-          </section>
-          <div className="hive-panel__head">
-            <h2>{translate('Департаменты улья')}</h2>
-              <span>{hiveLoading ? <HiveSkeleton className="hive-skeleton--text" /> : showingConnectedIdleState ? translate('Нет активных агентов') : `${translate('Активно:')} ${agentsOnline} / ${capacityLabel}`}</span>
-          </div>
-          <div className="hive-departments">
-            {departments.map((department) => {
-              const percent = hivePercent(department.activeCount, department.maxCapacity)
-              return (
-                <article
-                  key={department.key}
-                  className={`hive-department${department.activeCount > 0 ? ' hive-department--active' : ''}`}
-                  data-dept={department.key}
-                >
-                  <span className="hive-department__icon" aria-hidden="true"><UiIcon name={department.icon} size={18} /></span>
-                  <div className="hive-department__body">
-                    <div className="hive-department__head">
-                      <strong>{translate(department.label)}</strong>
-                    </div>
-                    <div className="hive-department__count">
-                      {hiveLoading ? <HiveSkeleton className="hive-skeleton--line" /> : <><span>{showingConnectedIdleState ? translate('Нет активных агентов') : `${department.activeCount} / ${department.maxCapacity}`}</span><em>{showingConnectedIdleState ? '—' : `${percent}%`}</em></>}
-                    </div>
-                    <div
-                      className="hive-progress"
-                      role="progressbar"
-                      aria-label={translate(department.label)}
-                      aria-valuemin={0}
-                      aria-valuemax={Math.max(department.maxCapacity, 1)}
-                      aria-valuenow={department.activeCount}
-                    >
-                      {hiveLoading ? <HiveSkeleton className="hive-skeleton--bar" /> : <span style={{ width: `${percent}%` }} />}
-                    </div>
-                  </div>
-                </article>
-              )
-            })}
-            </div>
-            <section className="hive-departments__agents" aria-label={translate('Активные агенты')}>
-              <div className="hive-panel__head">
-                <h3>{translate('Активные агенты')} ({agentsOnline})</h3>
-                <span>{translate('глубина и подагенты')}</span>
-              </div>
-              {hiveLoading ? (
-                <ul className="hive-agent-list hive-agent-list--loading" aria-label={translate('Загрузка агентов')}>
-                  {[1, 2, 3].map((item) => <li key={item}><HiveSkeleton className="hive-skeleton--avatar" /><HiveSkeleton className="hive-skeleton--agent" /></li>)}
-                </ul>
-              ) : hive && hive.activeAgents.length > 0 ? (
-                <ul className="hive-agent-list">
-                  {hive.activeAgents.slice(0, 8).map((agent) => (
-                    <li key={agent.id}>
-                      <span className="hive-agent__avatar" aria-hidden="true">{agentMonogram(agent.id)}</span>
-                      <div className="hive-agent__body">
-                        <div className="hive-agent__topline">
-                          <strong>{agent.id || 'worker'}</strong>
-                          <span className="hive-role-badge">{translate(departmentLabel(agent.role))}</span>
-                        </div>
-                        <small>{translate(agent.currentAction) || translate('ожидание')}</small>
-                      </div>
-                      <span className="hive-agent__meta">{agent.spawnedSubagents} / {agent.ceiling}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="hive-empty">
-                  {connected
-                    ? translate('Активных агентов нет.')
-                    : translate('Core недоступен — ожидается актуальная проекция.')}
-                </p>
-              )}
-            </section>
-          </section>
-
-        <section className="hive-queen" aria-label={translate('Королева Ева')}>
-          <div className="hive-queen__stage">
-            <HiveCityScene status={observationStatus} />
-            <div className="hive-queen__body hive-queen__body--overlay">
-              <div className="hive-queen__header-row">
-                <div>
-                  <p className="hive-queen__eyebrow">Eva core · {hive?.queen.name || 'EvoHime'}</p>
-                  <h2>{translate('Королева Ева')}</h2>
-                  <p className="hive-queen__role">{translate('Главный оркестратор улья')}</p>
-                </div>
-                <p className={`hive-queen__status hive-queen__status--${queenActive ? 'active' : 'observing'}`}>
-                  <span className="hive-dot" aria-hidden="true" />
-                  {translate(queenWorking ? 'Работает' : queenStatusLabel)}
-                </p>
-              </div>
-              <label className="hive-settings-toggle" htmlFor="queen-autonomy-toggle">
-                <span>{translate('Автономность Королевы')}</span>
-                <input
-                  id="queen-autonomy-toggle"
-                  type="checkbox"
-                  role="switch"
-                  aria-label={translate('Автономность Королевы')}
-                  checked={proactiveEvolutionEnabled}
-                  disabled={!connected || proactiveEvolutionBusy}
-                  onChange={(changeEvent) => void toggleProactiveEvolution(changeEvent.target.checked)}
-                />
-              </label>
-              {proactiveEvolutionError ? (
-                <p role="alert" className="hive-console__error">{translate(proactiveEvolutionError)}</p>
-              ) : null}
-              <p className="hive-queen__note">
-                {paused
-                  ? `${translate(QUEEN_REASON_LABELS[hive?.queen.reason ?? ''] ?? hive?.queen.reason ?? 'лимит провайдера')} · ${formatWakeAt(wakeAtMs, Date.now())}`
-                  : queenWorking
-                    ? translate(queenActivity)
-                    : translate('Координирует агентов и выполняет задачи')}
-              </p>
-            </div>
-          </div>
-          <dl className="hive-queen__footer">
-            <div>
-              <dt>{translate('Воркеры')}</dt>
-              <dd>{workerSummaryLabel}</dd>
-            </div>
-            {nextObservationAtMs !== null ? (
-              <div>
-                <dt>{translate('Следующая проверка окружения')}</dt>
-                <dd>{formatClock(nextObservationAtMs)}</dd>
-              </div>
-            ) : observationStatus === 'observing' || observationStatus === 'active' ? (
-              <div>
-                <dt>{translate('Следующая проверка окружения')}</dt>
-                <dd>{translate('Наблюдение активно')}</dd>
-              </div>
-            ) : null}
-            <div>
-              <dt>{translate('Наблюдение Улья')}</dt>
-              <dd>{translate(observationStatusLabel)}</dd>
-            </div>
-          </dl>
+      <div className="hive-stage">
+        <section className="hive-stage__departments" aria-label={translate('Департаменты улья')}>
+          <HiveCityScene
+            status={observationStatus}
+            departments={departmentPins}
+            selectedDepartment={selectedDepartment}
+            onSelectDepartment={toggleDepartmentFilter}
+            queenWorking={queenWorking}
+            queenOverlay={queenCenterCard}
+            idleDepartmentsLabel={translate('Ожидание')}
+            activeDepartmentsLabel={translate('Работает')}
+          />
         </section>
 
-        <aside className="hive-panel hive-panel--metrics" aria-label={translate('Метрики улья')}>
-          <div className="hive-panel__head">
-            <h2>{translate('Метрики улья')}</h2>
-          </div>
-          <div className="hive-metrics-summary">
-            <div className="hive-metrics">
-              <EfficiencyRing percent={efficiency} />
-            </div>
-             <ul className="hive-stat-list">
-               <li><span>{translate('Агентов онлайн')}</span><strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : agentsOnline}</strong></li>
-               <li><span>{translate('Задач в работе')}</span><strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : activeTasks}</strong></li>
-               <li>
-                 <span>{translate('Задач сегодня')}</span>
-                 <strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : hive?.metrics.tasksToday ?? 0}</strong>
-               </li>
-               <li>
-                 <span>{translate('Среднее время')}</span>
-                 <strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : averageTimeLabel}</strong>
-              </li>
-            </ul>
-          </div>
-
-          <div className="hive-budget-card">
-            <div className="hive-budget-card__head">
-              <h3>{translate(budget.dailyCostAvailable ? 'Бюджет и провайдер' : 'Провайдер и лимиты')}</h3>
-              <span className="hive-budget-card__provider-tag">{snapshotBudgetLabel}</span>
-            </div>
-             {hiveLoading ? (
-               <div className="hive-budget-skeleton" aria-label={translate('Загрузка бюджета')}>
-                 <HiveSkeleton className="hive-skeleton--line" /><HiveSkeleton className="hive-skeleton--bar" /><HiveSkeleton className="hive-skeleton--line hive-skeleton--wide" />
-               </div>
-             ) : budget.dailyCostAvailable ? (
-              <>
-                <div className="hive-budget-card__spent">
-                  <span>{translate('Потрачено сегодня')}</span>
-                  <strong>{spentLabel} / ${dailyBudgetUsd.toFixed(2)}</strong>
-                </div>
-                <div
-                  className="hive-progress"
-                  role="progressbar"
-                  aria-label={translate('Расход дневного бюджета')}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={spendPercent}
-                >
-                  <span style={{ width: `${spendPercent}%` }} />
-                </div>
-                <p className="hive-budget-card__limit">
-                  {translate('Лимит:')} ${dailyBudgetUsd.toFixed(2)}{translate('/день')} • {translate('Остаток:')} ${remainingUsd.toFixed(2)}
-                </p>
-              </>
-            ) : null}
-            {isRoutProvider ? (
-              <p className="hive-budget-card__requests">
-                {translate('Дневной лимит: 650 000 токенов (сброс в 00:00 UTC)')}
-              </p>
-            ) : (
-              <p className="hive-budget-card__requests">
-                {translate('Лимит запросов провайдера')}: {requestSummary}
-              </p>
-            )}
-            {routmyStatusText ? <p className="hive-budget-card__routmy">{routmyStatusText}</p> : null}
-            <small>
-              {budget.model ? `${translate('Текущая модель:')} ${budget.model}` : translate('Модель ещё не известна')}
-              {effectiveFallbackModel && !routmyStatusText ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}
-              {!isRoutProvider && !configuredCaps ? ` · ${translate('лимиты запросов не настроены')}` : ''}
-              {!budget.historyAvailable ? ` · ${translate('история отправок недоступна')}` : ''}
-            </small>
-            {budget.exhausted ? <p className="hive-budget-card__notice">{translate('Лимит запросов исчерпан — Core приостановит отправку до сброса окна.')}</p> : null}
-          </div>
-        </aside>
-        </div>
-
-        <aside className="hive-panel hive-chat" aria-label={translate('Диалог с Королевой Евой')}>
-          <div className="hive-panel__head">
-            <h2>{translate('Диалог с Королевой Евой')}</h2>
-            <div className="hive-panel__actions">
-              <button
-                type="button"
-                className="hive-link-button"
-                onClick={() => void openHiveChat()}
-              >
-                {translate('Открыть чат Улья')}
-              </button>
-              <span className="hive-badge">
-                {translate(queenTyping ? 'в процессе' : 'на связи')}
+        <header className="hive-hud-top">
+          <div className="hive-hud-top__brand">
+            <p className="hive-console__eyebrow">Hive / Eva</p>
+            <h1>{translate('Улей (Hive)')}</h1>
+            <p className="hive-hud-top__subtitle">{translate('Единый центр управления Ульем и Королевой Евой')}</p>
+            <div className="hive-hud-top__dept-summary">
+              <h2>{translate('Департаменты улья')}</h2>
+              <span>
+                {hiveLoading ? (
+                  <HiveSkeleton className="hive-skeleton--text" />
+                ) : showingConnectedIdleState ? (
+                  translate('Нет активных агентов')
+                ) : (
+                  `${translate('Активно:')} ${agentsOnline} / ${capacityLabel}`
+                )}
               </span>
             </div>
           </div>
 
-          <section className="hive-chat__logs" aria-label={translate('Логи улья')}>
+          <div className="hive-hud-top__right">
+            <div className="hive-console__controls">
+              {!connected ? (
+                <span className={`status-pill status-pill--${connection}`}>
+                  {translate(HIVE_CONNECTION_LABELS[connection])}
+                </span>
+              ) : null}
+              <label className="hive-interval">
+                <span>{translate('Обновление')}</span>
+                <select
+                  aria-label={translate('Интервал обновления')}
+                  value={preference.intervalMs}
+                  onChange={(changeEvent) => updatePreference({ ...preference, intervalMs: Number(changeEvent.target.value) })}
+                >
+                  {HIVE_INTERVALS.map((value) => (
+                    <option key={value} value={value}>{value / 1000}с</option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" className="hive-console__refresh" onClick={requestSnapshot} disabled={!connected}>
+                {translate('Обновить сейчас')}
+              </button>
+              <button
+                type="button"
+                className="hive-settings-trigger"
+                aria-label={translate('Настройки улья')}
+                title={translate('Настройки улья')}
+                aria-expanded={hiveSettingsOpen}
+                onClick={() => setHiveSettingsOpen(true)}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+                </svg>
+              </button>
+            </div>
+
+            <aside className="hive-hud-status" aria-label={translate('Метрики улья')}>
+              <div className="hive-panel__head">
+                <h2>{translate('Метрики улья')}</h2>
+                <span className="hive-hud-status__badge">{translate(observationStatusLabel)}</span>
+              </div>
+              <div className="hive-metrics-summary">
+                <div className="hive-metrics">
+                  <EfficiencyRing percent={efficiency} />
+                </div>
+                <ul className="hive-stat-list">
+                  <li><span>{translate('Агентов онлайн')}</span><strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : agentsOnline}</strong></li>
+                  <li><span>{translate('Задач в работе')}</span><strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : activeTasks}</strong></li>
+                  <li>
+                    <span>{translate('Задач сегодня')}</span>
+                    <strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : hive?.metrics.tasksToday ?? 0}</strong>
+                  </li>
+                  <li>
+                    <span>{translate('Среднее время')}</span>
+                    <strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : averageTimeLabel}</strong>
+                  </li>
+                </ul>
+              </div>
+              <dl className="hive-queen__footer">
+                <div>
+                  <dt>{translate('Воркеры')}</dt>
+                  <dd>{workerSummaryLabel}</dd>
+                </div>
+                {nextObservationAtMs !== null ? (
+                  <div>
+                    <dt>{translate('Следующая проверка окружения')}</dt>
+                    <dd>{formatClock(nextObservationAtMs)}</dd>
+                  </div>
+                ) : observationStatus === 'observing' || observationStatus === 'active' ? (
+                  <div>
+                    <dt>{translate('Следующая проверка окружения')}</dt>
+                    <dd>{translate('Наблюдение активно')}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            </aside>
+          </div>
+        </header>
+
+        {effectiveActiveApprovals.length > 0 || commandError ? (
+          <div className="hive-hud-alerts">
+            {effectiveActiveApprovals.map((approval) => (
+              <ApprovalRequest
+                key={approval.approvalId}
+                request={approval}
+                busy={resolvingApprovalIds.has(approval.approvalId)}
+                onResolve={(granted) => void approvalResolved(approval, granted)}
+              />
+            ))}
+            {commandError ? <p role="alert" className="hive-console__error">{translate(commandError)}</p> : null}
+          </div>
+        ) : null}
+
+        <div className="hive-dock">
+          <section className="hive-dock__card hive-dock__card--agents" aria-label={translate('Активные агенты')}>
+            <div className="hive-panel__head">
+              <h3>{translate('Активные агенты')} ({agentsOnline})</h3>
+              {selectedDepartmentLabel ? (
+                <button
+                  type="button"
+                  className="hive-filter-chip"
+                  onClick={() => setSelectedDepartment(null)}
+                >
+                  <span>{translate(selectedDepartmentLabel)}</span>
+                  <span aria-hidden="true">×</span>
+                </button>
+              ) : (
+                <span>{translate('глубина и подагенты')}</span>
+              )}
+            </div>
+            {hiveLoading ? (
+              <ul className="hive-agent-list hive-agent-list--loading" aria-label={translate('Загрузка агентов')}>
+                {[1, 2, 3].map((item) => <li key={item}><HiveSkeleton className="hive-skeleton--avatar" /><HiveSkeleton className="hive-skeleton--agent" /></li>)}
+              </ul>
+            ) : hive && visibleAgents.length > 0 ? (
+              <ul className="hive-agent-list">
+                {visibleAgents.slice(0, 8).map((agent) => (
+                  <li key={agent.id}>
+                    <span className="hive-agent__avatar" aria-hidden="true">{agentMonogram(agent.id)}</span>
+                    <div className="hive-agent__body">
+                      <div className="hive-agent__topline">
+                        <strong>{agent.id || 'worker'}</strong>
+                        <span className="hive-role-badge">{translate(departmentLabel(agent.role))}</span>
+                      </div>
+                      <small>{translate(agent.currentAction) || translate('ожидание')}</small>
+                    </div>
+                    <span className="hive-agent__meta">{agent.spawnedSubagents} / {agent.ceiling}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="hive-empty">
+                {selectedDepartment
+                  ? translate('В выбранном департаменте активных агентов нет.')
+                  : connected
+                    ? translate('Активных агентов нет.')
+                    : translate('Core недоступен — ожидается актуальная проекция.')}
+              </p>
+            )}
+
+            <section className="hive-watched" aria-label={translate('Проекты под наблюдением')}>
+              <div className="hive-panel__head">
+                <h4>{translate('Проекты под наблюдением')}</h4>
+                <span>{hive?.watchedRepositories.length ?? 0}</span>
+              </div>
+              {hive && hive.watchedRepositories.length > 0 ? (
+                <ul className="hive-watched__list">
+                  {hive.watchedRepositories.map((repository) => (
+                    <li key={repository.path} className="hive-watched__item">
+                      <div className="hive-watched__body">
+                        <strong title={repository.path}>{shortRepositoryPath(repository.path)}</strong>
+                        {repository.currentTask ? <small>{translate(repository.currentTask)}</small> : null}
+                      </div>
+                      <span className={`hive-watched__status hive-watched__status--${repository.status}`}>{translate(repository.status)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="hive-empty hive-empty--compact">{translate('Нет отслеживаемых проектов')}</p>
+              )}
+            </section>
+          </section>
+
+          <section className="hive-dock__card hive-dock__card--budget" aria-label={translate('Провайдер и лимиты')}>
+            <div className="hive-budget-card">
+              <div className="hive-budget-card__head">
+                <h3>{translate(budget.dailyCostAvailable ? 'Бюджет и провайдер' : 'Провайдер и лимиты')}</h3>
+                <span className="hive-budget-card__provider-tag">{snapshotBudgetLabel}</span>
+              </div>
+              {hiveLoading ? (
+                <div className="hive-budget-skeleton" aria-label={translate('Загрузка бюджета')}>
+                  <HiveSkeleton className="hive-skeleton--line" /><HiveSkeleton className="hive-skeleton--bar" /><HiveSkeleton className="hive-skeleton--line hive-skeleton--wide" />
+                </div>
+              ) : budget.dailyCostAvailable ? (
+                <>
+                  <div className="hive-budget-card__spent">
+                    <span>{translate('Потрачено сегодня')}</span>
+                    <strong>{spentLabel} / ${dailyBudgetUsd.toFixed(2)}</strong>
+                  </div>
+                  <div
+                    className="hive-progress"
+                    role="progressbar"
+                    aria-label={translate('Расход дневного бюджета')}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={spendPercent}
+                  >
+                    <span style={{ width: `${spendPercent}%` }} />
+                  </div>
+                  <p className="hive-budget-card__limit">
+                    {translate('Лимит:')} ${dailyBudgetUsd.toFixed(2)}{translate('/день')} • {translate('Остаток:')} ${remainingUsd.toFixed(2)}
+                  </p>
+                </>
+              ) : null}
+              {isRoutProvider ? (
+                <p className="hive-budget-card__requests">
+                  {translate('Дневной лимит: 650 000 токенов (сброс в 00:00 UTC)')}
+                </p>
+              ) : (
+                <p className="hive-budget-card__requests">
+                  {translate('Лимит запросов провайдера')}: {requestSummary}
+                </p>
+              )}
+              <p className="hive-budget-card__model">
+                {budget.model ? `${translate('Текущая модель:')} ${budget.model}` : translate('Модель ещё не известна')}
+                {effectiveFallbackModel && !routmyStatusText ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}
+                {!isRoutProvider && !configuredCaps ? ` · ${translate('лимиты запросов не настроены')}` : ''}
+                {!budget.historyAvailable ? ` · ${translate('история отправок недоступна')}` : ''}
+              </p>
+              {routmyStatusText ? <p className="hive-budget-card__routmy">{routmyStatusText}</p> : null}
+              {budget.exhausted ? <p className="hive-budget-card__notice">{translate('Лимит запросов исчерпан — Core приостановит отправку до сброса окна.')}</p> : null}
+            </div>
+
+            <div className="hive-activity-bars" aria-hidden="true">
+              {departments.slice(0, 8).map((department) => {
+                const loadPercent = hivePercent(department.activeCount, department.maxCapacity)
+                const heightPercent = department.activeCount > 0 ? Math.max(24, loadPercent) : 14
+                return (
+                  <div
+                    key={department.key}
+                    className={`hive-activity-bars__col${department.activeCount > 0 ? ' hive-activity-bars__col--active' : ''}`}
+                    title={`${translate(department.label)}: ${department.activeCount}`}
+                  >
+                    <span style={{ height: `${heightPercent}%` }} />
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+
+          <section
+            className={`hive-dock__card hive-dock__card--logs${allLogs ? ' hive-dock__card--logs-expanded' : ''}`}
+            aria-label={translate('Логи улья')}
+          >
             <div className="hive-panel__head">
               <h3>{translate('Логи улья')}</h3>
               <div className="hive-panel__actions">
@@ -3171,89 +3274,160 @@ export function HiveDashboard({
                 </li>
               ))}
             </ol>
-            {logs.length === 0 ? <p className="hive-empty">{translate('Событий пока нет.')}</p> : null}
+            {logs.length === 0 ? <p className="hive-empty hive-empty--compact">{translate('Событий пока нет.')}</p> : null}
           </section>
 
-          <div className="hive-chat__messages" role="log" aria-live="polite">
-            {hiveChatMessages.length === 0 && effectiveActiveApprovals.length === 0 && !queenTyping ? (
-              <p className="hive-empty">{translate('Напиши Королеве Еве — здесь отобразятся последние сообщения диалога.')}</p>
-            ) : null}
-            {hiveChatMessages.map((message) => (
-              <div
-                key={message.id}
-                className={`hive-chat__message hive-chat__message--${message.role}${message.failed ? ' hive-chat__message--failed' : ''}`}
-              >
-                <span className="hive-chat__author">
-                  {translate(message.role === 'user' ? 'Вы' : 'Королева Ева')}
-                </span>
-                <p className="hive-chat__text">{message.text}</p>
-              </div>
-            ))}
-            {effectiveActiveApprovals.map((approval) => (
-              <div key={`chat-approval-${approval.approvalId}`} className="hive-chat__approval" data-testid="hive-chat-approval">
-                <div className="hive-chat__approval-body">
-                  <span className="hive-chat__author">{translate('Запрос подтверждения')}</span>
-                  <p className="hive-chat__text">{approval.summary}</p>
-                  <small>{approval.toolName} · {approval.permission} · {approval.scope}</small>
-                </div>
-                <div className="hive-approval__actions">
-                  <button
-                    type="button"
-                    className="hive-button hive-button--approve"
-                    disabled={resolvingApprovalIds.has(approval.approvalId)}
-                    onClick={() => void approvalResolved(approval, true)}
-                  >
-                    {translate('Разрешить')}
-                  </button>
-                  <button
-                    type="button"
-                    className="hive-button hive-button--reject"
-                    disabled={resolvingApprovalIds.has(approval.approvalId)}
-                    onClick={() => void approvalResolved(approval, false)}
-                  >
-                    {translate('Отклонить')}
-                  </button>
-                </div>
-              </div>
-            ))}
-            {queenTyping ? (
-              <div className="hive-chat__typing" data-testid="queen-typing-indicator" role="status" aria-live="polite">
-                <span>{translate('Королева печатает')}</span>
-                <small className="hive-chat__activity" data-testid="queen-activity"> · {translate(queenActivity)}</small>
-                <span className="hive-chat__dots" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </span>
-              </div>
-            ) : null}
-          </div>
-
-          <form
-            className="hive-chat__composer"
-            onSubmit={(submitEvent) => {
-              submitEvent.preventDefault()
-              void sendHiveMessage()
-            }}
-          >
-            <input
-              type="text"
-              className="hive-chat__input"
-              aria-label={translate('Сообщение Королеве Еве')}
-              placeholder={translate('Напиши задачу или вопрос Королеве Еве...')}
-              value={chatDraft}
-              onChange={(changeEvent) => setChatDraft(changeEvent.target.value)}
-              disabled={!connected || sendingMessage}
-            />
+          <div className="hive-dock__card hive-dock__card--launcher">
             <button
-              type="submit"
-              className="hive-chat__send"
-              disabled={!connected || sendingMessage || chatDraft.trim().length === 0}
+              type="button"
+              className={`hive-chat-launcher${hiveChatOpen ? ' hive-chat-launcher--open' : ''}`}
+              aria-label={translate('Диалог с Королевой Евой')}
+              aria-expanded={hiveChatOpen}
+              aria-controls="hive-chat-drawer"
+              onClick={() => setHiveChatOpen((open) => !open)}
             >
-               <span className="hive-chat__send-icon" aria-hidden="true">➤</span>{translate('Отправить')}
+              <span className="hive-chat-launcher__glow" aria-hidden="true">
+                <HiveLotusMark size={38} />
+              </span>
+              <span className="hive-chat-launcher__body">
+                <strong>{translate('Диалог с Королевой Евой')}</strong>
+                <small>
+                  {translate(
+                    queenTyping
+                      ? 'Королева печатает'
+                      : waitingApproval
+                        ? 'Ждёт подтверждения'
+                        : 'Открыть диалог'
+                  )}
+                </small>
+              </span>
+              <span className="hive-chat-launcher__meta">
+                <span className="hive-badge">{translate(queenTyping ? 'в процессе' : 'на связи')}</span>
+                {effectiveActiveApprovals.length > 0 ? (
+                  <span className="hive-chat-launcher__alert">{effectiveActiveApprovals.length}</span>
+                ) : null}
+              </span>
             </button>
-          </form>
-        </aside>
+          </div>
+        </div>
+
+        {hiveChatOpen ? (
+          <>
+            <div
+              className="hive-chat-drawer__backdrop"
+              aria-hidden="true"
+              onClick={() => setHiveChatOpen(false)}
+            />
+            <aside id="hive-chat-drawer" className="hive-chat-drawer" aria-label={translate('Диалог с Королевой Евой')}>
+              <div className="hive-panel__head hive-chat-drawer__head">
+                <div className="hive-chat-drawer__title">
+                  <HiveLotusMark size={20} />
+                  <h2>{translate('Диалог с Королевой Евой')}</h2>
+                </div>
+                <div className="hive-panel__actions">
+                  <button
+                    type="button"
+                    className="hive-link-button"
+                    onClick={() => void openHiveChat()}
+                  >
+                    {translate('Открыть чат Улья')}
+                  </button>
+                  <span className="hive-badge">
+                    {translate(queenTyping ? 'в процессе' : 'на связи')}
+                  </span>
+                  <button
+                    type="button"
+                    className="hive-chat-drawer__close"
+                    aria-label={translate('Закрыть диалог')}
+                    onClick={() => setHiveChatOpen(false)}
+                  >
+                    <UiIcon name="x" size={16} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="hive-chat__messages" role="log" aria-live="polite">
+                {hiveChatMessages.length === 0 && effectiveActiveApprovals.length === 0 && !queenTyping ? (
+                  <p className="hive-empty">{translate('Напиши Королеве Еве — здесь отобразятся последние сообщения диалога.')}</p>
+                ) : null}
+                {hiveChatMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`hive-chat__message hive-chat__message--${message.role}${message.failed ? ' hive-chat__message--failed' : ''}`}
+                  >
+                    <span className="hive-chat__author">
+                      {translate(message.role === 'user' ? 'Вы' : 'Королева Ева')}
+                    </span>
+                    <p className="hive-chat__text">{message.text}</p>
+                  </div>
+                ))}
+                {effectiveActiveApprovals.map((approval) => (
+                  <div key={`chat-approval-${approval.approvalId}`} className="hive-chat__approval" data-testid="hive-chat-approval">
+                    <div className="hive-chat__approval-body">
+                      <span className="hive-chat__author">{translate('Запрос подтверждения')}</span>
+                      <p className="hive-chat__text">{approval.summary}</p>
+                      <small>{approval.toolName} · {approval.permission} · {approval.scope}</small>
+                    </div>
+                    <div className="hive-approval__actions">
+                      <button
+                        type="button"
+                        className="hive-button hive-button--approve"
+                        disabled={resolvingApprovalIds.has(approval.approvalId)}
+                        onClick={() => void approvalResolved(approval, true)}
+                      >
+                        {translate('Разрешить')}
+                      </button>
+                      <button
+                        type="button"
+                        className="hive-button hive-button--reject"
+                        disabled={resolvingApprovalIds.has(approval.approvalId)}
+                        onClick={() => void approvalResolved(approval, false)}
+                      >
+                        {translate('Отклонить')}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {queenTyping ? (
+                  <div className="hive-chat__typing" data-testid="queen-typing-indicator" role="status" aria-live="polite">
+                    <span>{translate('Королева печатает')}</span>
+                    <small className="hive-chat__activity" data-testid="queen-activity"> · {translate(queenActivity)}</small>
+                    <span className="hive-chat__dots" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+
+              <form
+                className="hive-chat__composer"
+                onSubmit={(submitEvent) => {
+                  submitEvent.preventDefault()
+                  void sendHiveMessage()
+                }}
+              >
+                <input
+                  type="text"
+                  className="hive-chat__input"
+                  aria-label={translate('Сообщение Королеве Еве')}
+                  placeholder={translate('Напиши задачу или вопрос Королеве Еве...')}
+                  value={chatDraft}
+                  onChange={(changeEvent) => setChatDraft(changeEvent.target.value)}
+                  disabled={!connected || sendingMessage}
+                />
+                <button
+                  type="submit"
+                  className="hive-chat__send"
+                  disabled={!connected || sendingMessage || chatDraft.trim().length === 0}
+                >
+                  <span className="hive-chat__send-icon" aria-hidden="true">➤</span>{translate('Отправить')}
+                </button>
+              </form>
+            </aside>
+          </>
+        ) : null}
       </div>
 
       {hiveSettingsOpen ? (
