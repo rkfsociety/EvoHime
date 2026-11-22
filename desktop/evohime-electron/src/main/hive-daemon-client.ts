@@ -1,10 +1,10 @@
 import { connect as netConnect, type Socket } from 'node:net'
 
-import {
-  MAX_CITY_MAP_FRAME_BYTES,
-  parseHiveCityMapSnapshot,
-  type HiveCityMapOutcome
-} from '@shared/hive-city-map'
+import type { HiveCityMapOutcome } from '@shared/hive-city-map'
+// Значения импортируются по относительному пути (в отличие от остального
+// src/main): модуль также грузит dev-конфигурация Hive Studio
+// (`vite.studio.config.ts`), которую bundler Vite собирает до алиасов.
+import { MAX_CITY_MAP_FRAME_BYTES, parseHiveCityMapSnapshot } from '../shared/hive-city-map'
 
 /**
  * Direct main-process client to `evohime-hive-daemon` over the observation

@@ -20,6 +20,14 @@ EvaPulse — независимый фоновый daemon: он читает jou
 в [`hive-architecture.md`](hive-architecture.md); канонические typed boundaries —
 в [`architecture/hive.md`](architecture/hive.md).
 
+Сцена города Улья (`HiveCityScene`, живой архипелаг plan 199) разрабатывается
+через dev-стенд Hive Studio: `npm run studio` в `desktop/evohime-electron`
+поднимает Vite-сервер со страницей `http://localhost:5178/hive-studio.html` —
+настоящая сцена в обычном браузере; источник данных — детерминированная
+симуляция или live-опрос наблюдательного pipe `evohime-hive-daemon` через
+dev-middleware `vite.studio.config.ts`. Страница и её CSS не входят в
+production-бандл (rollup input перечисляет только `index.html`).
+
 ## Независимые EvaPulse и Hive (plan 198, закрыт 2026-11-21)
 
 EvaPulse и Hive разделены на уровне Core: `HiveSignalReceiver` принимает только

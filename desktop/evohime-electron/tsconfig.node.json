@@ -28,6 +28,7 @@
     "src/shared/**/*.ts",
     "tests/**/*.ts",
     "electron.vite.config.ts",
+    "vite.studio.config.ts",
     "vitest.config.ts"
   ]
 }

@@ -93,6 +93,9 @@ npm test                 # adapter, security policy, preload, real-Core E2E (ski
 $env:EVOHIME_UPDATE_E2E='1'; npx vitest run tests/e2e/source-update.e2e.test.ts   # реальное обновление: клон, пересборка, подмена пакета (~7 мин)
 npm run build; npm run check:bundle   # статические security-проверки production bundles
 npm run dev              # dev-запуск оболочки
+npm run studio           # dev-стенд сцены Улья в браузере: http://localhost:5178/hive-studio.html
+                         # (настоящий HiveCityScene с HMR; источники — симуляция
+                         # или live-канал наблюдательного pipe демона)
 npm run package          # распакованный Windows package в release\win-unpacked
 ```
 
