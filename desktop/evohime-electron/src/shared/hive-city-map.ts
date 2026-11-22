@@ -469,6 +469,22 @@ const BUILDING_CELL = 2.4
 const BUILDING_MAX_COLUMNS = 8
 
 /**
+ * Радиус кольца домов работников департаментов в столице. Кольцо живёт между
+ * башней Королевы (центр) и кварталами модулей проекта, поэтому радиус слегка
+ * растёт с числом лотов, но остаётся внутри [`CAPITAL_TOWER_INNER_RADIUS`].
+ */
+export function capitalHouseRingRadius(total: number): number {
+  return Math.min(4.2, Math.max(3.2, 0.2 * total))
+}
+
+/**
+ * Внутренний радиус столицы, свободный от кварталов проекта: все модульные
+ * башни капитального острова выталкиваются за него, уступая центр башне
+ * Королевы и кольцу домов работников.
+ */
+export const CAPITAL_TOWER_INNER_RADIUS = 5.4
+
+/**
  * Shared deterministic island renderer model: sorted districts, a compact
  * building grid grouped by district, and seeded jitter. Both the SVG 2D
  * renderer and the WebGL renderer consume this layout, so both modes always
@@ -527,31 +543,62 @@ function buildIslandView(
     return leftRank - rightRank || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
   })
 
-  const columns = Math.max(1, Math.min(BUILDING_MAX_COLUMNS, Math.ceil(Math.sqrt(ordered.length))))
-  const rows = Math.ceil(ordered.length / columns)
+  // Цитадель(и) Королевы занимают точный центр города, вне сетки кварталов.
+  const citadels = ordered.filter((item) => item.kind === 'citadel')
+  const quarter = ordered.filter((item) => item.kind !== 'citadel')
 
-  const buildings = ordered.map((building, index) => {
+  const buildings: CityBuildingView[] = []
+  citadels.forEach((building, index) => {
+    // Несколько цитаделей — компактный дворец: башни вплотную к центру.
+    const angle = (2 * Math.PI * index) / Math.max(1, citadels.length)
+    const offset = citadels.length === 1 ? 0 : 0.8
+    buildings.push({
+      building,
+      x: Math.cos(angle) * offset,
+      z: Math.sin(angle) * offset,
+      height: Math.max(0.15, building.height_weight_bp / 1000),
+      isEdgeTarget: false
+    })
+  })
+
+  const columns = Math.max(1, Math.min(BUILDING_MAX_COLUMNS, Math.ceil(Math.sqrt(quarter.length))))
+  const rows = Math.ceil(quarter.length / columns)
+  const reserveCenter = island.role === 'capital'
+
+  quarter.forEach((building, index) => {
     const column = index % columns
     const row = Math.floor(index / columns)
     const seed = `${island.id}/${building.id}`
     const jitterX = (mixSeed(seed, 1) - 0.5) * 0.9
     const jitterZ = (mixSeed(seed, 2) - 0.5) * 0.9
-    const height = Math.max(0.15, building.height_weight_bp / 1000)
-    return {
-      building,
-      x: (column - (columns - 1) / 2) * BUILDING_CELL + jitterX,
-      z: (row - (rows - 1) / 2) * BUILDING_CELL * 0.8 + jitterZ,
-      height,
-      isEdgeTarget: false
+    let bx = (column - (columns - 1) / 2) * BUILDING_CELL + jitterX
+    let bz = (row - (rows - 1) / 2) * BUILDING_CELL * 0.8 + jitterZ
+    if (reserveCenter) {
+      // Кварталы проекта не заходят во внутреннюю зону столицы: там башня
+      // Королевы и кольцо домов работников.
+      const distance = Math.hypot(bx, bz)
+      if (distance < CAPITAL_TOWER_INNER_RADIUS) {
+        const direction = distance < 0.001 ? 1 / CAPITAL_TOWER_INNER_RADIUS : 1 / distance
+        bx = bx * direction * CAPITAL_TOWER_INNER_RADIUS
+        bz = bz * direction * CAPITAL_TOWER_INNER_RADIUS
+      }
     }
+    buildings.push({
+      building,
+      x: bx,
+      z: bz,
+      height: Math.max(0.15, building.height_weight_bp / 1000),
+      isEdgeTarget: false
+    })
   })
 
   const layoutRadius = Math.max(
     3.6,
-    2.2 * Math.sqrt(Math.max(1, ordered.length)),
-    (Math.max(columns, rows) * BUILDING_CELL) / 2 + 1.2
+    2.2 * Math.sqrt(Math.max(1, buildings.length)),
+    (Math.max(columns, rows) * BUILDING_CELL) / 2 + 1.2,
+    reserveCenter ? CAPITAL_TOWER_INNER_RADIUS + 1.0 : 0
   )
-  const radius = Math.min(10, layoutRadius)
+  const radius = Math.min(12, layoutRadius)
 
   return { island, x, z, radius, buildings, phase }
 }

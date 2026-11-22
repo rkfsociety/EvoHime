@@ -3,7 +3,9 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 
 import {
+  CAPITAL_TOWER_INNER_RADIUS,
   CITY_MAP_MAX_SATELLITES,
+  capitalHouseRingRadius,
   displayIslandHue,
   fnv1a32,
   type CityIslandView
@@ -36,6 +38,15 @@ function towerDisplayHeight(heightWeight: number): number {
   return Math.max(0.9, heightWeight * 3.8)
 }
 
+/** Дисплейная высота башни Королевы в центре столицы (island units). */
+const QUEEN_TOWER_DISPLAY_HEIGHT = 5.2
+
+/** Высота башни в 3D: цитадель Королевы всегда доминирует над кварталами. */
+function towerHeight3D(kind: string, heightWeight: number): number {
+  if (kind === 'citadel') return Math.max(towerDisplayHeight(heightWeight), QUEEN_TOWER_DISPLAY_HEIGHT)
+  return towerDisplayHeight(heightWeight)
+}
+
 export interface HiveArchipelago3DProps {
   readonly capital: CityIslandView
   readonly satellites: readonly CityIslandView[]
@@ -44,7 +55,7 @@ export interface HiveArchipelago3DProps {
   readonly selectedBuildingId: string | null
   readonly hoveredBuildingId: string | null
   readonly droneCount: number
-  /** Слоты-дома работников департаментов на окраине столицы. */
+  /** Слоты-дома работников департаментов на кольце вокруг башни Королевы. */
   readonly departmentHouses?: readonly HiveCityHouseLot[]
   /** Ключ выбранного департамента (подсвечивает его дома). */
   readonly selectedDepartment?: string | null
@@ -227,7 +238,7 @@ function IslandTowers({
     const dummy = new THREE.Object3D()
     return view.buildings.map((item) => {
       const width = item.building.kind === 'citadel' ? 1.5 : 1.05
-      const displayHeight = towerDisplayHeight(item.height)
+      const displayHeight = towerHeight3D(item.building.kind, item.height)
       dummy.position.set(view.x + item.x, displayHeight / 2, view.z + item.z)
       dummy.scale.set(width, displayHeight, width)
       dummy.updateMatrix()
@@ -279,7 +290,7 @@ function IslandTowers({
       return
     }
     const width = item.building.kind === 'citadel' ? 1.7 : 1.25
-    const displayHeight = towerDisplayHeight(item.height)
+    const displayHeight = towerHeight3D(item.building.kind, item.height)
     outline.position.set(view.x + item.x, displayHeight / 2, view.z + item.z)
     outline.scale.set(width, displayHeight + 0.3, width)
     outline.visible = true
@@ -373,7 +384,7 @@ function IslandNameplate({ view }: { view: CityIslandView }) {
   )
 }
 
-/** One worker house on the capital outskirts; lit when the worker is active. */
+/** One worker house on the ring around the queen tower; lit when active. */
 function DepartmentHouse3D({
   view,
   lot,
@@ -393,7 +404,9 @@ function DepartmentHouse3D({
   onSelectDepartment: ((departmentKey: string) => void) | undefined
 }) {
   const angle = (lot.slot / lot.total) * Math.PI * 2
-  const ringRadius = view.radius + 2.4
+  // Дома работников живут на кольце между башней Королевы (центр) и
+  // кварталами проекта, внутри внутренней зоны столицы.
+  const ringRadius = Math.min(capitalHouseRingRadius(lot.total), CAPITAL_TOWER_INNER_RADIUS - 1.2)
   const position = useMemo<[number, number, number]>(() => {
     const x = view.x + Math.cos(angle) * ringRadius
     const z = view.z + Math.sin(angle) * ringRadius
@@ -535,7 +548,7 @@ function CitadelCore({ view, paused }: { view: CityIslandView; paused: boolean }
 
   const position = useMemo<[number, number, number]>(() => {
     const citadel = view.buildings.find((item) => item.building.kind === 'citadel')
-    const displayHeight = towerDisplayHeight(citadel?.height ?? 0.6)
+    const displayHeight = towerHeight3D(citadel ? citadel.building.kind : 'module', citadel?.height ?? 0.6)
     return [view.x + (citadel?.x ?? 0), displayHeight + 1.9, view.z + (citadel?.z ?? 0)]
   }, [view])
 

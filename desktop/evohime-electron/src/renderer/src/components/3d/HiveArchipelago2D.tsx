@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react'
 
 import {
   CITY_MAP_MAX_SATELLITES,
+  capitalHouseRingRadius,
   displayIslandHue,
   type CityBuilding,
   type CityBuildingView,
@@ -37,7 +38,7 @@ export interface HiveArchipelago2DProps {
   readonly selectedIslandId: string | null
   readonly selectedBuildingId: string | null
   readonly hoveredBuildingId: string | null
-  /** Слоты-дома работников департаментов на окраине столицы. */
+  /** Слоты-дома работников департаментов на кольце вокруг башни Королевы. */
   readonly departmentHouses?: readonly HiveCityHouseLot[]
   /** Ключ выбранного департамента (подсвечивает его дома). */
   readonly selectedDepartment?: string | null
@@ -218,7 +219,9 @@ function Tower({
   onHover: (hovered: boolean) => void
 }) {
   const half = buildingHalfWidth(item.building.kind)
-  const height = item.height * HEIGHT_SCALE + (isCitadel ? 2.6 : 0)
+  // Цитадель Королевы — самое высокое здание города, всегда доминирует.
+  const height =
+    item.height * HEIGHT_SCALE + (isCitadel ? Math.max(2.6, 7.0 - item.height * HEIGHT_SCALE) : 0)
   const faces = isoBoxFaces(view.x + item.x, view.z + item.z, half, height)
   const accent = islandAccent(view.island)
   const spire = isCitadel ? project(view.x + item.x, view.z + item.z, height + 1.5) : null
@@ -268,7 +271,9 @@ function DepartmentHouse2D({
   onSelectDepartment: ((departmentKey: string) => void) | undefined
 }) {
   const angle = (lot.slot / lot.total) * Math.PI * 2
-  const ringRadius = view.radius + 2.4
+  // Дома работников — на кольце между башней Королевы (центр) и кварталами
+  // проекта, зеркально 3D-режиму.
+  const ringRadius = capitalHouseRingRadius(lot.total)
   const center = project(view.x + Math.cos(angle) * ringRadius, view.z + Math.sin(angle) * ringRadius, 0)
   // Плоский силуэт дома (фронтон к зрителю), anchored в центре лота.
   const w = 14
