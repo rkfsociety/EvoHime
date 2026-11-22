@@ -14,3 +14,7 @@ pub mod pulse_boundary;
 pub mod settings;
 pub mod state;
 pub mod worktree;
+
+/// Read-only architecture scanner and versioned city-map contract
+/// (plan 199.1).
+pub mod city_map;
