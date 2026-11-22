@@ -292,7 +292,11 @@ function IslandTowers({
           onHoverBuilding(item ? item.building.id : null)
         }}
         onPointerOut={() => onHoverBuilding(null)}
-      />
+      >
+        {/* Без геометрии-потомка instancedMesh получает пустой BufferGeometry
+            и не рисует ни одного instance — город остаётся невидимым. */}
+        <boxGeometry args={[1, 1, 1]} />
+      </instancedMesh>
       <mesh ref={outlineRef} visible={false}>
         <boxGeometry args={[1, 1, 1]} />
         <meshBasicMaterial color="#ffe9b0" wireframe />
@@ -309,16 +313,33 @@ function IslandNameplate({ view }: { view: CityIslandView }) {
     canvas.height = 64
     const context = canvas.getContext('2d')
     if (context) {
+      const radius = 12
       context.fillStyle = 'rgba(9, 11, 22, 0.78)'
-      context.fillRect(0, 0, canvas.width, canvas.height)
-      context.strokeStyle = `hsl(${view.island.accent_hue}, 72%, 62%)`
-      context.lineWidth = 4
-      context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4)
+      if (typeof context.roundRect === 'function') {
+        context.beginPath()
+        context.roundRect(2, 2, canvas.width - 4, canvas.height - 4, radius)
+        context.fill()
+        context.strokeStyle = `hsl(${view.island.accent_hue} 72% 62% / 0.75)`
+        context.lineWidth = 2
+        context.stroke()
+      } else {
+        context.fillRect(0, 0, canvas.width, canvas.height)
+        context.strokeStyle = `hsl(${view.island.accent_hue}, 72%, 62%)`
+        context.lineWidth = 2
+        context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4)
+      }
       context.fillStyle = '#e6ecff'
-      context.font = '600 26px system-ui, sans-serif'
       context.textAlign = 'center'
       context.textBaseline = 'middle'
-      context.fillText(view.island.name, canvas.width / 2, canvas.height / 2 + 2)
+      // Ужимаем кегль, чтобы длинные имена репозиториев не обрезались краем.
+      let fontPx = 26
+      context.font = `600 ${fontPx}px system-ui, sans-serif`
+      const maxWidth = canvas.width - 32
+      while (fontPx > 14 && context.measureText(view.island.name).width > maxWidth) {
+        fontPx -= 2
+        context.font = `600 ${fontPx}px system-ui, sans-serif`
+      }
+      context.fillText(view.island.name, canvas.width / 2, canvas.height / 2 + 2, maxWidth)
     }
     const created = new THREE.CanvasTexture(canvas)
     created.colorSpace = THREE.SRGBColorSpace
