@@ -5,15 +5,22 @@
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use evohime_desktop_ipc::{generated, session, transport};
+use evohime_hive::city_map::{
+    assemble_snapshot, canonical_path_string, embedded_capital_island, offline_snapshot,
+    repository_fingerprint, resolve_repo_root, satellite_id_for, scan_island, unavailable_island,
+    CityIsland, CityIslandRole, CityIslandSource, CityIslandUnavailableReason,
+    HiveCityMapSnapshot, RepoFingerprint, CAPITAL_ISLAND_ID, MAX_REPO_SCAN_DURATION,
+    MAX_SATELLITES, MAX_TOTAL_SCAN_DURATION,
+};
 #[cfg(unix)]
 use evohime_hive::pulse::HIVE_OBSERVATION_CONTROL_SOCKET_ENV;
 use evohime_hive::pulse::{
@@ -1130,6 +1137,423 @@ fn init_tracing() {
     let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
 }
 
+// ---------------------------------------------------------------------------
+// City archipelago map runtime (plan 199.2)
+// ---------------------------------------------------------------------------
+
+/// Read timeout for one observation control connection request, agreed with
+/// the 1500 ms client timeout on the shell side.
+const OBSERVATION_CONTROL_READ_TIMEOUT: Duration = Duration::from_millis(1000);
+
+/// Write timeout for one observation control connection response.
+const OBSERVATION_CONTROL_WRITE_TIMEOUT: Duration = Duration::from_millis(1500);
+
+/// Fallback idle delay between city-map maintenance passes when the daemon
+/// carries no real observation settings yet.
+const CITY_MAP_FALLBACK_POLL: Duration = Duration::from_secs(5);
+
+/// One queued city-map recompute job: immutable settings projection plus the
+/// wall-clock instant it was requested at.
+struct CityMapJob {
+    eva_workspace_path: Option<String>,
+    watched_repositories: Vec<String>,
+    now_ms: i64,
+}
+
+/// Mutable single-flight state of the city-map recompute worker.
+#[derive(Default)]
+struct CityMapShared {
+    /// Exactly one `spawn_blocking` worker runs while this flag is set.
+    recomputing: bool,
+    /// Latest queued job (replaced wholesale by newer settings); the worker
+    /// drains it serially, so a request during an active scan becomes exactly
+    /// one repeat pass after the current one.
+    job: Option<CityMapJob>,
+    /// Publish-ready islands of the last successful pass, keyed by island id.
+    satellites: BTreeMap<String, CityIsland>,
+    /// Repository fingerprints of the last full pass, keyed by canonical path.
+    fingerprints: BTreeMap<String, RepoFingerprint>,
+    /// Capital island of the last successful pass (live scan or embedded).
+    capital_island: Option<CityIsland>,
+    /// `(canonical path, fingerprint)` of the capital's last live scan.
+    capital_fingerprint: Option<(String, RepoFingerprint)>,
+}
+
+/// Shared runtime of the city-archipelago map: keeps the latest published
+/// snapshot, per-repository fingerprints, and a single-flight guard around
+/// `spawn_blocking` recomputes. [`GetCityMap`](HiveObservationControlRequest::GetCityMap)
+/// never blocks on the file system: it clones the last valid snapshot or
+/// answers with the instant offline one on a cold start.
+struct CityMapRuntime {
+    shared: Arc<std::sync::Mutex<CityMapShared>>,
+    published: Arc<RwLock<Option<Arc<HiveCityMapSnapshot>>>>,
+    /// Wakes the maintenance loop right after a settings change.
+    wake: Arc<tokio::sync::Notify>,
+}
+
+impl Clone for CityMapRuntime {
+    fn clone(&self) -> Self {
+        Self {
+            shared: Arc::clone(&self.shared),
+            published: Arc::clone(&self.published),
+            wake: Arc::clone(&self.wake),
+        }
+    }
+}
+
+impl Default for CityMapRuntime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CityMapRuntime {
+    fn new() -> Self {
+        Self {
+            shared: Arc::new(std::sync::Mutex::new(CityMapShared::default())),
+            published: Arc::new(RwLock::new(None)),
+            wake: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    /// Returns the last published snapshot without touching the file system;
+    /// the instant offline snapshot (embedded capital only) on a cold start.
+    fn current(&self, now_ms: i64) -> Arc<HiveCityMapSnapshot> {
+        match self.published.read() {
+            Ok(guard) => match guard.as_ref() {
+                Some(snapshot) => Arc::clone(snapshot),
+                None => Arc::new(offline_snapshot(now_ms)),
+            },
+            Err(_) => Arc::new(offline_snapshot(now_ms)),
+        }
+    }
+
+    /// Queues a recompute with the given settings projection. At most one
+    /// `spawn_blocking` worker runs; a request during an active scan is
+    /// coalesced into serial repeat passes (never a second worker).
+    fn request_rebuild(&self, job: CityMapJob) {
+        match self.shared.lock() {
+            Ok(mut shared) => {
+                shared.job = Some(job);
+                if shared.recomputing {
+                    return;
+                }
+                shared.recomputing = true;
+            }
+            Err(_) => return,
+        }
+        let this = self.clone();
+        tokio::task::spawn_blocking(move || CityMapRuntime::worker(this));
+    }
+
+    /// Wakes the maintenance loop (settings changed on the shell side).
+    fn kick(&self) {
+        self.wake.notify_one();
+    }
+
+    /// Waits for a kick or the idle poll delay; returns `true` on a kick.
+    async fn idle_wait(&self, idle_poll: Duration) -> bool {
+        let wake = Arc::clone(&self.wake);
+        tokio::select! {
+            _ = wake.notified() => true,
+            _ = tokio::time::sleep(idle_poll) => false,
+        }
+    }
+
+    /// Single-flight recompute worker: drains the queued job and, when a
+    /// rescan was requested meanwhile, repeats exactly once.
+    fn worker(this: CityMapRuntime) {
+        loop {
+            enum Step {
+                Run(CityMapJob),
+                Done,
+            }
+            let step = match this.shared.lock() {
+                Ok(mut shared) => match shared.job.take() {
+                    Some(job) => Step::Run(job),
+                    None => {
+                        shared.recomputing = false;
+                        Step::Done
+                    }
+                },
+                Err(_) => return,
+            };
+            match step {
+                Step::Run(job) => {
+                    if let Err(error) = run_city_map_job(&this, &job) {
+                        tracing::warn!(error = %error, "city map recompute failed");
+                    }
+                }
+                Step::Done => return,
+            }
+        }
+    }
+}
+
+/// Last-segment name of a canonical path (the island display name).
+fn last_path_segment(canonical: &str) -> String {
+    canonical.rsplit('/').next().unwrap_or(canonical).to_owned()
+}
+
+/// Rescans the capital from the live workspace; any failure falls back to the
+/// embedded canonical manifest (mirrors `build_archipelago`).
+fn rescan_capital(path: &str, total_deadline: Instant) -> CityIsland {
+    let remaining = total_deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return embedded_capital_island();
+    }
+    let deadline = Instant::now() + remaining.min(MAX_REPO_SCAN_DURATION);
+    match scan_island(
+        Path::new(path),
+        CAPITAL_ISLAND_ID.to_owned(),
+        "EvoHime",
+        CityIslandRole::Capital,
+        Some(deadline),
+    ) {
+        Ok(island) => island,
+        Err(reason) => {
+            tracing::warn!(
+                reason = ?reason,
+                "city map: capital scan failed; using embedded manifest"
+            );
+            embedded_capital_island()
+        }
+    }
+}
+
+/// Computes one maintenance pass: per-repository fingerprint comparison, a
+/// bounded rescan of the changed repositories only, and a conditional publish
+/// (a pass with an unchanged revision set keeps the previous snapshot
+/// instance, including its `generated_at_ms`).
+fn run_city_map_job(runtime: &CityMapRuntime, job: &CityMapJob) -> Result<(), String> {
+    let total_deadline = Instant::now() + MAX_TOTAL_SCAN_DURATION;
+    let (prev_satellites, prev_fingerprints, prev_capital, prev_capital_fingerprint) = {
+        match runtime.shared.lock() {
+            Ok(shared) => (
+                shared.satellites.clone(),
+                shared.fingerprints.clone(),
+                shared.capital_island.clone(),
+                shared.capital_fingerprint.clone(),
+            ),
+            Err(_) => return Err("city map state lock poisoned".to_owned()),
+        }
+    };
+
+    // --- Capital: live scan of the Eva workspace, or the embedded manifest.
+    let capital_path = job
+        .eva_workspace_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty());
+    let mut satellite_cache: BTreeMap<String, CityIsland> = BTreeMap::new();
+    let mut capital_fingerprint_entry: Option<(String, RepoFingerprint)> = None;
+    let capital = match capital_path {
+        Some(path) => {
+            let key = canonical_path_string(path);
+            match repository_fingerprint(Path::new(path)) {
+                Ok(fingerprint) => {
+                    capital_fingerprint_entry = Some((key, fingerprint));
+                }
+                Err(reason) => {
+                    tracing::warn!(
+                        reason = ?reason,
+                        "city map: capital fingerprint failed; rescanning"
+                    );
+                }
+            }
+            let reusable =
+                matches!((&capital_fingerprint_entry, &prev_capital_fingerprint, &prev_capital),
+                    (Some((key, fp)), Some((prev_key, prev_fp)), Some(island))
+                        if prev_key == key && prev_fp == fp
+                            && island.source == CityIslandSource::LiveWorkspace);
+            match (reusable, prev_capital.clone()) {
+                (true, Some(island)) => island,
+                _ => rescan_capital(path, total_deadline),
+            }
+        }
+        None => embedded_capital_island(),
+    };
+
+    // --- Satellites: canonical identity, bounded rescan of changed repos.
+    let mut entries: Vec<(String, String, PathBuf)> = Vec::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for raw in &job.watched_repositories {
+        let canonical = resolve_repo_root(raw);
+        if canonical.is_empty() {
+            continue;
+        }
+        if !seen.insert(canonical.clone()) {
+            continue;
+        }
+        entries.push((
+            satellite_id_for(&canonical),
+            last_path_segment(&canonical),
+            PathBuf::from(canonical),
+        ));
+    }
+    entries
+        .sort_by(|a, b| (a.0.as_str(), a.1.as_str()).cmp(&(b.0.as_str(), b.1.as_str())));
+    entries.truncate(MAX_SATELLITES);
+
+    let mut satellites: Vec<CityIsland> = Vec::with_capacity(entries.len());
+    let mut published_fingerprints: BTreeMap<String, RepoFingerprint> = BTreeMap::new();
+    for (id, name, root) in entries {
+        let canonical = root.to_string_lossy().into_owned();
+        let fingerprint = repository_fingerprint(&root);
+        if let Ok(fp) = &fingerprint {
+            if let Some(prev_fp) = prev_fingerprints.get(&canonical) {
+                if prev_fp == fp {
+                    if let Some(prev_island) = prev_satellites.get(&id) {
+                        satellites.push(prev_island.clone());
+                        published_fingerprints.insert(canonical.clone(), fp.clone());
+                        satellite_cache.insert(id.clone(), prev_island.clone());
+                        continue;
+                    }
+                }
+            }
+        }
+        // The repository is new or its on-disk signature changed.
+        let remaining = total_deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            // Budget exhausted: serve the cached island, else an explicit
+            // unavailable placeholder; the fingerprint stays untouched so the
+            // next pass rescans properly.
+            match prev_satellites.get(&id) {
+                Some(prev_island) => satellites.push(prev_island.clone()),
+                None => satellites.push(unavailable_island(
+                    id.clone(),
+                    name.clone(),
+                    CityIslandRole::Satellite,
+                    CityIslandUnavailableReason::ScanTimeout,
+                )),
+            }
+            continue;
+        }
+        let deadline = Instant::now() + remaining.min(MAX_REPO_SCAN_DURATION);
+        let (island, fresh_fingerprint) =
+            match scan_island(&root, id.clone(), &name, CityIslandRole::Satellite, Some(deadline)) {
+                Ok(island) => match &fingerprint {
+                    Ok(fp) => (island, Some(fp.clone())),
+                    Err(_) => (island, None),
+                },
+                Err(reason) => {
+                    tracing::warn!(
+                        island = %id,
+                        reason = ?reason,
+                        "city map: satellite scan failed"
+                    );
+                    match prev_satellites.get(&id) {
+                        // Keep the previous structure; the fresh fingerprint is
+                        // recorded so the next unchanged pass reuses it.
+                        Some(prev_island) => match &fingerprint {
+                            Ok(fp) => (prev_island.clone(), Some(fp.clone())),
+                            Err(_) => (prev_island.clone(), None),
+                        },
+                        None => (
+                            unavailable_island(
+                                id.clone(),
+                                name.clone(),
+                                CityIslandRole::Satellite,
+                                reason,
+                            ),
+                            None,
+                        ),
+                    }
+                }
+            };
+        if let Some(fp) = fresh_fingerprint {
+            published_fingerprints.insert(canonical.clone(), fp);
+        }
+        satellite_cache.insert(id.clone(), island.clone());
+        satellites.push(island);
+    }
+
+    // --- Cache-hit fast path: identical revision set keeps the old snapshot.
+    {
+        let published = match runtime.published.read() {
+            Ok(guard) => guard,
+            Err(_) => return Err("city map published lock poisoned".to_owned()),
+        };
+        if let Some(prev_snapshot) = published.as_ref() {
+            let same_capital = prev_snapshot.capital.revision_hash == capital.revision_hash
+                && prev_snapshot.capital.source == capital.source;
+            let same_satellites = prev_snapshot.satellites.len() == satellites.len()
+                && prev_snapshot
+                    .satellites
+                    .iter()
+                    .zip(satellites.iter())
+                    .all(|(prev, next)| {
+                        prev.id == next.id && prev.revision_hash == next.revision_hash
+                    });
+            if same_capital && same_satellites {
+                if let Ok(mut shared) = runtime.shared.lock() {
+                    shared.fingerprints = published_fingerprints;
+                    shared.satellites = satellite_cache;
+                    shared.capital_island = Some(capital);
+                    shared.capital_fingerprint = capital_fingerprint_entry;
+                }
+                return Ok(());
+            }
+        }
+    }
+
+    // --- Publish the fresh snapshot.
+    let snapshot = Arc::new(assemble_snapshot(capital, satellites, job.now_ms));
+    match runtime.published.write() {
+        Ok(mut guard) => *guard = Some(Arc::clone(&snapshot)),
+        Err(_) => return Err("city map published lock poisoned".to_owned()),
+    }
+    if let Ok(mut shared) = runtime.shared.lock() {
+        shared.fingerprints = published_fingerprints;
+        shared.satellites = satellite_cache;
+    }
+    tracing::info!(
+        revision = %snapshot.revision_hash,
+        satellites = snapshot.satellites.len(),
+        "city map snapshot published"
+    );
+    Ok(())
+}
+
+/// Maintenance loop of the city map: fetches Hive settings from Core at the
+/// local observation cadence (plus kicks from `NotifySettingsChanged`), and
+/// recomputes the archipelago in a bounded background worker.
+async fn run_city_map_maintenance(city_map: CityMapRuntime, client: Arc<CoreIpcClient>) {
+    loop {
+        let mut idle_poll = CITY_MAP_FALLBACK_POLL;
+        let mut job = None;
+        match client.fetch_hive_state().await {
+            Ok(state) => {
+                let settings = snapshot_to_settings(&state);
+                idle_poll = Duration::from_secs(settings.local_observation_interval_secs.max(1));
+                job = Some(CityMapJob {
+                    eva_workspace_path: settings.eva_workspace_path.clone(),
+                    watched_repositories: settings.watched_repositories.clone(),
+                    now_ms: unix_now_ms(),
+                });
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, "city map: failed to fetch hive state");
+            }
+        }
+        if let Some(job) = job {
+            city_map.request_rebuild(job);
+        }
+        // A kick shortens the wait: settings just changed on the shell side.
+        if city_map.idle_wait(idle_poll).await {
+            continue;
+        }
+    }
+}
+
+/// Current Unix time in milliseconds; `0` if the clock is before the epoch.
+fn unix_now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|delta| i64::try_from(delta.as_millis()).unwrap_or(i64::MAX))
+        .unwrap_or(0)
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     init_tracing();
@@ -1225,11 +1649,18 @@ async fn main() -> ExitCode {
         telemetry,
     );
     let control_daemon = daemon.clone();
+    let city_map_runtime = CityMapRuntime::new();
+    let control_city_map = city_map_runtime.clone();
     let control_task = tokio::spawn(async move {
-        if let Err(error) = run_observation_control_server(control_daemon).await {
+        if let Err(error) = run_observation_control_server(control_daemon, control_city_map).await {
             tracing::error!(error = %error, "observation control IPC server stopped");
         }
     });
+    // Bounded background maintenance of the city-archipelago map (plan 199.2).
+    let city_map_maintenance = tokio::spawn(run_city_map_maintenance(
+        city_map_runtime.clone(),
+        Arc::clone(&client),
+    ));
     let status = daemon.status();
     tracing::info!(
         status = %status.status,
@@ -1255,23 +1686,42 @@ async fn main() -> ExitCode {
     }
 
     control_task.abort();
+    city_map_maintenance.abort();
     daemon.shutdown();
     ExitCode::SUCCESS
 }
 
-async fn handle_observation_control_connection<S>(mut stream: S, daemon: HiveObservationDaemon)
-where
+async fn handle_observation_control_connection<S>(
+    mut stream: S,
+    daemon: HiveObservationDaemon,
+    city_map: CityMapRuntime,
+) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let payload = match transport::read_frame(&mut stream).await {
-        Ok(payload) => payload,
-        Err(error) => {
+    // Explicit timeouts keep a slow reader or writer from pinning a control
+    // socket and from affecting other in-flight connections (each connection
+    // also runs on its own tokio task).
+    let payload = match tokio::time::timeout(
+        OBSERVATION_CONTROL_READ_TIMEOUT,
+        transport::read_frame(&mut stream),
+    )
+    .await
+    {
+        Ok(Ok(payload)) => payload,
+        Ok(Err(error)) => {
             tracing::debug!(error = %error, "observation control IPC read failed");
+            return;
+        }
+        Err(_) => {
+            tracing::debug!("observation control IPC read timed out");
             return;
         }
     };
     let request = match serde_json::from_slice::<HiveObservationControlRequest>(&payload) {
         Ok(request) => request,
+        // Canonical old-protocol behavior: an invalid/unknown request body is
+        // answered with the `invalid_request` error frame; a new shell treats
+        // it as `unavailable` while the daemon module has not caught up.
         Err(error) => {
             let error_payload = match serde_json::to_vec(&serde_json::json!({
                 "error": format!("invalid_request: {error}"),
@@ -1283,29 +1733,80 @@ where
             return;
         }
     };
-    let controller = HiveObservationController::new(daemon);
-    let snapshot = match request {
-        HiveObservationControlRequest::GetObservationStatus => controller.snapshot(),
-        HiveObservationControlRequest::NotifySettingsChanged => {
-            controller.notify_settings_changed();
-            controller.snapshot()
-        }
-    };
-    let response_bytes = match serde_json::to_vec(&snapshot) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            tracing::error!(error = %error, "failed to serialize HiveObservationSnapshot");
+    match request {
+        HiveObservationControlRequest::GetCityMap => {
+            // Never blocks on the file system: the last valid snapshot or the
+            // instant offline one; the payload is bounded by
+            // MAX_CITY_MAP_PAYLOAD_BYTES by construction.
+            let snapshot = city_map.current(unix_now_ms());
+            let response_bytes = match serde_json::to_vec(&*snapshot) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    tracing::error!(error = %error, "failed to serialize HiveCityMapSnapshot");
+                    return;
+                }
+            };
+            if let Err(error) =
+                tokio::time::timeout(OBSERVATION_CONTROL_WRITE_TIMEOUT, transport::write_frame(&mut stream, &response_bytes)).await
+            {
+                let _ = error;
+                tracing::debug!("observation control IPC city-map write failed or timed out");
+            }
             return;
         }
-    };
-    if let Err(error) = transport::write_frame(&mut stream, &response_bytes).await {
-        tracing::debug!(error = %error, "observation control IPC write failed");
+        HiveObservationControlRequest::NotifySettingsChanged => {
+            let controller = HiveObservationController::new(daemon);
+            controller.notify_settings_changed();
+            // The shell changed settings: shorten the city-map wait instead of
+            // waiting for the next scheduled maintenance pass.
+            city_map.kick();
+            let snapshot = controller.snapshot();
+            let response_bytes = match serde_json::to_vec(&snapshot) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    tracing::error!(error = %error, "failed to serialize HiveObservationSnapshot");
+                    return;
+                }
+            };
+            if let Err(error) = tokio::time::timeout(
+                OBSERVATION_CONTROL_WRITE_TIMEOUT,
+                transport::write_frame(&mut stream, &response_bytes),
+            )
+            .await
+            {
+                let _ = error;
+                tracing::debug!("observation control IPC write failed or timed out");
+            }
+            return;
+        }
+        HiveObservationControlRequest::GetObservationStatus => {
+            let controller = HiveObservationController::new(daemon);
+            let snapshot = controller.snapshot();
+            let response_bytes = match serde_json::to_vec(&snapshot) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    tracing::error!(error = %error, "failed to serialize HiveObservationSnapshot");
+                    return;
+                }
+            };
+            if let Err(error) = tokio::time::timeout(
+                OBSERVATION_CONTROL_WRITE_TIMEOUT,
+                transport::write_frame(&mut stream, &response_bytes),
+            )
+            .await
+            {
+                let _ = error;
+                tracing::debug!("observation control IPC write failed or timed out");
+            }
+            return;
+        }
     }
 }
 
 #[cfg(windows)]
 async fn run_observation_control_server(
     daemon: HiveObservationDaemon,
+    city_map: CityMapRuntime,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::net::windows::named_pipe::ServerOptions;
 
@@ -1323,8 +1824,9 @@ async fn run_observation_control_server(
         }?;
         server.connect().await?;
         let daemon = daemon.clone();
+        let city_map = city_map.clone();
         tokio::spawn(async move {
-            handle_observation_control_connection(server, daemon).await;
+            handle_observation_control_connection(server, daemon, city_map).await;
         });
     }
 }
@@ -1332,6 +1834,7 @@ async fn run_observation_control_server(
 #[cfg(unix)]
 async fn run_observation_control_server(
     daemon: HiveObservationDaemon,
+    city_map: CityMapRuntime,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let socket_path = match std::env::var_os(HIVE_OBSERVATION_CONTROL_SOCKET_ENV) {
         Some(value) if !value.is_empty() => PathBuf::from(value),
@@ -1349,8 +1852,9 @@ async fn run_observation_control_server(
     loop {
         let (stream, _) = listener.accept().await?;
         let daemon = daemon.clone();
+        let city_map = city_map.clone();
         tokio::spawn(async move {
-            handle_observation_control_connection(stream, daemon).await;
+            handle_observation_control_connection(stream, daemon, city_map).await;
         });
     }
 }
@@ -1410,5 +1914,189 @@ mod tests {
         let restored = snapshot_to_settings(&snapshot);
         assert_eq!(restored.local_observation_interval_secs, 15);
         assert_eq!(restored.llm_dispatch_interval_secs, 600);
+    }
+
+    // -------------------------------------------------------------------
+    // City archipelago map (plan 199.2)
+    // -------------------------------------------------------------------
+
+    use evohime_hive::pulse::{
+        FailedWorkerContext, HiveObservationOptions, ObservationCycleReport, ObservationFuture,
+        ObservationProbe, ObservationTaskSink, RoadmapItem,
+    };
+
+    /// Probe seam that never observes successfully.
+    struct NoopProbe;
+
+    impl ObservationProbe for NoopProbe {
+        fn observe(&self) -> ObservationFuture<'_, Result<ObservationCycleReport, String>> {
+            Box::pin(async { Err("noop".to_owned()) })
+        }
+    }
+
+    /// Sink seam that never dispatches tasks.
+    struct NoopSink;
+
+    impl ObservationTaskSink for NoopSink {
+        fn dispatch_recovery(
+            &self,
+            _failed_workers: &[FailedWorkerContext],
+            _eva_workspace_path: Option<&str>,
+        ) -> ObservationFuture<'_, Result<String, String>> {
+            Box::pin(async { Err("noop".to_owned()) })
+        }
+
+        fn dispatch_evolution(
+            &self,
+            _items: &[RoadmapItem],
+            _eva_workspace_path: Option<&str>,
+        ) -> ObservationFuture<'_, Result<String, String>> {
+            Box::pin(async { Err("noop".to_owned()) })
+        }
+    }
+
+    /// Spawns an observation daemon with inert seams for control-connection tests.
+    fn noop_daemon() -> HiveObservationDaemon {
+        HiveObservationDaemon::spawn(
+            Arc::new(NoopProbe),
+            Arc::new(NoopSink),
+            HiveObservationOptions::default(),
+            None,
+        )
+    }
+
+    /// Sends one framed control request against an in-memory stream and returns
+    /// the framed response; the connection task is joined to surface panics.
+    async fn exchange_control_frame(
+        request: &[u8],
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let (mut client, server) = tokio::io::duplex(256 * 1024);
+        let connection = tokio::spawn(handle_observation_control_connection(
+            server,
+            noop_daemon(),
+            CityMapRuntime::default(),
+        ));
+        transport::write_frame(&mut client, request).await?;
+        let response = tokio::time::timeout(
+            Duration::from_secs(5),
+            transport::read_frame(&mut client),
+        )
+        .await??;
+        connection.await.expect("connection task");
+        Ok(response)
+    }
+
+    #[test]
+    fn city_map_cache_hit_keeps_snapshot_instance() {
+        let runtime = CityMapRuntime::default();
+        let job = CityMapJob {
+            eva_workspace_path: None,
+            watched_repositories: Vec::new(),
+            now_ms: unix_now_ms(),
+        };
+        run_city_map_job(&runtime, &job).expect("first city map pass");
+        let first = runtime.current(unix_now_ms());
+        run_city_map_job(&runtime, &job).expect("second city map pass");
+        let second = runtime.current(unix_now_ms());
+        assert!(Arc::ptr_eq(&first, &second), "unchanged pass must republish the same snapshot instance");
+        assert_eq!(first.revision_hash, second.revision_hash);
+        assert_eq!(first.generated_at_ms, second.generated_at_ms);
+        assert_eq!(first.capital.id, CAPITAL_ISLAND_ID);
+        assert!(first.satellites.is_empty());
+    }
+
+    #[test]
+    fn city_map_new_satellite_changes_revision() {
+        let runtime = CityMapRuntime::default();
+        let empty_job = CityMapJob {
+            eva_workspace_path: None,
+            watched_repositories: Vec::new(),
+            now_ms: unix_now_ms(),
+        };
+        run_city_map_job(&runtime, &empty_job).expect("empty city map pass");
+        let baseline = runtime.current(unix_now_ms());
+        assert!(baseline.satellites.is_empty());
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let src = temp.path().join("src");
+        std::fs::create_dir_all(&src).expect("src dir");
+        std::fs::write(src.join("main.rs"), "fn main() {}\n").expect("source file");
+
+        let job = CityMapJob {
+            eva_workspace_path: None,
+            watched_repositories: vec![temp.path().to_string_lossy().into_owned()],
+            now_ms: unix_now_ms(),
+        };
+        run_city_map_job(&runtime, &job).expect("satellite city map pass");
+        let updated = runtime.current(unix_now_ms());
+        assert_eq!(updated.satellites.len(), 1);
+        let satellite = &updated.satellites[0];
+        assert_eq!(satellite.role, CityIslandRole::Satellite);
+        assert_eq!(satellite.source, CityIslandSource::LiveWorkspace);
+        assert_eq!(satellite.status, city_map_status_ready());
+        assert_ne!(updated.revision_hash, baseline.revision_hash);
+    }
+
+    fn city_map_status_ready() -> evohime_hive::city_map::CityIslandStatus {
+        evohime_hive::city_map::CityIslandStatus::Ready
+    }
+
+    #[tokio::test]
+    async fn control_connection_get_city_map_returns_snapshot_frame() {
+        let request = serde_json::json!({ "command": "get_city_map" }).to_string();
+        let response = exchange_control_frame(request.as_bytes())
+            .await
+            .expect("city map exchange");
+        let value: serde_json::Value =
+            serde_json::from_slice(&response).expect("city map JSON");
+        assert!(value.get("error").is_none(), "get_city_map must not error");
+        let snapshot: HiveCityMapSnapshot =
+            serde_json::from_value(value).expect("typed snapshot");
+        assert_eq!(
+            snapshot.capital.id,
+            CAPITAL_ISLAND_ID,
+            "cold start publishes the embedded capital"
+        );
+        assert!(snapshot.satellites.is_empty());
+        assert!(!snapshot.revision_hash.is_empty());
+    }
+
+    #[tokio::test]
+    async fn control_connection_get_observation_status_keeps_contract() {
+        let request = serde_json::json!({ "command": "get_observation_status" }).to_string();
+        let response = exchange_control_frame(request.as_bytes())
+            .await
+            .expect("status exchange");
+        let value: serde_json::Value =
+            serde_json::from_slice(&response).expect("status JSON");
+        for key in [
+            "schema_version",
+            "owner",
+            "status",
+            "enabled",
+            "next_wake_at_ms",
+        ] {
+            assert!(value.get(key).is_some(), "missing `{key}` in {value}");
+        }
+        assert_eq!(value["status"], "observing");
+        assert_eq!(value["enabled"], true);
+    }
+
+    #[tokio::test]
+    async fn control_connection_unknown_command_answers_invalid_request() {
+        let request = serde_json::json!({ "command": "definitely_unknown" }).to_string();
+        let response = exchange_control_frame(request.as_bytes())
+            .await
+            .expect("unknown command exchange");
+        let value: serde_json::Value =
+            serde_json::from_slice(&response).expect("error JSON");
+        let error = value
+            .get("error")
+            .and_then(serde_json::Value::as_str)
+            .expect("error string");
+        assert!(
+            error.starts_with("invalid_request:"),
+            "unexpected error payload: {error}"
+        );
     }
 }

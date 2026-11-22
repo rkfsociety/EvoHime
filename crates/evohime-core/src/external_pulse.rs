@@ -179,7 +179,8 @@ mod tests {
                 serde_json::from_slice(&req_bytes).expect("decode request");
             let snapshot = match req {
                 HiveObservationControlRequest::GetObservationStatus
-                | HiveObservationControlRequest::NotifySettingsChanged => {
+                | HiveObservationControlRequest::NotifySettingsChanged
+                | HiveObservationControlRequest::GetCityMap => {
                     HiveObservationSnapshot {
                         schema_version: 1,
                         owner: "hive_observation".to_owned(),

@@ -270,6 +270,12 @@ pub enum HiveObservationControlRequest {
     GetObservationStatus,
     /// Wakes the autonomous observation loop immediately after a settings change.
     NotifySettingsChanged,
+    /// Requests the current city-archipelago map
+    /// ([`crate::city_map::HiveCityMapSnapshot`]). The daemon answers with a
+    /// valid snapshot frame even on a cold start (at least the embedded
+    /// capital); an old daemon answers the canonical `invalid_request` error
+    /// frame, which the client maps to `unavailable`.
+    GetCityMap,
 }
 
 /// Test seam for the observation and dispatch intervals.

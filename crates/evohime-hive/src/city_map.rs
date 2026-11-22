@@ -2380,8 +2380,9 @@ pub fn build_archipelago_with_budgets(
 }
 
 /// Canonicalized repository root used for satellite identity: an fs-resolved
-/// canonical path when possible, a normalized string otherwise.
-fn resolve_repo_root(raw: &str) -> String {
+/// canonical path when possible, a normalized string otherwise. The daemon
+/// reuse-cache keys repositories by exactly this value.
+pub fn resolve_repo_root(raw: &str) -> String {
     if raw.trim().is_empty() {
         return String::new();
     }
