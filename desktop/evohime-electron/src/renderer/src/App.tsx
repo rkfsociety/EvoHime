@@ -11,7 +11,6 @@ import type {
   UserIdentity
 } from '@shared/api'
 import type { UpdateStatus } from '@shared/update'
-import { shortCommit } from '@shared/update'
 
 import { useShellApi } from './shell-api'
 import { UpdateIndicator } from './UpdateIndicator'
@@ -492,11 +491,6 @@ export function App(): React.JSX.Element {
         <span title={state?.coreVersion ? `Версия runtime-пакета Core: ${state.coreVersion}` : undefined}>
           {t('Core модуль')} {translate(update?.installedModules?.core ?? '—')}
         </span>
-        {/* Сборка опознаётся commit: релизная версия модуля показана отдельно. */}
-        {update && update.phase !== 'disabled' ? (
-          <span title={t(`Commit сборки, ветка ${update.branch}`)}>{t('сборка')} {translate(shortCommit(update.installedCommit))}</span>
-        ) : null}
-        <span title={t('Последнее событие в журнале Core')}>seq {translate(state?.lastSequence ?? 0)}</span>
         {(state?.reconnectAttempts ?? 0) > 0 ? <span>{t('переподключений:')} {translate(state?.reconnectAttempts)}</span> : null}
         <span className="statusbar__spacer" />
         {state?.reason ? <span className="statusbar__reason">{translate(state.reason)}</span> : null}

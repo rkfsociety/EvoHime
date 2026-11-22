@@ -159,8 +159,6 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Свернуть боковую панель': 'Collapse sidebar',
   'Диалог': 'Chat',
   'Слушание: проверка состояния…': 'Listening: checking status…',
-  'сборка': 'build',
-  'Последнее событие в журнале Core': 'Latest event in the Core journal',
   'переподключений:': 'reconnections:',
   'учётная запись Windows': 'Windows account',
   'Слушание выключено': 'Listening is off',
