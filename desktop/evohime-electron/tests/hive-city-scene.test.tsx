@@ -249,6 +249,53 @@ describe('HiveCityScene — живой архипелаг (план 199.3)', () 
     expect(chips).toHaveLength(13)
   })
 
+  it('в архипелаге департаменты — дома на окраине столицы, а не-floating пины', async () => {
+    const user = userEvent.setup()
+    const onSelectDepartment = vi.fn()
+    const departments: readonly HiveCityDepartmentPin[] = [
+      {
+        key: 'development',
+        label: 'Разработка',
+        subtitle: 'Разработка кода',
+        icon: 'terminal',
+        activeCount: 2,
+        maxCapacity: 3
+      },
+      {
+        key: 'research',
+        label: 'Исследования',
+        subtitle: 'Поиск решений',
+        icon: 'target',
+        activeCount: 0,
+        maxCapacity: 2
+      }
+    ]
+    render(
+      <HiveCityScene
+        status="observing"
+        departments={departments}
+        selectedDepartment="development"
+        onSelectDepartment={onSelectDepartment}
+        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
+      />
+    )
+
+    // Пины панорамы скрыты, дома работников отрисованы на окраине столицы.
+    expect(screen.queryByTestId('hive-pin-development')).toBeNull()
+    // 3 слота разработки + 2 слота исследований = 5 домов.
+    const houses = screen.getAllByTestId(/^hive-archipelago-house-/)
+    expect(houses).toHaveLength(5)
+
+    const devHouses = houses.filter((house) => house.getAttribute('data-dept') === 'development')
+    const activeDevHouses = devHouses.filter((house) => house.getAttribute('data-active') === 'true')
+    expect(devHouses).toHaveLength(3)
+    expect(activeDevHouses).toHaveLength(2)
+
+    const house = screen.getByTestId('hive-archipelago-house-development-0')
+    await user.click(house)
+    expect(onSelectDepartment).toHaveBeenCalledWith('development')
+  })
+
   it('жизненный цикл спутника: entering → active → exiting → размонтирование', () => {
     vi.useFakeTimers()
     try {

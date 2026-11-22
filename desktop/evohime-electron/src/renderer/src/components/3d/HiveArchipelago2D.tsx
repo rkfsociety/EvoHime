@@ -8,6 +8,7 @@ import {
   type CityEdge,
   type CityIslandView
 } from '@shared/hive-city-map'
+import type { HiveCityHouseLot } from './HiveCityScene'
 
 /**
  * Лёгкий SVG-рендерер карты-архипелага (план 199.3).
@@ -36,6 +37,12 @@ export interface HiveArchipelago2DProps {
   readonly selectedIslandId: string | null
   readonly selectedBuildingId: string | null
   readonly hoveredBuildingId: string | null
+  /** Слоты-дома работников департаментов на окраине столицы. */
+  readonly departmentHouses?: readonly HiveCityHouseLot[]
+  /** Ключ выбранного департамента (подсвечивает его дома). */
+  readonly selectedDepartment?: string | null
+  /** Клик по дому работника (выбор департамента), опционально. */
+  readonly onSelectDepartment?: ((departmentKey: string) => void) | undefined
   readonly onSelectIsland: (islandId: string) => void
   readonly onSelectBuilding: (islandId: string, buildingId: string) => void
   readonly onHoverBuilding: (buildingId: string | null) => void
@@ -248,6 +255,84 @@ function Tower({
   )
 }
 
+/** Один дом-лот работника департамента на оконной кольцевой застройке города. */
+function DepartmentHouse2D({
+  view,
+  lot,
+  highlighted,
+  onSelectDepartment
+}: {
+  view: CityIslandView
+  lot: HiveCityHouseLot
+  highlighted: boolean
+  onSelectDepartment: ((departmentKey: string) => void) | undefined
+}) {
+  const angle = (lot.slot / lot.total) * Math.PI * 2
+  const ringRadius = view.radius + 2.4
+  const center = project(view.x + Math.cos(angle) * ringRadius, view.z + Math.sin(angle) * ringRadius, 0)
+  // Плоский силуэт дома (фронтон к зрителю), anchored в центре лота.
+  const w = 14
+  const h = 12
+  const roof = 7
+  const x = center.x
+  const y = center.y
+  const fill = lot.active ? lot.accent : '#3c4359'
+  const fillOpacity = lot.active ? 0.92 : 0.4
+  return (
+    <g
+      data-testid={`hive-archipelago-house-${lot.departmentKey}-${lot.slot}`}
+      data-dept={lot.departmentKey}
+      data-active={lot.active ? 'true' : 'false'}
+      onPointerDown={(event) => {
+        if (onSelectDepartment === undefined) return
+        event.stopPropagation()
+        onSelectDepartment(lot.departmentKey)
+      }}
+      style={onSelectDepartment === undefined ? undefined : { cursor: 'pointer' }}
+      className={highlighted ? 'hive-archipelago__house hive-archipelago__house--selected' : 'hive-archipelago__house'}
+    >
+      {lot.active ? (
+        <circle cx={x} cy={y} r={13} fill={lot.accent} fillOpacity={0.14} />
+      ) : null}
+      <path
+        d={`M ${x - w / 2} ${y} L ${x - w / 2} ${y - h / 2} L ${x} ${y - h / 2 - roof} L ${x + w / 2} ${y - h / 2} L ${x + w / 2} ${y} Z`}
+        fill={fill}
+        fillOpacity={fillOpacity}
+        stroke={highlighted ? '#ffe9b0' : '#0b0d18'}
+        strokeWidth={highlighted ? 1.8 : 0.7}
+      />
+    </g>
+  )
+}
+
+/** Дома работников столицы: каждый слот вместимости департамента — свой дом. */
+function CapitalHouses2D({
+  view,
+  lots,
+  selectedDepartment,
+  onSelectDepartment
+}: {
+  view: CityIslandView
+  lots: readonly HiveCityHouseLot[]
+  selectedDepartment: string | null
+  onSelectDepartment: ((departmentKey: string) => void) | undefined
+}) {
+  if (lots.length === 0) return null
+  return (
+    <g className="hive-archipelago__houses">
+      {lots.map((lot) => (
+        <DepartmentHouse2D
+          key={`${lot.departmentKey}-${lot.slot}`}
+          view={view}
+          lot={lot}
+          highlighted={selectedDepartment === lot.departmentKey}
+          onSelectDepartment={onSelectDepartment}
+        />
+      ))}
+    </g>
+  )
+}
+
 function IslandCity({
   view,
   selectedIsland,
@@ -348,6 +433,9 @@ export const HiveArchipelago2D = memo(function HiveArchipelago2D({
   selectedIslandId,
   selectedBuildingId,
   hoveredBuildingId,
+  departmentHouses,
+  selectedDepartment,
+  onSelectDepartment,
   onSelectIsland,
   onSelectBuilding,
   onHoverBuilding
@@ -413,6 +501,14 @@ export const HiveArchipelago2D = memo(function HiveArchipelago2D({
         onSelectBuilding={onSelectBuilding}
         onHoverBuilding={onHoverBuilding}
       />
+      {departmentHouses !== undefined && departmentHouses.length > 0 ? (
+        <CapitalHouses2D
+          view={capital}
+          lots={departmentHouses}
+          selectedDepartment={selectedDepartment ?? null}
+          onSelectDepartment={onSelectDepartment}
+        />
+      ) : null}
       {satellitesInRange.map((view) => (
         <IslandCity
           key={view.island.id}

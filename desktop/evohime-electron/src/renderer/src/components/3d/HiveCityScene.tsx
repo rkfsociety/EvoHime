@@ -38,6 +38,20 @@ export interface HiveCityAgentHint {
   readonly currentAction: string
 }
 
+/**
+ * Один дом на окраине столицы: слот одного работника департамента Улья.
+ * Активные работники получают освещённый дом, ожидающие — приглушённый.
+ */
+export interface HiveCityHouseLot {
+  /** Ключ департамента (клик по дому выбирает департамент). */
+  readonly departmentKey: string
+  /** Стабильный индекс лота в общей застройке (0..total-1). */
+  readonly slot: number
+  readonly total: number
+  readonly active: boolean
+  readonly accent: string
+}
+
 export type HiveCityMapPayload =
   | { readonly available: true; readonly snapshot: HiveCityMapSnapshot }
   | { readonly available: false; readonly snapshot: null }
@@ -548,6 +562,35 @@ export function HiveCityScene({
 
   const hasInteractiveOverlay = departments.length > 0 || Boolean(queenOverlay)
 
+  /**
+   * Дома работников департаментов на окраине столицы (план 199.3): у каждого
+   * слота вместимости — свой дом; активные освещены. Разброс по окружности
+   * детерминированный, порядок отсортирован по ключу, чтобы застройка не
+   * «пересобиралась» при смене активных работников.
+   */
+  const departmentHouses = useMemo<readonly HiveCityHouseLot[]>(() => {
+    const ordered = [...departments].sort((left, right) => left.key.localeCompare(right.key))
+    const total = ordered.reduce((sum, item) => sum + Math.max(1, item.maxCapacity), 0)
+    const lots: HiveCityHouseLot[] = []
+    let slot = 0
+    for (const department of ordered) {
+      const capacity = Math.max(1, department.maxCapacity)
+      const accent =
+        DEPARTMENT_COORDS[department.key]?.accent ?? FALLBACK_COORDS[0]?.accent ?? '#8d82e8'
+      for (let index = 0; index < capacity; index += 1) {
+        lots.push({
+          departmentKey: department.key,
+          slot,
+          total: Math.max(1, total),
+          active: index < department.activeCount,
+          accent
+        })
+        slot += 1
+      }
+    }
+    return lots
+  }, [departments])
+
   const positionedDepartments = useMemo(() => {
     let fallbackIndex = 0
     return departments.map((department) => {
@@ -735,6 +778,9 @@ export function HiveCityScene({
                     selectedBuildingId={inspectorBuildingId}
                     hoveredBuildingId={hoveredBuildingId}
                     droneCount={droneCount}
+                    departmentHouses={departmentHouses}
+                    selectedDepartment={selectedDepartment}
+                    onSelectDepartment={onSelectDepartment}
                     onSelectIsland={handleSelectIsland}
                     onSelectBuilding={handleSelectBuilding}
                     onHoverBuilding={setHoveredBuildingId}
@@ -751,6 +797,9 @@ export function HiveCityScene({
                 selectedIslandId={focusIslandId}
                 selectedBuildingId={inspectorBuildingId}
                 hoveredBuildingId={hoveredBuildingId}
+                departmentHouses={departmentHouses}
+                selectedDepartment={selectedDepartment}
+                onSelectDepartment={onSelectDepartment}
                 onSelectIsland={handleSelectIsland}
                 onSelectBuilding={handleSelectBuilding}
                 onHoverBuilding={setHoveredBuildingId}
@@ -937,7 +986,11 @@ export function HiveCityScene({
       )}
 
       <div className="hive-city-scene__pins">
-        {positionedDepartments.map(({ department, coord }) => {
+        {/* В режиме живого архипелага департаменты показаны домами на окраине
+            столицы (клик по дому выбирает департамент); фиксированные пины
+            остались только у панорамного силуэта, где город отрисован арт-фоном. */}
+        {!showArchipelago
+          ? positionedDepartments.map(({ department, coord }) => {
           const isActive = department.activeCount > 0
           const isSelected = selectedDepartment === department.key
           const percent = department.maxCapacity > 0
@@ -983,7 +1036,8 @@ export function HiveCityScene({
               ) : null}
             </button>
           )
-        })}
+        })
+          : null}
 
         {queenOverlay ? (
           <div className="hive-city-scene__queen-anchor">

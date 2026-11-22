@@ -2568,11 +2568,21 @@ pub fn build_archipelago_with_budgets(
     let _ = started;
 
     // Satellites: canonical order by public id, budget shared.
+    // The capital already renders the Eva workspace checkout: a watched
+    // repository pointing at the same directory must not duplicate it as a
+    // second city.
+    let workspace_canonical = inputs
+        .eva_workspace_path
+        .filter(|raw| !raw.trim().is_empty())
+        .map(resolve_repo_root);
     let mut entries: Vec<(String, String, PathBuf)> = Vec::new();
     let mut seen_canonical: BTreeSet<String> = BTreeSet::new();
     for raw in inputs.watched_repositories {
         let canonical = resolve_repo_root(raw);
-        if canonical.is_empty() || !seen_canonical.insert(canonical.clone()) {
+        if canonical.is_empty()
+            || Some(canonical.as_str()) == workspace_canonical.as_deref()
+            || !seen_canonical.insert(canonical.clone())
+        {
             continue;
         }
         let id = satellite_id_for(&canonical);
@@ -2966,6 +2976,34 @@ desktop-bridge = { path = "crates/desktop-bridge" }
         assert_eq!(snapshot.capital.status, CityIslandStatus::Ready);
         assert!(snapshot.satellites.is_empty());
         assert_eq!(snapshot.generated_at_ms, 42);
+    }
+
+    #[test]
+    fn watched_repository_equal_to_workspace_never_duplicates_the_capital() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let live = tmp.path().join("EvoHime");
+        write_file(&live.join("src/lib.rs"), "pub fn eva() {}\n");
+        let live_path = live.to_string_lossy().into_owned();
+        // Several spellings of the same checkout (raw, trailing separator,
+        // doubled separator) must all collapse into the capital alone.
+        let watched = [
+            live_path.clone(),
+            format!("{live_path}/"),
+            format!("{live_path}//"),
+        ];
+        let inputs = CityMapInputs {
+            eva_workspace_path: Some(live_path.as_str()),
+            watched_repositories: &watched,
+            cached_satellites: &BTreeMap::new(),
+        };
+        let snapshot = build_archipelago(&inputs, 11);
+
+        assert_eq!(snapshot.capital.source, CityIslandSource::LiveWorkspace);
+        assert_eq!(snapshot.capital.role, CityIslandRole::Capital);
+        assert!(
+            snapshot.satellites.is_empty(),
+            "a watched repository pointing at the Eva workspace must not become a satellite"
+        );
     }
 
     #[test]

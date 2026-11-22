@@ -8,6 +8,7 @@ import {
   fnv1a32,
   type CityIslandView
 } from '@shared/hive-city-map'
+import type { HiveCityHouseLot } from './HiveCityScene'
 
 /**
  * WebGL-архипелаг на `three` + `@react-three/fiber` (план 199.3).
@@ -43,6 +44,12 @@ export interface HiveArchipelago3DProps {
   readonly selectedBuildingId: string | null
   readonly hoveredBuildingId: string | null
   readonly droneCount: number
+  /** Слоты-дома работников департаментов на окраине столицы. */
+  readonly departmentHouses?: readonly HiveCityHouseLot[]
+  /** Ключ выбранного департамента (подсвечивает его дома). */
+  readonly selectedDepartment?: string | null
+  /** Клик по дому работника (выбор департамента), опционально. */
+  readonly onSelectDepartment?: ((departmentKey: string) => void) | undefined
   readonly onSelectIsland: (islandId: string) => void
   readonly onSelectBuilding: (islandId: string, buildingId: string) => void
   readonly onHoverBuilding: (buildingId: string | null) => void
@@ -360,9 +367,139 @@ function IslandNameplate({ view }: { view: CityIslandView }) {
   useEffect(() => () => texture.dispose(), [texture])
 
   return (
-    <sprite position={[view.x, 2.2, view.z + view.radius + 1.5]} scale={[6, 1.5, 1]}>
+    <sprite position={[view.x, 3.0, view.z + view.radius + 3.4]} scale={[6, 1.5, 1]}>
       <spriteMaterial map={texture} transparent depthWrite={false} />
     </sprite>
+  )
+}
+
+/** One worker house on the capital outskirts; lit when the worker is active. */
+function DepartmentHouse3D({
+  view,
+  lot,
+  houseMaterials,
+  highlighted,
+  onSelectDepartment
+}: {
+  view: CityIslandView
+  lot: HiveCityHouseLot
+  houseMaterials: {
+    readonly activeBody: THREE.MeshStandardMaterial
+    readonly activeRoof: THREE.MeshStandardMaterial
+    readonly idleBody: THREE.MeshStandardMaterial
+    readonly idleRoof: THREE.MeshStandardMaterial
+  }
+  highlighted: boolean
+  onSelectDepartment: ((departmentKey: string) => void) | undefined
+}) {
+  const angle = (lot.slot / lot.total) * Math.PI * 2
+  const ringRadius = view.radius + 2.4
+  const position = useMemo<[number, number, number]>(() => {
+    const x = view.x + Math.cos(angle) * ringRadius
+    const z = view.z + Math.sin(angle) * ringRadius
+    return [x, 0.34, z]
+  }, [angle, ringRadius, view.x, view.z])
+  const body = lot.active ? houseMaterials.activeBody : houseMaterials.idleBody
+  const roof = lot.active ? houseMaterials.activeRoof : houseMaterials.idleRoof
+
+  return (
+    <group
+      position={position}
+      data-testid={`hive-archipelago-house-${lot.departmentKey}-${lot.slot}`}
+      data-dept={lot.departmentKey}
+      data-active={lot.active ? 'true' : 'false'}
+      onPointerDown={(event: ThreeEvent<PointerEvent>) => {
+        if (onSelectDepartment === undefined) return
+        event.stopPropagation()
+        onSelectDepartment(lot.departmentKey)
+      }}
+    >
+      <mesh position={[0, 0.04, 0]}>
+        <boxGeometry args={[1.7, 0.08, 1.7]} />
+        <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.28 : 0.1} />
+      </mesh>
+      <mesh material={body}>
+        <boxGeometry args={[1.05, 0.68, 1.05]} />
+      </mesh>
+      <mesh
+        material={roof}
+        position={[0, 0.34 + 0.42, 0]}
+        rotation={[0, Math.PI / 4, 0]}
+      >
+        <coneGeometry args={[0.92, 0.6, 4]} />
+      </mesh>
+      {highlighted ? (
+        <mesh position={[0, 0.34, 0]}>
+          <boxGeometry args={[1.35, 0.8, 1.35]} />
+          <meshBasicMaterial color="#ffe9b0" wireframe transparent opacity={0.6} />
+        </mesh>
+      ) : null}
+    </group>
+  )
+}
+
+/** Gable houses of one island: every hive worker capacity slot gets its own. */
+function DepartmentHouses3D({
+  view,
+  lots,
+  selectedDepartment,
+  onSelectDepartment
+}: {
+  view: CityIslandView
+  lots: readonly HiveCityHouseLot[]
+  selectedDepartment: string | null
+  onSelectDepartment: ((departmentKey: string) => void) | undefined
+}) {
+  const houseMaterials = useMemo(
+    () => ({
+      activeBody: new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#39415c'),
+        roughness: 0.6,
+        metalness: 0.1
+      }),
+      activeRoof: new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#e0b341'),
+        emissive: new THREE.Color('#e0b341'),
+        emissiveIntensity: 0.75,
+        roughness: 0.4
+      }),
+      idleBody: new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#232838'),
+        roughness: 0.75
+      }),
+      idleRoof: new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#3c4359'),
+        roughness: 0.7
+      })
+    }),
+    []
+  )
+
+  useEffect(
+    () => () => {
+      houseMaterials.activeBody.dispose()
+      houseMaterials.activeRoof.dispose()
+      houseMaterials.idleBody.dispose()
+      houseMaterials.idleRoof.dispose()
+    },
+    [houseMaterials]
+  )
+
+  if (lots.length === 0) return <></>
+
+  return (
+    <group>
+      {lots.map((lot) => (
+        <DepartmentHouse3D
+          key={`${lot.departmentKey}-${lot.slot}`}
+          view={view}
+          lot={lot}
+          houseMaterials={houseMaterials}
+          highlighted={selectedDepartment === lot.departmentKey}
+          onSelectDepartment={onSelectDepartment}
+        />
+      ))}
+    </group>
   )
 }
 
@@ -499,6 +636,9 @@ function IslandGroup3D({
   selectedIsland,
   selectedBuildingId,
   hoveredBuildingId,
+  departmentHouses,
+  selectedDepartment,
+  onSelectDepartment,
   onSelectIsland,
   onSelectBuilding,
   onHoverBuilding
@@ -508,6 +648,10 @@ function IslandGroup3D({
   selectedIsland: boolean
   selectedBuildingId: string | null
   hoveredBuildingId: string | null
+  /** Слоты-дома работников; задаются только для столицы. */
+  departmentHouses?: readonly HiveCityHouseLot[]
+  selectedDepartment?: string | null
+  onSelectDepartment?: ((departmentKey: string) => void) | undefined
   onSelectIsland: (islandId: string) => void
   onSelectBuilding: (islandId: string, buildingId: string) => void
   onHoverBuilding: (buildingId: string | null) => void
@@ -547,6 +691,14 @@ function IslandGroup3D({
         onHoverBuilding={onHoverBuilding}
       />
       <CitadelCore view={view} paused={paused} />
+      {departmentHouses !== undefined && departmentHouses.length > 0 ? (
+        <DepartmentHouses3D
+          view={view}
+          lots={departmentHouses}
+          selectedDepartment={selectedDepartment ?? null}
+          onSelectDepartment={onSelectDepartment}
+        />
+      ) : null}
       <IslandNameplate view={view} />
     </group>
   )
@@ -564,6 +716,9 @@ export function HiveArchipelago3D({
   selectedBuildingId,
   hoveredBuildingId,
   droneCount,
+  departmentHouses,
+  selectedDepartment,
+  onSelectDepartment,
   onSelectIsland,
   onSelectBuilding,
   onHoverBuilding,
@@ -620,6 +775,9 @@ export function HiveArchipelago3D({
           selectedIslandId={selectedIslandId}
           selectedBuildingId={selectedBuildingId}
           hoveredBuildingId={hoveredBuildingId}
+          departmentHouses={departmentHouses ?? []}
+          selectedDepartment={selectedDepartment ?? null}
+          onSelectDepartment={onSelectDepartment}
           onSelectIsland={onSelectIsland}
           onSelectBuilding={onSelectBuilding}
           onHoverBuilding={onHoverBuilding}
@@ -639,6 +797,9 @@ function FloatingCityGroup({
   selectedIslandId,
   selectedBuildingId,
   hoveredBuildingId,
+  departmentHouses,
+  selectedDepartment,
+  onSelectDepartment,
   onSelectIsland,
   onSelectBuilding,
   onHoverBuilding
@@ -649,6 +810,9 @@ function FloatingCityGroup({
   readonly selectedIslandId: string | null
   readonly selectedBuildingId: string | null
   readonly hoveredBuildingId: string | null
+  readonly departmentHouses: readonly HiveCityHouseLot[]
+  readonly selectedDepartment: string | null
+  readonly onSelectDepartment: ((departmentKey: string) => void) | undefined
   readonly onSelectIsland: (islandId: string) => void
   readonly onSelectBuilding: (islandId: string, buildingId: string) => void
   readonly onHoverBuilding: (buildingId: string | null) => void
@@ -661,6 +825,9 @@ function FloatingCityGroup({
         selectedIsland={selectedIslandId === capital.island.id}
         selectedBuildingId={selectedBuildingId}
         hoveredBuildingId={hoveredBuildingId}
+        departmentHouses={departmentHouses}
+        selectedDepartment={selectedDepartment}
+        onSelectDepartment={onSelectDepartment}
         onSelectIsland={onSelectIsland}
         onSelectBuilding={onSelectBuilding}
         onHoverBuilding={onHoverBuilding}

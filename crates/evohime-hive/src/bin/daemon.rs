@@ -1374,14 +1374,18 @@ fn run_city_map_job(runtime: &CityMapRuntime, job: &CityMapJob) -> Result<(), St
     };
 
     // --- Satellites: canonical identity, bounded rescan of changed repos.
+    // The capital already renders the Eva workspace checkout: a watched
+    // repository pointing at the same directory must not duplicate it as a
+    // second city (mirrors the guard of `build_archipelago_with_budgets`).
+    let capital_canonical = capital_path.map(resolve_repo_root);
     let mut entries: Vec<(String, String, PathBuf)> = Vec::new();
     let mut seen: BTreeSet<String> = BTreeSet::new();
     for raw in &job.watched_repositories {
         let canonical = resolve_repo_root(raw);
-        if canonical.is_empty() {
-            continue;
-        }
-        if !seen.insert(canonical.clone()) {
+        if canonical.is_empty()
+            || Some(canonical.as_str()) == capital_canonical.as_deref()
+            || !seen.insert(canonical.clone())
+        {
             continue;
         }
         entries.push((
