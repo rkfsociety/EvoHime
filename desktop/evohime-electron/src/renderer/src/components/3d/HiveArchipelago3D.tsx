@@ -8,6 +8,7 @@ import {
   capitalHouseRingRadius,
   displayIslandHue,
   fnv1a32,
+  type CityBuildingView,
   type CityIslandView
 } from '@shared/hive-city-map'
 import type { HiveCityHouseLot } from './HiveCityScene'
@@ -115,24 +116,61 @@ function IslandGround({
   material: THREE.MeshBasicMaterial
   onSelect: () => void
 }) {
-  const ref = useRef<THREE.Mesh>(null)
+  const ref = useRef<THREE.Group>(null)
   useLayoutEffect(() => {
-    const mesh = ref.current
-    if (!mesh) return
-    mesh.position.set(view.x, 0, view.z)
-    mesh.scale.set(view.radius * 2, 0.12, view.radius * 2)
+    const group = ref.current
+    if (!group) return
+    group.position.set(view.x, 0, view.z)
   }, [view])
+
+  // Скальное основание под плитой: остров читается как парящий осколок
+  // земли, а не плоский ромб.
+  const rockRefs = useRef<THREE.Group>(null)
+  const rocks = useMemo(() => {
+    const seed = fnv1a32(`${view.island.id}/rocks`)
+    return Array.from({ length: 5 }, (_, index) => {
+      const angle = ((seed >>> (index * 5)) % 360) / 180 * Math.PI
+      const distance = 0.55 + ((seed >>> (index * 3 + 2)) % 100) / 100 * 0.25
+      return {
+        x: Math.cos(angle) * view.radius * distance,
+        y: -0.7 - ((seed >>> (index * 4 + 1)) % 100) / 100 * view.radius * 0.25,
+        z: Math.sin(angle) * view.radius * distance,
+        size: 0.5 + ((seed >>> (index * 6)) % 100) / 100 * 0.7,
+        rotation: (index * Math.PI) / 5
+      }
+    })
+  }, [view.island.id, view.radius])
+
   return (
-    <mesh
-      ref={ref}
-      material={material}
-      onPointerDown={(event: ThreeEvent<PointerEvent>) => {
-        event.stopPropagation()
-        onSelect()
-      }}
-    >
-      <boxGeometry args={[1, 1, 1]} />
-    </mesh>
+    <group ref={ref}>
+      {/* Плита города: шестиугольная, с фаской-кромкой. */}
+      <mesh
+        material={material}
+        onPointerDown={(event: ThreeEvent<PointerEvent>) => {
+          event.stopPropagation()
+          onSelect()
+        }}
+      >
+        <cylinderGeometry args={[view.radius, view.radius * 0.92, 0.5, 6]} />
+      </mesh>
+      <mesh position={[0, 0.29, 0]} scale={[view.radius * 1.05, 0.05, view.radius * 1.05]}>
+        <cylinderGeometry args={[1, 1, 1, 6]} />
+        <meshBasicMaterial color={material.color} transparent opacity={0.5} />
+      </mesh>
+      {/* Скальное основание: перевёрнутая усечённая пирамида. */}
+      <mesh position={[0, -0.7 - view.radius * 0.22, 0]} rotation={[Math.PI, 0, 0]}>
+        <cylinderGeometry args={[view.radius * 0.25, view.radius * 0.88, view.radius * 0.75, 6]} />
+        <meshStandardMaterial color="#181c2c" roughness={0.95} metalness={0.05} />
+      </mesh>
+      <group ref={rockRefs}>
+        {rocks.map((rock, index) => (
+          <mesh key={index} position={[rock.x, rock.y, rock.z]} rotation={[rock.rotation, rock.rotation * 0.7, 0]}>
+            <dodecahedronGeometry args={[rock.size, 0]} />
+            <meshStandardMaterial color="#12141f" roughness={1} />
+          </mesh>
+        ))}
+      </group>
+    </group>
   )
 }
 
@@ -210,15 +248,127 @@ function ConnectingBridges({
 
 
 /**
- * Towers of one island: a single InstancedMesh scaled per building
- * (`height_weight_bp`), plus one outline mesh for the highlighted tower.
+ * Артикулированная башня одного модуля: детерминированный вариант силуэта
+ * (уступы, две башни, шпиль или террасы) из seed `island/building`, светящиеся
+ * пояса уровнями и тёплая крыша. Вместо одного процедурного куба — 3-7 мешей;
+ * счёт зданий ограничен контрактом карты.
  */
+function BuildingComplex3D({
+  view,
+  item,
+  materials,
+  selected,
+  hovered,
+  onSelectBuilding,
+  onHoverBuilding
+}: {
+  view: CityIslandView
+  item: CityBuildingView
+  materials: { readonly body: THREE.MeshStandardMaterial; readonly accent: THREE.MeshStandardMaterial }
+  selected: boolean
+  hovered: boolean
+  onSelectBuilding: (islandId: string, buildingId: string) => void
+  onHoverBuilding: (buildingId: string | null) => void
+}) {
+  const variant = useMemo(
+    () => fnv1a32(`${view.island.id}/${item.building.id}/silhouette`) % 4,
+    [view.island.id, item.building.id]
+  )
+  const height = towerDisplayHeight(item.height)
+  const width = 1.05
+  const x = view.x + item.x
+  const z = view.z + item.z
+  // Простая запись слоёв силуэта: [ширина, доля полной высоты, материал, поворот, сдвиг X].
+  const layers = useMemo<Array<{ w: number; h: number; accent: boolean; rot: number; y: number; dx: number }>>(() => {
+    const band = 0.05
+    switch (variant) {
+      case 0: // классическая башня с уступами и поясами
+      {
+        const main = height - band * 2
+        return [
+          { w: width * 1.08, h: main * 0.55, accent: false, rot: 0, y: main * 0.275, dx: 0 },
+          { w: width * 0.86, h: band, accent: true, rot: 0, y: main * 0.55 + band / 2, dx: 0 },
+          { w: width * 0.78, h: main * 0.3, accent: false, rot: 0, y: main * 0.55 + band + main * 0.15, dx: 0 },
+          { w: width * 0.6, h: band, accent: true, rot: 0, y: main * 0.85 + band / 2, dx: 0 },
+          { w: width * 0.52, h: main * 0.15, accent: false, rot: 0, y: main * 0.85 + band + main * 0.075, dx: 0 }
+        ]
+      }
+      case 1: // две башни-близнеца на общем стилобате
+      {
+        const podium = height * 0.22
+        const tower = height - podium
+        return [
+          { w: width * 1.24, h: podium, accent: false, rot: 0, y: podium / 2, dx: 0 },
+          { w: width * 0.52, h: tower, accent: false, rot: 0, y: podium + tower / 2, dx: -width * 0.6 },
+          { w: width * 0.52, h: tower * 0.72, accent: false, rot: 0, y: podium + (tower * 0.72) / 2, dx: width * 0.6 }
+        ]
+      }
+      case 2: // плита со шпилем
+      {
+        const main = height * 0.8
+        const spire = height * 0.2
+        return [
+          { w: width * 1.14, h: main, accent: false, rot: 0, y: main / 2, dx: 0 },
+          { w: width * 0.7, h: main * 0.12, accent: true, rot: 0, y: main + main * 0.06, dx: 0 },
+          { w: width * 0.16, h: spire, accent: false, rot: 0, y: main + main * 0.12 + spire / 2, dx: 0 }
+        ]
+      }
+      default: // террасный холм
+      {
+        const step = height / 3
+        return [
+          { w: width * 1.24, h: step, accent: false, rot: Math.PI / 4, y: step / 2, dx: 0 },
+          { w: width * 0.94, h: step, accent: false, rot: Math.PI / 4, y: step * 1.5, dx: 0 },
+          { w: width * 0.6, h: step, accent: true, rot: Math.PI / 4, y: step * 2.5, dx: 0 }
+        ]
+      }
+    }
+  }, [height, variant])
+
+  const handlePointerDown = (event: ThreeEvent<PointerEvent>): void => {
+    event.stopPropagation()
+    onSelectBuilding(view.island.id, item.building.id)
+  }
+  const lit = selected || hovered
+
+  return (
+    <group
+      position={[x, 0, z]}
+      userData={{ testid: `hive-archipelago-tower-${item.building.id}`, buildingId: item.building.id }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={(event: ThreeEvent<PointerEvent>) => {
+        event.stopPropagation()
+        onHoverBuilding(item.building.id)
+      }}
+      onPointerOut={() => onHoverBuilding(null)}
+    >
+      {layers.map((layer, index) => (
+        <mesh
+          key={index}
+          position={[layer.dx, layer.y, 0]}
+          material={layer.accent ? materials.accent : materials.body}
+          rotation={[0, layer.rot, 0]}
+          scale={[layer.w, layer.h, layer.w]}
+        >
+          <boxGeometry args={[1, 1, 1]} />
+        </mesh>
+      ))}
+      {lit ? (
+        <mesh position={[0, height / 2, 0]}>
+          <boxGeometry args={[width * 1.5, height + 0.4, width * 1.5]} />
+          <meshBasicMaterial color="#ffe9b0" wireframe transparent opacity={0.55} />
+        </mesh>
+      ) : null}
+    </group>
+  )
+}
+
+/** Башни одного острова: артикулированные комплексы по детерминированным силуэтам. */
 function IslandTowers({
   view,
   materials,
   selectedBuildingId,
   hoveredBuildingId,
-  paused,
   onSelectBuilding,
   onHoverBuilding
 }: {
@@ -226,110 +376,26 @@ function IslandTowers({
   materials: { readonly body: THREE.MeshStandardMaterial; readonly accent: THREE.MeshStandardMaterial }
   selectedBuildingId: string | null
   hoveredBuildingId: string | null
-  paused: boolean
   onSelectBuilding: (islandId: string, buildingId: string) => void
   onHoverBuilding: (buildingId: string | null) => void
 }) {
-  const bodyRef = useRef<THREE.InstancedMesh>(null)
-  const outlineRef = useRef<THREE.Mesh>(null)
-  const count = view.buildings.length
-
-  const matrices = useMemo(() => {
-    const dummy = new THREE.Object3D()
-    return view.buildings.map((item) => {
-      const width = item.building.kind === 'citadel' ? 1.5 : 1.05
-      const displayHeight = towerHeight3D(item.building.kind, item.height)
-      dummy.position.set(view.x + item.x, displayHeight / 2, view.z + item.z)
-      dummy.scale.set(width, displayHeight, width)
-      dummy.updateMatrix()
-      return dummy.matrix.clone()
-    })
-  }, [view])
-
-  useLayoutEffect(() => {
-    const mesh = bodyRef.current
-    if (!mesh) return
-    matrices.forEach((matrix, index) => mesh.setMatrixAt(index, matrix))
-    mesh.instanceMatrix.needsUpdate = true
-    mesh.computeBoundingSphere()
-  }, [matrices])
-
-  // Soft window flicker: a deterministic per-island shimmer of emissive
-  // intensity (no per-building lights, no post-processing).
-  const flickerSeed = useMemo(
-    () => (fnv1a32(view.island.id) % 1000) / 1000,
-    [view.island.id]
-  )
-  useFrame((state) => {
-    const material = materials.accent
-    if (paused) {
-      material.emissiveIntensity = 1
-      return
-    }
-    const t = state.clock.elapsedTime
-    material.emissiveIntensity = 0.85 + 0.3 * Math.sin(t * 1.7 + flickerSeed * Math.PI * 2)
-  })
-
-  const highlightedIndex = useMemo(() => {
-    if (selectedBuildingId === null && hoveredBuildingId === null) return null
-    const target = hoveredBuildingId ?? selectedBuildingId
-    const index = view.buildings.findIndex((item) => item.building.id === target)
-    return index === -1 ? null : index
-  }, [hoveredBuildingId, selectedBuildingId, view.buildings])
-
-  useLayoutEffect(() => {
-    const outline = outlineRef.current
-    if (!outline) return
-    if (highlightedIndex === null) {
-      outline.visible = false
-      return
-    }
-    const item = view.buildings[highlightedIndex]
-    if (!item) {
-      outline.visible = false
-      return
-    }
-    const width = item.building.kind === 'citadel' ? 1.7 : 1.25
-    const displayHeight = towerHeight3D(item.building.kind, item.height)
-    outline.position.set(view.x + item.x, displayHeight / 2, view.z + item.z)
-    outline.scale.set(width, displayHeight + 0.3, width)
-    outline.visible = true
-  }, [highlightedIndex, view])
-
-  const handlePointerDown = (event: ThreeEvent<PointerEvent>): void => {
-    event.stopPropagation()
-    const instanceId = 'instanceId' in event ? event.instanceId : undefined
-    const item = instanceId === undefined ? undefined : view.buildings[instanceId]
-    if (item) {
-      onSelectBuilding(view.island.id, item.building.id)
-    } else {
-      onSelectBuilding(view.island.id, view.island.id)
-    }
-  }
-
-  if (count === 0) return <></>
+  const activeId = hoveredBuildingId ?? selectedBuildingId
+  const towerBuildings = view.buildings.filter((item) => item.building.kind !== 'citadel')
+  if (towerBuildings.length === 0) return <></>
   return (
     <group>
-      <instancedMesh
-        ref={bodyRef}
-        args={[undefined, materials.body, count]}
-        onPointerDown={handlePointerDown}
-        onPointerMove={(event: ThreeEvent<PointerEvent>) => {
-          event.stopPropagation()
-          const instanceId = 'instanceId' in event ? event.instanceId : undefined
-          const item = instanceId === undefined ? undefined : view.buildings[instanceId]
-          onHoverBuilding(item ? item.building.id : null)
-        }}
-        onPointerOut={() => onHoverBuilding(null)}
-      >
-        {/* Без геометрии-потомка instancedMesh получает пустой BufferGeometry
-            и не рисует ни одного instance — город остаётся невидимым. */}
-        <boxGeometry args={[1, 1, 1]} />
-      </instancedMesh>
-      <mesh ref={outlineRef} visible={false}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshBasicMaterial color="#ffe9b0" wireframe />
-      </mesh>
+      {towerBuildings.map((item) => (
+        <BuildingComplex3D
+          key={`${view.island.id}/${item.building.id}`}
+          view={view}
+          item={item}
+          materials={materials}
+          selected={selectedBuildingId === item.building.id}
+          hovered={activeId === item.building.id}
+          onSelectBuilding={onSelectBuilding}
+          onHoverBuilding={onHoverBuilding}
+        />
+      ))}
     </group>
   )
 }
@@ -446,6 +512,16 @@ function DepartmentHouse3D({
       >
         <coneGeometry args={[0.92, 0.6, 4]} />
       </mesh>
+      {/* Труба: детерминированная сторона крыши. */}
+      <mesh position={[0.28, 0.34 + 0.42, -0.28]}>
+        <boxGeometry args={[0.16, 0.34, 0.16]} />
+        <meshStandardMaterial color="#181c2c" roughness={0.9} />
+      </mesh>
+      {/* Тёплое окно: светится у активного работника. */}
+      <mesh position={[0, 0.34, 0.53]}>
+        <boxGeometry args={[0.34, 0.2, 0.02]} />
+        <meshBasicMaterial color={lot.active ? '#ffd98a' : '#242a40'} />
+      </mesh>
       {highlighted ? (
         <mesh position={[0, 0.34, 0]}>
           <boxGeometry args={[1.35, 0.8, 1.35]} />
@@ -453,6 +529,54 @@ function DepartmentHouse3D({
         </mesh>
       ) : null}
     </group>
+  )
+}
+
+/** Маяк спутника: мягкое дышащее гало над центром острова без цитадели. */
+function BeaconGlow3D({ view }: { view: CityIslandView }) {
+  const coreRef = useRef<THREE.Mesh>(null)
+  const haloRef = useRef<THREE.Mesh>(null)
+  useFrame((state) => {
+    const t = state.clock.elapsedTime
+    if (coreRef.current) coreRef.current.scale.setScalar(0.36 + 0.06 * Math.sin(t * 1.9))
+    if (haloRef.current) haloRef.current.scale.setScalar(1 + 0.07 * Math.sin(t * 1.2))
+  })
+  return (
+    <group position={[view.x, 1.7, view.z]}>
+      <mesh ref={coreRef}>
+        <sphereGeometry args={[0.42, 10, 10]} />
+        <meshBasicMaterial color="#ffe9b0" transparent opacity={0.85} />
+      </mesh>
+      <mesh ref={haloRef}>
+        <sphereGeometry args={[0.95, 12, 12]} />
+        <meshBasicMaterial color="#8d82e8" transparent opacity={0.14} />
+      </mesh>
+    </group>
+  )
+}
+
+/** Starfield: static deterministic points on a far shell; no motion cost. */
+function Starfield(): React.JSX.Element | null {
+  const geometry = useMemo(() => {
+    const positions = new Float32Array(300 * 3)
+    for (let index = 0; index < 300; index += 1) {
+      const seedA = (fnv1a32(`star-a-${index}`) % 3600) / 3600 * Math.PI * 2
+      const seedB = (fnv1a32(`star-b-${index}`) % 1000) / 1000
+      const radius = 130 + seedB * 60
+      const y = (fnv1a32(`star-y-${index}`) % 1000) / 1000 * 90 + 6
+      positions[index * 3] = Math.cos(seedA) * radius
+      positions[index * 3 + 1] = y
+      positions[index * 3 + 2] = Math.sin(seedA) * radius
+    }
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    return geometry
+  }, [])
+  useEffect(() => () => geometry.dispose(), [geometry])
+  return (
+    <points geometry={geometry}>
+      <pointsMaterial color="#9fb4ff" size={1.4} sizeAttenuation={false} transparent opacity={0.6} />
+    </points>
   )
 }
 
@@ -521,45 +645,81 @@ function DepartmentHouses3D({
   )
 }
 
-/** Citadel: breathing halo and emissive core reacting to the hive status. */
-function CitadelCore({ view, paused }: { view: CityIslandView; paused: boolean }) {
-  const coreRef = useRef<THREE.Mesh>(null)
+/** Дворец Королевы: ярусный силуэт с ротондой, позолоченной короной и маяком. */
+function QueenTower3D({ view }: { view: CityIslandView }) {
+  const towerRef = useRef<THREE.Group>(null)
+  const beaconRef = useRef<THREE.Mesh>(null)
   const haloRef = useRef<THREE.Mesh>(null)
-  const material = useMemo(
-    () =>
-      new THREE.MeshBasicMaterial({
-        color: new THREE.Color('#ffe9b0'),
-        transparent: true,
-        opacity: 0.92
-      }),
-    []
-  )
-  useEffect(() => () => material.dispose(), [material])
+  const materials = useMemo(() => ({
+    body: new THREE.MeshStandardMaterial({
+      color: new THREE.Color('#2a2438'),
+      emissive: new THREE.Color('#8d82e8'),
+      emissiveIntensity: 0.14,
+      roughness: 0.5,
+      metalness: 0.35
+    }),
+    gilded: new THREE.MeshStandardMaterial({
+      color: new THREE.Color('#e8c874'),
+      emissive: new THREE.Color('#e8b34a'),
+      emissiveIntensity: 0.5,
+      roughness: 0.3,
+      metalness: 0.6
+    })
+  }), [])
+  useEffect(() => () => {
+    materials.body.dispose()
+    materials.gilded.dispose()
+  }, [materials])
 
+  // Пульс маяка: дыхание короны и гало, останавливается на паузе.
   useFrame((state) => {
     const t = state.clock.elapsedTime
-    if (!paused && coreRef.current) {
-      coreRef.current.scale.setScalar(0.42 + 0.08 * Math.sin(t * 2.1))
+    if (beaconRef.current) {
+      beaconRef.current.scale.setScalar(0.32 + 0.05 * Math.sin(t * 2.1))
     }
-    if (!paused && haloRef.current) {
-      haloRef.current.scale.setScalar(1 + 0.06 * Math.sin(t * 1.3))
+    if (haloRef.current) {
+      haloRef.current.scale.setScalar(1 + 0.08 * Math.sin(t * 1.3))
     }
   })
 
-  const position = useMemo<[number, number, number]>(() => {
+  const plan = useMemo(() => {
     const citadel = view.buildings.find((item) => item.building.kind === 'citadel')
-    const displayHeight = towerHeight3D(citadel ? citadel.building.kind : 'module', citadel?.height ?? 0.6)
-    return [view.x + (citadel?.x ?? 0), displayHeight + 1.9, view.z + (citadel?.z ?? 0)]
+    const height = towerHeight3D('citadel', citadel?.height ?? 1)
+    return { x: view.x + (citadel?.x ?? 0), z: view.z + (citadel?.z ?? 0), height }
   }, [view])
 
+  // Ярусы: стилобат → тело → ротонда; выше — корона с маяком.
+  const tierGuide = plan.height
+  const tiers = [
+    { w: 2.3, h: tierGuide * 0.16, rot: 0, mat: 'body' as const },
+    { w: 1.75, h: tierGuide * 0.25, rot: Math.PI / 8, mat: 'body' as const },
+    { w: 1.3, h: tierGuide * 0.23, rot: 0, mat: 'body' as const },
+    { w: 0.95, h: tierGuide * 0.25, rot: Math.PI / 4, mat: 'gilded' as const }
+  ]
+  let cursor = 0
+  const placed = tiers.map((tier) => {
+    const entry = { ...tier, y: cursor + tier.h / 2 }
+    cursor += tier.h
+    return entry
+  })
+  const crownBase = cursor
+
   return (
-    <group>
-      <mesh ref={coreRef} position={position} material={material}>
+    <group ref={towerRef} position={[plan.x, 0, plan.z]}>
+      {placed.map((tier, index) => (
+        <mesh key={index} position={[0, tier.y, 0]} material={materials[tier.mat]} rotation={[0, tier.rot, 0]} scale={[tier.w, tier.h, tier.w]}>
+          <boxGeometry args={[1, 1, 1]} />
+        </mesh>
+      ))}
+      <mesh position={[0, crownBase + 0.18, 0]} material={materials.gilded}>
+        <coneGeometry args={[0.55, 0.36, 6]} />
+      </mesh>
+      <mesh ref={beaconRef} position={[0, crownBase + 0.62, 0]} material={materials.gilded}>
         <sphereGeometry args={[1, 12, 12]} />
       </mesh>
-      <mesh ref={haloRef} position={[position[0], position[1], position[2]]}>
-        <sphereGeometry args={[1.35, 14, 14]} />
-        <meshBasicMaterial color="#8d82e8" transparent opacity={0.16} />
+      <mesh ref={haloRef} position={[0, crownBase + 0.62, 0]}>
+        <sphereGeometry args={[0.85, 14, 14]} />
+        <meshBasicMaterial color="#ffe9b0" transparent opacity={0.2} />
       </mesh>
     </group>
   )
@@ -704,11 +864,14 @@ function IslandGroup3D({
         materials={materials}
         selectedBuildingId={selectedIsland ? selectedBuildingId : null}
         hoveredBuildingId={view.island.status === 'ready' ? hoveredBuildingId : null}
-        paused={paused}
         onSelectBuilding={onSelectBuilding}
         onHoverBuilding={onHoverBuilding}
       />
-      <CitadelCore view={view} paused={paused} />
+      {view.buildings.some((item) => item.building.kind === 'citadel') ? (
+        <QueenTower3D view={view} />
+      ) : (
+        <BeaconGlow3D view={view} />
+      )}
       {departmentHouses !== undefined && departmentHouses.length > 0 ? (
         <DepartmentHouses3D
           view={view}
@@ -782,9 +945,14 @@ export function HiveArchipelago3D({
         }}
       >
         <color attach="background" args={['#070812']} />
-        <ambientLight intensity={0.55} />
-        <directionalLight position={[30, 40, 10]} intensity={1.1} />
+        <ambientLight intensity={0.42} />
+        <hemisphereLight args={['#4a5aa8', '#0b0d18', 0.55]} />
+        <directionalLight position={[30, 40, 10]} intensity={1.15} color="#ffe2b0" />
+        <directionalLight position={[-24, 18, -16]} intensity={0.35} color="#7aa0ff" />
+        {/* Тёплый источник над дворцом Королевы: город читается объёмом. */}
+        <pointLight position={[0, 9, 0]} intensity={60} distance={60} decay={1.8} color="#ffd98a" />
         <CameraRig focus={focus} paused={paused} />
+        <Starfield />
 
         <FloatingCityGroup
           capital={capital}
