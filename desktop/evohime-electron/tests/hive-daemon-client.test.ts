@@ -172,6 +172,18 @@ describe('hive-daemon-client', () => {
     expect(outcome).toEqual({ available: false, snapshot: null })
   })
 
+  it('дедлайн покрывает и фазу подключения: зависший connect не подвешивает вызов', async () => {
+    const outcome = await fetchHiveCityMap({
+      endpoint: uniquePipeName(),
+      timeoutMs: 120,
+      connect: (_endpoint, timeoutMs) =>
+        new Promise<Socket>((_resolve, reject) => {
+          setTimeout(() => reject(new Error('connect timeout')), timeoutMs)
+        })
+    })
+    expect(outcome).toEqual({ available: false, snapshot: null })
+  })
+
   it('отсекает входящий фрейм крупнее MAX_CITY_MAP_FRAME_BYTES', async () => {
     const endpoint = await startStubDaemon({
       onResponse: (_request, socket) => {

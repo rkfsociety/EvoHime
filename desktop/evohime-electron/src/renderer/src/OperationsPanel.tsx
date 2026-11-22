@@ -2046,17 +2046,34 @@ export function HiveDashboard({
 
   // Burst после изменений рабочей папки/списка проектов: пока revision_hash
   // не сменится (или 12 тиков по 500 ms), перечитываем карту чаще обычного.
+  // Перезапуск заменяет прежний burst — параллельных интервалов не бывает.
+  const cityMapBurstTimerRef = useRef<number | null>(null)
   const startCityMapBurst = useCallback((): void => {
+    if (cityMapBurstTimerRef.current !== null) {
+      window.clearInterval(cityMapBurstTimerRef.current)
+    }
     const baseline = cityMapRevisionRef.current
     let ticks = 0
-    const burstTimer = window.setInterval(() => {
+    cityMapBurstTimerRef.current = window.setInterval(() => {
       requestCityMap()
       ticks += 1
       if (ticks >= 12 || cityMapRevisionRef.current !== baseline) {
-        window.clearInterval(burstTimer)
+        if (cityMapBurstTimerRef.current !== null) {
+          window.clearInterval(cityMapBurstTimerRef.current)
+          cityMapBurstTimerRef.current = null
+        }
       }
     }, 500)
   }, [requestCityMap])
+
+  useEffect(() => {
+    return () => {
+      if (cityMapBurstTimerRef.current !== null) {
+        window.clearInterval(cityMapBurstTimerRef.current)
+        cityMapBurstTimerRef.current = null
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!api || !connected) return

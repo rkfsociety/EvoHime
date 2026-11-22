@@ -74,24 +74,30 @@ const GET_CITY_MAP_REQUEST = encodeHiveFrame(
 export interface HiveDaemonClientOptions {
   /** Endpoint override; defaults to `hiveControlEndpoint()`. */
   readonly endpoint?: string
-  /** Overall response deadline in ms; defaults to 1500. */
+  /** Overall response deadline in ms; defaults to 1500. Covers the connect
+   * phase too: a named pipe that hangs on open degrades to unavailable. */
   readonly timeoutMs?: number
-  /** Connect seam for tests: returns an arbitrary duplex socket. */
-  readonly connect?: (endpoint: string) => Promise<Socket>
+  /** Connect seam for tests: returns an arbitrary duplex socket. The second
+   * argument is the connect-phase deadline in ms. */
+  readonly connect?: (endpoint: string, timeoutMs: number) => Promise<Socket>
   /** env seam for tests. */
   readonly env?: NodeJS.ProcessEnv
   /** platform seam for tests. */
   readonly platform?: NodeJS.Platform
 }
 
-function defaultConnect(endpoint: string): Promise<Socket> {
+function defaultConnect(endpoint: string, timeoutMs: number): Promise<Socket> {
   return new Promise((resolve, reject) => {
     const socket = netConnect(endpoint)
     const fail = (error: Error): void => {
+      clearTimeout(timer)
       socket.destroy()
       reject(error)
     }
+    const pending = setTimeout(() => fail(new Error('connect timeout')), timeoutMs)
+    const timer = pending.unref?.() ?? pending
     socket.once('connect', () => {
+      clearTimeout(timer)
       socket.off('error', fail)
       resolve(socket)
     })
@@ -112,7 +118,7 @@ export async function fetchHiveCityMap(
 
   let socket: Socket
   try {
-    socket = await connect(endpoint)
+    socket = await connect(endpoint, timeoutMs)
   } catch {
     return { available: false, snapshot: null }
   }

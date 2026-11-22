@@ -23,6 +23,9 @@ const CAMERA_OFFSET = new THREE.Vector3(34, 30, 34)
 const OVERVIEW_ZOOM = 9
 const FOCUS_ZOOM = 22
 
+/** Reusable per-frame scratch object: no 60 Hz allocations inside useFrame. */
+const FRAME_DUMMY = new THREE.Object3D()
+
 export interface HiveArchipelago3DProps {
   readonly capital: CityIslandView
   readonly satellites: readonly CityIslandView[]
@@ -143,7 +146,7 @@ function ConnectingBridges({
   useFrame((state) => {
     const pulses = pulsesRef.current
     if (pulses && pulseCount > 0) {
-      const dummy = new THREE.Object3D()
+      const dummy = FRAME_DUMMY
       for (let index = 0; index < pulses.count && index < bridgeGeometries.length; index += 1) {
         const bridge = bridgeGeometries[index]
         if (!bridge) continue
@@ -396,7 +399,7 @@ function AgentDrones({ count, paused }: { count: number; paused: boolean }) {
   useFrame((state) => {
     const mesh = ref.current
     if (!mesh) return
-    const dummy = new THREE.Object3D()
+    const dummy = FRAME_DUMMY
     const t = paused ? 0 : state.clock.elapsedTime
     for (let index = 0; index < mesh.count && index < seeds.length; index += 1) {
       const seed = seeds[index]
