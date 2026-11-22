@@ -7,7 +7,7 @@
    - подтвердить отсутствие изменений в `crates/evohime-core/`, `crates/desktop-ipc/proto/` и `release-versions/core.txt`;
    - подтвердить прохождение CI gates для `evohime-hive` (unit/integration tests, clippy с `deny(unwrap_used, expect_used, panic)`, `cargo doc --workspace --lib --no-deps --locked` с `-D missing_docs`) и `evohime-electron` (`typecheck`, `test`, `check:protocol`, `build`, `check:bundle`).
 2. Подготовка релизных версий публикуемых модулей (по правилам 14 и 16 `AGENTS.md`, только при изменении исходников соответствующих модулей):
-   - повысить патч-версию в `release-versions/hive.txt`, `release-versions/shell-host.txt` и `release-versions/ui-bundle.txt` (и не трогать `release-versions/core.txt`).
+   - повысить патч-версию в `release-versions/hive.txt` (`evohime-hive-daemon`), `release-versions/shell-host.txt` (Electron main/preload: `src/main/hive-daemon-client.ts`, `src/main/shell-bridge.ts`, `src/shared/api.ts`) и `release-versions/ui-bundle.txt` (Electron renderer: `HiveCityScene.tsx`, `OperationsPanel.tsx`) — и не трогать `release-versions/core.txt`.
 3. Синхронизация канонической документации при закрытии направления:
    - перенести итоговый контракт `HiveCityMapSnapshot`, `GetCityMap` на control pipe Улья и клиентскую проекцию архипелага в [docs/architecture/hive.md](../architecture/hive.md) и [docs/hive-architecture.md](../hive-architecture.md);
    - обновить [docs/current-state.md](../current-state.md) и [docs/release-evidence.md](../release-evidence.md);
