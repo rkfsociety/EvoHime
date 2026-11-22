@@ -1115,6 +1115,48 @@ pub fn select_route_snapshot(
     })
 }
 
+/// Non-secret, UI-safe summary of a routing decision that failed to produce a
+/// route: the decision reason plus every rejected candidate with its reject
+/// reason, so a `all_routes_excluded` configuration error explains itself
+/// instead of leaving the caller guessing.
+///
+/// # Examples
+///
+/// ```
+/// use evohime_model_gateway::{RoutingRequest, SnapshotRouteDecision};
+///
+/// let decision = SnapshotRouteDecision {
+///     selected_route: None,
+///     fallback_chain: Vec::new(),
+///     candidates: Vec::new(),
+///     reason_code: "no_routes_configured".into(),
+/// };
+/// assert_eq!(
+///     evohime_model_gateway::excluded_candidates_summary(&decision),
+///     "no_routes_configured"
+/// );
+/// ```
+pub fn excluded_candidates_summary(decision: &SnapshotRouteDecision) -> String {
+    let reasons = decision
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.reject_reason.is_some())
+        .map(|candidate| {
+            format!(
+                "{}={}",
+                candidate.route_id,
+                candidate.reject_reason.as_deref().unwrap_or("unknown")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    if reasons.is_empty() {
+        decision.reason_code.clone()
+    } else {
+        format!("{} ({})", decision.reason_code, reasons)
+    }
+}
+
 fn candidate_supports_capability(candidate: &CandidateEntry, capability: &str) -> bool {
     match capability {
         "chat" => true,
@@ -1557,6 +1599,64 @@ mod tests {
             Some("budget-456".to_string()),
         );
         assert!(matches!(result, Err(SnapshotError::InvalidRouteId(_))));
+    }
+
+    #[test]
+    fn excluded_candidates_summary_lists_reject_reasons() {
+        let hashes = PolicyHashes::from_canonical_json(b"p", b"a", b"t", b"s", b"r");
+        let mut hive = make_candidate("hive", 1);
+        let mut fallback = make_candidate("hive_fallback", 1);
+        for candidate in [&mut hive, &mut fallback] {
+            candidate.capabilities.execution_class = ExecutionClass::Cloud;
+            candidate.initial_health = CandidateHealthSnapshot::unknown_at(1_000);
+        }
+        let snapshot = RoutePolicySnapshot::new_at(
+            "run-excluded".into(),
+            vec![hive, fallback],
+            hashes,
+            UserPreference::default(),
+            None,
+            1_000,
+        )
+        .expect("snapshot");
+        let overlay = RunHealthOverlay::new("run-excluded");
+        let request = RoutingRequest {
+            required_capabilities: vec!["chat".into()],
+            max_cost_micros_per_1k_tokens: None,
+            max_latency_ms: None,
+            // Требование выше candidate.privacy отбраковывает обоих
+            // кандидатов: строки ошибки должны содержать причины.
+            required_privacy: PrivacyClass::Sensitive,
+            allow_fallback: true,
+            preferred_route: Some("hive".into()),
+            task_class: Some("complex".into()),
+            offline: false,
+            allow_cloud: true,
+            estimated_input_tokens: 0,
+            quality_delta: 0.05,
+        };
+        let decision = select_route_snapshot(&request, &snapshot, &overlay, None, 0, 1_050)
+            .expect("decision");
+        assert_eq!(decision.selected_route, None);
+        assert_eq!(decision.reason_code, "all_routes_excluded");
+        assert_eq!(
+            excluded_candidates_summary(&decision),
+            "all_routes_excluded (hive=privacy_violation, hive_fallback=privacy_violation)"
+        );
+    }
+
+    #[test]
+    fn excluded_candidates_summary_falls_back_to_reason_code_without_rejects() {
+        let decision = SnapshotRouteDecision {
+            selected_route: None,
+            fallback_chain: Vec::new(),
+            candidates: Vec::new(),
+            reason_code: "no_routes_configured".into(),
+        };
+        assert_eq!(
+            excluded_candidates_summary(&decision),
+            "no_routes_configured"
+        );
     }
 
     #[test]

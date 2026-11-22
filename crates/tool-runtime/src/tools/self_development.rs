@@ -694,6 +694,23 @@ struct ReadFileInput {
     path: String,
 }
 
+/// Reports whether the two workspace roots are mutually isolated for
+/// self-development tool use: neither canonicalized root may contain the
+/// other. When either path cannot be canonicalized the answer is `false`, so
+/// callers cannot advertise tools whose first call would be rejected.
+pub fn workspace_roots_canonically_isolated(
+    active_workspace_root: &std::path::Path,
+    eva_workspace_root: &std::path::Path,
+) -> bool {
+    match (
+        active_workspace_root.canonicalize(),
+        eva_workspace_root.canonicalize(),
+    ) {
+        (Ok(active), Ok(root)) => !active.starts_with(&root) && !root.starts_with(&active),
+        _ => false,
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WriteFileInput {

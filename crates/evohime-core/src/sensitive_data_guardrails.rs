@@ -645,14 +645,32 @@ fn iban_mod97(value: &str) -> u32 {
 }
 
 fn has_contextual_tax_id(input: &str) -> bool {
-    let lower = input.to_ascii_lowercase();
-    let labelled = ["tax", "vat", "inn", "tin", "налог", "инн"]
-        .iter()
-        .any(|label| lower.contains(label));
-    labelled
-        && input
-            .split(|character: char| !character.is_ascii_digit())
-            .any(|part| (8..=14).contains(&part.len()))
+    // Метка налогового идентификатора должна быть отдельным словом на той же
+    // строке, что и длинный цифровой run. Глобальная подстрока по всему вводу
+    // («tin» внутри «tiny», «settings», «listener») превращала любой
+    // технический документ в ложное «налоговое» совпадение и поднимала
+    // требование приватности до Sensitive, отчего все облачные маршруты
+    // отбраковывались как privacy_violation (all_routes_excluded).
+    input
+        .lines()
+        .any(|line| {
+            let lower = line.to_lowercase();
+            let labelled = lower
+                .split(|character: char| !character.is_alphanumeric())
+                .any(|word| match word {
+                    "tax" | "vat" | "inn" | "tin" | "налог" | "инн" => true,
+                    word => {
+                        word.starts_with("tax")
+                            && word["tax".len()..]
+                                .bytes()
+                                .all(|byte| byte.is_ascii_digit())
+                    }
+                });
+            labelled
+                && line
+                    .split(|character: char| !character.is_ascii_digit())
+                    .any(|part| (8..=14).contains(&part.len()))
+        })
 }
 
 /// Validates a policy and computes its versioned integrity digest.
@@ -1240,6 +1258,30 @@ mod tests {
             redact_text_chunked(&default_policy("tool"), &input),
             Err(GuardrailError::InputTooLarge)
         ));
+    }
+
+    #[test]
+    fn tax_id_context_is_word_local() {
+        // Метка «tin» внутри «-Rungs tiny» не превращает длинный цифровой run
+        // на другой строке в налоговый идентификатор.
+        let text = concat!(
+            "pwsh .\\scripts\\build-listener-runtime.ps1 -Rungs tiny\n",
+            "build stamp 202407171234 finished\n",
+        );
+        let summary = classify_text(text).unwrap();
+        assert!(summary.findings.is_empty());
+        assert_eq!(summary.required_privacy, "public");
+    }
+
+    #[test]
+    fn tax_id_same_line_label_still_matches() {
+        // Метка рядом с кандидатом на той же строке продолжает детектироваться,
+        // включая кириллическую «ИНН» в верхнем регистре.
+        let summary = classify_text("ИНН 12345678-1234").unwrap();
+        assert!(summary
+            .findings
+            .iter()
+            .any(|finding| finding.kind == SensitiveEntityKind::NationalTaxId));
     }
 
     #[test]

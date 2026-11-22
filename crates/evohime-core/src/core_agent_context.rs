@@ -1224,7 +1224,10 @@ impl ToolAgent {
             ),
             ChatMessage::text(ChatRole::User, input),
         ];
-        // Ни инструментов, ни повторов: ровно одна попытка.
+        // Ни инструментов, ни повторов: ровно одна попытка. Класс задачи
+        // обязателен: без него селектор маршрутов помечает все облачные
+        // кандидаты как classification_incomplete и вызов суммаризации
+        // гарантированно падает с all_routes_excluded.
         let result = self
             .gateway
             .chat_with_tools_with_policy(
@@ -1236,7 +1239,7 @@ impl ToolAgent {
                     required_privacy: PrivacyClass::Internal,
                     allow_fallback: true,
                     preferred_route: None,
-                    task_class: None,
+                    task_class: Some("complex".into()),
                     offline: false,
                     allow_cloud: true,
                     estimated_input_tokens: 0,

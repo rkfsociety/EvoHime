@@ -51,12 +51,12 @@ pub use crate::model_ranker::{
     ROUT_DEFAULT_FREE_MODEL,
 };
 pub use crate::provider_contract::{
-    classify_provider_error, select_route_snapshot, select_route_snapshot_cached, AttemptTrace,
-    CandidateEntry, CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory,
-    HealthStatus, ImageOutputCapability, ImageOutputOperation, ImageProviderRequest, PolicyHashes,
-    ProbeConfig, ProbeFailure, ProbeResult, ProviderImageOutput, RetryConfig, RoutePolicySnapshot,
-    RunHealthOverlay, RunResult, RunTrace, SnapshotCandidateDecision, SnapshotError,
-    SnapshotRouteDecision,
+    classify_provider_error, excluded_candidates_summary, select_route_snapshot,
+    select_route_snapshot_cached, AttemptTrace, CandidateEntry, CapabilityMetadata, CircuitState,
+    ExecutionClass, FailureCategory, HealthStatus, ImageOutputCapability, ImageOutputOperation,
+    ImageProviderRequest, PolicyHashes, ProbeConfig, ProbeFailure, ProbeResult,
+    ProviderImageOutput, RetryConfig, RoutePolicySnapshot, RunHealthOverlay, RunResult, RunTrace,
+    SnapshotCandidateDecision, SnapshotError, SnapshotRouteDecision,
 };
 pub use crate::providers::ChatRequestOptions;
 pub use crate::providers::ImageOutputFuture;
@@ -1503,7 +1503,12 @@ impl ModelGateway {
                 }
             }
             trace.set_result(RunResult::RouteExhausted);
-            return Err(last_error.unwrap_or(ProviderError::Config(decision.reason_code)));
+            return Err(last_error
+                .unwrap_or_else(|| {
+                    // Routes were empty: surface every per-candidate reject
+                    // reason so the configuration error explains itself.
+                    ProviderError::Config(crate::excluded_candidates_summary(&decision))
+                }));
         }
         let runtime = self
             .plan_route(mode, request, RuntimeLimits::default())

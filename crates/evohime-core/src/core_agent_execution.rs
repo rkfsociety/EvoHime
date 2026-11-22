@@ -1106,13 +1106,29 @@ impl ToolAgent {
         );
         if self_development_intent {
             if let Some(path) = context.eva_workspace_root.as_deref() {
+                // Обещать eva_workspace_* можно только когда воркспейс задачи
+                // изолирован от Eva-воркспейса: инструменты сами отклоняют
+                // пересекающиеся корни, и queen-задачи в worktree внутри
+                // репозитория иначе получают гарантированный отказ первым же
+                // инструментом (см. tool-runtime::self_development).
+                let capability_sentence =
+                    if evohime_tool_runtime::self_development::workspace_roots_canonically_isolated(
+                        &context.workspace_root,
+                        path,
+                    ) {
+                        "Use eva_workspace_* to investigate, patch and verify changes."
+                    } else {
+                        "The eva_workspace_* tools consider this task workspace not isolated \
+                         from the Eva workspace; use the regular filesystem_* and git_* tools \
+                         to investigate, patch and verify changes."
+                    };
                 system_prompt.push_str(&format!(
                     "\n\nEvaPulse autonomous recovery instruction: {prompt}\n\
                      Self-development capability eva_self_development is available for the \
-                     validated repository at {}. Use eva_workspace_* to investigate, patch and \
-                     verify changes. A commit requires the successful-test gate enforced by the \
-                     tools; never edit the running product.",
-                    path.display()
+                     validated repository at {}. {} A commit requires the successful-test gate \
+                     enforced by the tools; never edit the running product.",
+                    path.display(),
+                    capability_sentence
                 ));
             }
         }
