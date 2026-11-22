@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 
 import type { ChatSummary } from '@shared/api'
 
+import updaterEvaHeroUrl from './assets/updater-eva-hero.jpg'
 import { useShellApi } from './shell-api'
-import { EvaIcon } from './EvaIcon'
 import { translate, useAppLocale, useT } from './i18n'
+import { UiIcon, type UiIconName } from './UiIcon'
 
 /**
  * What the user sees before a conversation is open.
@@ -14,11 +15,17 @@ import { translate, useAppLocale, useT } from './i18n'
  * usable — typing there creates the chat, so nothing has to be set up first.
  */
 
-const SUGGESTIONS = [
-  { ru: 'Изучи проект и расскажи, как он устроен', en: 'Explore the project and explain how it works' },
-  { ru: 'Найди, где обрабатываются ошибки, и покажи слабые места', en: 'Find where errors are handled and point out weaknesses' },
-  { ru: 'Запусти тесты и объясни, что упало', en: 'Run the tests and explain what failed' },
-  { ru: 'Опиши, что делает этот модуль', en: 'Describe what this module does' }
+interface HomeSuggestion {
+  readonly ru: string
+  readonly en: string
+  readonly icon: UiIconName
+}
+
+const SUGGESTIONS: readonly HomeSuggestion[] = [
+  { ru: 'Изучи проект и расскажи, как он устроен', en: 'Explore the project and explain how it works', icon: 'compass' },
+  { ru: 'Найди, где обрабатываются ошибки, и покажи слабые места', en: 'Find where errors are handled and point out weaknesses', icon: 'alert-triangle' },
+  { ru: 'Запусти тесты и объясни, что упало', en: 'Run the tests and explain what failed', icon: 'check-circle' },
+  { ru: 'Опиши, что делает этот модуль', en: 'Describe what this module does', icon: 'box' }
 ]
 
 export interface HomeScreenProps {
@@ -57,7 +64,9 @@ export function HomeScreen({
 
   return (
     <div className="home">
-      <span className="home__logo"><EvaIcon /></span>
+      <span className="home__logo">
+        <img className="home__avatar" src={updaterEvaHeroUrl} alt="" aria-hidden="true" draggable={false} />
+      </span>
       <h2 className="home__greeting">
         {translate(identityName ? t('Чем займёмся, {name}?').replace('{name}', identityName) : t('Чем займёмся?'))}
       </h2>
@@ -92,7 +101,12 @@ export function HomeScreen({
             {SUGGESTIONS.map((suggestion) => (
               <li key={suggestion.ru}>
                 <button type="button" onClick={() => onPickSuggestion(locale === 'en' ? suggestion.en : suggestion.ru)}>
-                  {translate(locale === 'en' ? suggestion.en : suggestion.ru)}
+                  <span className="home__suggestion-icon" aria-hidden="true">
+                    <UiIcon name={suggestion.icon} size={16} />
+                  </span>
+                  <span className="home__suggestion-text">
+                    {translate(locale === 'en' ? suggestion.en : suggestion.ru)}
+                  </span>
                 </button>
               </li>
             ))}

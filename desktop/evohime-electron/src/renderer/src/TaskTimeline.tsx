@@ -905,7 +905,7 @@ export function TaskTimeline({
     entries.length === 0 && sentPrompt === null && visibleApproval === null && conversation.length === 0
 
   return (
-    <section className="chat" aria-label={translate("Ход задачи")}>
+    <section className={`chat${empty ? ' chat--empty' : ''}`} aria-label={translate("Ход задачи")}>
       <RecoveryBanner
         connection={connection}
         events={taskEvents}
@@ -999,12 +999,6 @@ export function TaskTimeline({
 
       <div className="composer">
         <div className="composer__inner">
-          <div className="composer__controls" aria-label={translate("Параметры задачи")}>
-            <div className="composer__scope" title={workspace ?? translate("Без проекта")}>
-              <ComposerIcon name="folder" className="composer__control-icon" />
-              <strong>{translate(workspace ? basename(workspace) : translate("Без проекта"))}</strong>
-            </div>
-          </div>
           <div className="composer__box">
             <div className="composer__prompt-row">
               <input
@@ -1120,6 +1114,10 @@ export function TaskTimeline({
 
           <div className="composer__footer">
             <div className="composer__footer-start">
+              <div className="composer__scope" title={workspace ?? translate("Без проекта")}>
+                <ComposerIcon name="folder" className="composer__control-icon" />
+                <strong>{translate(workspace ? basename(workspace) : translate("Без проекта"))}</strong>
+              </div>
               <div className="composer__control-group">
                 <ComposerIcon name="link" className="composer__control-icon" />
                 <ChatProviderPicker

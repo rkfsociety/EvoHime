@@ -20,7 +20,7 @@ import { TaskTimeline } from './TaskTimeline'
 import type { SettingsTab } from './SettingsModal'
 import { RecoveryBanner } from './RecoveryBanner'
 import { ProviderStateProvider } from './provider-state'
-import { EvaIcon } from './EvaIcon'
+import { BrandLotus } from './BrandLotus'
 import { UiIcon, type UiIconName } from './UiIcon'
 import { applyAppearance, loadAppearance, saveAppearance, type AppearanceSettings } from './appearance'
 import { setAppLocale, translate, useT } from './i18n'
@@ -114,6 +114,7 @@ export function App(): React.JSX.Element {
   // Пользователь открывает их явно из верхней панели.
   const [workbenchVisible, setWorkbenchVisible] = useState(false)
   const [browserVisible, setBrowserVisible] = useState(false)
+  const [summaryVisible, setSummaryVisible] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -249,6 +250,8 @@ export function App(): React.JSX.Element {
 
   const connection = state?.connection ?? 'starting'
   const title = view === 'chat' ? t('Диалог') : t(VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
+  const showSummary = chatId !== null || summaryVisible
+  const showSidePanels = showSummary || workbenchVisible || browserVisible
 
   return (
     <ProviderStateProvider>
@@ -262,7 +265,7 @@ export function App(): React.JSX.Element {
             title={sidebarCollapsed ? t('Развернуть боковую панель') : t('Свернуть боковую панель')}
             onClick={() => setSidebarCollapsed((value) => !value)}
           >
-            <span className="sidebar__logo"><EvaIcon /></span>
+            <span className="sidebar__logo"><BrandLotus size={20} /></span>
           </button>
           <h1 className="sidebar__title">EvoHime</h1>
         </div>
@@ -344,6 +347,11 @@ export function App(): React.JSX.Element {
           <h2 className="topbar__title">{translate(title)}</h2>
           <span className="topbar__path" title={workspace ?? undefined}>{workspace ?? t('папка не выбрана')}</span>
           <span className="topbar__spacer" />
+          {view === 'chat' && !showSummary ? (
+            <button type="button" className="topbar__panel-toggle" onClick={() => setSummaryVisible(true)} title={t('Сводка')}>
+              <UiIcon name="list-checks" size={14} />{t('Сводка')}
+            </button>
+          ) : null}
           {!workbenchVisible ? (
             <button type="button" className="topbar__panel-toggle" onClick={() => setWorkbenchVisible(true)} title={t('Рабочая панель')}>
               <UiIcon name="panel-right" size={14} />{t('Рабочая панель')}
@@ -380,7 +388,9 @@ export function App(): React.JSX.Element {
           <div className="main__body">
             <Suspense fallback={<p role="status">{t('Загрузка')}</p>}>
             {view === 'chat' ? (
-              <div className={`conversation-layout${workbenchVisible || browserVisible ? '' : ' conversation-layout--summary-only'}`}>
+              <div
+                className={`conversation-layout${!showSidePanels ? ' conversation-layout--chat-only' : workbenchVisible || browserVisible ? '' : ' conversation-layout--summary-only'}`}
+              >
                 <TaskTimeline
                   connection={connection}
                   events={events}
@@ -396,28 +406,30 @@ export function App(): React.JSX.Element {
                   resolvedApprovalIds={resolvedApprovalIds}
                   onApprovalResolved={(id) => setResolvedApprovalIds((current) => current.includes(id) ? current : [...current, id])}
                 />
-                <aside
-                  className={`conversation-side-panels${workbenchVisible || browserVisible ? '' : ' conversation-side-panels--summary-only'}`}
-                  aria-label={t('Дополнительные панели')}
-                >
-                  <ChatSummaryPanel
-                    connection={connection}
-                    chatId={chatId}
-                    chatRevision={chatRevision}
-                    events={events}
-                    workspace={workspace}
-                  />
-                  {translate(workbenchVisible ? (
-                    <WorkbenchPanel
+                {showSidePanels ? (
+                  <aside
+                    className={`conversation-side-panels${workbenchVisible || browserVisible ? '' : ' conversation-side-panels--summary-only'}`}
+                    aria-label={t('Дополнительные панели')}
+                  >
+                    <ChatSummaryPanel
                       connection={connection}
                       chatId={chatId}
-                      workspace={workspace}
+                      chatRevision={chatRevision}
                       events={events}
-                      onClose={() => setWorkbenchVisible(false)}
+                      workspace={workspace}
                     />
-                  ) : null)}
-                  {translate(browserVisible ? <AgenticBrowserSessionPanel onClose={() => setBrowserVisible(false)} /> : null)}
-                </aside>
+                    {translate(workbenchVisible ? (
+                      <WorkbenchPanel
+                        connection={connection}
+                        chatId={chatId}
+                        workspace={workspace}
+                        events={events}
+                        onClose={() => setWorkbenchVisible(false)}
+                      />
+                    ) : null)}
+                    {translate(browserVisible ? <AgenticBrowserSessionPanel onClose={() => setBrowserVisible(false)} /> : null)}
+                  </aside>
+                ) : null}
               </div>
             ) : (
               <div className="main__scroll">
