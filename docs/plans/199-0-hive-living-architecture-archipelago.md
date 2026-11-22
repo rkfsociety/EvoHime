@@ -22,9 +22,16 @@
 - **Камера без вращения:** изометрический ракурс фиксирован (без `OrbitControls` вращения); допускаются только клики по зданиям/городам, подсветка связей и плавный перевод фокуса/зум на выбранный остров с возвратом к общему виду.
 
 ## Изменяемые контракты
-- `evohime-hive`: новый модуль `city_map` (`HiveCityMapSnapshot`, `CityIsland`, `CityDistrict`, `CityBuilding`, `CityEdge`, `CityMapSource`, версия схемы `HIVE_CITY_MAP_SCHEMA_VERSION = 1`, `deny_unknown_fields`).
+- `evohime-hive`: новый модуль `city_map` (`HiveCityMapSnapshot`, `CityIsland`, `CityDistrict`, `CityBuilding`, `CityEdge`, версия схемы `HIVE_CITY_MAP_SCHEMA_VERSION = 1`, `deny_unknown_fields`). Любое новое поле требует инкремента `HIVE_CITY_MAP_SCHEMA_VERSION`.
 - `evohime-hive::pulse`: аддитивный вариант `HiveObservationControlRequest::GetCityMap` на собственном pipe Улья (полная обратная совместимость с `GetObservationStatus` и `NotifySettingsChanged`).
 - `evohime-electron`: новый main-клиент `hive-daemon-client.ts` для прямого подключения к `\\.\pipe\evohime-hive-observation` / `hive-observation.sock`, команда `hive.getCityMap` в `@shared/api` и `shell-bridge.ts`, переработка [HiveCityScene.tsx](../../desktop/evohime-electron/src/renderer/src/components/3d/HiveCityScene.tsx) и её интеграция в [OperationsPanel.tsx](../../desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx).
+
+### Сводная таблица уровней лимитов фрейма и снимка
+| Уровень | Константа | Лимит | Поведение при превышении |
+| --- | --- | --- | --- |
+| Серверный бюджет снимка (`evohime-hive`) | `MAX_CITY_MAP_PAYLOAD_BYTES` | `256 KiB` | Детерминированное усечение (рёбра → второстепенные здания); крайний fallback — `embedded_manifest` Столицы |
+| Клиентский лимит приёма (`evohime-electron`) | `MAX_CITY_MAP_FRAME_BYTES` | `512 KiB` | Отклонение фрейма и возврат типизированного `unavailable` из `hive-daemon-client.ts` |
+| Транспортный лимит pipe (`desktop-ipc`) | `MAX_FRAME_BYTES` | `4 MiB` | `FrameError::TooLarge` на уровне транспорта |
 
 ## Зависимости
 ### Блокирующие
@@ -51,7 +58,7 @@
 
 ## Критерии готовности
 - [ ] `evohime-core` и `crates/desktop-ipc/proto/evohime.desktop.proto` не изменены.
-- [ ] `evohime-hive` строит детерминированный `HiveCityMapSnapshot` для Столицы Евы (`eva_workspace_path` или встроенный манифест) и для всех `watched_repositories`.
+- [ ] `evohime-hive` строит `HiveCityMapSnapshot` с детерминированными `revision_hash`, `structure_hash` и сортировкой коллекций (без зависимости от volatile-поля `generated_at_ms`) для Столицы Евы и всех `watched_repositories`.
 - [ ] Сканер соблюдает границы безопасности путей, игнорирует служебные каталоги и укладывается в жёсткие лимиты узлов/рёбер/размера payload.
 - [ ] Добавление/удаление проекта в `watched_repositories` обновляет архипелаг в `evohime-hive-daemon` и вызывает анимацию строительства/сворачивания города-спутника в UI.
 - [ ] Сцена в `HiveCityScene.tsx` живая, кликабельная, без вращения камеры, с инспектором зданий/связей, фокусом на выбранный город и безопасным 2D-fallback.
