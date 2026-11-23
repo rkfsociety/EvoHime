@@ -19,7 +19,6 @@ import {
   fnv1a32,
   type CityBuildingKind,
   type CityBuildingView,
-  type CityEdgeKind,
   type CityIslandView
 } from '@shared/hive-city-map'
 import type { HiveCityHouseLot } from './HiveCityScene'
@@ -98,19 +97,6 @@ function buildingKindLabel(kind: CityBuildingKind): string {
     case 'module':
     default:
       return 'Модуль'
-  }
-}
-
-/** Цвет дороги по типу связи между модулями. */
-function edgeKindColor(kind: CityEdgeKind): string {
-  switch (kind) {
-    case 'ipc':
-      return '#f0c45a'
-    case 'runtime':
-      return '#a78bfa'
-    case 'dependency':
-    default:
-      return '#5ea8ff'
   }
 }
 
@@ -2269,14 +2255,12 @@ function QueenRoads3D({
 function AgentModuleCouriers3D({
   view,
   lots,
-  droneCount,
   deliveredMapRef,
   active,
   paused
 }: {
   view: CityIslandView
   lots: readonly HiveCityHouseLot[]
-  droneCount: number
   deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
   active: boolean
   paused: boolean
@@ -2300,11 +2284,7 @@ function AgentModuleCouriers3D({
     const modules = view.buildings.filter((item) => item.building.kind !== 'citadel')
     if (modules.length === 0 || lots.length === 0) return []
     const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
-    const activeLots = lots.filter((lot) => lot.active)
-    const sourceLots =
-      activeLots.length > 0
-        ? activeLots
-        : lots.slice(0, Math.min(lots.length, Math.max(2, droneCount)))
+    const sourceLots = lots.filter((lot) => lot.active)
 
     const list: Array<{
       readonly lotSlot: number
@@ -2342,7 +2322,7 @@ function AgentModuleCouriers3D({
       })
     })
     return list.slice(0, 18)
-  }, [view, lots, droneCount])
+  }, [view, lots])
 
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const instanceColor = useMemo(() => new THREE.Color(), [])
@@ -2432,164 +2412,6 @@ function AgentModuleCouriers3D({
         ref={meshRef}
         args={[undefined, packetMaterial, Math.max(1, routes.length * 2)]}
         visible={active && routes.length > 0}
-        frustumCulled={false}
-      >
-        <boxGeometry args={[1, 1, 1]} />
-      </instancedMesh>
-    </group>
-  )
-}
-
-/** Магистрали между зданиями модулей: цветные трассы зависимостей/IPC с направленными пакетами. */
-function ModuleRoads3D({
-  view,
-  highlightedBuildingId,
-  active,
-  paused
-}: {
-  view: CityIslandView
-  highlightedBuildingId: string | null
-  active: boolean
-  paused: boolean
-}) {
-  const roads = useMemo(() => {
-    const byId = new Map(view.buildings.map((item) => [item.building.id, item]))
-    const edges = [...view.island.edges]
-      .sort((left, right) => right.weight - left.weight)
-      .slice(0, 24)
-    const isCapital = view.island.role === 'capital'
-    const segments: Array<{
-      readonly fromId: string
-      readonly toId: string
-      readonly fromAngle: number
-      readonly fromEntryR: number
-      readonly toAngle: number
-      readonly toEntryR: number
-      readonly ringR: number
-      readonly deltaAngle: number
-      readonly color: string
-    }> = []
-    for (const edge of edges) {
-      const from = byId.get(edge.from_id)
-      const to = byId.get(edge.to_id)
-      if (from === undefined || to === undefined) continue
-      if (from.building.kind === 'citadel' || to.building.kind === 'citadel') continue
-      const rFrom = Math.hypot(from.x, from.z)
-      const rTo = Math.hypot(to.x, to.z)
-      if (rFrom < 0.5 || rTo < 0.5) continue
-      const avgR = (rFrom + rTo) / 2
-      const ringR = isCapital
-        ? avgR < 7.6
-          ? 6.0
-          : avgR < 10.8
-            ? 9.2
-            : 12.4
-        : Math.max(2.2, view.radius * 0.42)
-      const fromAngle = Math.atan2(from.z, from.x)
-      const toAngle = Math.atan2(to.z, to.x)
-      let deltaAngle = toAngle - fromAngle
-      while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2
-      while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2
-      const fromEntryR = rFrom > ringR ? Math.max(ringR + 0.25, rFrom - 0.85) : Math.min(ringR - 0.25, rFrom + 0.85)
-      const toEntryR = rTo > ringR ? Math.max(ringR + 0.25, rTo - 0.85) : Math.min(ringR - 0.25, rTo + 0.85)
-      segments.push({
-        fromId: edge.from_id,
-        toId: edge.to_id,
-        fromAngle,
-        fromEntryR,
-        toAngle,
-        toEntryR,
-        ringR,
-        deltaAngle,
-        color: edgeKindColor(edge.kind)
-      })
-    }
-    return segments
-  }, [view])
-
-  const lineMaterials = useMemo(
-    () => ({
-      dependency: new THREE.MeshBasicMaterial({ color: '#5ea8ff', transparent: true, opacity: 0.45, depthWrite: false }),
-      ipc: new THREE.MeshBasicMaterial({ color: '#f0c45a', transparent: true, opacity: 0.55, depthWrite: false }),
-      runtime: new THREE.MeshBasicMaterial({ color: '#a78bfa', transparent: true, opacity: 0.5, depthWrite: false }),
-      highlighted: new THREE.MeshBasicMaterial({ color: '#ffe494', transparent: true, opacity: 0.9, depthWrite: false })
-    }),
-    []
-  )
-  const pulseMaterial = useMemo(
-    () => new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.92 }),
-    []
-  )
-  useEffect(() => () => {
-    lineMaterials.dependency.dispose()
-    lineMaterials.ipc.dispose()
-    lineMaterials.runtime.dispose()
-    lineMaterials.highlighted.dispose()
-    pulseMaterial.dispose()
-  }, [lineMaterials, pulseMaterial])
-
-  const meshRef = useRef<THREE.InstancedMesh>(null)
-  const instanceColor = useMemo(() => new THREE.Color(), [])
-
-  useLayoutEffect(() => {
-    const mesh = meshRef.current
-    if (!mesh) return
-    roads.forEach((road, index) => {
-      const isLit =
-        highlightedBuildingId !== null &&
-        (road.fromId === highlightedBuildingId || road.toId === highlightedBuildingId)
-      instanceColor.set(isLit ? '#ffe9b0' : road.color)
-      mesh.setColorAt(index, instanceColor)
-    })
-    if (mesh.instanceColor !== null) mesh.instanceColor.needsUpdate = true
-  }, [roads, highlightedBuildingId, instanceColor])
-
-  useFrame((state) => {
-    const mesh = meshRef.current
-    if (!mesh || !active) return
-    const time = paused ? 0 : state.clock.elapsedTime
-    const dummy = FRAME_DUMMY
-    const laneOffset = 0.1
-    roads.forEach((road, index) => {
-      if (index >= mesh.count) return
-      const isLit =
-        highlightedBuildingId !== null &&
-        (road.fromId === highlightedBuildingId || road.toId === highlightedBuildingId)
-      const speed = isLit ? 0.28 : 0.18
-      const basePhase = index / Math.max(1, roads.length)
-      const t = paused ? basePhase : (basePhase + time * speed) % 1
-      const pose = evalRingRoutePose(
-        view.x,
-        view.z,
-        road.fromAngle,
-        road.fromEntryR,
-        road.toAngle,
-        road.toEntryR,
-        road.ringR,
-        road.deltaAngle,
-        t,
-        laneOffset
-      )
-
-      const pulseY = 0.12 + (index % 7) * 0.0008
-      dummy.position.set(pose.x, pulseY, pose.z)
-      dummy.lookAt(pose.x + pose.dx, pulseY, pose.z + pose.dz)
-      dummy.scale.set(isLit ? 0.14 : 0.1, 0.09, isLit ? 0.34 : 0.24)
-      dummy.updateMatrix()
-      mesh.setMatrixAt(index, dummy.matrix)
-    })
-    mesh.instanceMatrix.needsUpdate = true
-  })
-
-  if (roads.length === 0) return <></>
-
-  return (
-    <group>
-      {/* Импульсы межмодульного трафика двигаются строго по готовой дорожной сети CityStreets3D без дублирования полотен. */}
-      <instancedMesh
-        ref={meshRef}
-        args={[undefined, pulseMaterial, Math.max(1, roads.length)]}
-        visible={active && roads.length > 0}
         frustumCulled={false}
       >
         <boxGeometry args={[1, 1, 1]} />
@@ -3110,7 +2932,7 @@ function IslandGroup3D({
   selectedIsland,
   selectedBuildingId,
   hoveredBuildingId,
-  droneCount,
+  droneCount: _droneCount,
   queenActive = true,
   departmentHouses,
   selectedDepartment,
@@ -3156,21 +2978,11 @@ function IslandGroup3D({
     group.visible = true
   }, [view.island.id])
 
-  const highlightedBuilding =
-    view.island.status === 'ready' ? (hoveredBuildingId ?? (selectedIsland ? selectedBuildingId : null)) : null
-
   return (
     <group ref={groupRef}>
       <IslandGround view={view} selected={selectedIsland} onSelect={() => onSelectIsland(view.island.id)} />
       {/* Уличная сеть города: проспекты, фонари, скверы, светофоры. */}
       <CityStreets3D view={view} skin={skin} paused={paused} />
-      {/* Дороги под застройкой: связи модулей, двор Королевы и курьеры от агентов к модулям. */}
-      <ModuleRoads3D
-        view={view}
-        highlightedBuildingId={highlightedBuilding}
-        active={queenActive}
-        paused={paused}
-      />
       {departmentHouses !== undefined && departmentHouses.length > 0 ? (
         <>
           <QueenRoads3D
@@ -3184,7 +2996,6 @@ function IslandGroup3D({
           <AgentModuleCouriers3D
             view={view}
             lots={departmentHouses}
-            droneCount={droneCount ?? 0}
             deliveredMapRef={deliveredMapRef}
             active={queenActive}
             paused={paused}
