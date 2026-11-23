@@ -35,9 +35,9 @@ import type { HiveCityHouseLot } from './HiveCityScene'
 /** Fixed isometric camera offset (angle never changes; only zoom/pan). */
 const CAMERA_OFFSET = new THREE.Vector3(34, 30, 34)
 
-const OVERVIEW_ZOOM_SOLO = 26
-const OVERVIEW_ZOOM_ARCHIPELAGO = 14.5
-const FOCUS_ZOOM = 29
+const OVERVIEW_ZOOM_SOLO = 22
+const OVERVIEW_ZOOM_ARCHIPELAGO = 14
+const FOCUS_ZOOM = 28
 const MIN_ZOOM = 8
 const MAX_ZOOM = 70
 
@@ -727,25 +727,18 @@ function BuildingComplex3D({
   const z = view.z + item.z
   const kindColor = buildingKindColor(item.building.kind)
 
-  // Детерминированные соседние малоэтажные корпуса в этом же квартале (создают плотность города).
+  // Одна аккуратная пристройка внутри подиума квартала (воздушная застройка без наползания на улицы).
   const annexes = useMemo(() => {
     const seed = fnv1a32(`${view.island.id}/${item.building.id}/annex`)
     const side1 = seed % 2 === 0 ? 1 : -1
     const side2 = (seed >>> 3) % 2 === 0 ? 1 : -1
     return [
       {
-        dx: side1 * 0.62,
-        dz: -side2 * 0.56,
-        w: 0.56 + ((seed >>> 5) % 20) / 100,
-        d: 0.52 + ((seed >>> 8) % 20) / 100,
-        h: Math.max(0.55, height * (0.34 + ((seed >>> 11) % 18) / 100))
-      },
-      {
-        dx: -side1 * 0.58,
-        dz: side2 * 0.6,
-        w: 0.48 + ((seed >>> 14) % 18) / 100,
-        d: 0.54 + ((seed >>> 17) % 18) / 100,
-        h: Math.max(0.45, height * (0.26 + ((seed >>> 20) % 16) / 100))
+        dx: side1 * 0.44,
+        dz: -side2 * 0.42,
+        w: 0.44 + ((seed >>> 5) % 14) / 100,
+        d: 0.42 + ((seed >>> 8) % 14) / 100,
+        h: Math.max(0.5, height * (0.34 + ((seed >>> 11) % 16) / 100))
       }
     ]
   }, [view.island.id, item.building.id, height])
@@ -815,10 +808,10 @@ function BuildingComplex3D({
     >
       {/* Квартальный тротуар-блок с тонкой акцентной окантовкой категории модуля. */}
       <mesh position={[0, 0.05, 0]} material={skin.plinth}>
-        <boxGeometry args={[2.02, 0.1, 2.02]} />
+        <boxGeometry args={[1.56, 0.1, 1.56]} />
       </mesh>
       <mesh position={[0, 0.105, 0]}>
-        <boxGeometry args={[1.96, 0.02, 1.96]} />
+        <boxGeometry args={[1.5, 0.02, 1.5]} />
         <meshBasicMaterial color={kindColor} transparent opacity={lit ? 0.9 : 0.42} />
       </mesh>
 
@@ -858,7 +851,7 @@ function BuildingComplex3D({
       {lit ? (
         <>
           <mesh position={[0, height / 2 + 0.1, 0]}>
-            <boxGeometry args={[2.06, height + 0.4, 2.06]} />
+            <boxGeometry args={[1.64, height + 0.4, 1.64]} />
             <meshBasicMaterial color="#ffd98a" wireframe transparent opacity={0.45} />
           </mesh>
           <LabelSprite3D
@@ -1020,58 +1013,50 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
   }, [laneMaterial, lampPoleMaterial, lampBulbMaterial, treeTrunkMaterial, treeCrownMaterial])
 
   const ringRadii = useMemo(() => {
-    const outer = view.radius * 0.76
+    const outer = view.radius * 0.78
     if (isCapital) {
-      return [6.0, 9.2, outer].filter((r) => r <= view.radius * 0.82)
+      // Кольцевые проспекты проходят строго между кольцами зданий (дома на 4.8, модули на 7.6, 10.8, 14.0).
+      return [6.0, 9.2, 12.4, outer].filter((r) => r <= view.radius * 0.82)
     }
     return [view.radius * 0.42, outer].filter((r) => r >= 2.2)
   }, [isCapital, view.radius])
-
-  const avenues = useMemo(() => {
-    const count = isCapital ? 8 : 6
-    const startR = isCapital ? 2.4 : 1.1
-    const endR = view.radius * 0.78
-    return Array.from({ length: count }, (_, index) => {
-      const angle = (index / count) * Math.PI * 2 + Math.PI / 8
-      return {
-        from: [view.x + Math.cos(angle) * startR, view.z + Math.sin(angle) * startR] as const,
-        to: [view.x + Math.cos(angle) * endR, view.z + Math.sin(angle) * endR] as const
-      }
-    })
-  }, [isCapital, view.radius, view.x, view.z])
 
   // Позиции уличных фонарей вдоль кольцевых проспектов и набережной.
   const lampPositions = useMemo(() => {
     const list: Array<readonly [number, number]> = []
     ringRadii.forEach((r, rIdx) => {
-      const count = Math.max(8, Math.floor((2 * Math.PI * r) / 3.8))
+      const count = Math.max(8, Math.floor((2 * Math.PI * r) / 4.2))
       for (let i = 0; i < count; i += 1) {
         const angle = (i / count) * Math.PI * 2 + rIdx * 0.25
-        list.push([view.x + Math.cos(angle) * (r + 0.26), view.z + Math.sin(angle) * (r + 0.26)])
+        const lx = Math.cos(angle) * (r + 0.34)
+        const lz = Math.sin(angle) * (r + 0.34)
+        const tooClose = view.buildings.some((b) => Math.hypot(b.x - lx, b.z - lz) < 1.25)
+        if (!tooClose) list.push([view.x + lx, view.z + lz])
       }
     })
     return list
-  }, [ringRadii, view.x, view.z])
+  }, [ringRadii, view.buildings, view.x, view.z])
 
-  // Позиции деревьев в скверах (на безопасном расстоянии от зданий).
+  // Позиции деревьев в скверах (на безопасном расстоянии от зданий и дорог).
   const treePositions = useMemo(() => {
     const list: Array<readonly [number, number, number]> = []
-    const outerR = view.radius * 0.72
-    const candidateCount = isCapital ? 26 : 12
+    const outerR = view.radius * 0.74
+    const candidateCount = isCapital ? 24 : 10
     for (let i = 0; i < candidateCount; i += 1) {
       const seed = fnv1a32(`${view.island.id}/tree-${i}`)
       const angle = ((i / candidateCount) * Math.PI * 2) + ((seed % 100) / 100) * 0.18
-      const r = (isCapital ? 5.6 : 1.8) + (((seed >>> 6) % 100) / 100) * Math.max(1.2, outerR - (isCapital ? 5.8 : 2.0))
+      const r = (isCapital ? 6.6 : 1.8) + (((seed >>> 6) % 100) / 100) * Math.max(1.2, outerR - (isCapital ? 6.8 : 2.0))
       const tx = Math.cos(angle) * r
       const tz = Math.sin(angle) * r
-      const tooClose = view.buildings.some((b) => Math.hypot(b.x - tx, b.z - tz) < 1.65)
-      if (!tooClose) {
+      const nearBuilding = view.buildings.some((b) => Math.hypot(b.x - tx, b.z - tz) < 1.85)
+      const nearRoad = ringRadii.some((ringR) => Math.abs(r - ringR) < 0.65)
+      if (!nearBuilding && !nearRoad) {
         const scale = 0.8 + ((seed >>> 12) % 45) / 100
         list.push([view.x + tx, view.z + tz, scale])
       }
     }
     return list
-  }, [isCapital, view])
+  }, [isCapital, ringRadii, view])
 
   const poleRef = useRef<THREE.InstancedMesh>(null)
   const bulbRef = useRef<THREE.InstancedMesh>(null)
@@ -1114,28 +1099,16 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
 
   return (
     <group>
-      {/* Кольцевые проспекты. */}
+      {/* Кольцевые проспекты с двумя полосами движения. */}
       {ringRadii.map((r, idx) => (
         <group key={`avenue-ring-${idx}`}>
           <mesh position={[view.x, 0.015, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={skin.roadBed}>
-            <ringGeometry args={[r - 0.24, r + 0.24, 48]} />
+            <ringGeometry args={[r - 0.3, r + 0.3, 64]} />
           </mesh>
           <mesh position={[view.x, 0.024, view.z]} rotation={[Math.PI / 2, 0, 0]} material={laneMaterial}>
-            <torusGeometry args={[r, 0.025, 6, 48]} />
+            <torusGeometry args={[r, 0.025, 6, 64]} />
           </mesh>
         </group>
-      ))}
-      {/* Радиальные улицы. */}
-      {avenues.map((av, idx) => (
-        <RoadSegment3D
-          key={`avenue-spoke-${idx}`}
-          from={av.from}
-          to={av.to}
-          bedMaterial={skin.roadBed}
-          lineMaterial={laneMaterial}
-          width={0.38}
-          y={0.016}
-        />
       ))}
       {/* Уличные фонари. */}
       {lampPositions.length > 0 ? (
@@ -1244,11 +1217,12 @@ function QueenRoads3D({
     const list: QueenPacket[] = []
     lots.forEach((lot, lotIndex) => {
       const seed = fnv1a32(`${view.island.id}/road-${lot.departmentKey}-${lot.slot}`)
-      const toQueenCount = lot.active ? 3 : 1
+      const flowSpeed = lot.active ? 0.26 : 0.14
+      const toQueenCount = lot.active ? 2 : 1
       for (let i = 0; i < toQueenCount; i += 1) {
         list.push({
           color: lot.accent,
-          speed: (lot.active ? 0.34 : 0.16) + ((seed + i * 31) % 80) / 1000,
+          speed: flowSpeed,
           phase: ((seed % 997) / 997 + i / toQueenCount) % 1,
           lot: lotIndex,
           kind: 'to-queen',
@@ -1259,7 +1233,7 @@ function QueenRoads3D({
       for (let i = 0; i < fromQueenCount; i += 1) {
         list.push({
           color: '#ffe494',
-          speed: (lot.active ? 0.3 : 0.15) + ((seed + i * 47) % 80) / 1000,
+          speed: flowSpeed,
           phase: (((seed >>> 3) % 997) / 997 + i / fromQueenCount) % 1,
           lot: lotIndex,
           kind: 'from-queen',
@@ -1268,8 +1242,8 @@ function QueenRoads3D({
       }
       list.push({
         color: lot.accent,
-        speed: (lot.active ? 0.22 : 0.1) + (seed % 50) / 1000,
-        phase: ((seed >>> 5) % 997) / 997,
+        speed: 0.18,
+        phase: lot.slot / Math.max(1, lots.length),
         lot: lotIndex,
         kind: 'ring',
         active: lot.active
@@ -1300,6 +1274,7 @@ function QueenRoads3D({
     if (!mesh) return
     const time = paused ? 0 : state.clock.elapsedTime
     const dummy = FRAME_DUMMY
+    const laneOffset = 0.11
     packets.forEach((packet, index) => {
       if (index >= mesh.count) return
       const angle = houseAngles[packet.lot]
@@ -1315,25 +1290,30 @@ function QueenRoads3D({
           (packet.lot + 1 < lots.length ? houseAngles[packet.lot + 1] : (houseAngles[0] ?? angle) + Math.PI * 2) ?? angle
         const target = nextAngle > angle ? nextAngle : nextAngle + Math.PI * 2
         const current = angle + (target - angle) * progress
-        x = view.x + Math.cos(current) * ringRadius
-        z = view.z + Math.sin(current) * ringRadius
+        const laneR = ringRadius + 0.12
+        x = view.x + Math.cos(current) * laneR
+        z = view.z + Math.sin(current) * laneR
         dirX = -Math.sin(current)
         dirZ = Math.cos(current)
-        dummy.scale.set(0.11, 0.11, packet.active ? 0.34 : 0.22)
+        dummy.scale.set(0.12, 0.1, packet.active ? 0.32 : 0.22)
       } else {
-        const roadStart = 2.35
+        const roadStart = 2.4
+        const roadEnd = Math.max(roadStart + 0.4, ringRadius - 0.55)
         const outward = packet.kind === 'from-queen' ? progress : 1 - progress
-        const radius = roadStart + outward * (ringRadius - roadStart)
-        x = view.x + Math.cos(angle) * radius
-        z = view.z + Math.sin(angle) * radius
+        const radius = roadStart + outward * (roadEnd - roadStart)
         const sign = packet.kind === 'from-queen' ? 1 : -1
         dirX = Math.cos(angle) * sign
         dirZ = Math.sin(angle) * sign
-        dummy.scale.set(packet.active ? 0.14 : 0.1, packet.active ? 0.14 : 0.1, packet.active ? 0.44 : 0.26)
+        // Правостороннее движение: вправо от вектора направления (dirZ, -dirX) в плоскости XZ.
+        const rightX = -dirZ
+        const rightZ = dirX
+        x = view.x + Math.cos(angle) * radius + rightX * laneOffset
+        z = view.z + Math.sin(angle) * radius + rightZ * laneOffset
+        dummy.scale.set(packet.active ? 0.14 : 0.11, 0.1, packet.active ? 0.34 : 0.24)
       }
 
-      dummy.position.set(x, 0.15, z)
-      dummy.lookAt(x + dirX, 0.15, z + dirZ)
+      dummy.position.set(x, 0.12, z)
+      dummy.lookAt(x + dirX, 0.12, z + dirZ)
       dummy.updateMatrix()
       mesh.setMatrixAt(index, dummy.matrix)
     })
@@ -1344,28 +1324,29 @@ function QueenRoads3D({
 
   return (
     <group>
-      {/* Радиальные проспекты от двора Королевы к домам агентов. */}
+      {/* Двухполосные радиальные проспекты от двора Королевы до края двориков домов. */}
       {lots.map((lot, index) => {
         const angle = houseAngles[index]
         if (angle === undefined) return null
+        const roadEnd = Math.max(2.8, ringRadius - 0.55)
         return (
           <RoadSegment3D
             key={`road-${lot.departmentKey}-${lot.slot}`}
-            from={[view.x + Math.cos(angle) * 2.35, view.z + Math.sin(angle) * 2.35]}
-            to={[view.x + Math.cos(angle) * ringRadius, view.z + Math.sin(angle) * ringRadius]}
+            from={[view.x + Math.cos(angle) * 2.4, view.z + Math.sin(angle) * 2.4]}
+            to={[view.x + Math.cos(angle) * roadEnd, view.z + Math.sin(angle) * roadEnd]}
             bedMaterial={skin.roadBed}
             lineMaterial={spokeLineMaterial}
-            width={0.34}
+            width={0.46}
             y={0.025}
           />
         )
       })}
-      {/* Кольцевой бульвар между домами агентов. */}
-      <mesh position={[view.x, 0.025, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={ringBedMaterial}>
-        <ringGeometry args={[ringRadius - 0.18, ringRadius + 0.18, 48]} />
+      {/* Двухполосный кольцевой бульвар между домами агентов. */}
+      <mesh position={[view.x, 0.022, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={ringBedMaterial}>
+        <ringGeometry args={[ringRadius - 0.24, ringRadius + 0.24, 64]} />
       </mesh>
-      <mesh position={[view.x, 0.04, view.z]} rotation={[Math.PI / 2, 0, 0]} material={ringLineMaterial}>
-        <torusGeometry args={[ringRadius, 0.035, 6, 48]} />
+      <mesh position={[view.x, 0.036, view.z]} rotation={[Math.PI / 2, 0, 0]} material={ringLineMaterial}>
+        <torusGeometry args={[ringRadius, 0.028, 6, 64]} />
       </mesh>
       {/* Вытянутые пакеты информации вдоль лучей и кольца. */}
       <instancedMesh
@@ -1422,6 +1403,8 @@ function AgentModuleCouriers3D({
     packetMaterial.dispose()
   }, [courierLineMaterial, packetMaterial])
 
+  const MAIN_AVENUES_RADIUS = 6.0
+
   const routes = useMemo(() => {
     const modules = view.buildings.filter((item) => item.building.kind !== 'citadel')
     if (modules.length === 0 || lots.length === 0) return []
@@ -1436,38 +1419,39 @@ function AgentModuleCouriers3D({
         : lots.slice(0, Math.min(lots.length, Math.max(2, droneCount)))
 
     const list: Array<{
-      readonly from: readonly [number, number]
-      readonly to: readonly [number, number]
+      readonly houseAngle: number
+      readonly houseExitR: number
+      readonly targetAngle: number
+      readonly targetEntryR: number
       readonly color: string
-      readonly speed: number
       readonly phase: number
       readonly active: boolean
     }> = []
 
     sourceLots.forEach((lot, idx) => {
-      const angle = (lot.slot / Math.max(1, lot.total)) * Math.PI * 2
-      const hx = view.x + Math.cos(angle) * ringRadius
-      const hz = view.z + Math.sin(angle) * ringRadius
-      // Выбираем 2 ближайших или детерминированных модуля для каждого активного агента.
+      const houseAngle = (lot.slot / Math.max(1, lot.total)) * Math.PI * 2
+      const hx = Math.cos(houseAngle) * ringRadius
+      const hz = Math.sin(houseAngle) * ringRadius
       const sorted = [...modules].sort((a, b) => {
-        const da = Math.hypot(view.x + a.x - hx, view.z + a.z - hz)
-        const db = Math.hypot(view.x + b.x - hx, view.z + b.z - hz)
+        const da = Math.hypot(a.x - hx, a.z - hz)
+        const db = Math.hypot(b.x - hx, b.z - hz)
         return da - db
       })
-      const targets = sorted.slice(0, lot.active ? 2 : 1)
-      targets.forEach((target, tIdx) => {
-        const seed = fnv1a32(`${view.island.id}/courier-${lot.slot}-${target.building.id}`)
-        list.push({
-          from: [hx, hz],
-          to: [view.x + target.x, view.z + target.z],
-          color: lot.active ? lot.accent : '#7ef2c4',
-          speed: (lot.active ? 0.28 : 0.14) + ((seed + idx * 19 + tIdx * 37) % 70) / 1000,
-          phase: (seed % 997) / 997,
-          active: lot.active
-        })
+      const target = sorted[0]
+      if (!target) return
+      const targetAngle = Math.atan2(target.z, target.x)
+      const targetR = Math.hypot(target.x, target.z)
+      list.push({
+        houseAngle,
+        houseExitR: ringRadius + 0.54,
+        targetAngle,
+        targetEntryR: Math.max(MAIN_AVENUES_RADIUS + 0.25, targetR - 0.85),
+        color: lot.active ? lot.accent : '#7ef2c4',
+        phase: idx / Math.max(1, sourceLots.length),
+        active: lot.active
       })
     })
-    return list.slice(0, 24)
+    return list.slice(0, 18)
   }, [view, lots, droneCount])
 
   const meshRef = useRef<THREE.InstancedMesh>(null)
@@ -1476,7 +1460,7 @@ function AgentModuleCouriers3D({
     const mesh = meshRef.current
     if (!mesh) return
     routes.forEach((route, index) => {
-      // По 2 пакета на маршрут: туда и обратно.
+      // Две машины на маршрут: туда (к модулю) и обратно (к агенту).
       instanceColor.set(route.color)
       mesh.setColorAt(index * 2, instanceColor)
       instanceColor.set('#ffe494')
@@ -1490,20 +1474,59 @@ function AgentModuleCouriers3D({
     if (!mesh || routes.length === 0) return
     const time = paused ? 0 : state.clock.elapsedTime
     const dummy = FRAME_DUMMY
+    const flowSpeed = 0.16
+    const laneOffset = 0.11
+
     routes.forEach((route, index) => {
-      const dx = route.to[0] - route.from[0]
-      const dz = route.to[1] - route.from[1]
+      // Кратчайший угол по кольцу от дома к модулю.
+      let deltaAngle = route.targetAngle - route.houseAngle
+      while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2
+      while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2
+
       for (let dir = 0; dir < 2; dir += 1) {
         const instIdx = index * 2 + dir
         if (instIdx >= mesh.count) continue
-        const p = paused ? (route.phase + dir * 0.5) % 1 : (route.phase + dir * 0.5 + time * route.speed) % 1
+        const p = paused ? (route.phase + dir * 0.5) % 1 : (route.phase + dir * 0.5 + time * flowSpeed) % 1
         const t = dir === 0 ? p : 1 - p
-        const x = route.from[0] + dx * t
-        const z = route.from[1] + dz * t
-        const sign = dir === 0 ? 1 : -1
-        dummy.position.set(x, 0.15, z)
-        dummy.lookAt(x + dx * sign, 0.15, z + dz * sign)
-        dummy.scale.set(route.active ? 0.12 : 0.09, route.active ? 0.12 : 0.09, route.active ? 0.38 : 0.24)
+
+        let x = view.x
+        let z = view.z
+        let dirX = 1
+        let dirZ = 0
+
+        if (t < 0.2) {
+          // Участок 1: выезд от дома агента до Главного кольца.
+          const u = t / 0.2
+          const r = route.houseExitR + u * (MAIN_AVENUES_RADIUS - route.houseExitR)
+          const sign = dir === 0 ? 1 : -1
+          dirX = Math.cos(route.houseAngle) * sign
+          dirZ = Math.sin(route.houseAngle) * sign
+          x = view.x + Math.cos(route.houseAngle) * r - dirZ * laneOffset
+          z = view.z + Math.sin(route.houseAngle) * r + dirX * laneOffset
+        } else if (t <= 0.8) {
+          // Участок 2: движение по дуге Главного кольца (внешняя/внутренняя полоса).
+          const u = (t - 0.2) / 0.6
+          const curAngle = route.houseAngle + deltaAngle * u
+          const ringSign = (deltaAngle >= 0 ? 1 : -1) * (dir === 0 ? 1 : -1)
+          const laneR = MAIN_AVENUES_RADIUS + (dir === 0 ? 0.13 : -0.13)
+          x = view.x + Math.cos(curAngle) * laneR
+          z = view.z + Math.sin(curAngle) * laneR
+          dirX = -Math.sin(curAngle) * ringSign
+          dirZ = Math.cos(curAngle) * ringSign
+        } else {
+          // Участок 3: заезд от Главного кольца к подиуму модуля.
+          const u = (t - 0.8) / 0.2
+          const r = MAIN_AVENUES_RADIUS + u * (route.targetEntryR - MAIN_AVENUES_RADIUS)
+          const sign = dir === 0 ? 1 : -1
+          dirX = Math.cos(route.targetAngle) * sign
+          dirZ = Math.sin(route.targetAngle) * sign
+          x = view.x + Math.cos(route.targetAngle) * r - dirZ * laneOffset
+          z = view.z + Math.sin(route.targetAngle) * r + dirX * laneOffset
+        }
+
+        dummy.position.set(x, 0.12, z)
+        dummy.lookAt(x + dirX, 0.12, z + dirZ)
+        dummy.scale.set(route.active ? 0.14 : 0.11, 0.1, route.active ? 0.34 : 0.24)
         dummy.updateMatrix()
         mesh.setMatrixAt(instIdx, dummy.matrix)
       }
@@ -1515,16 +1538,38 @@ function AgentModuleCouriers3D({
 
   return (
     <group>
+      {/* Двухполосные подъездные дороги от домов и от Главного кольца к модулям (не режут здания). */}
       {routes.map((route, index) => (
-        <RoadSegment3D
-          key={`agent-module-road-${index}`}
-          from={route.from}
-          to={route.to}
-          bedMaterial={skin.roadBed}
-          lineMaterial={courierLineMaterial}
-          width={0.22}
-          y={0.022}
-        />
+        <group key={`agent-module-road-${index}`}>
+          <RoadSegment3D
+            from={[
+              view.x + Math.cos(route.houseAngle) * route.houseExitR,
+              view.z + Math.sin(route.houseAngle) * route.houseExitR
+            ]}
+            to={[
+              view.x + Math.cos(route.houseAngle) * MAIN_AVENUES_RADIUS,
+              view.z + Math.sin(route.houseAngle) * MAIN_AVENUES_RADIUS
+            ]}
+            bedMaterial={skin.roadBed}
+            lineMaterial={courierLineMaterial}
+            width={0.42}
+            y={0.02}
+          />
+          <RoadSegment3D
+            from={[
+              view.x + Math.cos(route.targetAngle) * MAIN_AVENUES_RADIUS,
+              view.z + Math.sin(route.targetAngle) * MAIN_AVENUES_RADIUS
+            ]}
+            to={[
+              view.x + Math.cos(route.targetAngle) * route.targetEntryR,
+              view.z + Math.sin(route.targetAngle) * route.targetEntryR
+            ]}
+            bedMaterial={skin.roadBed}
+            lineMaterial={courierLineMaterial}
+            width={0.42}
+            y={0.02}
+          />
+        </group>
       ))}
       <instancedMesh
         ref={meshRef}
@@ -1554,25 +1599,51 @@ function ModuleRoads3D({
     const byId = new Map(view.buildings.map((item) => [item.building.id, item]))
     const edges = [...view.island.edges]
       .sort((left, right) => right.weight - left.weight)
-      .slice(0, 40)
+      .slice(0, 24)
+    const isCapital = view.island.role === 'capital'
     const segments: Array<{
       readonly fromId: string
       readonly toId: string
-      readonly from: readonly [number, number]
-      readonly to: readonly [number, number]
-      readonly width: number
+      readonly fromAngle: number
+      readonly fromEntryR: number
+      readonly toAngle: number
+      readonly toEntryR: number
+      readonly ringR: number
+      readonly deltaAngle: number
       readonly color: string
     }> = []
     for (const edge of edges) {
       const from = byId.get(edge.from_id)
       const to = byId.get(edge.to_id)
       if (from === undefined || to === undefined) continue
+      if (from.building.kind === 'citadel' || to.building.kind === 'citadel') continue
+      const rFrom = Math.hypot(from.x, from.z)
+      const rTo = Math.hypot(to.x, to.z)
+      if (rFrom < 0.5 || rTo < 0.5) continue
+      const avgR = (rFrom + rTo) / 2
+      const ringR = isCapital
+        ? avgR < 7.6
+          ? 6.0
+          : avgR < 10.8
+            ? 9.2
+            : 12.4
+        : Math.max(2.2, view.radius * 0.42)
+      const fromAngle = Math.atan2(from.z, from.x)
+      const toAngle = Math.atan2(to.z, to.x)
+      let deltaAngle = toAngle - fromAngle
+      while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2
+      while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2
+      const fromEntryR = rFrom > ringR ? Math.max(ringR + 0.25, rFrom - 0.85) : Math.min(ringR - 0.25, rFrom + 0.85)
+      const toEntryR = rTo > ringR ? Math.max(ringR + 0.25, rTo - 0.85) : Math.min(ringR - 0.25, rTo + 0.85)
       segments.push({
         fromId: edge.from_id,
         toId: edge.to_id,
-        from: [view.x + from.x, view.z + from.z],
-        to: [view.x + to.x, view.z + to.z],
-        width: 0.16 + (edge.weight / 100) * 0.16,
+        fromAngle,
+        fromEntryR,
+        toAngle,
+        toEntryR,
+        ringR,
+        deltaAngle,
         color: edgeKindColor(edge.kind)
       })
     }
@@ -1621,21 +1692,51 @@ function ModuleRoads3D({
     if (!mesh) return
     const time = paused ? 0 : state.clock.elapsedTime
     const dummy = FRAME_DUMMY
+    const laneOffset = 0.1
     roads.forEach((road, index) => {
       if (index >= mesh.count) return
-      const seed = fnv1a32(`${view.island.id}/pulse-${index}`)
       const isLit =
         highlightedBuildingId !== null &&
         (road.fromId === highlightedBuildingId || road.toId === highlightedBuildingId)
-      const speed = (isLit ? 0.34 : 0.16) + (seed % 80) / 1000
-      const progress = paused ? (seed % 997) / 997 : ((seed % 997) / 997 + time * speed) % 1
-      const dx = road.to[0] - road.from[0]
-      const dz = road.to[1] - road.from[1]
-      const x = road.from[0] + dx * progress
-      const z = road.from[1] + dz * progress
+      const speed = isLit ? 0.28 : 0.18
+      const basePhase = index / Math.max(1, roads.length)
+      const t = paused ? basePhase : (basePhase + time * speed) % 1
+
+      let x = view.x
+      let z = view.z
+      let dirX = 1
+      let dirZ = 0
+
+      if (t < 0.2) {
+        const u = t / 0.2
+        const r = road.fromEntryR + u * (road.ringR - road.fromEntryR)
+        const sign = road.ringR >= road.fromEntryR ? 1 : -1
+        dirX = Math.cos(road.fromAngle) * sign
+        dirZ = Math.sin(road.fromAngle) * sign
+        x = view.x + Math.cos(road.fromAngle) * r - dirZ * laneOffset
+        z = view.z + Math.sin(road.fromAngle) * r + dirX * laneOffset
+      } else if (t <= 0.8) {
+        const u = (t - 0.2) / 0.6
+        const curAngle = road.fromAngle + road.deltaAngle * u
+        const ringSign = road.deltaAngle >= 0 ? 1 : -1
+        const laneR = road.ringR + (ringSign > 0 ? 0.13 : -0.13)
+        x = view.x + Math.cos(curAngle) * laneR
+        z = view.z + Math.sin(curAngle) * laneR
+        dirX = -Math.sin(curAngle) * ringSign
+        dirZ = Math.cos(curAngle) * ringSign
+      } else {
+        const u = (t - 0.8) / 0.2
+        const r = road.ringR + u * (road.toEntryR - road.ringR)
+        const sign = road.toEntryR >= road.ringR ? 1 : -1
+        dirX = Math.cos(road.toAngle) * sign
+        dirZ = Math.sin(road.toAngle) * sign
+        x = view.x + Math.cos(road.toAngle) * r - dirZ * laneOffset
+        z = view.z + Math.sin(road.toAngle) * r + dirX * laneOffset
+      }
+
       dummy.position.set(x, 0.12, z)
-      dummy.lookAt(x + dx, 0.12, z + dz)
-      dummy.scale.set(isLit ? 0.13 : 0.09, isLit ? 0.13 : 0.09, isLit ? 0.38 : 0.25)
+      dummy.lookAt(x + dirX, 0.12, z + dirZ)
+      dummy.scale.set(isLit ? 0.14 : 0.1, 0.09, isLit ? 0.34 : 0.24)
       dummy.updateMatrix()
       mesh.setMatrixAt(index, dummy.matrix)
     })
@@ -1658,15 +1759,24 @@ function ModuleRoads3D({
               ? lineMaterials.runtime
               : lineMaterials.dependency
         return (
-          <RoadSegment3D
-            key={`module-road-${index}`}
-            from={road.from}
-            to={road.to}
-            bedMaterial={skin.roadBed}
-            lineMaterial={mat}
-            width={road.width}
-            y={0.02}
-          />
+          <group key={`module-road-${index}`}>
+            <RoadSegment3D
+              from={[view.x + Math.cos(road.fromAngle) * road.fromEntryR, view.z + Math.sin(road.fromAngle) * road.fromEntryR]}
+              to={[view.x + Math.cos(road.fromAngle) * road.ringR, view.z + Math.sin(road.fromAngle) * road.ringR]}
+              bedMaterial={skin.roadBed}
+              lineMaterial={mat}
+              width={0.36}
+              y={0.018}
+            />
+            <RoadSegment3D
+              from={[view.x + Math.cos(road.toAngle) * road.ringR, view.z + Math.sin(road.toAngle) * road.ringR]}
+              to={[view.x + Math.cos(road.toAngle) * road.toEntryR, view.z + Math.sin(road.toAngle) * road.toEntryR]}
+              bedMaterial={skin.roadBed}
+              lineMaterial={mat}
+              width={0.36}
+              y={0.018}
+            />
+          </group>
         )
       })}
       <instancedMesh

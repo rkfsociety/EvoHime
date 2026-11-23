@@ -482,7 +482,7 @@ export function capitalHouseRingRadius(total: number): number {
  * башни капитального острова выталкиваются за него, уступая центр башне
  * Королевы и кольцу домов работников.
  */
-export const CAPITAL_TOWER_INNER_RADIUS = 6.2
+export const CAPITAL_TOWER_INNER_RADIUS = 6.4
 
 /**
  * Shared deterministic island renderer model: sorted districts, a compact
@@ -571,18 +571,18 @@ function buildIslandView(
     // Радиальная застройка столицы: кольца кварталов вокруг внутреннего
     // двора Королевы. Каждое следующее кольцо повёрнуто, поэтому застройка
     // читается как упорядоченные «звёздные» ряды, а не смятая сетка.
-    const ringStart = CAPITAL_TOWER_INNER_RADIUS + 0.8
-    const ringStep = 2.3
+    const ringStart = CAPITAL_TOWER_INNER_RADIUS + 1.2
+    const ringStep = 3.2
     let ringIndex = 0
     let indexOnRing = 0
     let ringRadius = ringStart
     for (const building of quarter) {
       const seed = `${island.id}/${building.id}`
-      const capacity = Math.max(6, Math.floor((2 * Math.PI * ringRadius) / ringStep))
+      const capacity = Math.max(8, Math.floor((2 * Math.PI * ringRadius) / ringStep))
       const baseAngle =
         (2 * Math.PI * indexOnRing) / capacity + ringIndex * (Math.PI / capacity)
-      const jitterAngle = (mixSeed(seed, 3) - 0.5) * (2 * Math.PI / capacity) * 0.3
-      const jitterRadius = (mixSeed(seed, 4) - 0.5) * 0.7
+      const jitterAngle = (mixSeed(seed, 3) - 0.5) * (2 * Math.PI / capacity) * 0.16
+      const jitterRadius = (mixSeed(seed, 4) - 0.5) * 0.24
       const angle = baseAngle + jitterAngle
       const radiusOnRing = ringRadius + jitterRadius
       buildings.push({
@@ -626,9 +626,9 @@ function buildIslandView(
     4.8,
     2.2 * Math.sqrt(Math.max(1, buildings.length)) * hexApothemFactor,
     ((Math.max(columns, rows) * BUILDING_CELL) / 2 + 1.5) * hexApothemFactor,
-    reserveCenter ? (outerRingRadius + 1.8) * hexApothemFactor : 0
+    reserveCenter ? (outerRingRadius + 2.0) * hexApothemFactor : 0
   )
-  const radius = Math.min(reserveCenter ? 15.5 : 13, layoutRadius)
+  const radius = Math.min(reserveCenter ? 19.5 : 15, layoutRadius)
 
   return { island, x, z, radius, buildings, phase }
 }
