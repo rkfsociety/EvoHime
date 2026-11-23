@@ -36,8 +36,8 @@ import type { HiveCityHouseLot } from './HiveCityScene'
 
 /** Fixed isometric camera offset (angle never changes; only zoom/pan). */
 const CAMERA_OFFSET = new THREE.Vector3(34, 30, 34)
-/** Top-down camera offset (micro Z offset prevents lookAt gimbal flip and aligns X/Z axes). */
-const TOP_CAMERA_OFFSET = new THREE.Vector3(0, 56, 0.01)
+/** Top-down camera offset (small Z offset keeps X/Z axes strictly aligned without 45deg drift). */
+const TOP_CAMERA_OFFSET = new THREE.Vector3(0, 56, 0.35)
 
 const OVERVIEW_ZOOM_SOLO = 22
 const OVERVIEW_ZOOM_ARCHIPELAGO = 14
@@ -2192,9 +2192,12 @@ function CameraRig({
   }, [focus, overviewZoom])
 
   useFrame((_, delta) => {
-    const factor = paused ? 1 : 1 - Math.exp(-5 * Math.min(delta, 0.1))
+    const factor = paused ? 1 : 1 - Math.exp(-7 * Math.min(delta, 0.1))
     look.current.lerp(desired.current, factor)
     currentOffset.current.lerp(topView ? TOP_CAMERA_OFFSET : CAMERA_OFFSET, factor)
+    if (topView && Math.abs(currentOffset.current.x) < 0.25) {
+      currentOffset.current.x = 0
+    }
     camera.position.copy(look.current).add(currentOffset.current)
     camera.lookAt(look.current)
     const ortho = camera as THREE.OrthographicCamera
