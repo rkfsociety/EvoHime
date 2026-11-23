@@ -792,6 +792,13 @@ export function isPoseCollidingWithPeers(
     if (prevX !== undefined && prevZ !== undefined) {
       const aheadDot = (other.lastX - prevX) * dirX + (other.lastZ - prevZ) * dirZ
       if (aheadDot < -0.05) continue
+      if (
+        (peers[selfIndex]?.blockedSec ?? 0) > 0.8 &&
+        (other.blockedSec ?? 0) > 0.8 &&
+        selfIndex < i
+      ) {
+        continue
+      }
     }
     const nextDist = Math.hypot(other.lastX - x, other.lastZ - z)
     if (nextDist >= broadRadius) continue
@@ -825,25 +832,24 @@ export function isPoseCollidingWithPeers(
  */
 export function isPathStepBlocked(
   segments: readonly PathSegment[],
-  totalLength: number,
+  _totalLength: number,
   candidateProgress: number,
   selfIndex: number,
   peers: readonly VehiclePoseState[],
   curX: number,
   curZ: number,
-  lookaheadDist = 0.08
+  _lookaheadDist = 0.08
 ): boolean {
   const clampedP = Math.min(1, Math.max(0, candidateProgress))
   const nextPose = evalSegmentedPose(segments, clampedP)
-  if (isPoseCollidingWithPeers(nextPose.x, nextPose.z, nextPose.dx, nextPose.dz, selfIndex, peers, curX, curZ)) {
-    return true
-  }
-  if (clampedP < 1) {
-    const lookP = Math.min(1, clampedP + lookaheadDist / Math.max(1.5, totalLength))
-    const lookPose = evalSegmentedPose(segments, lookP)
-    if (isPoseCollidingWithPeers(lookPose.x, lookPose.z, lookPose.dx, lookPose.dz, selfIndex, peers, curX, curZ)) {
-      return true
-    }
-  }
-  return false
+  return isPoseCollidingWithPeers(
+    nextPose.x,
+    nextPose.z,
+    nextPose.dx,
+    nextPose.dz,
+    selfIndex,
+    peers,
+    curX,
+    curZ
+  )
 }
