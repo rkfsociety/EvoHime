@@ -1141,9 +1141,14 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
     return [view.radius * 0.42, outer].filter((r) => r >= 2.2)
   }, [isCapital, view.radius])
 
-  // Гарантированный съезд с ближайшего свободного кольцевого проспекта к КАЖДОМУ зданию-модулю (не заходит внутрь дома).
+  // Гарантированный съезд с края ближайшего свободного кольцевого проспекта к КАЖДОМУ зданию-модулю (не заезжает внутрь кольца и дома).
   const moduleDriveways = useMemo(() => {
-    const list: Array<{ readonly from: readonly [number, number]; readonly to: readonly [number, number] }> = []
+    const list: Array<{
+      readonly from: readonly [number, number]
+      readonly to: readonly [number, number]
+      readonly junction: readonly [number, number]
+      readonly angle: number
+    }> = []
     if (ringRadii.length === 0) return list
     for (const item of view.buildings) {
       if (item.building.kind === 'citadel') continue
@@ -1155,7 +1160,7 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
       const candidates = [...ringRadii].sort((a, b) => Math.abs(r - a) - Math.abs(r - b))
       let chosenRing = candidates[0] ?? 6.0
       for (const cand of candidates) {
-        const entryCand = r >= cand ? Math.max(cand + 0.25, r - podiumHalf) : Math.min(cand - 0.25, r + podiumHalf)
+        const entryCand = r >= cand ? Math.max(cand + 0.36, r - podiumHalf) : Math.min(cand - 0.36, r + podiumHalf)
         const midR = (cand + entryCand) / 2
         const mx = Math.cos(angle) * midR
         const mz = Math.sin(angle) * midR
@@ -1167,19 +1172,28 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
           break
         }
       }
-      const entryR = r >= chosenRing ? Math.max(chosenRing + 0.25, r - podiumHalf) : Math.min(chosenRing - 0.25, r + podiumHalf)
-      if (Math.abs(entryR - chosenRing) < 0.18) continue
+      const edgeR = r >= chosenRing ? chosenRing + 0.33 : chosenRing - 0.33
+      const entryR = r >= chosenRing ? Math.max(edgeR + 0.14, r - podiumHalf) : Math.min(edgeR - 0.14, r + podiumHalf)
+      if (Math.abs(entryR - edgeR) < 0.12) continue
       list.push({
-        from: [view.x + Math.cos(angle) * chosenRing, view.z + Math.sin(angle) * chosenRing],
-        to: [view.x + Math.cos(angle) * entryR, view.z + Math.sin(angle) * entryR]
+        from: [view.x + Math.cos(angle) * edgeR, view.z + Math.sin(angle) * edgeR],
+        to: [view.x + Math.cos(angle) * entryR, view.z + Math.sin(angle) * entryR],
+        junction: [view.x + Math.cos(angle) * edgeR, view.z + Math.sin(angle) * edgeR],
+        angle
       })
     }
     return list
   }, [ringRadii, view.buildings, view.x, view.z])
 
-  // Межкольцевые соединители в свободных от зданий секторах.
+  // Межкольцевые соединители в свободных от зданий секторах (стыкуются по краям колец).
   const ringConnectors = useMemo(() => {
-    const list: Array<{ readonly from: readonly [number, number]; readonly to: readonly [number, number] }> = []
+    const list: Array<{
+      readonly from: readonly [number, number]
+      readonly to: readonly [number, number]
+      readonly angle: number
+      readonly r0: number
+      readonly r1: number
+    }> = []
     if (ringRadii.length < 2) return list
     for (let rIdx = 0; rIdx < ringRadii.length - 1; rIdx += 1) {
       const r0 = ringRadii[rIdx]
@@ -1194,8 +1208,11 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
         const blocked = view.buildings.some((b) => Math.hypot(b.x - mx, b.z - mz) < 1.85)
         if (!blocked) {
           list.push({
-            from: [view.x + Math.cos(angle) * r0, view.z + Math.sin(angle) * r0],
-            to: [view.x + Math.cos(angle) * r1, view.z + Math.sin(angle) * r1]
+            from: [view.x + Math.cos(angle) * (r0 + 0.33), view.z + Math.sin(angle) * (r0 + 0.33)],
+            to: [view.x + Math.cos(angle) * (r1 - 0.33), view.z + Math.sin(angle) * (r1 - 0.33)],
+            angle,
+            r0: r0 + 0.33,
+            r1: r1 - 0.33
           })
           placed += 1
         }
@@ -1342,29 +1359,52 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
       ))}
       {/* Межкольцевые проспекты в свободных секторах. */}
       {ringConnectors.map((conn, idx) => (
-        <RoadSegment3D
-          key={`ring-conn-${idx}`}
-          from={conn.from}
-          to={conn.to}
-          bedMaterial={skin.roadBed}
-          curbMaterial={skin.roadCurb}
-          lineMaterial={laneMaterial}
-          width={0.54}
-          y={0.016}
-        />
+        <group key={`ring-conn-${idx}`}>
+          <RoadSegment3D
+            from={conn.from}
+            to={conn.to}
+            bedMaterial={skin.roadBed}
+            curbMaterial={skin.roadCurb}
+            lineMaterial={laneMaterial}
+            width={0.54}
+            y={0.016}
+          />
+          <mesh
+            position={[view.x + Math.cos(conn.angle) * conn.r0, 0.026, view.z + Math.sin(conn.angle) * conn.r0]}
+            rotation={[-Math.PI / 2, 0, -conn.angle + Math.PI / 2]}
+            material={skin.roadBed}
+          >
+            <planeGeometry args={[0.46, 0.08]} />
+          </mesh>
+          <mesh
+            position={[view.x + Math.cos(conn.angle) * conn.r1, 0.026, view.z + Math.sin(conn.angle) * conn.r1]}
+            rotation={[-Math.PI / 2, 0, -conn.angle + Math.PI / 2]}
+            material={skin.roadBed}
+          >
+            <planeGeometry args={[0.46, 0.08]} />
+          </mesh>
+        </group>
       ))}
       {/* Съезды с кольцевых дорог к каждому зданию (до границы подиума). */}
       {moduleDriveways.map((drive, idx) => (
-        <RoadSegment3D
-          key={`module-drive-${idx}`}
-          from={drive.from}
-          to={drive.to}
-          bedMaterial={skin.roadBed}
-          curbMaterial={skin.roadCurb}
-          lineMaterial={laneMaterial}
-          width={0.46}
-          y={0.018}
-        />
+        <group key={`module-drive-${idx}`}>
+          <RoadSegment3D
+            from={drive.from}
+            to={drive.to}
+            bedMaterial={skin.roadBed}
+            curbMaterial={skin.roadCurb}
+            lineMaterial={laneMaterial}
+            width={0.46}
+            y={0.018}
+          />
+          <mesh
+            position={[drive.junction[0], 0.026, drive.junction[1]]}
+            rotation={[-Math.PI / 2, 0, -drive.angle + Math.PI / 2]}
+            material={skin.roadBed}
+          >
+            <planeGeometry args={[0.38, 0.08]} />
+          </mesh>
+        </group>
       ))}
       {/* Светофоры регулировки трафика на главных перекрёстках. */}
       {signalPositions.length > 0 ? (
@@ -1426,6 +1466,112 @@ function angularDistance(a: number, b: number): number {
   while (d < -Math.PI) d += Math.PI * 2
   return Math.abs(d)
 }
+
+/**
+ * Квадратичная кривая Безье и единичная касательная для плавного поворота
+ * машины на перекрёстке без мгновенного скачка позиции или угла.
+ */
+function evalTurnBezier(
+  ax: number,
+  az: number,
+  cx: number,
+  cz: number,
+  bx: number,
+  bz: number,
+  u: number
+): { x: number; z: number; dx: number; dz: number } {
+  const s = Math.min(1, Math.max(0, u))
+  const inv = 1 - s
+  const x = inv * inv * ax + 2 * inv * s * cx + s * s * bx
+  const z = inv * inv * az + 2 * inv * s * cz + s * s * bz
+  let dx = 2 * inv * (cx - ax) + 2 * s * (bx - cx)
+  let dz = 2 * inv * (cz - az) + 2 * s * (bz - cz)
+  const len = Math.hypot(dx, dz)
+  if (len > 1e-5) {
+    dx /= len
+    dz /= len
+  } else {
+    const fallbackLen = Math.hypot(bx - ax, bz - az) || 1
+    dx = (bx - ax) / fallbackLen
+    dz = (bz - az) / fallbackLen
+  }
+  return { x, z, dx, dz }
+}
+
+/**
+ * Единая гладкая траектория по маршруту «съезд -> кольцо -> съезд» со скруглёнными
+ * поворотами Безье на стыках и правосторонним смещением полос.
+ */
+function evalRingRoutePose(
+  viewX: number,
+  viewZ: number,
+  startAngle: number,
+  startR: number,
+  endAngle: number,
+  endR: number,
+  ringR: number,
+  arcDelta: number,
+  t: number,
+  laneOffset: number
+): { x: number; z: number; dx: number; dz: number } {
+  const ringSign = arcDelta >= 0 ? 1 : -1
+  const ringLaneR = ringR - ringSign * 0.13
+  const radial1Sign = ringR >= startR ? 1 : -1
+  const r1dx = Math.cos(startAngle) * radial1Sign
+  const r1dz = Math.sin(startAngle) * radial1Sign
+  const radial2Sign = endR >= ringR ? 1 : -1
+  const r2dx = Math.cos(endAngle) * radial2Sign
+  const r2dz = Math.sin(endAngle) * radial2Sign
+
+  if (t < 0.12) {
+    const r = startR + (t / 0.2) * (ringR - startR)
+    return {
+      x: viewX + Math.cos(startAngle) * r - r1dz * laneOffset,
+      z: viewZ + Math.sin(startAngle) * r + r1dx * laneOffset,
+      dx: r1dx,
+      dz: r1dz
+    }
+  }
+  if (t <= 0.28) {
+    const rIn = startR + (0.12 / 0.2) * (ringR - startR)
+    const ax = viewX + Math.cos(startAngle) * rIn - r1dz * laneOffset
+    const az = viewZ + Math.sin(startAngle) * rIn + r1dx * laneOffset
+    const cx = viewX + Math.cos(startAngle) * ringLaneR - r1dz * laneOffset
+    const cz = viewZ + Math.sin(startAngle) * ringLaneR + r1dx * laneOffset
+    const outA = startAngle + arcDelta * ((0.28 - 0.2) / 0.6)
+    const bx = viewX + Math.cos(outA) * ringLaneR
+    const bz = viewZ + Math.sin(outA) * ringLaneR
+    return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.12) / 0.16)
+  }
+  if (t < 0.72) {
+    const u = (t - 0.2) / 0.6
+    const curA = startAngle + arcDelta * u
+    return {
+      x: viewX + Math.cos(curA) * ringLaneR,
+      z: viewZ + Math.sin(curA) * ringLaneR,
+      dx: -Math.sin(curA) * ringSign,
+      dz: Math.cos(curA) * ringSign
+    }
+  }
+  if (t <= 0.88) {
+    const inA = startAngle + arcDelta * ((0.72 - 0.2) / 0.6)
+    const ax = viewX + Math.cos(inA) * ringLaneR
+    const az = viewZ + Math.sin(inA) * ringLaneR
+    const cx = viewX + Math.cos(endAngle) * ringLaneR - r2dz * laneOffset
+    const cz = viewZ + Math.sin(endAngle) * ringLaneR + r2dx * laneOffset
+    const rOut = ringR + ((0.88 - 0.8) / 0.2) * (endR - ringR)
+    const bx = viewX + Math.cos(endAngle) * rOut - r2dz * laneOffset
+    const bz = viewZ + Math.sin(endAngle) * rOut + r2dx * laneOffset
+    return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.72) / 0.16)
+  }
+  const r = ringR + ((t - 0.8) / 0.2) * (endR - ringR)
+  return {
+    x: viewX + Math.cos(endAngle) * r - r2dz * laneOffset,
+    z: viewZ + Math.sin(endAngle) * r + r2dx * laneOffset,
+    dx: r2dx,
+    dz: r2dz
+  }
+}
 const QUEEN_PROCESS_SEC = 1.15
 
 interface AgentCarSim {
@@ -1433,6 +1579,7 @@ interface AgentCarSim {
   progress: number
   curAngle: number
   cooldown: number
+  turnStartAngle?: number
 }
 
 /**
@@ -1577,6 +1724,7 @@ function QueenRoads3D({
     if (!paused && processingLotRef.current === null && queue.length > 0) {
       const nextIdx = queue.shift()
       if (nextIdx !== undefined && cars[nextIdx]) {
+        cars[nextIdx].turnStartAngle = cars[nextIdx].curAngle
         cars[nextIdx].phase = 'processing'
         cars[nextIdx].progress = 0
         processingLotRef.current = { lotIndex: nextIdx, remaining: QUEEN_PROCESS_SEC }
@@ -1595,6 +1743,68 @@ function QueenRoads3D({
       while (res > QUEEN_GATE_ANGLE) res -= Math.PI * 2
       while (res <= QUEEN_GATE_ANGLE - Math.PI * 2) res += Math.PI * 2
       return res
+    }
+    const evalQueenOutPose = (t: number, homeAngle: number, backArc: number) => {
+      const gdx = Math.cos(QUEEN_GATE_ANGLE)
+      const gdz = Math.sin(QUEEN_GATE_ANGLE)
+      const hdx = Math.cos(homeAngle)
+      const hdz = Math.sin(homeAngle)
+      const laneRForU = (u: number): number =>
+        innerBoulevardR + (backArc > Math.PI * 0.45 && u < 0.8 ? 0.11 : 0.3)
+
+      if (t < 0.17) {
+        const r = gateEntryR + (t / 0.25) * (innerBoulevardR - gateEntryR)
+        return {
+          x: view.x + gdx * r - gdz * laneOffset,
+          z: view.z + gdz * r + gdx * laneOffset,
+          dx: gdx,
+          dz: gdz
+        }
+      }
+      if (t <= 0.33) {
+        const rIn = gateEntryR + (0.17 / 0.25) * (innerBoulevardR - gateEntryR)
+        const ax = view.x + gdx * rIn - gdz * laneOffset
+        const az = view.z + gdz * rIn + gdx * laneOffset
+        const outU = (0.33 - 0.25) / 0.5
+        const laneR = laneRForU(outU)
+        const cx = view.x + gdx * laneR - gdz * laneOffset
+        const cz = view.z + gdz * laneR + gdx * laneOffset
+        const outA = QUEEN_GATE_ANGLE - backArc * outU
+        const bx = view.x + Math.cos(outA) * laneR
+        const bz = view.z + Math.sin(outA) * laneR
+        return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.17) / 0.16)
+      }
+      if (t < 0.67) {
+        const u = (t - 0.25) / 0.5
+        const curA = QUEEN_GATE_ANGLE - backArc * u
+        const laneR = laneRForU(u)
+        return {
+          x: view.x + Math.cos(curA) * laneR,
+          z: view.z + Math.sin(curA) * laneR,
+          dx: Math.sin(curA),
+          dz: -Math.cos(curA)
+        }
+      }
+      if (t <= 0.83) {
+        const inU = (0.67 - 0.25) / 0.5
+        const laneR = laneRForU(inU)
+        const inA = QUEEN_GATE_ANGLE - backArc * inU
+        const ax = view.x + Math.cos(inA) * laneR
+        const az = view.z + Math.sin(inA) * laneR
+        const cx = view.x + hdx * laneR - hdz * laneOffset
+        const cz = view.z + hdz * laneR + hdx * laneOffset
+        const rOut = innerBoulevardR + ((0.83 - 0.75) / 0.25) * (homeEdgeR - innerBoulevardR)
+        const bx = view.x + hdx * rOut - hdz * laneOffset
+        const bz = view.z + hdz * rOut + hdx * laneOffset
+        return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.67) / 0.16)
+      }
+      const r = innerBoulevardR + ((t - 0.75) / 0.25) * (homeEdgeR - innerBoulevardR)
+      return {
+        x: view.x + hdx * r - hdz * laneOffset,
+        z: view.z + hdz * r + hdx * laneOffset,
+        dx: hdx,
+        dz: hdz
+      }
     }
 
     // Шаг 2: двигаем каждую машину и обновляем её матрицу (с запретом проезда сквозь впереди идущую машину).
@@ -1648,30 +1858,11 @@ function QueenRoads3D({
           }
         }
         const t = Math.min(1, Math.max(0, car.progress))
-        if (t < 0.25) {
-          const u = t / 0.25
-          const r = gateEntryR + u * (innerBoulevardR - gateEntryR)
-          dirX = Math.cos(QUEEN_GATE_ANGLE)
-          dirZ = Math.sin(QUEEN_GATE_ANGLE)
-          x = view.x + Math.cos(QUEEN_GATE_ANGLE) * r - dirZ * laneOffset
-          z = view.z + Math.sin(QUEEN_GATE_ANGLE) * r + dirX * laneOffset
-        } else if (t < 0.75) {
-          const u = (t - 0.25) / 0.5
-          const curA = QUEEN_GATE_ANGLE - backArc * u
-          // Правостороннее движение (-angle): справа от водителя — внешняя сторона (+0.11 скоростная, +0.30 крайняя).
-          const laneR = innerBoulevardR + (backArc > Math.PI * 0.45 && u < 0.8 ? 0.11 : 0.3)
-          x = view.x + Math.cos(curA) * laneR
-          z = view.z + Math.sin(curA) * laneR
-          dirX = Math.sin(curA)
-          dirZ = -Math.cos(curA)
-        } else {
-          const u = (t - 0.75) / 0.25
-          const r = innerBoulevardR + u * (homeEdgeR - innerBoulevardR)
-          dirX = Math.cos(homeAngle)
-          dirZ = Math.sin(homeAngle)
-          x = view.x + Math.cos(homeAngle) * r - dirZ * laneOffset
-          z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
-        }
+        const pose = evalQueenOutPose(t, homeAngle, backArc)
+        x = pose.x
+        z = pose.z
+        dirX = pose.dx
+        dirZ = pose.dz
       } else if (car.phase === 'to_ring') {
         if (car.cooldown > 0) {
           car.cooldown -= dt
@@ -1712,21 +1903,43 @@ function QueenRoads3D({
           } else {
             car.progress = Math.min(car.progress, RING_ENTRY_STOP_PROGRESS)
           }
+          const turnLeadArc = Math.min(0.08, Math.max(0.02, (GATE_STOP_ANGLE - entryAngle) * 0.35))
+          const targetEntryAngle = Math.min(GATE_STOP_ANGLE, entryAngle + turnLeadArc)
+          const targetLaneR = innerBoulevardR - (GATE_STOP_ANGLE - targetEntryAngle <= 0.65 ? 0.3 : 0.11)
           if (car.progress >= 1 && !ringBlocked) {
             car.phase = 'along_ring'
             car.progress = 0
-            car.curAngle = Math.min(entryAngle, GATE_STOP_ANGLE)
+            car.curAngle = targetEntryAngle
           }
-          const r = homeEdgeR - Math.min(1, car.progress) * (homeEdgeR - innerBoulevardR)
-          dirX = -Math.cos(homeAngle)
-          dirZ = -Math.sin(homeAngle)
-          x = view.x + Math.cos(homeAngle) * r - dirZ * laneOffset
-          z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
+          const hdx = -Math.cos(homeAngle)
+          const hdz = -Math.sin(homeAngle)
+          if (car.progress <= RING_ENTRY_STOP_PROGRESS) {
+            const r = homeEdgeR - Math.min(1, car.progress) * (homeEdgeR - innerBoulevardR)
+            dirX = hdx
+            dirZ = hdz
+            x = view.x + Math.cos(homeAngle) * r - dirZ * laneOffset
+            z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
+          } else {
+            const turnU = (car.progress - RING_ENTRY_STOP_PROGRESS) / Math.max(0.05, 1 - RING_ENTRY_STOP_PROGRESS)
+            const stopR = homeEdgeR - RING_ENTRY_STOP_PROGRESS * (homeEdgeR - innerBoulevardR)
+            const ax = view.x + Math.cos(homeAngle) * stopR - hdz * laneOffset
+            const az = view.z + Math.sin(homeAngle) * stopR + hdx * laneOffset
+            const cx = view.x + Math.cos(homeAngle) * targetLaneR - hdz * laneOffset
+            const cz = view.z + Math.sin(homeAngle) * targetLaneR + hdx * laneOffset
+            const bx = view.x + Math.cos(targetEntryAngle) * targetLaneR
+            const bz = view.z + Math.sin(targetEntryAngle) * targetLaneR
+            const pose = evalTurnBezier(ax, az, cx, cz, bx, bz, turnU)
+            x = pose.x
+            z = pose.z
+            dirX = pose.dx
+            dirZ = pose.dz
+          }
         }
       } else if (car.phase === 'along_ring' || car.phase === 'queued') {
         // 4-полосное движение: транзитные/дальние машины едут по скоростной (-0.11) мимо пробки,
-        // а на подъезде к воротам перестраиваются в полосу очереди (-0.30) с соблюдением дистанции.
-        const isInQueueZone = car.phase === 'queued' || GATE_STOP_ANGLE - car.curAngle <= 0.65
+        // а на подъезде к воротам плавно перестраиваются в полосу очереди (-0.30) с соблюдением дистанции.
+        const distToGate = GATE_STOP_ANGLE - car.curAngle
+        const isInQueueZone = car.phase === 'queued' || distToGate <= 0.65
         let maxAllowedAngle = GATE_STOP_ANGLE
         let queuedAhead = false
         for (let oIdx = 0; oIdx < cars.length; oIdx += 1) {
@@ -1750,21 +1963,45 @@ function QueenRoads3D({
           car.phase = 'queued'
           if (!queue.includes(index)) queue.push(index)
         }
-        // Правостороннее движение (+angle): справа от водителя — внутренняя сторона (-0.30 полоса очереди, -0.11 скоростная).
-        const laneR = innerBoulevardR - (isInQueueZone || car.phase === 'queued' ? 0.3 : 0.11)
+        // Плавное перестроение в полосу очереди (-0.11 -> -0.30).
+        const mergeT = car.phase === 'queued' ? 1 : Math.min(1, Math.max(0, (0.75 - (GATE_STOP_ANGLE - car.curAngle)) / 0.2))
+        const smoothMerge = mergeT * mergeT * (3 - 2 * mergeT)
+        const laneR = innerBoulevardR - (0.11 + smoothMerge * 0.19)
         x = view.x + Math.cos(car.curAngle) * laneR
         z = view.z + Math.sin(car.curAngle) * laneR
         dirX = -Math.sin(car.curAngle)
         dirZ = Math.cos(car.curAngle)
       } else if (car.phase === 'processing') {
-        car.progress = Math.min(1, car.progress + dt * 2.5)
-        const r = innerBoulevardR - car.progress * (innerBoulevardR - gateEntryR)
-        dirX = -Math.cos(QUEEN_GATE_ANGLE)
-        dirZ = -Math.sin(QUEEN_GATE_ANGLE)
-        x = view.x + Math.cos(QUEEN_GATE_ANGLE) * r - dirZ * laneOffset
-        z = view.z + Math.sin(QUEEN_GATE_ANGLE) * r + dirX * laneOffset
+        car.progress = Math.min(1, car.progress + dt * 2.0)
+        const gdx = -Math.cos(QUEEN_GATE_ANGLE)
+        const gdz = -Math.sin(QUEEN_GATE_ANGLE)
+        if (car.progress <= 0.42) {
+          const u = car.progress / 0.42
+          const startA = car.turnStartAngle ?? GATE_STOP_ANGLE
+          const startLaneR = innerBoulevardR - 0.3
+          const ax = view.x + Math.cos(startA) * startLaneR
+          const az = view.z + Math.sin(startA) * startLaneR
+          const cx = view.x + Math.cos(QUEEN_GATE_ANGLE) * startLaneR - gdz * laneOffset
+          const cz = view.z + Math.sin(QUEEN_GATE_ANGLE) * startLaneR + gdx * laneOffset
+          const enterR = innerBoulevardR - 0.52
+          const bx = view.x + Math.cos(QUEEN_GATE_ANGLE) * enterR - gdz * laneOffset
+          const bz = view.z + Math.sin(QUEEN_GATE_ANGLE) * enterR + gdx * laneOffset
+          const pose = evalTurnBezier(ax, az, cx, cz, bx, bz, u)
+          x = pose.x
+          z = pose.z
+          dirX = pose.dx
+          dirZ = pose.dz
+        } else {
+          const u = (car.progress - 0.42) / 0.58
+          const enterR = innerBoulevardR - 0.52
+          const r = enterR - u * (enterR - gateEntryR)
+          dirX = gdx
+          dirZ = gdz
+          x = view.x + Math.cos(QUEEN_GATE_ANGLE) * r - dirZ * laneOffset
+          z = view.z + Math.sin(QUEEN_GATE_ANGLE) * r + dirX * laneOffset
+        }
       } else if (car.phase === 'returning_ring') {
-        // Возврат по выездной полосе ворот и внутренней полосе кольца (-angle).
+        // Возврат по выездной полосе ворот и внешней полосе кольца (-angle) со скруглениями Безье.
         car.progress += dt * 0.55
         if (car.progress >= 1) {
           car.phase = 'cooldown'
@@ -1772,30 +2009,11 @@ function QueenRoads3D({
           car.cooldown = 0.25 + (index % 5) * 0.15
         }
         const t = Math.min(1, car.progress)
-        if (t < 0.25) {
-          const u = t / 0.25
-          const r = gateEntryR + u * (innerBoulevardR - gateEntryR)
-          dirX = Math.cos(QUEEN_GATE_ANGLE)
-          dirZ = Math.sin(QUEEN_GATE_ANGLE)
-          x = view.x + Math.cos(QUEEN_GATE_ANGLE) * r - dirZ * laneOffset
-          z = view.z + Math.sin(QUEEN_GATE_ANGLE) * r + dirX * laneOffset
-        } else if (t < 0.75) {
-          const u = (t - 0.25) / 0.5
-          const curA = QUEEN_GATE_ANGLE - backArc * u
-          // Правостороннее движение (-angle): справа от водителя — внешняя сторона (+0.11 скоростная, +0.30 крайняя).
-          const laneR = innerBoulevardR + (backArc > Math.PI * 0.45 && u < 0.8 ? 0.11 : 0.3)
-          x = view.x + Math.cos(curA) * laneR
-          z = view.z + Math.sin(curA) * laneR
-          dirX = Math.sin(curA)
-          dirZ = -Math.cos(curA)
-        } else {
-          const u = (t - 0.75) / 0.25
-          const r = innerBoulevardR + u * (homeEdgeR - innerBoulevardR)
-          dirX = Math.cos(homeAngle)
-          dirZ = Math.sin(homeAngle)
-          x = view.x + Math.cos(homeAngle) * r - dirZ * laneOffset
-          z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
-        }
+        const pose = evalQueenOutPose(t, homeAngle, backArc)
+        x = pose.x
+        z = pose.z
+        dirX = pose.dx
+        dirZ = pose.dz
       } else {
         visible = false
         car.cooldown -= dt
@@ -1828,10 +2046,10 @@ function QueenRoads3D({
 
   return (
     <group>
-      {/* ЕДИНСТВЕННЫЙ парадный въезд в Цитадель Королевы с золотой аркой ворот. */}
+      {/* ЕДИНСТВЕННЫЙ парадный въезд в Цитадель Королевы с золотой аркой ворот (стыкуется ровно по внутреннему краю кольца). */}
       <RoadSegment3D
         from={[view.x + Math.cos(QUEEN_GATE_ANGLE) * 2.4, view.z + Math.sin(QUEEN_GATE_ANGLE) * 2.4]}
-        to={[view.x + Math.cos(QUEEN_GATE_ANGLE) * innerBoulevardR, view.z + Math.sin(QUEEN_GATE_ANGLE) * innerBoulevardR]}
+        to={[view.x + Math.cos(QUEEN_GATE_ANGLE) * (innerBoulevardR - 0.41), view.z + Math.sin(QUEEN_GATE_ANGLE) * (innerBoulevardR - 0.41)]}
         bedMaterial={skin.roadBed}
         curbMaterial={skin.roadCurb}
         lineMaterial={spokeLineMaterial}
@@ -1854,16 +2072,17 @@ function QueenRoads3D({
         </mesh>
       </group>
 
-      {/* Отдельные подъезды к КАЖДОМУ дому агента: от внутреннего бульвара (спереди) и от Главного кольца (сзади). */}
+      {/* Отдельные подъезды к КАЖДОМУ дому агента: стыкуются ровно по краям колец без наезда разметки и бордюров. */}
       {lots.map((lot, index) => {
         const angle = houseAngles[index]
         if (angle === undefined) return null
+        const frontStartR = innerBoulevardR + 0.41
         const backExitR = ringRadius + 0.54
-        const mainRingR = Math.max(backExitR + 0.25, 6.0)
+        const mainRingEdgeR = Math.max(backExitR + 0.14, 6.0 - 0.33)
         return (
           <group key={`road-${lot.departmentKey}-${lot.slot}`}>
             <RoadSegment3D
-              from={[view.x + Math.cos(angle) * innerBoulevardR, view.z + Math.sin(angle) * innerBoulevardR]}
+              from={[view.x + Math.cos(angle) * frontStartR, view.z + Math.sin(angle) * frontStartR]}
               to={[view.x + Math.cos(angle) * homeEdgeR, view.z + Math.sin(angle) * homeEdgeR]}
               bedMaterial={skin.roadBed}
               curbMaterial={skin.roadCurb}
@@ -1873,7 +2092,7 @@ function QueenRoads3D({
             />
             <RoadSegment3D
               from={[view.x + Math.cos(angle) * backExitR, view.z + Math.sin(angle) * backExitR]}
-              to={[view.x + Math.cos(angle) * mainRingR, view.z + Math.sin(angle) * mainRingR]}
+              to={[view.x + Math.cos(angle) * mainRingEdgeR, view.z + Math.sin(angle) * mainRingEdgeR]}
               bedMaterial={skin.roadBed}
               curbMaterial={skin.roadCurb}
               lineMaterial={spokeLineMaterial}
@@ -1905,22 +2124,22 @@ function QueenRoads3D({
       <mesh position={[view.x, 0.036, view.z]} rotation={[Math.PI / 2, 0, 0]} material={ringLineMaterial}>
         <torusGeometry args={[innerBoulevardR, 0.03, 6, 72]} />
       </mesh>
-      {/* Чистый перекрёсток на въезде в Цитадель Королевы (убирает внутренний бордюр поперёк въезда). */}
+      {/* Чистый перекрёсток на въезде в Цитадель Королевы (убирает только внутренний бордюр в проёме въезда). */}
       <mesh
         position={[
-          view.x + Math.cos(QUEEN_GATE_ANGLE) * (innerBoulevardR - 0.22),
+          view.x + Math.cos(QUEEN_GATE_ANGLE) * (innerBoulevardR - 0.41),
           0.037,
-          view.z + Math.sin(QUEEN_GATE_ANGLE) * (innerBoulevardR - 0.22)
+          view.z + Math.sin(QUEEN_GATE_ANGLE) * (innerBoulevardR - 0.41)
         ]}
         rotation={[-Math.PI / 2, 0, -QUEEN_GATE_ANGLE + Math.PI / 2]}
         material={skin.roadBed}
       >
-        <planeGeometry args={[0.58, 0.44]} />
+        <planeGeometry args={[0.56, 0.08]} />
       </mesh>
       {/* Чистые Т-образные стыки съездов домов с бордюрами колец. */}
       {houseAngles.map((angle, idx) => {
         const backExitR = ringRadius + 0.54
-        const mainRingR = Math.max(backExitR + 0.25, 6.0)
+        const mainRingEdgeR = Math.max(backExitR + 0.14, 6.0 - 0.33)
         return (
           <group key={`junction-patch-${idx}`}>
             <mesh
@@ -1932,18 +2151,18 @@ function QueenRoads3D({
               rotation={[-Math.PI / 2, 0, -angle + Math.PI / 2]}
               material={skin.roadBed}
             >
-              <planeGeometry args={[0.42, 0.16]} />
+              <planeGeometry args={[0.38, 0.08]} />
             </mesh>
             <mesh
               position={[
-                view.x + Math.cos(angle) * (mainRingR - 0.24),
+                view.x + Math.cos(angle) * mainRingEdgeR,
                 0.037,
-                view.z + Math.sin(angle) * (mainRingR - 0.24)
+                view.z + Math.sin(angle) * mainRingEdgeR
               ]}
               rotation={[-Math.PI / 2, 0, -angle + Math.PI / 2]}
               material={skin.roadBed}
             >
-              <planeGeometry args={[0.38, 0.16]} />
+              <planeGeometry args={[0.34, 0.08]} />
             </mesh>
           </group>
         )
@@ -2083,45 +2302,35 @@ function AgentModuleCouriers3D({
           continue
         }
         const p = paused ? (route.phase + dir * 0.5) % 1 : (route.phase + dir * 0.5 + time * flowSpeed) % 1
-        const t = dir === 0 ? p : 1 - p
+        const pose =
+          dir === 0
+            ? evalRingRoutePose(
+                view.x,
+                view.z,
+                route.houseAngle,
+                route.houseExitR,
+                route.targetAngle,
+                route.targetEntryR,
+                MAIN_AVENUES_RADIUS,
+                deltaAngle,
+                p,
+                laneOffset
+              )
+            : evalRingRoutePose(
+                view.x,
+                view.z,
+                route.targetAngle,
+                route.targetEntryR,
+                route.houseAngle,
+                route.houseExitR,
+                MAIN_AVENUES_RADIUS,
+                -deltaAngle,
+                p,
+                laneOffset
+              )
 
-        let x = view.x
-        let z = view.z
-        let dirX = 1
-        let dirZ = 0
-
-        if (t < 0.2) {
-          // Участок 1: выезд от дома агента до Главного кольца.
-          const u = t / 0.2
-          const r = route.houseExitR + u * (MAIN_AVENUES_RADIUS - route.houseExitR)
-          const sign = dir === 0 ? 1 : -1
-          dirX = Math.cos(route.houseAngle) * sign
-          dirZ = Math.sin(route.houseAngle) * sign
-          x = view.x + Math.cos(route.houseAngle) * r - dirZ * laneOffset
-          z = view.z + Math.sin(route.houseAngle) * r + dirX * laneOffset
-        } else if (t <= 0.8) {
-          // Участок 2: движение по дуге Главного кольца (внешняя/внутренняя полоса).
-          const u = (t - 0.2) / 0.6
-          const curAngle = route.houseAngle + deltaAngle * u
-          const ringSign = (deltaAngle >= 0 ? 1 : -1) * (dir === 0 ? 1 : -1)
-          const laneR = MAIN_AVENUES_RADIUS - ringSign * 0.13
-          x = view.x + Math.cos(curAngle) * laneR
-          z = view.z + Math.sin(curAngle) * laneR
-          dirX = -Math.sin(curAngle) * ringSign
-          dirZ = Math.cos(curAngle) * ringSign
-        } else {
-          // Участок 3: заезд от Главного кольца к подиуму модуля.
-          const u = (t - 0.8) / 0.2
-          const r = MAIN_AVENUES_RADIUS + u * (route.targetEntryR - MAIN_AVENUES_RADIUS)
-          const sign = dir === 0 ? 1 : -1
-          dirX = Math.cos(route.targetAngle) * sign
-          dirZ = Math.sin(route.targetAngle) * sign
-          x = view.x + Math.cos(route.targetAngle) * r - dirZ * laneOffset
-          z = view.z + Math.sin(route.targetAngle) * r + dirX * laneOffset
-        }
-
-        dummy.position.set(x, 0.12, z)
-        dummy.lookAt(x + dirX, 0.12, z + dirZ)
+        dummy.position.set(pose.x, 0.12, pose.z)
+        dummy.lookAt(pose.x + pose.dx, 0.12, pose.z + pose.dz)
         dummy.scale.set(route.active ? 0.14 : 0.11, 0.1, route.active ? 0.34 : 0.24)
         dummy.updateMatrix()
         mesh.setMatrixAt(instIdx, dummy.matrix)
@@ -2264,41 +2473,21 @@ function ModuleRoads3D({
       const speed = isLit ? 0.28 : 0.18
       const basePhase = index / Math.max(1, roads.length)
       const t = paused ? basePhase : (basePhase + time * speed) % 1
+      const pose = evalRingRoutePose(
+        view.x,
+        view.z,
+        road.fromAngle,
+        road.fromEntryR,
+        road.toAngle,
+        road.toEntryR,
+        road.ringR,
+        road.deltaAngle,
+        t,
+        laneOffset
+      )
 
-      let x = view.x
-      let z = view.z
-      let dirX = 1
-      let dirZ = 0
-
-      if (t < 0.2) {
-        const u = t / 0.2
-        const r = road.fromEntryR + u * (road.ringR - road.fromEntryR)
-        const sign = road.ringR >= road.fromEntryR ? 1 : -1
-        dirX = Math.cos(road.fromAngle) * sign
-        dirZ = Math.sin(road.fromAngle) * sign
-        x = view.x + Math.cos(road.fromAngle) * r - dirZ * laneOffset
-        z = view.z + Math.sin(road.fromAngle) * r + dirX * laneOffset
-      } else if (t <= 0.8) {
-        const u = (t - 0.2) / 0.6
-        const curAngle = road.fromAngle + road.deltaAngle * u
-        const ringSign = road.deltaAngle >= 0 ? 1 : -1
-        const laneR = road.ringR - ringSign * 0.13
-        x = view.x + Math.cos(curAngle) * laneR
-        z = view.z + Math.sin(curAngle) * laneR
-        dirX = -Math.sin(curAngle) * ringSign
-        dirZ = Math.cos(curAngle) * ringSign
-      } else {
-        const u = (t - 0.8) / 0.2
-        const r = road.ringR + u * (road.toEntryR - road.ringR)
-        const sign = road.toEntryR >= road.ringR ? 1 : -1
-        dirX = Math.cos(road.toAngle) * sign
-        dirZ = Math.sin(road.toAngle) * sign
-        x = view.x + Math.cos(road.toAngle) * r - dirZ * laneOffset
-        z = view.z + Math.sin(road.toAngle) * r + dirX * laneOffset
-      }
-
-      dummy.position.set(x, 0.12, z)
-      dummy.lookAt(x + dirX, 0.12, z + dirZ)
+      dummy.position.set(pose.x, 0.12, pose.z)
+      dummy.lookAt(pose.x + pose.dx, 0.12, pose.z + pose.dz)
       dummy.scale.set(isLit ? 0.14 : 0.1, 0.09, isLit ? 0.34 : 0.24)
       dummy.updateMatrix()
       mesh.setMatrixAt(index, dummy.matrix)
