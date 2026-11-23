@@ -64,6 +64,11 @@ export function hasLiveSupervisor(
   return isAlive(context.supervisorPid)
 }
 
+/** Accepts only the process image returned for the supervisor PID lookup. */
+export function isSupervisorImageName(imageName: string | undefined): boolean {
+  return imageName?.trim().toLowerCase() === 'evohime-supervisor.exe'
+}
+
 export function launchContextPath(environment: NodeJS.ProcessEnv = process.env): string {
   const explicit = sanitize(environment['EVOHIME_LAUNCH_CONTEXT'])
   if (explicit) {

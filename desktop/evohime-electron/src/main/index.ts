@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, net, Notification, safeStorage } from 'electron'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 
 import type { AmbientHotkeyStatus, AppLocale, ListeningState, ShellDiagnostic, ShellState } from '@shared/api'
 
@@ -9,7 +9,7 @@ import { ChatStore } from './chat-store'
 import { CodexService } from './codex-service'
 import { JsonlLogger } from './diagnostics/logger'
 import { buildSupportBundleFiles, claimAutomaticSupportReport, serializeSupportBundle } from './diagnostics/support-bundle'
-import { hasLiveSupervisor, readLaunchContext } from './ipc/launch-context'
+import { hasLiveSupervisor, isSupervisorImageName, readLaunchContext } from './ipc/launch-context'
 import { CorePipeClient } from './ipc/pipe-client'
 import { createHiveDaemonClient } from './hive-daemon-client'
 import { dataDirectory, logDirectory } from './paths'
@@ -684,7 +684,7 @@ function stopSupervisor(): void {
     child.kill()
   }
   const pid = readLaunchContext().supervisorPid
-  if (pid && processIsAlive(pid)) {
+  if (pid && processIsSupervisor(pid)) {
     try {
       process.kill(pid)
     } catch (error) {
@@ -697,7 +697,7 @@ async function ensureSupervisorSession(
   force = false
 ): Promise<ReturnType<typeof readLaunchContext>> {
   const current = readLaunchContext()
-  if (!force && hasLiveSupervisor(current, processIsAlive)) {
+  if (!force && hasLiveSupervisor(current, processIsSupervisor)) {
     return current
   }
   if (!current.developerLaunch) {
@@ -751,10 +751,25 @@ async function ensureSupervisorSession(
     // a short time after spawn. Returning it immediately makes the liveness
     // monitor kill the freshly started client because it observes the stale
     // PID. Accept only the context whose recorded owner is alive.
-    if (!next.developerLaunch && hasLiveSupervisor(next, processIsAlive)) return next
+    if (!next.developerLaunch && hasLiveSupervisor(next, processIsSupervisor)) return next
   }
   log('warn', 'shell.supervisor_context_timeout', {})
   return readLaunchContext()
+}
+
+function processIsSupervisor(pid: number): boolean {
+  if (process.platform !== 'win32') return processIsAlive(pid)
+  try {
+    const output = execFileSync('tasklist.exe', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore']
+    }).trim()
+    const imageName = output.match(/^"([^"]+)"/)?.[1]
+    return isSupervisorImageName(imageName)
+  } catch {
+    return false
+  }
 }
 
 function processIsAlive(pid: number): boolean {
@@ -833,13 +848,10 @@ function monitorSupervisorLiveness(): NodeJS.Timeout {
     const launch = readLaunchContext()
     const pid = launch.supervisorPid
     if (launch.developerLaunch || !pid) return
-    try {
-      process.kill(pid, 0)
-    } catch {
-      log('error', 'shell.supervisor_owner_lost', { pid })
-      client?.stop()
-      clearInterval(timer)
-    }
+    if (processIsSupervisor(pid)) return
+    log('error', 'shell.supervisor_owner_lost', { pid })
+    client?.stop()
+    clearInterval(timer)
   }, 1_000)
   timer.unref()
   return timer

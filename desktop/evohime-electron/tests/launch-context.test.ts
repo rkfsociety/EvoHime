@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { hasLiveSupervisor, readLaunchContext } from '../src/main/ipc/launch-context'
+import { hasLiveSupervisor, isSupervisorImageName, readLaunchContext } from '../src/main/ipc/launch-context'
 
 /**
  * The shell starts a supervisor unless one is proven to be running.
@@ -27,6 +27,12 @@ const base = {
 }
 
 describe('supervisor liveness', () => {
+  it('does not trust a reused PID owned by another process image', () => {
+    expect(isSupervisorImageName('msedgewebview2.exe')).toBe(false)
+    expect(isSupervisorImageName('evohime-supervisor.exe')).toBe(true)
+    expect(isSupervisorImageName(undefined)).toBe(false)
+  })
+
   it('trusts a context whose recorded supervisor is still running', () => {
     const context = contextFrom({ ...base, supervisor_pid: 4242 })
 
