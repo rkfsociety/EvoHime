@@ -1059,6 +1059,7 @@ function queenCurrentActivity(events: readonly CoreEvent[]): string {
 function hiveLogEntries(
   events: readonly CoreEvent[],
   observedAt: ReadonlyMap<string, string>,
+  observedAtMs: ReadonlyMap<string, number>,
   limit: number,
   includeNoise = true,
   chatTaskIds: ReadonlySet<string> = new Set(),
@@ -1068,7 +1069,11 @@ function hiveLogEntries(
     .filter((event) => event.eventType !== 'hive_state.snapshot' && event.eventType !== 'hive.observation_status')
     .filter((event) => !event.taskId || chatTaskIds.has(event.taskId) || event.taskId.startsWith('eva-pulse-'))
     .filter((event) => includeNoise || !HIVE_LOG_NOISE_EVENTS.has(event.eventType))
-    .sort((left, right) => right.sequenceId - left.sequenceId)
+    .sort((left, right) => {
+      const leftAt = observedAtMs.get(coreEventKey(left)) ?? 0
+      const rightAt = observedAtMs.get(coreEventKey(right)) ?? 0
+      return rightAt - leftAt || right.sequenceId - left.sequenceId
+    })
     .slice(0, limit)
     .map((event) => {
       const key = coreEventKey(event)
@@ -1084,6 +1089,7 @@ function hiveLogEntries(
 function formatHiveLogsForClipboard(
   events: readonly CoreEvent[],
   observedAt: ReadonlyMap<string, string>,
+  observedAtMs: ReadonlyMap<string, number>,
   budget: HiveStateView['budget'],
   chatTaskIds: ReadonlySet<string> = new Set(),
   observedAtFor: (event: CoreEvent) => string = (event) => observedAt.get(coreEventKey(event)) ?? '—'
@@ -1105,7 +1111,11 @@ function formatHiveLogsForClipboard(
   const relevant = events
     .filter((event) => event.eventType !== 'hive_state.snapshot' && event.eventType !== 'hive.observation_status')
     .filter((event) => !event.taskId || chatTaskIds.has(event.taskId) || event.taskId.startsWith('eva-pulse-'))
-    .sort((left, right) => right.sequenceId - left.sequenceId)
+    .sort((left, right) => {
+      const leftAt = observedAtMs.get(coreEventKey(left)) ?? 0
+      const rightAt = observedAtMs.get(coreEventKey(right)) ?? 0
+      return rightAt - leftAt || right.sequenceId - left.sequenceId
+    })
     .slice(0, HIVE_LOGS_CLIPBOARD_LIMIT)
   for (const event of relevant) {
     const at = observedAtFor(event)
@@ -1647,6 +1657,7 @@ export function HiveDashboard({
   const [evaWorkspaceValidation, setEvaWorkspaceValidation] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle')
   const [evaWorkspaceValidationMessage, setEvaWorkspaceValidationMessage] = useState<string | null>(null)
   const [observedAt, setObservedAt] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const [observedAtMs, setObservedAtMs] = useState<ReadonlyMap<string, number>>(() => new Map())
   const logListRef = useRef<HTMLOListElement | null>(null)
   const [logsCopyState, setLogsCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const logsCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -2022,6 +2033,28 @@ export function HiveDashboard({
         const key = coreEventKey(event)
         if (next.has(key)) continue
         next.set(key, new Date().toLocaleTimeString('ru-RU', { hour12: false }))
+        changed = true
+      }
+      return changed ? next : current
+    })
+    setObservedAtMs((current) => {
+      let next = new Map(current)
+      if (next.size > 2000) {
+        next = new Map()
+        for (const event of events) {
+          const key = coreEventKey(event)
+          const seen = current.get(key)
+          if (seen !== undefined) next.set(key, seen)
+        }
+      }
+      let changed = next.size !== current.size
+      let receivedAt = Date.now()
+      for (const event of events) {
+        const key = coreEventKey(event)
+        if (next.has(key)) continue
+        // Keep same-millisecond arrivals ordered by the order in which the
+        // shell received them; Date.now() alone is too coarse for a burst.
+        next.set(key, receivedAt++)
         changed = true
       }
       return changed ? next : current
@@ -2866,7 +2899,7 @@ export function HiveDashboard({
       : fallbackLabel
         ? `${translate('Резерв:')} ${fallbackLabel}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} ${translate('токенов')})` : ''}${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
         : null
-  const realLogs = hiveLogEntries(hiveEvents, observedAt, allLogs ? 40 : 6, allLogs, hiveChatTaskIds, observedAtForHiveEvent)
+  const realLogs = hiveLogEntries(hiveEvents, observedAt, observedAtMs, allLogs ? 40 : 6, allLogs, hiveChatTaskIds, observedAtForHiveEvent)
   const logs = realLogs
   const latestLogId = logs[0]?.id ?? null
   useEffect(() => {
@@ -2882,7 +2915,7 @@ export function HiveDashboard({
     }
   }, [])
   const copyHiveLogs = useCallback(async (): Promise<void> => {
-    const formatted = formatHiveLogsForClipboard(hiveEvents, observedAt, budget, hiveChatTaskIds, observedAtForHiveEvent)
+    const formatted = formatHiveLogsForClipboard(hiveEvents, observedAt, observedAtMs, budget, hiveChatTaskIds, observedAtForHiveEvent)
     if (formatted.length === 0) return
     let copied = false
     try {
@@ -2903,7 +2936,7 @@ export function HiveDashboard({
       setLogsCopyState('idle')
       logsCopyTimerRef.current = null
     }, 2000)
-  }, [api, budget, hiveChatTaskIds, hiveEvents, observedAt, observedAtForHiveEvent])
+  }, [api, budget, hiveChatTaskIds, hiveEvents, observedAt, observedAtMs, observedAtForHiveEvent])
   const combinedPrompts = useMemo(() => {
     const byTask = new Map<string, HiveUserPrompt>()
     for (const item of historyPrompts) {
