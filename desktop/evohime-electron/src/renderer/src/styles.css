@@ -7489,6 +7489,20 @@ body {
   transform: translate(-50%, -50%);
 }
 
+.hive-city-scene__world--archipelago {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: none;
+}
+
+.hive-archipelago__frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
 .hive-city-scene__backdrop {
   position: absolute;
   inset: 0;
@@ -9674,6 +9688,12 @@ body {
     width: 100%;
     height: auto;
     transform: none;
+  }
+
+  .hive-city-scene__world--archipelago {
+    position: absolute;
+    inset: 0;
+    height: 100%;
   }
 
   .hive-city-scene__pins {

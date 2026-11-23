@@ -2957,7 +2957,7 @@ export function HiveArchipelago3D({
           position: 'absolute',
           right: '16px',
           bottom: '16px',
-          zIndex: 6,
+          zIndex: 25,
           cursor: 'pointer',
           padding: '6px 12px',
           borderRadius: '999px',
