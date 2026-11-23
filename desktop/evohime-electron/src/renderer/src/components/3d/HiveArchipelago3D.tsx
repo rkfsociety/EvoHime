@@ -1536,9 +1536,24 @@ function CityStreets3D({
 export const QUEEN_GATE_ANGLE = Math.PI / 2
 const TRAFFIC_LIGHT_CYCLE_SEC = 8.0
 
-/** Возвращает true, если на регулируемых перекрёстках открыто движение по кольцу (иначе — по прямой магистрали от ворот). */
+type TrafficLightState = 'ring_green' | 'amber_to_radial' | 'radial_green' | 'amber_to_ring'
+
+function getTrafficLightState(timeSec: number): TrafficLightState {
+  const phase = ((timeSec % TRAFFIC_LIGHT_CYCLE_SEC) + TRAFFIC_LIGHT_CYCLE_SEC) % TRAFFIC_LIGHT_CYCLE_SEC
+  if (phase < 3.4) return 'ring_green'
+  if (phase < 4.0) return 'amber_to_radial'
+  if (phase < 7.4) return 'radial_green'
+  return 'amber_to_ring'
+}
+
+/** Возвращает true, если разрешён въезд на перекрёсток со стороны кольца. */
 function isRingTrafficGreen(timeSec: number): boolean {
-  return (timeSec % TRAFFIC_LIGHT_CYCLE_SEC) < TRAFFIC_LIGHT_CYCLE_SEC * 0.55
+  return getTrafficLightState(timeSec) === 'ring_green'
+}
+
+/** Возвращает true, если разрешён въезд на перекрёсток со стороны прямой магистрали. */
+function isRadialTrafficGreen(timeSec: number): boolean {
+  return getTrafficLightState(timeSec) === 'radial_green'
 }
 
 /**
@@ -1575,8 +1590,10 @@ function RegulatedIntersection3D({
     []
   )
   const ringLampGreenMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#22c55e' }), [])
+  const ringLampAmberMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#f59e0b' }), [])
   const ringLampRedMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ef4444' }), [])
   const radialLampGreenMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#22c55e' }), [])
+  const radialLampAmberMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#f59e0b' }), [])
   const radialLampRedMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ef4444' }), [])
   const ringLampRefs = useRef<Array<THREE.Mesh | null>>([])
   const radialLampRefs = useRef<Array<THREE.Mesh | null>>([])
@@ -1585,15 +1602,36 @@ function RegulatedIntersection3D({
     stopLineMat.dispose()
     poleMat.dispose()
     ringLampGreenMat.dispose()
+    ringLampAmberMat.dispose()
     ringLampRedMat.dispose()
     radialLampGreenMat.dispose()
+    radialLampAmberMat.dispose()
     radialLampRedMat.dispose()
-  }, [stopLineMat, poleMat, ringLampGreenMat, ringLampRedMat, radialLampGreenMat, radialLampRedMat])
+  }, [
+    stopLineMat,
+    poleMat,
+    ringLampGreenMat,
+    ringLampAmberMat,
+    ringLampRedMat,
+    radialLampGreenMat,
+    radialLampAmberMat,
+    radialLampRedMat
+  ])
 
   useFrame((state) => {
-    const ringGreen = isRingTrafficGreen(paused ? 0 : state.clock.elapsedTime)
-    const rMat = ringGreen ? ringLampGreenMat : ringLampRedMat
-    const dMat = ringGreen ? radialLampRedMat : radialLampGreenMat
+    const light = getTrafficLightState(paused ? 0 : state.clock.elapsedTime)
+    const rMat =
+      light === 'ring_green'
+        ? ringLampGreenMat
+        : light === 'amber_to_radial' || light === 'amber_to_ring'
+          ? ringLampAmberMat
+          : ringLampRedMat
+    const dMat =
+      light === 'radial_green'
+        ? radialLampGreenMat
+        : light === 'amber_to_radial' || light === 'amber_to_ring'
+          ? radialLampAmberMat
+          : radialLampRedMat
     for (const lamp of ringLampRefs.current) {
       if (lamp) lamp.material = rMat
     }
@@ -1604,11 +1642,14 @@ function RegulatedIntersection3D({
 
   const ix = x + Math.cos(angle) * radius
   const iz = z + Math.sin(angle) * radius
-  const corners: readonly [number, number][] = [
-    [-0.49, -0.49],
-    [0.49, -0.49],
-    [-0.49, 0.49],
-    [0.49, 0.49]
+  // 4 отдельных светофора: 2 перед стоп-линиями кольца, 2 перед стоп-линиями радиальной дороги (отлично видны сверху!).
+  const ringPoles: readonly [number, number][] = [
+    [-0.51, 0.43],
+    [0.51, -0.43]
+  ]
+  const radialPoles: readonly [number, number][] = [
+    [-0.43, -0.51],
+    [0.43, 0.51]
   ]
 
   return (
@@ -1630,29 +1671,37 @@ function RegulatedIntersection3D({
       <mesh position={[0.49, 0.041, -0.21]} rotation={[-Math.PI / 2, 0, Math.PI / 2]} material={stopLineMat}>
         <planeGeometry args={[0.38, 0.055]} />
       </mesh>
-      {/* Четыре светофора по углам перекрёстка. */}
-      {corners.map(([cx, cz], idx) => (
-        <group key={`tl-${idx}`} position={[cx, 0, cz]}>
+      {/* Светофоры для кольцевого направления. */}
+      {ringPoles.map(([cx, cz], idx) => (
+        <group key={`tl-ring-${idx}`} position={[cx, 0, cz]}>
           <mesh position={[0, 0.16, 0]} material={poleMat}>
-            <cylinderGeometry args={[0.025, 0.03, 0.32, 6]} />
+            <cylinderGeometry args={[0.024, 0.03, 0.32, 6]} />
           </mesh>
           <mesh
             ref={(el) => {
               ringLampRefs.current[idx] = el
             }}
-            position={[0, 0.35, 0]}
+            position={[0, 0.34, 0]}
             material={ringLampGreenMat}
           >
-            <sphereGeometry args={[0.048, 8, 8]} />
+            <sphereGeometry args={[0.062, 10, 10]} />
+          </mesh>
+        </group>
+      ))}
+      {/* Светофоры для радиальной магистрали. */}
+      {radialPoles.map(([cx, cz], idx) => (
+        <group key={`tl-radial-${idx}`} position={[cx, 0, cz]}>
+          <mesh position={[0, 0.16, 0]} material={poleMat}>
+            <cylinderGeometry args={[0.024, 0.03, 0.32, 6]} />
           </mesh>
           <mesh
             ref={(el) => {
               radialLampRefs.current[idx] = el
             }}
-            position={[0, 0.28, 0]}
+            position={[0, 0.34, 0]}
             material={radialLampRedMat}
           >
-            <sphereGeometry args={[0.042, 8, 8]} />
+            <sphereGeometry args={[0.062, 10, 10]} />
           </mesh>
         </group>
       ))}
@@ -1781,53 +1830,45 @@ function buildMainRingPddSegments(
   startIsInner: boolean,
   laneOffset: number
 ): readonly PathSegment[] {
-  const ring1Sign = startIsInner ? 1 : -1
-  const ring2Sign = -ring1Sign
-  const ring1LaneR = ringR - ring1Sign * 0.13
-  const ring2LaneR = ringR - ring2Sign * 0.13
-  const arc1 = startIsInner ? posArc(uTurnAngle - startAngle) : posArc(startAngle - uTurnAngle)
-  const arc2 = startIsInner ? posArc(uTurnAngle - endAngle) : posArc(endAngle - uTurnAngle)
+  // На перекрёстке у прямой магистрали (startAngle или endAngle совпадает с uTurnAngle)
+  // разрешён поворот сразу в нужное полукольцо без лишнего нулевого разворота.
+  const ccwArc = posArc(endAngle - startAngle)
+  const cwArc = posArc(startAngle - endAngle)
+  const chooseCcw =
+    Math.abs(posArc(startAngle - uTurnAngle)) < 0.02 || Math.abs(posArc(endAngle - uTurnAngle)) < 0.02
+      ? ccwArc <= cwArc
+      : startIsInner
+  const ringSign = chooseCcw ? 1 : -1
+  const laneR = ringR - ringSign * 0.13
+  const arc = chooseCcw ? ccwArc : cwArc
 
-  const radial1Sign = startIsInner ? 1 : -1
-  const r1dx = Math.cos(startAngle) * radial1Sign
-  const r1dz = Math.sin(startAngle) * radial1Sign
-  const radial2Sign = startIsInner ? 1 : -1
-  const r2dx = Math.cos(endAngle) * radial2Sign
-  const r2dz = Math.sin(endAngle) * radial2Sign
+  const r1Sign = startIsInner ? 1 : -1
+  const r1dx = Math.cos(startAngle) * r1Sign
+  const r1dz = Math.sin(startAngle) * r1Sign
+  const r2Sign = startIsInner ? 1 : -1
+  const r2dx = Math.cos(endAngle) * r2Sign
+  const r2dz = Math.sin(endAngle) * r2Sign
 
   const border1R = startIsInner ? ringR - 0.41 : ringR + 0.41
   const border2R = startIsInner ? ringR + 0.41 : ringR - 0.41
-  const lead1 = Math.min(0.08, arc1 * 0.35)
-  const lead2 = Math.min(0.08, arc2 * 0.35)
-  const uTurnInLead = Math.min(0.1, arc1 * 0.4)
-  const uTurnOutLead = Math.min(0.1, arc2 * 0.4)
+  const lead1 = Math.min(0.1, arc * 0.4)
+  const lead2 = Math.min(0.1, arc * 0.4)
 
   const t1ax = viewX + Math.cos(startAngle) * border1R - r1dz * laneOffset
   const t1az = viewZ + Math.sin(startAngle) * border1R + r1dx * laneOffset
-  const t1cx = viewX + Math.cos(startAngle) * ring1LaneR - r1dz * laneOffset
-  const t1cz = viewZ + Math.sin(startAngle) * ring1LaneR + r1dx * laneOffset
-  const out1A = startAngle + ring1Sign * lead1
-  const t1bx = viewX + Math.cos(out1A) * ring1LaneR
-  const t1bz = viewZ + Math.sin(out1A) * ring1LaneR
+  const t1cx = viewX + Math.cos(startAngle) * laneR - r1dz * laneOffset
+  const t1cz = viewZ + Math.sin(startAngle) * laneR + r1dx * laneOffset
+  const out1A = startAngle + ringSign * lead1
+  const t1bx = viewX + Math.cos(out1A) * laneR
+  const t1bz = viewZ + Math.sin(out1A) * laneR
 
-  const arc1Span = Math.max(0, arc1 - lead1 - uTurnInLead)
+  const arcSpan = Math.max(0, arc - lead1 - lead2)
 
-  const uInA = uTurnAngle - ring1Sign * uTurnInLead
-  const uOutA = uTurnAngle + ring2Sign * uTurnOutLead
-  const uAx = viewX + Math.cos(uInA) * ring1LaneR
-  const uAz = viewZ + Math.sin(uInA) * ring1LaneR
-  const uCx = viewX + Math.cos(uTurnAngle) * ringR
-  const uCz = viewZ + Math.sin(uTurnAngle) * ringR
-  const uBx = viewX + Math.cos(uOutA) * ring2LaneR
-  const uBz = viewZ + Math.sin(uOutA) * ring2LaneR
-
-  const arc2Span = Math.max(0, arc2 - lead2 - uTurnOutLead)
-
-  const t2InA = endAngle - ring2Sign * lead2
-  const t2Ax = viewX + Math.cos(t2InA) * ring2LaneR
-  const t2Az = viewZ + Math.sin(t2InA) * ring2LaneR
-  const t2Cx = viewX + Math.cos(endAngle) * ring2LaneR - r2dz * laneOffset
-  const t2Cz = viewZ + Math.sin(endAngle) * ring2LaneR + r2dx * laneOffset
+  const t2InA = endAngle - ringSign * lead2
+  const t2Ax = viewX + Math.cos(t2InA) * laneR
+  const t2Az = viewZ + Math.sin(t2InA) * laneR
+  const t2Cx = viewX + Math.cos(endAngle) * laneR - r2dz * laneOffset
+  const t2Cz = viewZ + Math.sin(endAngle) * laneR + r2dx * laneOffset
   const t2Bx = viewX + Math.cos(endAngle) * border2R - r2dz * laneOffset
   const t2Bz = viewZ + Math.sin(endAngle) * border2R + r2dx * laneOffset
 
@@ -1849,30 +1890,14 @@ function buildMainRingPddSegments(
       eval: (u) => evalTurnBezier(t1ax, t1az, t1cx, t1cz, t1bx, t1bz, u)
     },
     {
-      len: arc1Span * ring1LaneR,
+      len: arcSpan * laneR,
       eval: (u) => {
-        const curA = out1A + ring1Sign * u * arc1Span
+        const curA = out1A + ringSign * u * arcSpan
         return {
-          x: viewX + Math.cos(curA) * ring1LaneR,
-          z: viewZ + Math.sin(curA) * ring1LaneR,
-          dx: -Math.sin(curA) * ring1Sign,
-          dz: Math.cos(curA) * ring1Sign
-        }
-      }
-    },
-    {
-      len: approxBezierLength(uAx, uAz, uCx, uCz, uBx, uBz),
-      eval: (u) => evalTurnBezier(uAx, uAz, uCx, uCz, uBx, uBz, u)
-    },
-    {
-      len: arc2Span * ring2LaneR,
-      eval: (u) => {
-        const curA = uOutA + ring2Sign * u * arc2Span
-        return {
-          x: viewX + Math.cos(curA) * ring2LaneR,
-          z: viewZ + Math.sin(curA) * ring2LaneR,
-          dx: -Math.sin(curA) * ring2Sign,
-          dz: Math.cos(curA) * ring2Sign
+          x: viewX + Math.cos(curA) * laneR,
+          z: viewZ + Math.sin(curA) * laneR,
+          dx: -Math.sin(curA) * ringSign,
+          dz: Math.cos(curA) * ringSign
         }
       }
     },
@@ -2085,7 +2110,9 @@ function QueenRoads3D({
     const mesh = meshRef.current
     if (!mesh) return
     const dt = paused ? 0 : Math.min(delta, 0.05)
-    const ringGreen = isRingTrafficGreen(paused ? 0 : state.clock.elapsedTime)
+    const elapsedSec = paused ? 0 : state.clock.elapsedTime
+    const ringGreen = isRingTrafficGreen(elapsedSec)
+    const radialGreen = isRadialTrafficGreen(elapsedSec)
     const dummy = FRAME_DUMMY
     const laneOffset = 0.13
     const gateEntryR = 2.45
@@ -2309,7 +2336,7 @@ function QueenRoads3D({
             isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
           if (!aheadBlocked) {
             const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
-            if (ringGreen && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
+            if (!radialGreen && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
               car.progress = queenOutPath.stopProgress
             } else {
               car.progress = nextP
@@ -2403,9 +2430,9 @@ function QueenRoads3D({
           }
         }
       } else if (car.phase === 'outer_to_uturn') {
-        // Движение по внешнему полукольцу (-angle) до регулируемого перекрёстка (QUEEN_GATE_ANGLE) и разворот/заезд к воротам.
+        // Движение по внешнему полукольцу (-angle) до стоп-линии регулируемого перекрёстка и плавный заезд в створ ворот.
         const arcToIntersection = posArc(car.curAngle - QUEEN_GATE_ANGLE)
-        const intersectionStopArc = 0.5 / innerBoulevardR
+        const intersectionStopArc = 0.52 / innerBoulevardR
         let maxTravel = arcToIntersection
         if (!ringGreen && arcToIntersection >= intersectionStopArc - 0.015) {
           maxTravel = Math.min(maxTravel, Math.max(0, arcToIntersection - intersectionStopArc))
@@ -2419,14 +2446,10 @@ function QueenRoads3D({
             maxTravel = Math.min(maxTravel, arcToIntersection - otherArc - MIN_CAR_ARC_GAP)
           }
         }
+        // Не выезжаем за стоп-линию перекрёстка, если полоса въезда к воротам Королевы уже занята.
         const uTurnBlocked =
-          arcToIntersection <= 0.16 &&
-          cars.some(
-            (other, oIdx) =>
-              oIdx !== index &&
-              (other.phase === 'along_ring' || other.phase === 'queued') &&
-              Math.abs(other.curAngle - GATE_STOP_ANGLE) < MIN_CAR_ARC_GAP * 1.25
-          )
+          arcToIntersection <= intersectionStopArc + 0.02 &&
+          cars.some((other, oIdx) => oIdx !== index && other.phase === 'queued')
         const curRingX = view.x + Math.cos(car.curAngle) * (innerBoulevardR + car.curLaneOffset)
         const curRingZ = view.z + Math.sin(car.curAngle) * (innerBoulevardR + car.curLaneOffset)
         const curRingDx = Math.sin(car.curAngle)
@@ -2441,23 +2464,27 @@ function QueenRoads3D({
         const allowedStep = uTurnBlocked ? 0 : Math.min(Math.max(0, maxTravel), dt * outerAngularSpeed)
         car.curAngle -= allowedStep
         const newArcToIntersection = Math.max(0, arcToIntersection - allowedStep)
-        if (newArcToIntersection <= 0.02 && !uTurnBlocked) {
+        if (newArcToIntersection <= 0.01 && !uTurnBlocked) {
           car.phase = 'queued'
           car.progress = 0
-          car.curAngle = GATE_STOP_ANGLE
+          car.curAngle = QUEEN_GATE_ANGLE
           car.curLaneOffset = 0.11
           if (!queue.includes(index)) queue.push(index)
         }
-        // На перекрёстке (последние 0.18 рад) плавно перестраиваемся к линии заезда в ворота Королевы.
+        // Поворот с кольца на полосу въезда в ворота происходит строго ПОСЛЕ стоп-линии перекрёстка.
         const desiredOuterOffset = 0.13
-        const uTurnZone = newArcToIntersection < 0.18 ? 1 - newArcToIntersection / 0.18 : 0
+        const uTurnZone =
+          newArcToIntersection < intersectionStopArc ? 1 - newArcToIntersection / intersectionStopArc : 0
         if (uTurnZone > 0) {
-          const ax = view.x + Math.cos(QUEEN_GATE_ANGLE + 0.18) * (innerBoulevardR + 0.13)
-          const az = view.z + Math.sin(QUEEN_GATE_ANGLE + 0.18) * (innerBoulevardR + 0.13)
+          const gdx = -Math.cos(QUEEN_GATE_ANGLE)
+          const gdz = -Math.sin(QUEEN_GATE_ANGLE)
+          const enterR = innerBoulevardR - 0.52
+          const ax = view.x + Math.cos(QUEEN_GATE_ANGLE + intersectionStopArc) * (innerBoulevardR + 0.13)
+          const az = view.z + Math.sin(QUEEN_GATE_ANGLE + intersectionStopArc) * (innerBoulevardR + 0.13)
           const cx = view.x + Math.cos(QUEEN_GATE_ANGLE) * innerBoulevardR
           const cz = view.z + Math.sin(QUEEN_GATE_ANGLE) * innerBoulevardR
-          const bx = view.x + Math.cos(GATE_STOP_ANGLE) * (innerBoulevardR - 0.11)
-          const bz = view.z + Math.sin(GATE_STOP_ANGLE) * (innerBoulevardR - 0.11)
+          const bx = view.x + Math.cos(QUEEN_GATE_ANGLE) * enterR - gdz * laneOffset
+          const bz = view.z + Math.sin(QUEEN_GATE_ANGLE) * enterR + gdx * laneOffset
           const pose = evalTurnBezier(ax, az, cx, cz, bx, bz, uTurnZone)
           x = pose.x
           z = pose.z
@@ -2485,88 +2512,35 @@ function QueenRoads3D({
             dirZ = tz
           }
         }
-      } else if (car.phase === 'along_ring' || car.phase === 'queued') {
-        // 4-полосное движение: транзитные/дальние машины едут по скоростной (-0.11) мимо пробки,
-        // а на подъезде к воротам плавно перестраиваются в полосу очереди (-0.30) с соблюдением дистанции.
-        const distToGate = GATE_STOP_ANGLE - car.curAngle
-        const isInQueueZone = car.phase === 'queued' || distToGate <= 0.65
-        let maxAllowedAngle = GATE_STOP_ANGLE
-        let queuedAhead = false
-        for (let oIdx = 0; oIdx < cars.length; oIdx += 1) {
-          if (oIdx === index) continue
-          const other = cars[oIdx]
-          if (!other || (other.phase !== 'along_ring' && other.phase !== 'queued')) continue
-          if (other.curAngle <= car.curAngle) continue
-          const otherInQueueZone = other.phase === 'queued' || GATE_STOP_ANGLE - other.curAngle <= 0.65
-          if (isInQueueZone || otherInQueueZone || other.curAngle - car.curAngle < MIN_CAR_ARC_GAP * 2) {
-            maxAllowedAngle = Math.min(maxAllowedAngle, other.curAngle - MIN_CAR_ARC_GAP)
-            if (other.phase === 'queued') queuedAhead = true
-          }
-        }
-        const innerAngularSpeed = HIVE_CAR_SPEED / Math.max(1.5, innerBoulevardR - car.curLaneOffset)
-        const nextAngle = Math.min(maxAllowedAngle, car.curAngle + dt * innerAngularSpeed)
-        const angleStep = Math.max(0, nextAngle - car.curAngle)
-        car.curAngle = Math.max(car.curAngle, nextAngle)
-        if (
-          car.phase === 'along_ring' &&
-          (car.curAngle >= GATE_STOP_ANGLE - 0.02 ||
-            ((isInQueueZone || queuedAhead) && maxAllowedAngle - car.curAngle < 0.02))
-        ) {
-          car.phase = 'queued'
-          if (!queue.includes(index)) queue.push(index)
-        }
-        // Плавное перестроение в полосу очереди (0.11 -> 0.30) только при движении вперёд (машины не ездят боком!).
-        const desiredLaneOffset = car.phase === 'queued' || GATE_STOP_ANGLE - car.curAngle <= 0.72 ? 0.3 : 0.11
-        const laneDiff = desiredLaneOffset - car.curLaneOffset
-        const arcMove = angleStep * (innerBoulevardR - car.curLaneOffset)
-        const maxLaneStep = arcMove * 0.36
-        const laneStep = Math.abs(laneDiff) <= maxLaneStep ? laneDiff : Math.sign(laneDiff) * maxLaneStep
-        car.curLaneOffset += laneStep
-        const laneR = innerBoulevardR - car.curLaneOffset
-        x = view.x + Math.cos(car.curAngle) * laneR
-        z = view.z + Math.sin(car.curAngle) * laneR
-        const tx = -Math.sin(car.curAngle)
-        const tz = Math.cos(car.curAngle)
-        if (arcMove > 1e-5 && Math.abs(laneStep) > 1e-6) {
-          const moveX = tx * arcMove - Math.cos(car.curAngle) * laneStep
-          const moveZ = tz * arcMove - Math.sin(car.curAngle) * laneStep
-          const dLen = Math.hypot(moveX, moveZ) || 1
-          dirX = moveX / dLen
-          dirZ = moveZ / dLen
-        } else {
-          dirX = tx
-          dirZ = tz
-        }
+      } else if (car.phase === 'queued') {
+        const gdx = -Math.cos(QUEEN_GATE_ANGLE)
+        const gdz = -Math.sin(QUEEN_GATE_ANGLE)
+        const enterR = innerBoulevardR - 0.52
+        dirX = gdx
+        dirZ = gdz
+        x = view.x + Math.cos(QUEEN_GATE_ANGLE) * enterR - dirZ * laneOffset
+        z = view.z + Math.sin(QUEEN_GATE_ANGLE) * enterR + dirX * laneOffset
+      } else if (car.phase === 'along_ring') {
+        car.phase = 'queued'
+        if (!queue.includes(index)) queue.push(index)
+        const gdx = -Math.cos(QUEEN_GATE_ANGLE)
+        const gdz = -Math.sin(QUEEN_GATE_ANGLE)
+        const enterR = innerBoulevardR - 0.52
+        dirX = gdx
+        dirZ = gdz
+        x = view.x + Math.cos(QUEEN_GATE_ANGLE) * enterR - dirZ * laneOffset
+        z = view.z + Math.sin(QUEEN_GATE_ANGLE) * enterR + dirX * laneOffset
       } else if (car.phase === 'processing') {
-        const procLen = Math.max(0.8, (innerBoulevardR - gateEntryR) + 0.35)
+        const enterR = innerBoulevardR - 0.52
+        const procLen = Math.max(0.4, enterR - gateEntryR)
         car.progress = Math.min(1, car.progress + dt * (HIVE_CAR_SPEED / procLen))
         const gdx = -Math.cos(QUEEN_GATE_ANGLE)
         const gdz = -Math.sin(QUEEN_GATE_ANGLE)
-        if (car.progress <= 0.42) {
-          const u = car.progress / 0.42
-          const startA = car.turnStartAngle ?? GATE_STOP_ANGLE
-          const startLaneR = innerBoulevardR - car.curLaneOffset
-          const ax = view.x + Math.cos(startA) * startLaneR
-          const az = view.z + Math.sin(startA) * startLaneR
-          const cx = view.x + Math.cos(QUEEN_GATE_ANGLE) * startLaneR - gdz * laneOffset
-          const cz = view.z + Math.sin(QUEEN_GATE_ANGLE) * startLaneR + gdx * laneOffset
-          const enterR = innerBoulevardR - 0.52
-          const bx = view.x + Math.cos(QUEEN_GATE_ANGLE) * enterR - gdz * laneOffset
-          const bz = view.z + Math.sin(QUEEN_GATE_ANGLE) * enterR + gdx * laneOffset
-          const pose = evalTurnBezier(ax, az, cx, cz, bx, bz, u)
-          x = pose.x
-          z = pose.z
-          dirX = pose.dx
-          dirZ = pose.dz
-        } else {
-          const u = (car.progress - 0.42) / 0.58
-          const enterR = innerBoulevardR - 0.52
-          const r = enterR - u * (enterR - gateEntryR)
-          dirX = gdx
-          dirZ = gdz
-          x = view.x + Math.cos(QUEEN_GATE_ANGLE) * r - dirZ * laneOffset
-          z = view.z + Math.sin(QUEEN_GATE_ANGLE) * r + dirX * laneOffset
-        }
+        const r = enterR - car.progress * (enterR - gateEntryR)
+        dirX = gdx
+        dirZ = gdz
+        x = view.x + Math.cos(QUEEN_GATE_ANGLE) * r - dirZ * laneOffset
+        z = view.z + Math.sin(QUEEN_GATE_ANGLE) * r + dirX * laneOffset
       } else if (car.phase === 'returning_ring') {
         // Возврат по выездной полосе ворот через регулируемый перекрёсток на внешнюю полосу кольца (-angle).
         const queenOutPath = buildQueenOutPath(homeAngle)
@@ -2576,7 +2550,7 @@ function QueenRoads3D({
           isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
         if (!aheadBlocked) {
           const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
-          if (ringGreen && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
+          if (!radialGreen && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
             car.progress = queenOutPath.stopProgress
           } else {
             car.progress = nextP
