@@ -640,7 +640,7 @@ export function isVehicleAheadBlocked(
       }
       if (selfPriority === 'driveway' && otherPriority === 'main') {
         // ПДД РФ п. 8.3: выезд с прилегающей территории уступает потоку на главной дороге.
-        if (dist < 0.95 && dot > -0.15) {
+        if (dist < 0.95 && dot > 0.02) {
           if (selfState) selfState.yieldingTo = i
           return true
         }
@@ -789,6 +789,10 @@ export function isPoseCollidingWithPeers(
     const other = peers[i]
     if (!other || !other.lastVisible) continue
     if (other.lastX === undefined || other.lastZ === undefined) continue
+    if (prevX !== undefined && prevZ !== undefined) {
+      const aheadDot = (other.lastX - prevX) * dirX + (other.lastZ - prevZ) * dirZ
+      if (aheadDot < -0.05) continue
+    }
     const nextDist = Math.hypot(other.lastX - x, other.lastZ - z)
     if (nextDist >= broadRadius) continue
     if (
