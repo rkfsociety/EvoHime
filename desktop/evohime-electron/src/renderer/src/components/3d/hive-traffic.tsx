@@ -12,26 +12,36 @@ export const CAR_FRONT_BUMPER_OFFSET = 0.21
 export const CAR_HALF_WIDTH = 0.082
 export const CAR_HALF_LENGTH = 0.20
 
-const TRAFFIC_LIGHT_CYCLE_SEC = 9.0
+const TRAFFIC_LIGHT_CYCLE_SEC = 10.0
 
-export type TrafficLightState = 'ring_green' | 'amber_to_radial' | 'radial_green' | 'amber_to_ring'
+export type TrafficLightState =
+  | 'ring_green'
+  | 'ring_green_blink'
+  | 'amber_to_radial'
+  | 'radial_green'
+  | 'radial_green_blink'
+  | 'amber_to_ring'
 
 export function getTrafficLightState(timeSec: number): TrafficLightState {
   const phase = ((timeSec % TRAFFIC_LIGHT_CYCLE_SEC) + TRAFFIC_LIGHT_CYCLE_SEC) % TRAFFIC_LIGHT_CYCLE_SEC
-  if (phase < 3.5) return 'ring_green'
-  if (phase < 4.5) return 'amber_to_radial'
-  if (phase < 8.0) return 'radial_green'
+  if (phase < 3.2) return 'ring_green'
+  if (phase < 4.2) return 'ring_green_blink'
+  if (phase < 5.0) return 'amber_to_radial'
+  if (phase < 8.2) return 'radial_green'
+  if (phase < 9.2) return 'radial_green_blink'
   return 'amber_to_ring'
 }
 
-/** Возвращает true, если разрешён въезд на перекрёсток со стороны кольца. */
+/** Возвращает true, если разрешён въезд на перекрёсток со стороны кольца (зелёный или зелёный мигающий по ПДД 6.2). */
 export function isRingTrafficGreen(timeSec: number): boolean {
-  return getTrafficLightState(timeSec) === 'ring_green'
+  const state = getTrafficLightState(timeSec)
+  return state === 'ring_green' || state === 'ring_green_blink'
 }
 
-/** Возвращает true, если разрешён въезд на перекрёсток со стороны прямой магистрали. */
+/** Возвращает true, если разрешён въезд на перекрёсток со стороны прямой магистрали (зелёный или зелёный мигающий по ПДД 6.2). */
 export function isRadialTrafficGreen(timeSec: number): boolean {
-  return getTrafficLightState(timeSec) === 'radial_green'
+  const state = getTrafficLightState(timeSec)
+  return state === 'radial_green' || state === 'radial_green_blink'
 }
 
 /**
@@ -175,16 +185,19 @@ export function RegulatedIntersection3D({
   useFrame((state) => {
     const elapsed = paused ? 0 : simClockRef ? simClockRef.current : state.clock.elapsedTime
     const light = getTrafficLightState(elapsed)
+    const blinkOn = Math.floor(elapsed * 6) % 2 === 0
 
-    const ringRed = light === 'radial_green' || light === 'amber_to_ring' ? lampRedOn : lampRedOff
+    const ringRed = light === 'radial_green' || light === 'radial_green_blink' || light === 'amber_to_ring' ? lampRedOn : lampRedOff
     const ringAmber =
       light === 'amber_to_radial' || light === 'amber_to_ring' ? lampAmberOn : lampAmberOff
-    const ringGreen = light === 'ring_green' ? lampGreenOn : lampGreenOff
+    const ringGreen =
+      light === 'ring_green' || (light === 'ring_green_blink' && blinkOn) ? lampGreenOn : lampGreenOff
 
-    const radialRed = light === 'ring_green' || light === 'amber_to_radial' ? lampRedOn : lampRedOff
+    const radialRed = light === 'ring_green' || light === 'ring_green_blink' || light === 'amber_to_radial' ? lampRedOn : lampRedOff
     const radialAmber =
       light === 'amber_to_radial' || light === 'amber_to_ring' ? lampAmberOn : lampAmberOff
-    const radialGreen = light === 'radial_green' ? lampGreenOn : lampGreenOff
+    const radialGreen =
+      light === 'radial_green' || (light === 'radial_green_blink' && blinkOn) ? lampGreenOn : lampGreenOff
 
     for (const lamp of ringRedRefs.current) {
       if (lamp) lamp.material = ringRed
@@ -225,8 +238,8 @@ export function RegulatedIntersection3D({
     headZ: number
     rotY: number
   }[] = [
-    { poleX: -0.46, poleZ: -0.51, headX: -0.21, headZ: -0.51, rotY: Math.PI / 2 },
-    { poleX: 0.46, poleZ: 0.51, headX: 0.21, headZ: 0.51, rotY: -Math.PI / 2 }
+    { poleX: -0.46, poleZ: -0.51, headX: -0.21, headZ: -0.51, rotY: -Math.PI / 2 },
+    { poleX: 0.46, poleZ: 0.51, headX: 0.21, headZ: 0.51, rotY: Math.PI / 2 }
   ]
 
   const renderTrafficHead = (
@@ -429,6 +442,9 @@ export function evalSegmentedPose(segments: readonly PathSegment[], t: number): 
   return segments[segments.length - 1]!.eval(1)
 }
 
+const LEFT_LANE_OFFSET = 0.13
+const RIGHT_LANE_OFFSET = 0.29
+
 export function buildMainRingPddSegments(
   viewX: number,
   viewZ: number,
@@ -448,7 +464,13 @@ export function buildMainRingPddSegments(
       ? ccwArc <= cwArc
       : startIsInner
   const ringSign = chooseCcw ? 1 : -1
-  const laneR = ringR - ringSign * 0.13
+  // ПДД РФ п. 8.5, 8.6: направо — в правую полосу (0.29), налево — в левую (0.13);
+  // съезд направо — с правой полосы, съезд налево — с левой.
+  const entryRightTurn = startIsInner === (ringSign === 1)
+  const exitRightTurn = startIsInner !== (ringSign === 1)
+  const entryLaneR = ringR - ringSign * (entryRightTurn ? RIGHT_LANE_OFFSET : LEFT_LANE_OFFSET)
+  const exitLaneR = ringR - ringSign * (exitRightTurn ? RIGHT_LANE_OFFSET : LEFT_LANE_OFFSET)
+  const midLaneR = (entryLaneR + exitLaneR) * 0.5
   const arc = chooseCcw ? ccwArc : cwArc
 
   const r1Sign = startIsInner ? 1 : -1
@@ -465,19 +487,19 @@ export function buildMainRingPddSegments(
 
   const t1ax = viewX + Math.cos(startAngle) * border1R - r1dz * laneOffset
   const t1az = viewZ + Math.sin(startAngle) * border1R + r1dx * laneOffset
-  const t1cx = viewX + Math.cos(startAngle) * laneR - r1dz * laneOffset
-  const t1cz = viewZ + Math.sin(startAngle) * laneR + r1dx * laneOffset
+  const t1cx = viewX + Math.cos(startAngle) * entryLaneR - r1dz * laneOffset
+  const t1cz = viewZ + Math.sin(startAngle) * entryLaneR + r1dx * laneOffset
   const out1A = startAngle + ringSign * lead1
-  const t1bx = viewX + Math.cos(out1A) * laneR
-  const t1bz = viewZ + Math.sin(out1A) * laneR
+  const t1bx = viewX + Math.cos(out1A) * entryLaneR
+  const t1bz = viewZ + Math.sin(out1A) * entryLaneR
 
   const arcSpan = Math.max(0, arc - lead1 - lead2)
 
   const t2InA = endAngle - ringSign * lead2
-  const t2Ax = viewX + Math.cos(t2InA) * laneR
-  const t2Az = viewZ + Math.sin(t2InA) * laneR
-  const t2Cx = viewX + Math.cos(endAngle) * laneR - r2dz * laneOffset
-  const t2Cz = viewZ + Math.sin(endAngle) * laneR + r2dx * laneOffset
+  const t2Ax = viewX + Math.cos(t2InA) * exitLaneR
+  const t2Az = viewZ + Math.sin(t2InA) * exitLaneR
+  const t2Cx = viewX + Math.cos(endAngle) * exitLaneR - r2dz * laneOffset
+  const t2Cz = viewZ + Math.sin(endAngle) * exitLaneR + r2dx * laneOffset
   const t2Bx = viewX + Math.cos(endAngle) * border2R - r2dz * laneOffset
   const t2Bz = viewZ + Math.sin(endAngle) * border2R + r2dx * laneOffset
 
@@ -499,12 +521,14 @@ export function buildMainRingPddSegments(
       eval: (u) => evalTurnBezier(t1ax, t1az, t1cx, t1cz, t1bx, t1bz, u)
     },
     {
-      len: arcSpan * laneR,
+      len: arcSpan * midLaneR,
       eval: (u) => {
         const curA = out1A + ringSign * u * arcSpan
+        const smooth = u * u * (3 - 2 * u)
+        const curR = entryLaneR + (exitLaneR - entryLaneR) * smooth
         return {
-          x: viewX + Math.cos(curA) * laneR,
-          z: viewZ + Math.sin(curA) * laneR,
+          x: viewX + Math.cos(curA) * curR,
+          z: viewZ + Math.sin(curA) * curR,
           dx: -Math.sin(curA) * ringSign,
           dz: Math.cos(curA) * ringSign
         }
