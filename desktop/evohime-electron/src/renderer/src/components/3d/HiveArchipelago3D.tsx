@@ -1405,7 +1405,7 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
   )
 }
 
-export const QUEEN_GATE_ANGLE = Math.PI * 0.38
+export const QUEEN_GATE_ANGLE = Math.PI / 2
 const QUEEN_U_TURN_ANGLE = QUEEN_GATE_ANGLE - Math.PI
 const MAIN_AVENUES_RADIUS = 7.2
 const HIVE_CAR_SPEED = 1.65
@@ -3100,29 +3100,29 @@ function QueenTower3D({ view, skin, paused }: { view: CityIslandView; skin: City
 
   return (
     <group position={[plan.x, 0, plan.z]} scale={[1, 0.78, 1]}>
-      <mesh position={[0, 0.25, 0]} material={skin.plinth}>
+      <mesh position={[0, 0.25, 0]} rotation={[0, Math.PI / 6, 0]} material={skin.plinth}>
         <cylinderGeometry args={[2.3, 2.45, 0.5, 6]} />
       </mesh>
       <mesh position={[0, 0.53, 0]} rotation={[Math.PI / 2, 0, 0]} material={skin.gold}>
         <torusGeometry args={[1.64, 0.055, 8, 32]} />
       </mesh>
-      <mesh position={[0, 1.6, 0]} rotation={[0, Math.PI / 8, 0]} material={tierMaterials}>
-        <cylinderGeometry args={[1.35, 1.62, 2.2, 8]} />
+      <mesh position={[0, 1.6, 0]} rotation={[0, Math.PI / 6, 0]} material={tierMaterials}>
+        <cylinderGeometry args={[1.35, 1.62, 2.2, 6]} />
       </mesh>
       <mesh position={[0, 2.72, 0]} rotation={[Math.PI / 2, 0, 0]} material={skin.gold}>
         <torusGeometry args={[1.28, 0.045, 8, 32]} />
       </mesh>
-      <mesh position={[0, 3.62, 0]} rotation={[0, Math.PI / 8, 0]} material={tierMaterials}>
-        <cylinderGeometry args={[1.05, 1.22, 1.8, 8]} />
+      <mesh position={[0, 3.62, 0]} rotation={[0, Math.PI / 6, 0]} material={tierMaterials}>
+        <cylinderGeometry args={[1.05, 1.22, 1.8, 6]} />
       </mesh>
       <mesh position={[0, 4.54, 0]} rotation={[Math.PI / 2, 0, 0]} material={skin.gold}>
         <torusGeometry args={[1.0, 0.04, 8, 32]} />
       </mesh>
-      <mesh position={[0, 5.28, 0]} rotation={[0, Math.PI / 8, 0]} material={tierMaterials}>
-        <cylinderGeometry args={[0.8, 0.98, 1.5, 8]} />
+      <mesh position={[0, 5.28, 0]} rotation={[0, Math.PI / 6, 0]} material={tierMaterials}>
+        <cylinderGeometry args={[0.8, 0.98, 1.5, 6]} />
       </mesh>
-      <mesh position={[0, 6.08, 0]} material={skin.gold}>
-        <coneGeometry args={[0.72, 1.1, 8]} />
+      <mesh position={[0, 6.08, 0]} rotation={[0, Math.PI / 6, 0]} material={skin.gold}>
+        <coneGeometry args={[0.72, 1.1, 6]} />
       </mesh>
       <mesh ref={beaconRef} position={[0, 6.95, 0]}>
         <icosahedronGeometry args={[0.32, 0]} />
