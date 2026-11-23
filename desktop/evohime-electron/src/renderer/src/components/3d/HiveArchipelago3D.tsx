@@ -2824,19 +2824,24 @@ function DepartmentHouse3D({
   const body = lot.active ? houseMaterials.activeBody : houseMaterials.idleBody
   const roof = lot.active ? houseMaterials.activeRoof : houseMaterials.idleRoof
   const beaconRef = useRef<THREE.Mesh>(null)
-  const windowMatRef = useRef<THREE.MeshBasicMaterial>(null)
+  const coreRingMatRef = useRef<THREE.MeshBasicMaterial>(null)
+  const garageLampMatRef = useRef<THREE.MeshBasicMaterial>(null)
 
   useFrame((state) => {
     const delivered = paused || deliveredMapRef.current.get(lot.slot) === true
     const working = lot.active && delivered
-    if (windowMatRef.current) {
-      windowMatRef.current.color.set(working ? '#ffe18c' : '#3a4668')
+    if (coreRingMatRef.current) {
+      coreRingMatRef.current.color.set(working ? '#ffe6a3' : lot.accent)
+      coreRingMatRef.current.opacity = working ? 0.96 : lot.active ? 0.65 : 0.28
+    }
+    if (garageLampMatRef.current) {
+      garageLampMatRef.current.color.set(working ? '#7ef2c4' : '#3a4668')
     }
     if (!beaconRef.current) return
     beaconRef.current.visible = working
     if (!working) return
     const t = paused ? 0 : state.clock.elapsedTime
-    beaconRef.current.position.y = 1.38 + Math.sin(t * 2.4 + lot.slot) * 0.08
+    beaconRef.current.position.y = 1.08 + Math.sin(t * 2.4 + lot.slot) * 0.06
     beaconRef.current.rotation.y = t * 1.4
   })
 
@@ -2855,43 +2860,47 @@ function DepartmentHouse3D({
         onSelectDepartment(lot.departmentKey)
       }}
     >
-      {/* Аккуратный тёмный дворик с тонкой цветной каймой департамента. */}
-      <mesh position={[0, 0.03, 0]}>
-        <boxGeometry args={[1.02, 0.06, 1.02]} />
-        <meshBasicMaterial color="#182038" />
+      {/* Шестигранный фундамент-платформа со светящимся контуром департамента. */}
+      <mesh position={[0, 0.03, 0]} rotation={[0, Math.PI / 6, 0]}>
+        <cylinderGeometry args={[0.56, 0.6, 0.06, 6]} />
+        <meshBasicMaterial color="#151d36" />
       </mesh>
-      <mesh position={[0, 0.065, 0]}>
-        <boxGeometry args={[0.98, 0.015, 0.98]} />
-        <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.72 : 0.3} />
+      <mesh position={[0, 0.065, 0]} rotation={[0, Math.PI / 6, 0]}>
+        <cylinderGeometry args={[0.52, 0.54, 0.018, 6]} />
+        <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.78 : 0.34} />
       </mesh>
-      {/* Стены дома ровно на фундаменте. */}
-      <mesh position={[0, 0.36, 0]} material={body}>
-        <boxGeometry args={[0.78, 0.58, 0.78]} />
+
+      {/* Видимый гараж-въезд со стороны дороги (-X в локальных координатах дома). */}
+      <mesh position={[-0.4, 0.16, 0]} material={body}>
+        <boxGeometry args={[0.28, 0.24, 0.38]} />
       </mesh>
-      {/* Акцентный пояс департамента под крышей. */}
-      <mesh position={[0, 0.67, 0]}>
-        <boxGeometry args={[0.84, 0.06, 0.84]} />
-        <meshBasicMaterial color={lot.accent} />
+      <mesh position={[-0.53, 0.14, 0]}>
+        <boxGeometry args={[0.04, 0.18, 0.26]} />
+        <meshBasicMaterial color="#090d1b" />
       </mesh>
-      {/* Двускатная/пирамидальная крыша. */}
-      <mesh material={roof} position={[0, 0.95, 0]} rotation={[0, Math.PI / 4, 0]}>
-        <coneGeometry args={[0.68, 0.48, 4]} />
+      <mesh position={[-0.44, 0.29, 0]}>
+        <boxGeometry args={[0.2, 0.03, 0.32]} />
+        <meshBasicMaterial ref={garageLampMatRef} color="#3a4668" />
       </mesh>
-      {/* Труба. */}
-      <mesh position={[0.2, 0.96, -0.2]}>
-        <boxGeometry args={[0.12, 0.28, 0.12]} />
-        <meshStandardMaterial color="#181c2c" roughness={0.9} />
+
+      {/* Основной 6-гранный корпус мини-хаба. */}
+      <mesh position={[0, 0.3, 0]} rotation={[0, Math.PI / 6, 0]} material={body}>
+        <cylinderGeometry args={[0.42, 0.46, 0.46, 6]} />
       </mesh>
-      {/* Окна на обеих видимых в изометрии гранях (+Z и +X): загораются только после доставки задачи машиной. */}
-      <mesh position={[0, 0.36, 0.4]}>
-        <boxGeometry args={[0.32, 0.2, 0.02]} />
-        <meshBasicMaterial ref={windowMatRef} color="#3a4668" />
+      {/* Светящийся акцентный пояс департамента. */}
+      <mesh position={[0, 0.55, 0]} rotation={[0, Math.PI / 6, 0]}>
+        <cylinderGeometry args={[0.45, 0.45, 0.055, 6]} />
+        <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.92 : 0.42} />
       </mesh>
-      <mesh position={[0.4, 0.36, 0]}>
-        <boxGeometry args={[0.02, 0.2, 0.32]} />
-        <meshBasicMaterial color={lot.active ? '#ffe18c' : '#3a4668'} />
+      {/* Ступенчатая 6-гранная крыша с чётким контуром сверху. */}
+      <mesh position={[0, 0.69, 0]} rotation={[0, Math.PI / 6, 0]} material={roof}>
+        <cylinderGeometry args={[0.25, 0.43, 0.22, 6]} />
       </mesh>
-      {/* Парящий индикатор активности над домом работающего агента (появляется после приезда машины). */}
+      <mesh position={[0, 0.81, 0]} rotation={[Math.PI / 2, 0, Math.PI / 6]}>
+        <torusGeometry args={[0.19, 0.028, 6, 6]} />
+        <meshBasicMaterial ref={coreRingMatRef} color={lot.accent} transparent opacity={0.4} />
+      </mesh>
+      {/* Парящий индикатор активности над мини-хабом работающего агента. */}
       {lot.active ? (
         <mesh ref={beaconRef} position={[0, 1.38, 0]} visible={paused}>
           <octahedronGeometry args={[0.13, 0]} />

@@ -12,6 +12,7 @@ import {
 
 import {
   buildCityMapView,
+  optimizeDepartmentOrder,
   type CityIsland,
   type HiveCityMapSnapshot
 } from '@shared/hive-city-map'
@@ -86,6 +87,8 @@ export interface HiveCitySceneProps {
   readonly suppressLegacyPanorama?: boolean | undefined
   /** Активные агенты Улья: эвристика для дронов и HUD-инспектора. */
   readonly activeAgents?: readonly HiveCityAgentHint[] | undefined
+  /** Режим оптимизации расстановки зданий и секторов Королевой. */
+  readonly queenOptimized?: boolean | undefined
 }
 
 interface DistrictAnchor {
@@ -547,7 +550,8 @@ export function HiveCityScene({
   departmentIconRenderer,
   cityMap = null,
   suppressLegacyPanorama = false,
-  activeAgents
+  activeAgents,
+  queenOptimized = false
 }: HiveCitySceneProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [hoveredDepartment, setHoveredDepartment] = useState<string | null>(null)
@@ -583,7 +587,7 @@ export function HiveCityScene({
    * «пересобиралась» при смене активных работников.
    */
   const departmentHouses = useMemo<readonly HiveCityHouseLot[]>(() => {
-    const ordered = [...departments].sort((left, right) => left.key.localeCompare(right.key))
+    const ordered = optimizeDepartmentOrder(departments, queenOptimized)
     const total = ordered.reduce((sum, item) => sum + Math.max(1, item.maxCapacity), 0)
     const lots: HiveCityHouseLot[] = []
     let slot = 0
@@ -604,7 +608,7 @@ export function HiveCityScene({
       }
     }
     return lots
-  }, [departments])
+  }, [departments, queenOptimized])
 
   const positionedDepartments = useMemo(() => {
     let fallbackIndex = 0
@@ -665,8 +669,8 @@ export function HiveCityScene({
       heldSatellites.length === 0
         ? snapshot
         : { ...snapshot, satellites: [...snapshot.satellites, ...heldSatellites] }
-    return buildCityMapView(effectiveSnapshot, phases)
-  }, [snapshot, lifecycle])
+    return buildCityMapView(effectiveSnapshot, phases, { optimizeByQueen: queenOptimized })
+  }, [snapshot, lifecycle, queenOptimized])
 
   const handleClearSelection = useCallback((): void => {
     setFocusIslandId(null)

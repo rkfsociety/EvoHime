@@ -507,14 +507,88 @@ export const CAPITAL_TOWER_INNER_RADIUS = 7.6
  * renderer and the WebGL renderer consume this layout, so both modes always
  * draw the same city.
  */
+export interface CityLayoutOptions {
+  readonly optimizeByQueen?: boolean | undefined
+}
+
+export interface CityLayoutEfficiency {
+  readonly avgEdgeDistance: number
+  readonly avgGateDistance: number
+}
+
+/**
+ * Оптимизирует порядок департаментов для сокращения пробега машин Королевы:
+ * наиболее загруженные департаменты размещаются ближе к воротам (углы у ±0 от π/2).
+ */
+export function optimizeDepartmentOrder<
+  T extends { readonly key: string; readonly activeCount: number; readonly maxCapacity: number }
+>(departments: readonly T[], optimizeByQueen: boolean): readonly T[] {
+  if (!optimizeByQueen) {
+    return [...departments].sort((left, right) => left.key.localeCompare(right.key))
+  }
+  const byLoad = [...departments].sort((left, right) => {
+    const loadDiff = right.activeCount - left.activeCount
+    if (loadDiff !== 0) return loadDiff
+    const ratioDiff =
+      right.activeCount / Math.max(1, right.maxCapacity) -
+      left.activeCount / Math.max(1, left.maxCapacity)
+    if (Math.abs(ratioDiff) > 1e-6) return ratioDiff
+    return left.key.localeCompare(right.key)
+  })
+  // Чередуем размещение у начала (справа от ворот) и у конца (слева от ворот),
+  // чтобы самые активные секторы были ближе всего к воротам Королевы.
+  const head: T[] = []
+  const tail: T[] = []
+  byLoad.forEach((item, index) => {
+    if (index % 2 === 0) head.push(item)
+    else tail.unshift(item)
+  })
+  return [...head, ...tail]
+}
+
+/** Измеряет среднюю длину связей между зданиями и взвешенную по трафику дистанцию до ворот Королевы. */
+export function computeCityLayoutEfficiency(view: CityIslandView): CityLayoutEfficiency {
+  const byId = new Map<string, CityBuildingView>()
+  for (const b of view.buildings) {
+    byId.set(b.building.id, b)
+  }
+  const edgeDegree = new Map<string, number>()
+  let edgeSum = 0
+  let edgeCount = 0
+  for (const edge of view.island.edges) {
+    edgeDegree.set(edge.from_id, (edgeDegree.get(edge.from_id) ?? 0) + 1)
+    edgeDegree.set(edge.to_id, (edgeDegree.get(edge.to_id) ?? 0) + 1)
+    const from = byId.get(edge.from_id)
+    const to = byId.get(edge.to_id)
+    if (!from || !to) continue
+    edgeSum += Math.hypot(to.x - from.x, to.z - from.z)
+    edgeCount += 1
+  }
+  const gateX = view.x
+  const gateZ = view.z + CAPITAL_TOWER_INNER_RADIUS
+  let gateWeightedSum = 0
+  let weightSum = 0
+  for (const b of view.buildings) {
+    if (b.building.kind === 'citadel') continue
+    const w = (edgeDegree.get(b.building.id) ?? 0) + 1
+    gateWeightedSum += Math.hypot(b.x - gateX, b.z - gateZ) * w
+    weightSum += w
+  }
+  return {
+    avgEdgeDistance: edgeCount > 0 ? edgeSum / edgeCount : 0,
+    avgGateDistance: weightSum > 0 ? gateWeightedSum / weightSum : 0
+  }
+}
+
 export function buildCityMapView(
   snapshot: HiveCityMapSnapshot,
-  phases: ReadonlyMap<string, IslandLifecyclePhase> | null = null
+  phases: ReadonlyMap<string, IslandLifecyclePhase> | null = null,
+  options?: CityLayoutOptions
 ): { readonly capital: CityIslandView; readonly satellites: readonly CityIslandView[] } {
   const phaseOf = (islandId: string): IslandLifecyclePhase =>
     phases?.get(islandId) ?? 'active'
 
-  const capital = buildIslandView(snapshot.capital, 0, 0, phaseOf(snapshot.capital.id))
+  const capital = buildIslandView(snapshot.capital, 0, 0, phaseOf(snapshot.capital.id), options)
 
   const visible = snapshot.satellites.filter(
     (island) => phases === null || phases.get(island.id) !== undefined
@@ -530,7 +604,7 @@ export function buildCityMapView(
       : 28 + islandRadiusEstimate(snapshot, index) + 15
     const x = Math.cos(angle) * distance
     const z = Math.sin(angle) * distance
-    return buildIslandView(island, x, z, phaseOf(island.id))
+    return buildIslandView(island, x, z, phaseOf(island.id), options)
   })
 
   return { capital, satellites }
@@ -547,14 +621,29 @@ function buildIslandView(
   island: CityIsland,
   x: number,
   z: number,
-  phase: IslandLifecyclePhase
+  phase: IslandLifecyclePhase,
+  options?: CityLayoutOptions
 ): CityIslandView {
   const districtRank = new Map<string, number>()
   island.districts.forEach((district, index) => {
     districtRank.set(district.id, districtOrderIndex(district.kind) * 1000 + index)
   })
 
+  const optimizeByQueen = options?.optimizeByQueen === true
+  const edgeDegree = new Map<string, number>()
+  if (optimizeByQueen) {
+    for (const edge of island.edges) {
+      edgeDegree.set(edge.from_id, (edgeDegree.get(edge.from_id) ?? 0) + 1)
+      edgeDegree.set(edge.to_id, (edgeDegree.get(edge.to_id) ?? 0) + 1)
+    }
+  }
+
   const ordered = [...island.buildings].sort((left, right) => {
+    if (optimizeByQueen) {
+      const leftScore = (edgeDegree.get(left.id) ?? 0) * 500 + left.height_weight_bp
+      const rightScore = (edgeDegree.get(right.id) ?? 0) * 500 + right.height_weight_bp
+      if (rightScore !== leftScore) return rightScore - leftScore
+    }
     const leftRank = districtRank.get(left.district_id) ?? 99_000
     const rightRank = districtRank.get(right.district_id) ?? 99_000
     return leftRank - rightRank || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
@@ -596,10 +685,24 @@ function buildIslandView(
       const capacity = Math.max(8, Math.floor((2 * Math.PI * ringRadius) / 3.5))
       const slice = quarter.slice(offset, offset + capacity)
       const countOnRing = slice.length
+      // В режиме оптимизации Королевы самые приоритетные здания ставятся симметрично
+      // ближе всего к прямому проспекту от ворот (Math.PI / 2), оставляя проезд свободным.
+      const orderedRingSlice = optimizeByQueen
+        ? (() => {
+            const arranged: CityBuilding[] = new Array(countOnRing)
+            slice.forEach((item, idx) => {
+              const targetIdx = idx % 2 === 0 ? idx / 2 : countOnRing - 1 - Math.floor(idx / 2)
+              arranged[targetIdx] = item
+            })
+            return arranged
+          })()
+        : slice
       for (let i = 0; i < countOnRing; i += 1) {
-        const building = slice[i]
+        const building = orderedRingSlice[i]
         if (!building) continue
-        const angle = (2 * Math.PI * i) / countOnRing + ringIndex * (Math.PI / countOnRing)
+        const angle = optimizeByQueen
+          ? Math.PI * 0.5 + ((i + 0.5) / countOnRing) * Math.PI * 2
+          : (2 * Math.PI * i) / countOnRing + ringIndex * (Math.PI / countOnRing)
         buildings.push({
           building,
           x: Math.cos(angle) * ringRadius,

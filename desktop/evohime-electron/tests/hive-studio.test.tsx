@@ -26,7 +26,12 @@ vi.mock('../src/renderer/src/components/3d/HiveArchipelago3D', async (importOrig
   }
 })
 
-import { parseHiveCityMapSnapshot } from '../src/shared/hive-city-map'
+import {
+  buildCityMapView,
+  computeCityLayoutEfficiency,
+  optimizeDepartmentOrder,
+  parseHiveCityMapSnapshot
+} from '../src/shared/hive-city-map'
 import { StudioApp } from '../src/renderer/src/hive-studio-app'
 import {
   buildHiveStudioSimulation,
@@ -147,5 +152,33 @@ describe('Hive Studio app', () => {
     expect(screen.getByLabelText('Пульт Hive Studio')).toBeTruthy()
     expect(screen.getByText('спутников: 1')).toBeTruthy()
     expect((screen.getByLabelText('Статус') as HTMLSelectElement).value).toBe('sleeping')
+  })
+
+  it('optimizes building and department placement when Queen optimization is enabled', async () => {
+    const snapshot = buildHiveStudioSimulation({ satelliteCount: 0 })
+    const standardView = buildCityMapView(snapshot, null, { optimizeByQueen: false }).capital
+    const optimizedView = buildCityMapView(snapshot, null, { optimizeByQueen: true }).capital
+    expect(optimizedView.buildings).toHaveLength(standardView.buildings.length)
+
+    const standardEff = computeCityLayoutEfficiency(standardView)
+    const optimizedEff = computeCityLayoutEfficiency(optimizedView)
+    expect(optimizedEff.avgGateDistance).toBeLessThanOrEqual(standardEff.avgGateDistance)
+
+    const ordered = optimizeDepartmentOrder(HIVE_STUDIO_DEPARTMENTS, true)
+    expect(ordered).toHaveLength(HIVE_STUDIO_DEPARTMENTS.length)
+    expect(ordered[0]!.activeCount).toBeGreaterThanOrEqual(ordered[Math.floor(ordered.length / 2)]!.activeCount)
+
+    const user = userEvent.setup()
+    const { unmount } = render(<StudioApp />)
+    await user.click(screen.getByRole('button', { name: 'Открыть пульт' }))
+    const toggle = screen.getByLabelText('Королева оптимизирует город') as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+    await user.click(toggle)
+    expect(toggle.checked).toBe(true)
+    expect(screen.getByTestId('hive-studio-optimization-metric').textContent).toContain('Оптимизировано')
+    unmount()
+
+    render(<StudioApp />)
+    expect((screen.getByLabelText('Королева оптимизирует город') as HTMLInputElement).checked).toBe(true)
   })
 })

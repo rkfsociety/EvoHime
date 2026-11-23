@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { buildCityMapView, computeCityLayoutEfficiency } from '@shared/hive-city-map'
 import { BrandLotus } from './BrandLotus'
 import { HiveCityScene, type HiveCityDepartmentPin } from './components/3d'
 import {
@@ -80,6 +81,7 @@ const STUDIO_SETTINGS_STORAGE_KEY = 'evohime:hive-studio:settings:v1'
 interface PersistedStudioSettings {
   readonly status: StudioStatus
   readonly queenWorking: boolean
+  readonly queenOptimized: boolean
   readonly satelliteCount: number
   readonly selectedDepartment: string | null
   readonly panelOpen: boolean
@@ -90,6 +92,7 @@ function loadStudioSettings(): PersistedStudioSettings {
   const defaults: PersistedStudioSettings = {
     status: 'active',
     queenWorking: true,
+    queenOptimized: false,
     satelliteCount: 0,
     selectedDepartment: null,
     panelOpen: false,
@@ -105,6 +108,8 @@ function loadStudioSettings(): PersistedStudioSettings {
       ? (statusCandidate as StudioStatus)
       : defaults.status
     const queenWorking = typeof parsed.queenWorking === 'boolean' ? parsed.queenWorking : defaults.queenWorking
+    const queenOptimized =
+      typeof parsed.queenOptimized === 'boolean' ? parsed.queenOptimized : defaults.queenOptimized
     const satelliteCount =
       typeof parsed.satelliteCount === 'number' && Number.isInteger(parsed.satelliteCount)
         ? Math.max(0, Math.min(6, parsed.satelliteCount))
@@ -138,6 +143,7 @@ function loadStudioSettings(): PersistedStudioSettings {
     return {
       status: validStatus,
       queenWorking,
+      queenOptimized,
       satelliteCount,
       selectedDepartment,
       panelOpen,
@@ -153,6 +159,7 @@ export function StudioApp(): React.JSX.Element {
   const [initial] = useState<PersistedStudioSettings>(loadStudioSettings)
   const [status, setStatus] = useState<StudioStatus>(initial.status)
   const [queenWorking, setQueenWorking] = useState(initial.queenWorking)
+  const [queenOptimized, setQueenOptimized] = useState(initial.queenOptimized)
   const [departments, setDepartments] = useState<readonly HiveStudioDepartmentState[]>(
     initial.departments
   )
@@ -167,6 +174,7 @@ export function StudioApp(): React.JSX.Element {
       const payload = {
         status,
         queenWorking,
+        queenOptimized,
         satelliteCount,
         selectedDepartment,
         panelOpen,
@@ -180,7 +188,7 @@ export function StudioApp(): React.JSX.Element {
     } catch {
       // Игнорируем ограничения квоты/приватного режима.
     }
-  }, [status, queenWorking, satelliteCount, selectedDepartment, panelOpen, departments])
+  }, [status, queenWorking, queenOptimized, satelliteCount, selectedDepartment, panelOpen, departments])
 
   const simulation = useMemo(
     () =>
@@ -219,6 +227,21 @@ export function StudioApp(): React.JSX.Element {
   }, [])
 
   const selected = departments.find((item) => item.key === selectedDepartment) ?? null
+
+  const optimizationSummary = useMemo(() => {
+    const baseView = buildCityMapView(simulation, null, { optimizeByQueen: false }).capital
+    const optView = buildCityMapView(simulation, null, { optimizeByQueen: true }).capital
+    const baseEff = computeCityLayoutEfficiency(baseView)
+    const optEff = computeCityLayoutEfficiency(optView)
+    const gateDeltaPct =
+      baseEff.avgGateDistance > 0
+        ? Math.round(((baseEff.avgGateDistance - optEff.avgGateDistance) / baseEff.avgGateDistance) * 100)
+        : 0
+    return {
+      gateDeltaPct,
+      avgGateDistance: (queenOptimized ? optEff.avgGateDistance : baseEff.avgGateDistance).toFixed(1)
+    }
+  }, [simulation, queenOptimized])
 
   return (
     <div className="hive-studio">
@@ -291,6 +314,19 @@ export function StudioApp(): React.JSX.Element {
             />
             <span>Королева работает</span>
           </label>
+          <label className="hive-studio__checkbox">
+            <input
+              type="checkbox"
+              checked={queenOptimized}
+              onChange={(changeEvent) => setQueenOptimized(changeEvent.target.checked)}
+            />
+            <span>Королева оптимизирует город</span>
+          </label>
+          <p className="hive-studio__hint" data-testid="hive-studio-optimization-metric">
+            {queenOptimized
+              ? `Оптимизировано · ср. путь: ${optimizationSummary.avgGateDistance} (−${Math.max(0, optimizationSummary.gateDeltaPct)}%)`
+              : `Стандартная раскладка · ср. путь: ${optimizationSummary.avgGateDistance}`}
+          </p>
         </fieldset>
 
         <fieldset className="hive-studio__group">
@@ -341,6 +377,7 @@ export function StudioApp(): React.JSX.Element {
           selectedDepartment={selectedDepartment}
           onSelectDepartment={handleSelectDepartment}
           queenWorking={queenWorking}
+          queenOptimized={queenOptimized}
           cityMap={cityMap}
           activeAgents={agentHints(departments)}
         />
