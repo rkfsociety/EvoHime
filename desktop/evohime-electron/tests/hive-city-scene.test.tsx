@@ -1,7 +1,84 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../src/renderer/src/components/3d/HiveArchipelago3D', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/renderer/src/components/3d/HiveArchipelago3D')>()
+  return {
+    ...actual,
+    HiveArchipelago3D: function MockHiveArchipelago3D({
+      capital,
+      satellites,
+      departmentHouses = [],
+      onSelectDepartment,
+      onSelectIsland,
+      onSelectBuilding,
+      onBackgroundClick
+    }: import('../src/renderer/src/components/3d/HiveArchipelago3D').HiveArchipelago3DProps) {
+      const islands = [capital, ...satellites]
+      return (
+        <div
+          data-testid="hive-archipelago-3d"
+          onPointerDown={(event) => {
+            if (event.button !== 0) return
+            if (event.target === event.currentTarget) {
+              onBackgroundClick()
+            }
+          }}
+        >
+          {islands.map((view) => (
+            <div
+              key={view.island.id}
+              data-island={view.island.id}
+              className={`hive-archipelago__island hive-archipelago__island--${view.phase}`}
+            >
+              {view.buildings.map((item) => (
+                <button
+                  key={item.building.id}
+                  type="button"
+                  data-testid={`hive-tower-${item.building.id}`}
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return
+                    event.stopPropagation()
+                    onSelectBuilding(view.island.id, item.building.id)
+                  }}
+                >
+                  {item.building.name}
+                </button>
+              ))}
+            </div>
+          ))}
+          {departmentHouses.map((lot) => (
+            <div
+              key={`${lot.departmentKey}-${lot.slot}`}
+              data-testid={`hive-archipelago-house-${lot.departmentKey}-${lot.slot}`}
+              data-dept={lot.departmentKey}
+              data-active={lot.active ? 'true' : 'false'}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return
+                event.stopPropagation()
+                onSelectDepartment?.(lot.departmentKey)
+              }}
+            />
+          ))}
+          {islands.map((view) => (
+            <button
+              key={`bg-${view.island.id}`}
+              type="button"
+              data-testid={`mock-select-island-${view.island.id}`}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return
+                event.stopPropagation()
+                onSelectIsland(view.island.id)
+              }}
+            />
+          ))}
+        </div>
+      )
+    }
+  }
+})
 
 import type { HiveCityMapSnapshot } from '../src/shared/hive-city-map'
 import { HiveCityScene, type HiveCityDepartmentPin } from '../src/renderer/src/components/3d'
@@ -153,11 +230,19 @@ const archipelagoSnapshot: HiveCityMapSnapshot = {
 }
 
 describe('HiveCityScene — живой архипелаг (план 199.3)', () => {
+  const originalGetContext = HTMLCanvasElement.prototype.getContext
+
+  beforeEach(() => {
+    HTMLCanvasElement.prototype.getContext = ((type: string) =>
+      type === 'webgl2' || type === 'webgl' ? ({} as RenderingContext) : null) as typeof HTMLCanvasElement.prototype.getContext
+  })
+
   afterEach(() => {
+    HTMLCanvasElement.prototype.getContext = originalGetContext
     cleanup()
   })
 
-  it('в jsdom рендерит архипелаг в 2D-режиме с чипами и башнями', () => {
+  it('рендерит 3D-архипелаг с чипами и башнями и без 2D-заглушки', () => {
     render(
       <HiveCityScene
         status="observing"
@@ -166,16 +251,31 @@ describe('HiveCityScene — живой архипелаг (план 199.3)', () 
     )
 
     const scene = screen.getByTestId('hive-city-scene')
-    expect(scene.getAttribute('data-mode')).toBe('2d')
-    expect(screen.getByTestId('hive-archipelago-2d')).toBeTruthy()
+    expect(scene.getAttribute('data-mode')).toBe('3d')
+    expect(screen.getByTestId('hive-archipelago-3d')).toBeTruthy()
+    expect(screen.queryByTestId('hive-archipelago-2d')).toBeNull()
     // Чипы: столица + спутник.
     expect(screen.getByTestId('hive-archipelago-chip-capital-evohime').textContent).toContain('Столица Евы')
     expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').textContent).toContain('Альфа')
     // Башни зданий из детерминированной раскладки.
     expect(screen.getByTestId('hive-tower-crates/evohime-core')).toBeTruthy()
     expect(screen.getByTestId('hive-tower-sat-alpha/src/main.rs')).toBeTruthy()
-    // Архипелаг дополняет панораму, HUD-виньетка не рисуется в архиве 2D.
+    // Архипелаг не рисует панораму.
     expect(screen.queryByTestId('hive-city-scene-art')).toBeNull()
+  })
+
+  it('при отсутствии WebGL не показывает 2D-заглушку', () => {
+    HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext
+    render(
+      <HiveCityScene
+        status="observing"
+        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
+      />
+    )
+    const scene = screen.getByTestId('hive-city-scene')
+    expect(scene.getAttribute('data-mode')).toBe('unavailable')
+    expect(screen.getByTestId('hive-archipelago-webgl-unavailable')).toBeTruthy()
+    expect(screen.queryByTestId('hive-archipelago-2d')).toBeNull()
   })
 
   it('клик по башне открывает инспектор, Escape и кнопка закрывают', async () => {
@@ -225,13 +325,13 @@ describe('HiveCityScene — живой архипелаг (план 199.3)', () 
     // СКМ по башне и по фону не должна ни выбирать, ни сбрасывать выделение.
     fireEvent.pointerDown(screen.getByTestId('hive-tower-crates/evohime-core'), { button: 1 })
     expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('true')
-    const svg = screen.getByTestId('hive-archipelago-2d')
-    fireEvent.pointerDown(svg, { target: svg, button: 1 })
+    const canvasHost = screen.getByTestId('hive-archipelago-3d')
+    fireEvent.pointerDown(canvasHost, { target: canvasHost, button: 1 })
     expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByTestId('hive-archipelago-inspector')).toBeTruthy()
 
-    // Клик ЛКМ по фону SVG (по воде) сбрасывает остров, инспектор и департамент.
-    fireEvent.pointerDown(svg, { target: svg, button: 0 })
+    // Клик ЛКМ по фону сбрасывает остров, инспектор и департамент.
+    fireEvent.pointerDown(canvasHost, { target: canvasHost, button: 0 })
     expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('false')
     expect(screen.queryByTestId('hive-archipelago-inspector')).toBeNull()
     expect(onSelectDepartment).toHaveBeenCalledWith('research')

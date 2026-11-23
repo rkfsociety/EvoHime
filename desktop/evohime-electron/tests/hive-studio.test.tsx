@@ -1,7 +1,30 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../src/renderer/src/components/3d/HiveArchipelago3D', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/renderer/src/components/3d/HiveArchipelago3D')>()
+  return {
+    ...actual,
+    HiveArchipelago3D: function MockHiveArchipelago3D({
+      departmentHouses = []
+    }: import('../src/renderer/src/components/3d/HiveArchipelago3D').HiveArchipelago3DProps) {
+      return (
+        <div data-testid="hive-archipelago-3d">
+          {departmentHouses.map((lot) => (
+            <div
+              key={`${lot.departmentKey}-${lot.slot}`}
+              data-testid={`hive-archipelago-house-${lot.departmentKey}-${lot.slot}`}
+              data-dept={lot.departmentKey}
+              data-active={lot.active ? 'true' : 'false'}
+            />
+          ))}
+        </div>
+      )
+    }
+  }
+})
 
 import { parseHiveCityMapSnapshot } from '../src/shared/hive-city-map'
 import { StudioApp } from '../src/renderer/src/hive-studio-app'
@@ -65,7 +88,15 @@ describe('buildHiveStudioSimulation', () => {
 })
 
 describe('Hive Studio app', () => {
+  const originalGetContext = HTMLCanvasElement.prototype.getContext
+
+  beforeEach(() => {
+    HTMLCanvasElement.prototype.getContext = ((type: string) =>
+      type === 'webgl2' || type === 'webgl' ? ({} as RenderingContext) : null) as typeof HTMLCanvasElement.prototype.getContext
+  })
+
   afterEach(() => {
+    HTMLCanvasElement.prototype.getContext = originalGetContext
     cleanup()
     window.localStorage.clear()
   })
@@ -73,8 +104,7 @@ describe('Hive Studio app', () => {
   it('renders the live scene in simulation mode with archipelago data', () => {
     render(<StudioApp />)
     const scene = screen.getByTestId('hive-city-scene')
-    // jsdom без WebGL → живой архипелаг рисуется SVG-рендерером (2D).
-    expect(scene.getAttribute('data-mode')).toBe('2d')
+    expect(scene.getAttribute('data-mode')).toBe('3d')
     const houses = document.querySelectorAll('[data-testid^="hive-archipelago-house-"]')
     expect(houses.length).toBeGreaterThan(0)
   })

@@ -15,7 +15,6 @@ import {
   type CityIsland,
   type HiveCityMapSnapshot
 } from '@shared/hive-city-map'
-import { HiveArchipelago2D } from './HiveArchipelago2D'
 import { HiveArchipelago3D } from './HiveArchipelago3D'
 
 import hiveCityPanoramaUrl from '../../assets/hive-city-panorama.jpg'
@@ -744,7 +743,7 @@ export function HiveCityScene({
       data-testid="hive-city-scene"
       data-status={normalizedStatus}
       data-paused={animationsPaused ? 'true' : 'false'}
-      data-mode={showArchipelago ? (use3D ? '3d' : '2d') : 'panorama'}
+      data-mode={showArchipelago ? (use3D ? '3d' : 'unavailable') : 'panorama'}
       aria-hidden={hasInteractiveOverlay ? undefined : true}
       onMouseDown={(event) => {
         if (event.button === 1) event.preventDefault()
@@ -784,20 +783,34 @@ export function HiveCityScene({
                 }
               />
             ) : (
-              <HiveArchipelago2D
-                capital={islandViews.capital}
-                satellites={islandViews.satellites}
-                paused={animationsPaused}
-                selectedIslandId={focusIslandId}
-                selectedBuildingId={inspectorBuildingId}
-                hoveredBuildingId={hoveredBuildingId}
-                departmentHouses={effectiveDepartmentHouses}
-                selectedDepartment={selectedDepartment}
-                onSelectDepartment={onSelectDepartment}
-                onSelectIsland={handleSelectIsland}
-                onSelectBuilding={handleSelectBuilding}
-                onHoverBuilding={setHoveredBuildingId}
-              />
+              <div
+                className="hive-archipelago__webgl-unavailable"
+                data-testid="hive-archipelago-webgl-unavailable"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '100%',
+                  height: '100%',
+                  gap: '12px',
+                  color: '#c4cce6'
+                }}
+              >
+                <span>3D-сцена Улья недоступна (WebGL отключён или потерян контекст)</span>
+                {webglBroken ? (
+                  <button
+                    type="button"
+                    className="hive-archipelago__chip"
+                    onClick={() => {
+                      setWebglBroken(false)
+                      setWebglKey((k) => k + 1)
+                    }}
+                  >
+                    Повторить WebGL
+                  </button>
+                ) : null}
+              </div>
             )}
           </div>
 
