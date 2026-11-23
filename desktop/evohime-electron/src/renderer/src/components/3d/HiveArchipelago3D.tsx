@@ -209,6 +209,13 @@ function createFacadeSet(variant: number): FacadeSet {
   return { material, albedo, emissive }
 }
 
+const TRAFFIC_CYCLE_SEC = 6.0
+const DELIVERY_DURATION_SEC = 2.0
+
+function isRadialTrafficGreen(time: number): boolean {
+  return (time % TRAFFIC_CYCLE_SEC) < TRAFFIC_CYCLE_SEC * 0.5
+}
+
 /** Shared per-canvas materials of the whole archipelago. */
 interface CitySkin {
   readonly facades: readonly FacadeSet[]
@@ -216,6 +223,7 @@ interface CitySkin {
   readonly plinth: THREE.MeshStandardMaterial
   readonly gold: THREE.MeshStandardMaterial
   readonly roadBed: THREE.MeshBasicMaterial
+  readonly roadCurb: THREE.MeshBasicMaterial
 }
 
 function createCitySkin(): CitySkin {
@@ -231,9 +239,15 @@ function createCitySkin(): CitySkin {
       metalness: 0.65
     }),
     roadBed: new THREE.MeshBasicMaterial({
-      color: '#1b2747',
+      color: '#0b101e',
       transparent: true,
-      opacity: 0.88
+      opacity: 0.94
+    }),
+    roadCurb: new THREE.MeshBasicMaterial({
+      color: '#6b91dc',
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false
     })
   }
 }
@@ -252,6 +266,7 @@ function CitySkinProvider({ children }: { children: ReactNode }): React.JSX.Elem
     skin.plinth.dispose()
     skin.gold.dispose()
     skin.roadBed.dispose()
+    skin.roadCurb.dispose()
   }, [skin])
   return <CitySkinContext.Provider value={skin}>{children}</CitySkinContext.Provider>
 }
@@ -942,20 +957,22 @@ function IslandNameplate({ view }: { view: CityIslandView }) {
 }
 
 /**
- * Двухслойный отрезок дороги на плите острова: тёмное дорожное полотно +
- * светящаяся осевая линия, чтобы дороги чётко читались в изометрии.
+ * Двухполосный отрезок дороги: контрастный тёмный асфальт, светлые бордюры по
+ * обоим краям и яркая осевая разделительная линия посередине.
  */
 function RoadSegment3D({
   from,
   to,
   bedMaterial,
+  curbMaterial,
   lineMaterial,
-  width = 0.34,
+  width = 0.52,
   y = 0.025
 }: {
   from: readonly [number, number]
   to: readonly [number, number]
   bedMaterial: THREE.Material
+  curbMaterial?: THREE.Material
   lineMaterial: THREE.Material
   width?: number
   y?: number
@@ -967,13 +984,22 @@ function RoadSegment3D({
   const angle = Math.atan2(dz, dx)
   const cx = (from[0] + to[0]) / 2
   const cz = (from[1] + to[1]) / 2
+  const curbMat = curbMaterial ?? lineMaterial
   return (
     <group position={[cx, y, cz]} rotation={[0, -angle, 0]}>
       <mesh material={bedMaterial}>
         <boxGeometry args={[length, 0.02, width]} />
       </mesh>
-      <mesh position={[0, 0.015, 0]} material={lineMaterial}>
-        <boxGeometry args={[length, 0.015, Math.max(0.05, width * 0.24)]} />
+      {/* Левый и правый бордюры для чёткой читаемости двух полос. */}
+      <mesh position={[0, 0.014, -width * 0.46]} material={curbMat}>
+        <boxGeometry args={[length, 0.014, 0.032]} />
+      </mesh>
+      <mesh position={[0, 0.014, width * 0.46]} material={curbMat}>
+        <boxGeometry args={[length, 0.014, 0.032]} />
+      </mesh>
+      {/* Осевая разделительная полоса. */}
+      <mesh position={[0, 0.016, 0]} material={lineMaterial}>
+        <boxGeometry args={[length, 0.015, 0.045]} />
       </mesh>
     </group>
   )
@@ -983,18 +1009,20 @@ function RoadSegment3D({
  * Городская уличная сеть острова: кольцевые проспекты, радиальные авеню,
  * уличные фонари с тёплыми огнями и зелёные скверы/деревья на бульварах.
  */
-function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin }) {
+function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: CitySkin; paused: boolean }) {
   const isCapital = view.island.role === 'capital'
   const laneMaterial = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
-        color: '#4e6fb8',
+        color: '#ffd980',
         transparent: true,
-        opacity: 0.36,
+        opacity: 0.72,
         depthWrite: false
       }),
     []
   )
+  const greenLightMaterial = useMemo(() => new THREE.MeshBasicMaterial({ color: '#4ade80' }), [])
+  const redLightMaterial = useMemo(() => new THREE.MeshBasicMaterial({ color: '#f87171' }), [])
   const lampPoleMaterial = useMemo(
     () => new THREE.MeshStandardMaterial({ color: '#1b2238', roughness: 0.7, metalness: 0.4 }),
     []
@@ -1019,11 +1047,13 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
   )
   useEffect(() => () => {
     laneMaterial.dispose()
+    greenLightMaterial.dispose()
+    redLightMaterial.dispose()
     lampPoleMaterial.dispose()
     lampBulbMaterial.dispose()
     treeTrunkMaterial.dispose()
     treeCrownMaterial.dispose()
-  }, [laneMaterial, lampPoleMaterial, lampBulbMaterial, treeTrunkMaterial, treeCrownMaterial])
+  }, [laneMaterial, greenLightMaterial, redLightMaterial, lampPoleMaterial, lampBulbMaterial, treeTrunkMaterial, treeCrownMaterial])
 
   const ringRadii = useMemo(() => {
     const outer = view.radius * 0.78
@@ -1167,16 +1197,63 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
     }
   }, [lampPositions, treePositions])
 
+  const radialSignalRef = useRef<THREE.InstancedMesh>(null)
+  const ringSignalRef = useRef<THREE.InstancedMesh>(null)
+  const signalPositions = useMemo(() => {
+    if (!isCapital) return []
+    const r = 6.0
+    return Array.from({ length: 4 }, (_, i) => {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4
+      return [view.x + Math.cos(a) * r, view.z + Math.sin(a) * r] as const
+    })
+  }, [isCapital, view.x, view.z])
+
+  useFrame((state) => {
+    const t = paused ? 0 : state.clock.elapsedTime
+    const radialGreen = isRadialTrafficGreen(t)
+    if (radialSignalRef.current) {
+      radialSignalRef.current.material = radialGreen ? greenLightMaterial : redLightMaterial
+    }
+    if (ringSignalRef.current) {
+      ringSignalRef.current.material = radialGreen ? redLightMaterial : greenLightMaterial
+    }
+  })
+
+  useLayoutEffect(() => {
+    const dummy = FRAME_DUMMY
+    if (radialSignalRef.current && ringSignalRef.current && signalPositions.length > 0) {
+      signalPositions.forEach(([sx, sz], i) => {
+        dummy.position.set(sx - 0.38, 0.56, sz)
+        dummy.rotation.set(0, 0, 0)
+        dummy.scale.set(1, 1, 1)
+        dummy.updateMatrix()
+        radialSignalRef.current?.setMatrixAt(i, dummy.matrix)
+
+        dummy.position.set(sx + 0.38, 0.56, sz)
+        dummy.updateMatrix()
+        ringSignalRef.current?.setMatrixAt(i, dummy.matrix)
+      })
+      radialSignalRef.current.instanceMatrix.needsUpdate = true
+      ringSignalRef.current.instanceMatrix.needsUpdate = true
+    }
+  }, [signalPositions])
+
   return (
     <group>
-      {/* Кольцевые проспекты с двумя полосами движения. */}
+      {/* Двухполосные кольцевые проспекты с бордюрами и осевой разметкой. */}
       {ringRadii.map((r, idx) => (
         <group key={`avenue-ring-${idx}`}>
           <mesh position={[view.x, 0.015, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={skin.roadBed}>
-            <ringGeometry args={[r - 0.3, r + 0.3, 64]} />
+            <ringGeometry args={[r - 0.34, r + 0.34, 72]} />
           </mesh>
-          <mesh position={[view.x, 0.024, view.z]} rotation={[Math.PI / 2, 0, 0]} material={laneMaterial}>
-            <torusGeometry args={[r, 0.025, 6, 64]} />
+          <mesh position={[view.x, 0.024, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
+            <torusGeometry args={[r - 0.33, 0.02, 6, 72]} />
+          </mesh>
+          <mesh position={[view.x, 0.024, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
+            <torusGeometry args={[r + 0.33, 0.02, 6, 72]} />
+          </mesh>
+          <mesh position={[view.x, 0.026, view.z]} rotation={[Math.PI / 2, 0, 0]} material={laneMaterial}>
+            <torusGeometry args={[r, 0.03, 6, 72]} />
           </mesh>
         </group>
       ))}
@@ -1187,8 +1264,9 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
           from={conn.from}
           to={conn.to}
           bedMaterial={skin.roadBed}
+          curbMaterial={skin.roadCurb}
           lineMaterial={laneMaterial}
-          width={0.44}
+          width={0.54}
           y={0.016}
         />
       ))}
@@ -1199,11 +1277,23 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
           from={drive.from}
           to={drive.to}
           bedMaterial={skin.roadBed}
+          curbMaterial={skin.roadCurb}
           lineMaterial={laneMaterial}
-          width={0.38}
+          width={0.46}
           y={0.018}
         />
       ))}
+      {/* Светофоры регулировки трафика на главных перекрёстках. */}
+      {signalPositions.length > 0 ? (
+        <>
+          <instancedMesh ref={radialSignalRef} args={[undefined, greenLightMaterial, signalPositions.length]}>
+            <sphereGeometry args={[0.1, 8, 8]} />
+          </instancedMesh>
+          <instancedMesh ref={ringSignalRef} args={[undefined, redLightMaterial, signalPositions.length]}>
+            <sphereGeometry args={[0.1, 8, 8]} />
+          </instancedMesh>
+        </>
+      ) : null}
       {/* Уличные фонари. */}
       {lampPositions.length > 0 ? (
         <>
@@ -1250,11 +1340,13 @@ function QueenRoads3D({
   view,
   lots,
   skin,
+  deliveredMapRef,
   paused
 }: {
   view: CityIslandView
   lots: readonly HiveCityHouseLot[]
   skin: CitySkin
+  deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
   paused: boolean
 }) {
   const ringRadius = Math.min(
@@ -1264,9 +1356,9 @@ function QueenRoads3D({
   const spokeLineMaterial = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
-        color: '#f0cf78',
+        color: '#ffd980',
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.78,
         depthWrite: false
       }),
     []
@@ -1274,9 +1366,9 @@ function QueenRoads3D({
   const ringLineMaterial = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
-        color: '#88b2ff',
+        color: '#ffd980',
         transparent: true,
-        opacity: 0.45,
+        opacity: 0.72,
         depthWrite: false
       }),
     []
@@ -1284,9 +1376,9 @@ function QueenRoads3D({
   const ringBedMaterial = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
-        color: '#1b2747',
+        color: '#0b101e',
         transparent: true,
-        opacity: 0.85,
+        opacity: 0.94,
         depthWrite: false
       }),
     []
@@ -1363,17 +1455,88 @@ function QueenRoads3D({
     if (mesh.instanceColor !== null) mesh.instanceColor.needsUpdate = true
   }, [packets, instanceColor])
 
-  useFrame((state) => {
+  const progressRef = useRef<Float32Array>(new Float32Array(0))
+  const dispatchStartRef = useRef<Map<number, number>>(new Map())
+
+  useLayoutEffect(() => {
+    const arr = new Float32Array(packets.length)
+    packets.forEach((p, idx) => {
+      arr[idx] = p.kind === 'from-queen' ? 0 : p.phase
+    })
+    progressRef.current = arr
+  }, [packets])
+
+  useFrame((state, delta) => {
     const mesh = meshRef.current
     if (!mesh) return
-    const time = paused ? 0 : state.clock.elapsedTime
+    const time = state.clock.elapsedTime
+    const dt = paused ? 0 : Math.min(delta, 0.05)
+    const radialGreen = isRadialTrafficGreen(time)
     const dummy = FRAME_DUMMY
-    const laneOffset = 0.11
+    const laneOffset = 0.12
+    const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
+
+    // Отслеживаем момент запуска машины-доставщика от Королевы к каждому активному дому.
+    lots.forEach((lot) => {
+      if (!lot.active) {
+        dispatchStartRef.current.delete(lot.slot)
+        deliveredMapRef.current.delete(lot.slot)
+      } else if (!dispatchStartRef.current.has(lot.slot)) {
+        dispatchStartRef.current.set(lot.slot, time + (lot.slot % 8) * 0.16)
+      }
+      if (lot.active && paused) {
+        deliveredMapRef.current.set(lot.slot, true)
+      }
+    })
+
     packets.forEach((packet, index) => {
       if (index >= mesh.count) return
       const angle = houseAngles[packet.lot]
-      if (angle === undefined) return
-      const progress = paused ? packet.phase : (packet.phase + time * packet.speed) % 1
+      const lotObj = lots[packet.lot]
+      if (angle === undefined || lotObj === undefined) return
+
+      const startAt = dispatchStartRef.current.get(lotObj.slot) ?? 0
+      const delivered = paused || deliveredMapRef.current.get(lotObj.slot) === true
+
+      // Первая машина от Королевы доставляет задачу; пока она в пути, дом ещё не работает.
+      if (lotObj.active && !delivered && packet.kind === 'from-queen') {
+        const elapsed = time - startAt
+        if (elapsed >= DELIVERY_DURATION_SEC) {
+          deliveredMapRef.current.set(lotObj.slot, true)
+        }
+      }
+
+      // Пока машина от Королевы не доехала до активного дома, обратный/кольцевой трафик от этого дома не стартует.
+      if (lotObj.active && !delivered && packet.kind !== 'from-queen') {
+        dummy.scale.setScalar(0)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(index, dummy.matrix)
+        return
+      }
+
+      let curProgress = progressRef.current[index] ?? packet.phase
+      if (!paused) {
+        if (packet.kind === 'ring') {
+          // Кольцевые машины притормаживают на перекрёстках при красном свете.
+          const stopZone = Math.abs((curProgress * 4) % 1 - 0.5) < 0.08
+          if (radialGreen && stopZone) {
+            // Стоим на красный перед перекрёстком.
+          } else {
+            curProgress = (curProgress + dt * packet.speed) % 1
+          }
+        } else {
+          // Радиальные машины притормаживают перед внутренним кольцом при красном для радиала.
+          const atIntersection = Math.abs(curProgress - 0.62) < 0.06
+          if (!radialGreen && atIntersection && delivered) {
+            // Ждём зелёного сигнала светофора.
+          } else {
+            curProgress = (curProgress + dt * packet.speed) % 1
+          }
+        }
+        progressRef.current[index] = curProgress
+      }
+
+      const progress = paused ? packet.phase : curProgress
       let x = view.x
       let z = view.z
       let dirX = 0
@@ -1384,13 +1547,12 @@ function QueenRoads3D({
           (packet.lot + 1 < lots.length ? houseAngles[packet.lot + 1] : (houseAngles[0] ?? angle) + Math.PI * 2) ?? angle
         const target = nextAngle > angle ? nextAngle : nextAngle + Math.PI * 2
         const current = angle + (target - angle) * progress
-        // Внутренний кольцевой бульвар перед домами (не проходит сквозь дома).
-        const laneR = Math.max(2.9, ringRadius - 1.25) + 0.1
+        const laneR = innerBoulevardR + 0.1
         x = view.x + Math.cos(current) * laneR
         z = view.z + Math.sin(current) * laneR
         dirX = -Math.sin(current)
         dirZ = Math.cos(current)
-        dummy.scale.set(0.12, 0.1, packet.active ? 0.32 : 0.22)
+        dummy.scale.set(0.13, 0.1, packet.active ? 0.34 : 0.22)
       } else {
         const roadStart = 2.4
         const roadEnd = Math.max(roadStart + 0.4, ringRadius - 0.55)
@@ -1399,12 +1561,11 @@ function QueenRoads3D({
         const sign = packet.kind === 'from-queen' ? 1 : -1
         dirX = Math.cos(angle) * sign
         dirZ = Math.sin(angle) * sign
-        // Правостороннее движение: вправо от вектора направления (dirZ, -dirX) в плоскости XZ.
         const rightX = -dirZ
         const rightZ = dirX
         x = view.x + Math.cos(angle) * radius + rightX * laneOffset
         z = view.z + Math.sin(angle) * radius + rightZ * laneOffset
-        dummy.scale.set(packet.active ? 0.14 : 0.11, 0.1, packet.active ? 0.34 : 0.24)
+        dummy.scale.set(packet.active ? 0.15 : 0.11, 0.1, packet.active ? 0.36 : 0.24)
       }
 
       dummy.position.set(x, 0.12, z)
@@ -1416,6 +1577,7 @@ function QueenRoads3D({
   })
 
   if (lots.length === 0) return <></>
+  const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
 
   return (
     <group>
@@ -1430,18 +1592,25 @@ function QueenRoads3D({
             from={[view.x + Math.cos(angle) * 2.4, view.z + Math.sin(angle) * 2.4]}
             to={[view.x + Math.cos(angle) * roadEnd, view.z + Math.sin(angle) * roadEnd]}
             bedMaterial={skin.roadBed}
+            curbMaterial={skin.roadCurb}
             lineMaterial={spokeLineMaterial}
-            width={0.46}
+            width={0.54}
             y={0.025}
           />
         )
       })}
       {/* Двухполосный кольцевой бульвар перед домами агентов (не входит в дома). */}
       <mesh position={[view.x, 0.022, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={ringBedMaterial}>
-        <ringGeometry args={[Math.max(2.9, ringRadius - 1.25) - 0.22, Math.max(2.9, ringRadius - 1.25) + 0.22, 64]} />
+        <ringGeometry args={[innerBoulevardR - 0.26, innerBoulevardR + 0.26, 72]} />
+      </mesh>
+      <mesh position={[view.x, 0.032, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
+        <torusGeometry args={[innerBoulevardR - 0.25, 0.018, 6, 72]} />
+      </mesh>
+      <mesh position={[view.x, 0.032, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
+        <torusGeometry args={[innerBoulevardR + 0.25, 0.018, 6, 72]} />
       </mesh>
       <mesh position={[view.x, 0.036, view.z]} rotation={[Math.PI / 2, 0, 0]} material={ringLineMaterial}>
-        <torusGeometry args={[Math.max(2.9, ringRadius - 1.25), 0.026, 6, 64]} />
+        <torusGeometry args={[innerBoulevardR, 0.028, 6, 72]} />
       </mesh>
       {/* Вытянутые пакеты информации вдоль лучей и кольца. */}
       <instancedMesh
@@ -1466,12 +1635,14 @@ function AgentModuleCouriers3D({
   lots,
   droneCount,
   skin,
+  deliveredMapRef,
   paused
 }: {
   view: CityIslandView
   lots: readonly HiveCityHouseLot[]
   droneCount: number
   skin: CitySkin
+  deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
   paused: boolean
 }) {
   const courierLineMaterial = useMemo(
@@ -1514,6 +1685,7 @@ function AgentModuleCouriers3D({
         : lots.slice(0, Math.min(lots.length, Math.max(2, droneCount)))
 
     const list: Array<{
+      readonly lotSlot: number
       readonly houseAngle: number
       readonly houseExitR: number
       readonly targetAngle: number
@@ -1537,6 +1709,7 @@ function AgentModuleCouriers3D({
       const targetAngle = Math.atan2(target.z, target.x)
       const targetR = Math.hypot(target.x, target.z)
       list.push({
+        lotSlot: lot.slot,
         houseAngle,
         houseExitR: ringRadius + 0.54,
         targetAngle,
@@ -1581,6 +1754,13 @@ function AgentModuleCouriers3D({
       for (let dir = 0; dir < 2; dir += 1) {
         const instIdx = index * 2 + dir
         if (instIdx >= mesh.count) continue
+        // Пока машина от Королевы не доехала до этого дома-агента, он не отправляет курьеров к модулям.
+        if (route.active && !paused && deliveredMapRef.current.get(route.lotSlot) !== true) {
+          dummy.scale.setScalar(0)
+          dummy.updateMatrix()
+          mesh.setMatrixAt(instIdx, dummy.matrix)
+          continue
+        }
         const p = paused ? (route.phase + dir * 0.5) % 1 : (route.phase + dir * 0.5 + time * flowSpeed) % 1
         const t = dir === 0 ? p : 1 - p
 
@@ -1646,8 +1826,9 @@ function AgentModuleCouriers3D({
               view.z + Math.sin(route.houseAngle) * MAIN_AVENUES_RADIUS
             ]}
             bedMaterial={skin.roadBed}
+            curbMaterial={skin.roadCurb}
             lineMaterial={courierLineMaterial}
-            width={0.42}
+            width={0.48}
             y={0.02}
           />
           <RoadSegment3D
@@ -1660,8 +1841,9 @@ function AgentModuleCouriers3D({
               view.z + Math.sin(route.targetAngle) * route.targetEntryR
             ]}
             bedMaterial={skin.roadBed}
+            curbMaterial={skin.roadCurb}
             lineMaterial={courierLineMaterial}
-            width={0.42}
+            width={0.48}
             y={0.02}
           />
         </group>
@@ -1891,6 +2073,7 @@ function DepartmentHouse3D({
   view,
   lot,
   houseMaterials,
+  deliveredMapRef,
   highlighted,
   paused,
   onSelectDepartment
@@ -1903,6 +2086,7 @@ function DepartmentHouse3D({
     readonly idleBody: THREE.MeshStandardMaterial
     readonly idleRoof: THREE.MeshStandardMaterial
   }
+  deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
   highlighted: boolean
   paused: boolean
   onSelectDepartment: ((departmentKey: string) => void) | undefined
@@ -1918,11 +2102,19 @@ function DepartmentHouse3D({
   const body = lot.active ? houseMaterials.activeBody : houseMaterials.idleBody
   const roof = lot.active ? houseMaterials.activeRoof : houseMaterials.idleRoof
   const beaconRef = useRef<THREE.Mesh>(null)
+  const windowMatRef = useRef<THREE.MeshBasicMaterial>(null)
 
   useFrame((state) => {
-    if (!lot.active || !beaconRef.current) return
+    const delivered = paused || deliveredMapRef.current.get(lot.slot) === true
+    const working = lot.active && delivered
+    if (windowMatRef.current) {
+      windowMatRef.current.color.set(working ? '#ffe18c' : '#3a4668')
+    }
+    if (!beaconRef.current) return
+    beaconRef.current.visible = working
+    if (!working) return
     const t = paused ? 0 : state.clock.elapsedTime
-    beaconRef.current.position.y = 1.65 + Math.sin(t * 2.4 + lot.slot) * 0.08
+    beaconRef.current.position.y = 1.38 + Math.sin(t * 2.4 + lot.slot) * 0.08
     beaconRef.current.rotation.y = t * 1.4
   })
 
@@ -1967,18 +2159,18 @@ function DepartmentHouse3D({
         <boxGeometry args={[0.12, 0.28, 0.12]} />
         <meshStandardMaterial color="#181c2c" roughness={0.9} />
       </mesh>
-      {/* Окна на обеих видимых в изометрии гранях (+Z и +X). */}
+      {/* Окна на обеих видимых в изометрии гранях (+Z и +X): загораются только после доставки задачи машиной. */}
       <mesh position={[0, 0.36, 0.4]}>
         <boxGeometry args={[0.32, 0.2, 0.02]} />
-        <meshBasicMaterial color={lot.active ? '#ffe18c' : '#3a4668'} />
+        <meshBasicMaterial ref={windowMatRef} color="#3a4668" />
       </mesh>
       <mesh position={[0.4, 0.36, 0]}>
         <boxGeometry args={[0.02, 0.2, 0.32]} />
         <meshBasicMaterial color={lot.active ? '#ffe18c' : '#3a4668'} />
       </mesh>
-      {/* Парящий индикатор активности над домом работающего агента. */}
+      {/* Парящий индикатор активности над домом работающего агента (появляется после приезда машины). */}
       {lot.active ? (
-        <mesh ref={beaconRef} position={[0, 1.38, 0]}>
+        <mesh ref={beaconRef} position={[0, 1.38, 0]} visible={paused}>
           <octahedronGeometry args={[0.13, 0]} />
           <meshBasicMaterial color={lot.accent} />
         </mesh>
@@ -2048,12 +2240,14 @@ function Starfield(): React.JSX.Element | null {
 function DepartmentHouses3D({
   view,
   lots,
+  deliveredMapRef,
   selectedDepartment,
   paused,
   onSelectDepartment
 }: {
   view: CityIslandView
   lots: readonly HiveCityHouseLot[]
+  deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
   selectedDepartment: string | null
   paused: boolean
   onSelectDepartment: ((departmentKey: string) => void) | undefined
@@ -2140,6 +2334,7 @@ function DepartmentHouses3D({
           view={view}
           lot={lot}
           houseMaterials={houseMaterials}
+          deliveredMapRef={deliveredMapRef}
           highlighted={selectedDepartment === lot.departmentKey}
           paused={paused}
           onSelectDepartment={onSelectDepartment}
@@ -2326,6 +2521,7 @@ function IslandGroup3D({
   onHoverBuilding: (buildingId: string | null) => void
 }) {
   const groupRef = useRef<THREE.Group>(null)
+  const deliveredMapRef = useRef<Map<number, boolean>>(new Map())
   const skin = useCitySkin()
   const accent = useIslandAccent(displayIslandHue(view.island.id, view.island.role))
 
@@ -2353,8 +2549,8 @@ function IslandGroup3D({
   return (
     <group ref={groupRef}>
       <IslandGround view={view} selected={selectedIsland} onSelect={() => onSelectIsland(view.island.id)} />
-      {/* Уличная сеть города: проспекты, фонари, скверы. */}
-      <CityStreets3D view={view} skin={skin} />
+      {/* Уличная сеть города: проспекты, фонари, скверы, светофоры. */}
+      <CityStreets3D view={view} skin={skin} paused={paused} />
       {/* Дороги под застройкой: связи модулей, двор Королевы и курьеры от агентов к модулям. */}
       <ModuleRoads3D
         view={view}
@@ -2364,12 +2560,19 @@ function IslandGroup3D({
       />
       {departmentHouses !== undefined && departmentHouses.length > 0 ? (
         <>
-          <QueenRoads3D view={view} lots={departmentHouses} skin={skin} paused={paused} />
+          <QueenRoads3D
+            view={view}
+            lots={departmentHouses}
+            skin={skin}
+            deliveredMapRef={deliveredMapRef}
+            paused={paused}
+          />
           <AgentModuleCouriers3D
             view={view}
             lots={departmentHouses}
             droneCount={droneCount ?? 0}
             skin={skin}
+            deliveredMapRef={deliveredMapRef}
             paused={paused}
           />
         </>
@@ -2392,6 +2595,7 @@ function IslandGroup3D({
         <DepartmentHouses3D
           view={view}
           lots={departmentHouses}
+          deliveredMapRef={deliveredMapRef}
           selectedDepartment={selectedDepartment ?? null}
           paused={paused}
           onSelectDepartment={onSelectDepartment}
