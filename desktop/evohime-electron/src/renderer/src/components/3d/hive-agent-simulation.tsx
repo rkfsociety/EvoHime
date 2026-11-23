@@ -705,7 +705,16 @@ export function QueenRoads3D({
           } else {
             const aheadBlocked =
               car.lastVisible === true &&
-              isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+              isVehicleAheadBlocked(
+                curPose.x,
+                curPose.z,
+                curPose.dx,
+                curPose.dz,
+                index,
+                cars,
+                0.56,
+                car.progress < 0.08 || car.progress > 0.92 ? 'driveway' : 'main'
+              )
             if (!aheadBlocked) {
               const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
               const canEnterInner =
@@ -785,7 +794,16 @@ export function QueenRoads3D({
           } else {
             const aheadBlocked =
               car.lastVisible === true &&
-              isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+              isVehicleAheadBlocked(
+                curPose.x,
+                curPose.z,
+                curPose.dx,
+                curPose.dz,
+                index,
+                cars,
+                0.56,
+                car.progress < 0.08 || car.progress > 0.92 ? 'driveway' : 'main'
+              )
             if (!aheadBlocked) {
               const nextP = car.progress + dt * (HIVE_CAR_SPEED / modOutPath.totalLength)
               const canEnterInner =
@@ -887,7 +905,16 @@ export function QueenRoads3D({
           } else {
             const aheadBlocked =
               car.lastVisible === true &&
-              isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+              isVehicleAheadBlocked(
+                curPose.x,
+                curPose.z,
+                curPose.dx,
+                curPose.dz,
+                index,
+                cars,
+                0.56,
+                car.progress < 0.08 || car.progress > 0.92 ? 'driveway' : 'main'
+              )
             if (!aheadBlocked) {
               const nextP = car.progress + dt * (HIVE_CAR_SPEED / modInPath.totalLength)
               const canEnterAvenue =
@@ -1364,6 +1391,11 @@ export function QueenRoads3D({
       car.lastZ = z
       car.lastDirX = dirX
       car.lastDirZ = dirZ
+      car.roadPriority =
+        (car.phase === 'to_module' || car.phase === 'from_module') &&
+        (car.progress < 0.08 || car.progress > 0.92)
+          ? 'driveway'
+          : 'main'
       })
     }
 

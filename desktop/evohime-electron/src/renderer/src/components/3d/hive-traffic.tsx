@@ -570,12 +570,15 @@ export function buildMainRingPddSegments(
   ]
 }
 
+export type RoadPriority = 'main' | 'driveway'
+
 export interface VehiclePoseState {
   lastX?: number
   lastZ?: number
   lastDirX?: number
   lastDirZ?: number
   lastVisible?: boolean
+  roadPriority?: RoadPriority
 }
 
 export function isVehicleAheadBlocked(
@@ -585,8 +588,10 @@ export function isVehicleAheadBlocked(
   dirZ: number,
   selfIndex: number,
   peers: readonly VehiclePoseState[],
-  minGap = 0.56
+  minGap = 0.56,
+  selfPriority: RoadPriority = 'main'
 ): boolean {
+  const effectiveGap = selfPriority === 'driveway' ? Math.max(minGap, 0.95) : minGap
   for (let i = 0; i < peers.length; i += 1) {
     if (i === selfIndex) continue
     const other = peers[i]
@@ -595,11 +600,12 @@ export function isVehicleAheadBlocked(
     const dx = other.lastX - x
     const dz = other.lastZ - z
     const dist = Math.hypot(dx, dz)
-    if (dist >= minGap) continue
+    if (dist >= effectiveGap) continue
     const dot = dx * dirX + dz * dirZ
     const cross = Math.abs(dx * -dirZ + dz * dirX)
     const otherDirX = other.lastDirX ?? dirX
     const otherDirZ = other.lastDirZ ?? dirZ
+    const otherPriority: RoadPriority = other.roadPriority ?? 'main'
     const sameDir =
       other.lastDirX !== undefined && other.lastDirZ !== undefined
         ? other.lastDirX * dirX + other.lastDirZ * dirZ
@@ -610,7 +616,17 @@ export function isVehicleAheadBlocked(
         return true
       }
     } else if (sameDir > -0.45) {
-      if (dist < 0.54 && dot > 0.02 && cross < 0.28) {
+      if (selfPriority === 'driveway' && otherPriority === 'main') {
+        // ПДД РФ п. 8.3: выезд с прилегающей территории уступает потоку на главной дороге.
+        if (dist < 0.95 && dot > -0.15) {
+          return true
+        }
+      } else if (selfPriority === 'main' && otherPriority === 'driveway') {
+        // Главная дорога имеет приоритет и не тормозит перед стоящим на выезде, пока полоса физически свободна.
+        if (cross < 0.14 && dot > 0.04 && dist < 0.44) {
+          return true
+        }
+      } else if (dist < 0.54 && dot > 0.02 && cross < 0.28) {
         const otherDot = -dx * otherDirX + -dz * otherDirZ
         if (otherDot <= 0.02) {
           return true
