@@ -1740,6 +1740,7 @@ function QueenRoads3D({
     const laneOffset = 0.13
     const gateEntryR = 2.45
     const homeEdgeR = Math.max(innerBoulevardR + 0.35, ringRadius - 0.55)
+    const homeGarageR = Math.max(homeEdgeR + 0.35, ringRadius)
     const cars = carsRef.current
     const queue = queueRef.current
 
@@ -1782,7 +1783,7 @@ function QueenRoads3D({
 
     const MIN_CAR_ARC_GAP = Math.max(0.15, (0.36 + 0.14) / innerBoulevardR)
     const GATE_STOP_ANGLE = computeQueenGateStopAngle(innerBoulevardR)
-    const RING_ENTRY_STOP_PROGRESS = computeRingEntryStopProgress(innerBoulevardR, homeEdgeR)
+    const RING_ENTRY_STOP_PROGRESS = computeRingEntryStopProgress(innerBoulevardR, homeGarageR)
 
     // Если ворота Королевы свободны — запускаем ТОЛЬКО самую ближнюю к воротам машину у стоп-линии!
     if (!paused && processingLotRef.current === null) {
@@ -1907,7 +1908,7 @@ function QueenRoads3D({
       }
       const u = (t - 0.9) / 0.1
       const rStart = Math.min(homeEdgeR, innerBoulevardR + 0.56)
-      const r = rStart + u * (homeEdgeR - rStart)
+      const r = rStart + u * (homeGarageR - rStart)
       return {
         x: view.x + hdx * r - hdz * laneOffset,
         z: view.z + hdz * r + hdx * laneOffset,
@@ -1955,7 +1956,7 @@ function QueenRoads3D({
 
       const queenLoopLength = Math.max(
         1.5,
-        (innerBoulevardR - gateEntryR) + backArc * innerBoulevardR + (homeEdgeR - innerBoulevardR)
+        (innerBoulevardR - gateEntryR) + backArc * innerBoulevardR + (homeGarageR - innerBoulevardR)
       )
 
       if (car.phase === 'delivering') {
@@ -1982,10 +1983,11 @@ function QueenRoads3D({
         const hdz = -Math.sin(homeAngle)
         if (car.cooldown > 0) {
           car.cooldown -= dt
+          visible = false
           dirX = hdx
           dirZ = hdz
-          x = view.x + Math.cos(homeAngle) * homeEdgeR - dirZ * laneOffset
-          z = view.z + Math.sin(homeAngle) * homeEdgeR + dirX * laneOffset
+          x = view.x + Math.cos(homeAngle) * homeGarageR - dirZ * laneOffset
+          z = view.z + Math.sin(homeAngle) * homeGarageR + dirX * laneOffset
         } else {
           // Выезд от дома агента ТОЛЬКО НАПРАВО (-angle) на внешнее полукольцо (без пересечения сплошной!).
           const ringBlocked = cars.some((other, oIdx) => {
@@ -2005,7 +2007,7 @@ function QueenRoads3D({
             }
             return false
           })
-          const toRingLen = Math.max(0.8, (homeEdgeR - innerBoulevardR) + 0.45)
+          const toRingLen = Math.max(0.8, (homeGarageR - innerBoulevardR) + 0.45)
           const nextProgress = car.progress + dt * (HIVE_CAR_SPEED / toRingLen)
           if (car.progress > RING_ENTRY_STOP_PROGRESS) {
             car.progress = Math.min(1, nextProgress)
@@ -2024,14 +2026,14 @@ function QueenRoads3D({
             car.curLaneOffset = targetLaneOffset
           }
           if (car.progress <= RING_ENTRY_STOP_PROGRESS) {
-            const r = homeEdgeR - Math.min(1, car.progress) * (homeEdgeR - innerBoulevardR)
+            const r = homeGarageR - Math.min(1, car.progress) * (homeGarageR - innerBoulevardR)
             dirX = hdx
             dirZ = hdz
             x = view.x + Math.cos(homeAngle) * r - dirZ * laneOffset
             z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
           } else {
             const turnU = (car.progress - RING_ENTRY_STOP_PROGRESS) / Math.max(0.05, 1 - RING_ENTRY_STOP_PROGRESS)
-            const stopR = homeEdgeR - RING_ENTRY_STOP_PROGRESS * (homeEdgeR - innerBoulevardR)
+            const stopR = homeGarageR - RING_ENTRY_STOP_PROGRESS * (homeGarageR - innerBoulevardR)
             const ax = view.x + Math.cos(homeAngle) * stopR - hdz * laneOffset
             const az = view.z + Math.sin(homeAngle) * stopR + hdx * laneOffset
             const cx = view.x + Math.cos(homeAngle) * targetLaneR - hdz * laneOffset
@@ -2215,11 +2217,12 @@ function QueenRoads3D({
         dirX = pose.dx
         dirZ = pose.dz
       } else {
-        // Ожидание у подъезда дома без пропадания/мигания.
+        // Ожидание внутри гаража дома перед плавным выездом.
+        visible = false
         dirX = -Math.cos(homeAngle)
         dirZ = -Math.sin(homeAngle)
-        x = view.x + Math.cos(homeAngle) * homeEdgeR - dirZ * laneOffset
-        z = view.z + Math.sin(homeAngle) * homeEdgeR + dirX * laneOffset
+        x = view.x + Math.cos(homeAngle) * homeGarageR - dirZ * laneOffset
+        z = view.z + Math.sin(homeAngle) * homeGarageR + dirX * laneOffset
         car.cooldown -= dt
         if (car.cooldown <= 0) {
           car.phase = 'to_ring'
@@ -2470,17 +2473,18 @@ function AgentModuleCouriers3D({
       if (!target) return
       const targetAngle = Math.atan2(target.z, target.x)
       const targetR = Math.hypot(target.x, target.z)
-      const targetEntryR = Math.max(MAIN_AVENUES_RADIUS + 0.34, Math.min(MAIN_AVENUES_RADIUS + 1.4, targetR - 0.85))
+      const houseGarageR = Math.max(homeEdgeR + 0.35, ringRadius)
+      const targetEntryR = Math.max(MAIN_AVENUES_RADIUS + 0.34, targetR - 0.25)
       const innerArc = posArc(houseAngle - bridgeAngle) * (innerBoulevardR + 0.28)
       const bridgeLen = Math.max(0.5, MAIN_AVENUES_RADIUS - (innerBoulevardR + 0.41))
       const mainArc = posArc(bridgeAngle - targetAngle) * MAIN_AVENUES_RADIUS
       const radialToTarget = Math.abs(targetEntryR - MAIN_AVENUES_RADIUS)
-      const houseSeg = Math.max(0.4, homeEdgeR - (innerBoulevardR + 0.41))
+      const houseSeg = Math.max(0.4, houseGarageR - (innerBoulevardR + 0.41))
       const pathLength = Math.max(3.0, houseSeg + innerArc + bridgeLen + mainArc + radialToTarget)
       list.push({
         lotSlot: lot.slot,
         houseAngle,
-        houseExitR: homeEdgeR,
+        houseExitR: houseGarageR,
         bridgeAngle,
         innerRingR: innerBoulevardR,
         targetAngle,
@@ -2496,7 +2500,9 @@ function AgentModuleCouriers3D({
 
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const instanceColor = useMemo(() => new THREE.Color(), [])
+  const activatedAtRef = useRef<Map<number, number>>(new Map())
   useLayoutEffect(() => {
+    activatedAtRef.current.clear()
     const mesh = meshRef.current
     if (!mesh) return
     routes.forEach((route, index) => {
@@ -2523,12 +2529,30 @@ function AgentModuleCouriers3D({
         if (instIdx >= mesh.count) continue
         // Пока машина от Королевы не доехала до этого дома-агента, он не отправляет курьеров к модулям.
         if (route.active && !paused && deliveredMapRef.current.get(route.lotSlot) !== true) {
+          activatedAtRef.current.delete(route.lotSlot)
           dummy.scale.setScalar(0)
           dummy.updateMatrix()
           mesh.setMatrixAt(instIdx, dummy.matrix)
           continue
         }
-        const p = paused ? (route.phase + dir * 0.5) % 1 : (route.phase + dir * 0.5 + time * flowSpeed) % 1
+        let p: number
+        if (paused) {
+          p = (route.phase + dir * 0.5) % 1
+        } else {
+          let startAt = activatedAtRef.current.get(route.lotSlot)
+          if (startAt === undefined) {
+            startAt = time
+            activatedAtRef.current.set(route.lotSlot, startAt)
+          }
+          const progress = Math.max(0, time - startAt) * flowSpeed
+          if (dir === 1 && progress < 0.5) {
+            dummy.scale.setScalar(0)
+            dummy.updateMatrix()
+            mesh.setMatrixAt(instIdx, dummy.matrix)
+            continue
+          }
+          p = (dir === 0 ? progress : progress - 0.5) % 1
+        }
         // Курьеры выезжают и возвращаются через ЕДИНСТВЕННЫЙ подъезд дома (на внутреннее кольцо),
         // затем через межкольцевой проспект bridgeAngle выходят на Главный проспект 6.0.
         let pose: { x: number; z: number; dx: number; dz: number }
