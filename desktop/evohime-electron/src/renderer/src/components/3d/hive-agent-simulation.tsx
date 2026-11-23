@@ -681,6 +681,7 @@ export function QueenRoads3D({
         if (!lot.active) {
           deliveredMapRef.current.delete(lot.slot)
           car.lastVisible = false
+          car.inIntersection = false
           return
         }
 
@@ -1396,6 +1397,10 @@ export function QueenRoads3D({
       } else {
         car.blockedSec = Math.min(10, (car.blockedSec ?? 0) + dt)
       }
+
+      const inInner = Math.abs(x - innerIx) < 0.56 && Math.abs(z - innerIz) < 0.56
+      const inAvenue = Math.abs(x - avenueIx) < 0.56 && Math.abs(z - avenueIz) < 0.56
+      car.inIntersection = visible && (inInner || inAvenue)
 
       car.lastVisible = visible
       car.lastX = x

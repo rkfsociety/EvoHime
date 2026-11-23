@@ -581,6 +581,7 @@ export interface VehiclePoseState {
   roadPriority?: RoadPriority
   blockedSec?: number
   yieldingTo?: number | undefined
+  inIntersection?: boolean
 }
 
 export function isVehicleAheadBlocked(
@@ -596,6 +597,7 @@ export function isVehicleAheadBlocked(
   const effectiveGap = Math.max(minGap, 1.05)
   const selfState = peers[selfIndex]
   const selfBlocked = selfState?.blockedSec ?? 0
+  const selfInIntersection = selfState?.inIntersection === true
   for (let i = 0; i < peers.length; i += 1) {
     if (i === selfIndex) continue
     const other = peers[i]
@@ -620,6 +622,15 @@ export function isVehicleAheadBlocked(
         return true
       }
     } else if (sameDir > -0.55) {
+      // ПДД РФ п. 13.7: машина, уже выехавшая на перекрёсток, завершает манёвр и не уступает стоящим за стоп-линией.
+      if (selfInIntersection && !other.inIntersection) {
+        continue
+      }
+      // ПДД РФ п. 13.8: въезжающий на перекрёсток обязан уступить машине, завершающей манёвр.
+      if (!selfInIntersection && other.inIntersection === true && dist < 0.85 && dot > 0.02) {
+        if (selfState) selfState.yieldingTo = i
+        return true
+      }
       if (other.yieldingTo === selfIndex) {
         continue
       }
