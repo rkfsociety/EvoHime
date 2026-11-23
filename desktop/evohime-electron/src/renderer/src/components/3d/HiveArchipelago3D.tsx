@@ -3272,12 +3272,24 @@ export function HiveArchipelago3D({
   const soloZoom = Math.max(8, Math.min(24, (16.5 / Math.max(10, capital.radius)) * OVERVIEW_ZOOM_SOLO))
   const overviewZoom = visibleSatellites.length > 0 ? OVERVIEW_ZOOM_ARCHIPELAGO : soloZoom
 
+  const glRef = useRef<THREE.WebGLRenderer | null>(null)
   const handleContextLost = useMemo(() => {
     return (event: Event): void => {
       event.preventDefault()
       onContextLost()
     }
   }, [onContextLost])
+
+  useEffect(() => {
+    return () => {
+      const gl = glRef.current
+      if (gl) {
+        gl.domElement.removeEventListener('webglcontextlost', handleContextLost, false)
+        gl.dispose()
+        glRef.current = null
+      }
+    }
+  }, [handleContextLost])
 
   return (
     <div
@@ -3296,6 +3308,7 @@ export function HiveArchipelago3D({
         gl={{ antialias: true, powerPreference: 'low-power' }}
         style={{ width: '100%', height: '100%' }}
         onCreated={({ gl }) => {
+          glRef.current = gl
           gl.domElement.addEventListener('webglcontextlost', handleContextLost, false)
         }}
         onPointerMissed={(event: unknown) => {

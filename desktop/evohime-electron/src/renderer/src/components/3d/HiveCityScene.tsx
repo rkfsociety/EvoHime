@@ -552,6 +552,14 @@ export function HiveCityScene({
   const rafRef = useRef<number | null>(null)
   const [hoveredDepartment, setHoveredDepartment] = useState<string | null>(null)
   const [webglBroken, setWebglBroken] = useState(false)
+  const [webglKey, setWebglKey] = useState(0)
+
+  const handleContextLost = useCallback(() => {
+    setTimeout(() => {
+      setWebglBroken(false)
+      setWebglKey((k) => k + 1)
+    }, 250)
+  }, [])
 
   const reducedMotion = useReducedMotionPreference()
   const documentHidden = useDocumentHidden()
@@ -781,6 +789,7 @@ export function HiveCityScene({
           >
             {use3D ? (
               <HiveArchipelago3DBoundary
+                key={webglKey}
                 onFallback={() => setWebglBroken(true)}
                 archipelago={
                   <HiveArchipelago3D
@@ -799,7 +808,7 @@ export function HiveCityScene({
                     onSelectBuilding={handleSelectBuilding}
                     onHoverBuilding={setHoveredBuildingId}
                     onBackgroundClick={() => setFocusIslandId(null)}
-                    onContextLost={() => setWebglBroken(true)}
+                    onContextLost={handleContextLost}
                   />
                 }
               />
