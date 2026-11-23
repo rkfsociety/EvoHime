@@ -149,6 +149,7 @@ export interface CitySkin {
   readonly plinth: THREE.MeshStandardMaterial
   readonly gold: THREE.MeshStandardMaterial
   readonly roadBed: THREE.MeshBasicMaterial
+  readonly drivewayBed: THREE.MeshBasicMaterial
   readonly roadCurb: THREE.MeshBasicMaterial
 }
 
@@ -166,6 +167,11 @@ function createCitySkin(): CitySkin {
     }),
     roadBed: new THREE.MeshBasicMaterial({
       color: '#0b101e',
+      transparent: true,
+      opacity: 0.94
+    }),
+    drivewayBed: new THREE.MeshBasicMaterial({
+      color: '#1f2a46',
       transparent: true,
       opacity: 0.94
     }),
@@ -192,6 +198,7 @@ export function CitySkinProvider({ children }: { children: ReactNode }): React.J
     skin.plinth.dispose()
     skin.gold.dispose()
     skin.roadBed.dispose()
+    skin.drivewayBed.dispose()
     skin.roadCurb.dispose()
   }, [skin])
   return <CitySkinContext.Provider value={skin}>{children}</CitySkinContext.Provider>

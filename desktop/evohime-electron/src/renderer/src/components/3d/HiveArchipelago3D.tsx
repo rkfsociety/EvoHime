@@ -846,7 +846,7 @@ function CityStreets3D({
           <RoadSegment3D
             from={drive.from}
             to={drive.to}
-            bedMaterial={skin.roadBed}
+            bedMaterial={skin.drivewayBed}
             curbMaterial={skin.roadCurb}
             lineMaterial={laneMaterial}
             width={0.46}
