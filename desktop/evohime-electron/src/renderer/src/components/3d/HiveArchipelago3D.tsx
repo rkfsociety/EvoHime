@@ -3162,6 +3162,58 @@ function QueenTower3D({ view, skin, paused }: { view: CityIslandView; skin: City
     [facade, skin.roof]
   )
 
+  const evaIconTexture = useMemo(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 256
+    canvas.height = 256
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      // Тёмный медальон-подложка, чтобы 5-лепестковый знак Евы чётко читался поверх золотого маяка.
+      ctx.beginPath()
+      ctx.arc(128, 128, 114, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(11, 15, 32, 0.9)'
+      ctx.fill()
+      ctx.lineWidth = 6
+      ctx.strokeStyle = 'rgba(255, 217, 138, 0.82)'
+      ctx.stroke()
+
+      if (typeof Path2D === 'function') {
+        ctx.save()
+        const s = 192 / 48
+        ctx.translate(32, 34)
+        ctx.scale(s, s)
+
+        const centerGrad = ctx.createLinearGradient(24, 7, 24, 39)
+        centerGrad.addColorStop(0, '#ffffff')
+        centerGrad.addColorStop(0.55, '#ddd6fe')
+        centerGrad.addColorStop(1, '#93c5fd')
+
+        const wingGrad = ctx.createLinearGradient(8, 16, 40, 38)
+        wingGrad.addColorStop(0, 'rgba(233, 213, 255, 0.95)')
+        wingGrad.addColorStop(1, 'rgba(167, 243, 208, 0.78)')
+
+        ctx.fillStyle = centerGrad
+        ctx.fill(new Path2D('M24 7C28.5 14 30 22 24 34C18 22 19.5 14 24 7Z'))
+
+        ctx.fillStyle = wingGrad
+        ctx.fill(new Path2D('M12 16C18.5 18 22 24.5 23.5 34.5C15.5 31.5 11.5 24.5 12 16Z'))
+        ctx.fill(new Path2D('M36 16C29.5 18 26 24.5 24.5 34.5C32.5 31.5 36.5 24.5 36 16Z'))
+
+        ctx.fillStyle = 'rgba(221, 214, 254, 0.78)'
+        ctx.fill(new Path2D('M7 25.5C13.5 25.5 18.5 29.5 23 35.5C15 36.5 9.5 32.5 7 25.5Z'))
+
+        ctx.fillStyle = 'rgba(147, 197, 253, 0.78)'
+        ctx.fill(new Path2D('M41 25.5C34.5 25.5 29.5 29.5 25 35.5C33 36.5 38.5 32.5 41 25.5Z'))
+        ctx.restore()
+      }
+    }
+    const tex = new THREE.CanvasTexture(canvas)
+    tex.colorSpace = THREE.SRGBColorSpace
+    return tex
+  }, [])
+
+  useEffect(() => () => evaIconTexture.dispose(), [evaIconTexture])
+
   const plan = useMemo(() => {
     const citadel = view.buildings.find((item) => item.building.kind === 'citadel')
     return { x: view.x + (citadel?.x ?? 0), z: view.z + (citadel?.z ?? 0) }
@@ -3218,6 +3270,10 @@ function QueenTower3D({ view, skin, paused }: { view: CityIslandView; skin: City
       <mesh ref={beamRef} position={[0, 9.4, 0]}>
         <cylinderGeometry args={[0.09, 0.14, 4.6, 6, 1, true]} />
         <meshBasicMaterial color="#ffd98a" transparent opacity={0.14} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
+      <mesh position={[0, 7.45, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[1.65, 1.65]} />
+        <meshBasicMaterial map={evaIconTexture} transparent depthWrite={false} />
       </mesh>
     </group>
   )
