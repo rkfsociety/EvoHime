@@ -222,7 +222,7 @@ function IslandGround({
 function ConnectingBridges({
   capital,
   satellites,
-  paused: _paused
+  paused
 }: {
   capital: CityIslandView
   satellites: readonly CityIslandView[]
@@ -273,6 +273,7 @@ function ConnectingBridges({
         const hue = displayIslandHue(view.island.id, view.island.role)
         return {
           islandId: view.island.id,
+          phase: view.phase,
           angle,
           from: [dirX * startR, dirZ * startR] as readonly [number, number],
           to: [dirX * endR, dirZ * endR] as readonly [number, number],
@@ -289,12 +290,48 @@ function ConnectingBridges({
       .filter((item): item is NonNullable<typeof item> => item !== null)
   }, [capital.radius, satellites])
 
+  const bridgeRefs = useRef<Map<string, THREE.Group>>(new Map())
+  const bridgeScalesRef = useRef<Map<string, number>>(new Map())
+
+  useFrame((_, delta) => {
+    const factor = paused ? 1 : 1 - Math.exp(-7.5 * Math.min(delta, 0.1))
+    for (const road of roadData) {
+      const grp = bridgeRefs.current.get(road.islandId)
+      if (!grp) continue
+      const target = road.phase === 'exiting' ? 0.02 : 1
+      const current = bridgeScalesRef.current.get(road.islandId) ?? (paused ? 1 : 0.04)
+      const next = Math.max(0.02, current + (target - current) * factor)
+      bridgeScalesRef.current.set(road.islandId, next)
+      const px = road.from[0]
+      const pz = road.from[1]
+      grp.position.set(px * (1 - next), 0, pz * (1 - next))
+      grp.scale.setScalar(next)
+      grp.visible = next > 0.03
+    }
+  })
+
   if (roadData.length === 0) return <></>
 
   return (
     <group>
       {roadData.map((road) => (
-        <group key={`bridge-group-${road.islandId}`}>
+        <group
+          key={`bridge-group-${road.islandId}`}
+          ref={(el) => {
+            if (el) {
+              bridgeRefs.current.set(road.islandId, el)
+              if (!bridgeScalesRef.current.has(road.islandId)) {
+                const init = paused ? 1 : 0.04
+                bridgeScalesRef.current.set(road.islandId, init)
+                el.position.set(road.from[0] * (1 - init), 0, road.from[1] * (1 - init))
+                el.scale.setScalar(init)
+              }
+            } else {
+              bridgeRefs.current.delete(road.islandId)
+              bridgeScalesRef.current.delete(road.islandId)
+            }
+          }}
+        >
           <mesh
             position={[road.deckCenter[0], -0.09, road.deckCenter[1]]}
             rotation={[0, -road.angle, 0]}
@@ -1611,7 +1648,6 @@ function CameraRig({
 
 function scaleForPhase(phase: string): number {
   if (phase === 'exiting') return 0.02
-  if (phase === 'entering') return 0.04
   return 1
 }
 
@@ -1649,6 +1685,7 @@ function IslandGroup3D({
   onBackgroundClick: () => void
 }) {
   const groupRef = useRef<THREE.Group>(null)
+  const scaleRef = useRef<number>(view.island.role === 'capital' || paused ? 1 : 0.04)
   const deliveredMapRef = useRef<Map<number, boolean>>(new Map())
   const skin = useCitySkin()
   const accent = useIslandAccent(displayIslandHue(view.island.id, view.island.role))
@@ -1657,19 +1694,26 @@ function IslandGroup3D({
   useFrame((_, delta) => {
     const group = groupRef.current
     if (!group) return
-    const factor = paused ? 1 : 1 - Math.exp(-6 * Math.min(delta, 0.1))
-    const current = group.scale.x
-    const next = current + (targetScale - current) * factor
-    group.scale.setScalar(Math.max(0.02, next))
+    const factor = paused ? 1 : 1 - Math.exp(-7.5 * Math.min(delta, 0.1))
+    const current = scaleRef.current
+    const next = Math.max(0.02, current + (targetScale - current) * factor)
+    scaleRef.current = next
+    // Масштабируем строго вокруг собственного центра острова (view.x, view.z),
+    // чтобы город вырастал на своём месте, а не летел из центра столицы (0,0,0)!
+    group.position.set(view.x * (1 - next), 0, view.z * (1 - next))
+    group.scale.setScalar(next)
     group.visible = next > 0.03
   })
 
   useLayoutEffect(() => {
     const group = groupRef.current
     if (!group) return
-    group.scale.setScalar(Math.max(0.02, Math.min(group.scale.x, 1)))
+    const initialScale = view.island.role === 'capital' || paused ? 1 : 0.04
+    scaleRef.current = initialScale
+    group.position.set(view.x * (1 - initialScale), 0, view.z * (1 - initialScale))
+    group.scale.setScalar(initialScale)
     group.visible = true
-  }, [view.island.id])
+  }, [view.island.id, view.island.role, view.x, view.z, paused])
 
   return (
     <group ref={groupRef}>
