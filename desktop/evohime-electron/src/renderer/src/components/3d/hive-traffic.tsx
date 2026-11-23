@@ -579,6 +579,8 @@ export interface VehiclePoseState {
   lastDirZ?: number
   lastVisible?: boolean
   roadPriority?: RoadPriority
+  blockedSec?: number
+  yieldingTo?: number | undefined
 }
 
 export function isVehicleAheadBlocked(
@@ -592,6 +594,8 @@ export function isVehicleAheadBlocked(
   selfPriority: RoadPriority = 'main'
 ): boolean {
   const effectiveGap = Math.max(minGap, 1.05)
+  const selfState = peers[selfIndex]
+  const selfBlocked = selfState?.blockedSec ?? 0
   for (let i = 0; i < peers.length; i += 1) {
     if (i === selfIndex) continue
     const other = peers[i]
@@ -616,14 +620,26 @@ export function isVehicleAheadBlocked(
         return true
       }
     } else if (sameDir > -0.55) {
+      if (other.yieldingTo === selfIndex) {
+        continue
+      }
+      if (selfBlocked > 0.5 && (other.blockedSec ?? 0) > 0.5) {
+        if (selfIndex < i) {
+          continue
+        }
+        if (selfState) selfState.yieldingTo = i
+        return true
+      }
       if (selfPriority === 'driveway' && otherPriority === 'main') {
         // ПДД РФ п. 8.3: выезд с прилегающей территории уступает потоку на главной дороге.
         if (dist < 0.95 && dot > -0.15) {
+          if (selfState) selfState.yieldingTo = i
           return true
         }
       } else if (selfPriority === 'main' && otherPriority === 'driveway') {
         // Главная дорога имеет приоритет и не тормозит перед стоящим на выезде, пока полоса физически свободна.
         if (cross < 0.14 && dot > 0.04 && dist < 0.44) {
+          if (selfState) selfState.yieldingTo = i
           return true
         }
       } else {
@@ -643,13 +659,16 @@ export function isVehicleAheadBlocked(
         if (nearConflict || predictedConflict) {
           const otherDot = -dx * otherDirX + -dz * otherDirZ
           if (otherDot <= 0.02) {
+            if (selfState) selfState.yieldingTo = i
             return true
           }
           const rightness = dx * -dirZ + dz * dirX
           if (rightness > 0.05) {
+            if (selfState) selfState.yieldingTo = i
             return true
           }
           if (Math.abs(rightness) <= 0.05 && selfIndex > i) {
+            if (selfState) selfState.yieldingTo = i
             return true
           }
         }

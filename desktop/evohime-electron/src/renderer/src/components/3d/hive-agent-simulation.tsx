@@ -1386,6 +1386,17 @@ export function QueenRoads3D({
         }
       }
 
+      const moved =
+        car.lastX !== undefined &&
+        car.lastZ !== undefined &&
+        Math.hypot(x - car.lastX, z - car.lastZ) > 1e-4
+      if (!visible || moved) {
+        car.blockedSec = 0
+        car.yieldingTo = undefined
+      } else {
+        car.blockedSec = Math.min(10, (car.blockedSec ?? 0) + dt)
+      }
+
       car.lastVisible = visible
       car.lastX = x
       car.lastZ = z
