@@ -1748,24 +1748,36 @@ function QueenRoads3D({
       }
     }
 
-    // Если ворота Королевы свободны — запускаем первую машину из пробки!
-    if (!paused && processingLotRef.current === null && queue.length > 0) {
-      const nextIdx = queue.shift()
-      if (nextIdx !== undefined && cars[nextIdx]) {
-        cars[nextIdx].turnStartAngle = cars[nextIdx].curAngle
-        cars[nextIdx].phase = 'processing'
-        cars[nextIdx].progress = 0
-        processingLotRef.current = { lotIndex: nextIdx, remaining: QUEEN_PROCESS_SEC }
+    const MIN_CAR_ARC_GAP = Math.max(0.15, (0.36 + 0.14) / innerBoulevardR)
+    const GATE_STOP_ANGLE = computeQueenGateStopAngle(innerBoulevardR)
+    const RING_ENTRY_STOP_PROGRESS = computeRingEntryStopProgress(innerBoulevardR, homeEdgeR)
+
+    // Если ворота Королевы свободны — запускаем ТОЛЬКО самую ближнюю к воротам машину у стоп-линии!
+    if (!paused && processingLotRef.current === null) {
+      let bestIdx = -1
+      let bestAngle = -Infinity
+      for (let i = 0; i < cars.length; i += 1) {
+        const candidate = cars[i]
+        if (!candidate || (candidate.phase !== 'queued' && candidate.phase !== 'along_ring')) continue
+        if (candidate.curAngle > bestAngle) {
+          bestAngle = candidate.curAngle
+          bestIdx = i
+        }
+      }
+      const bestCar = bestIdx >= 0 ? cars[bestIdx] : undefined
+      if (bestCar && bestAngle >= GATE_STOP_ANGLE - 0.06) {
+        const qPos = queue.indexOf(bestIdx)
+        if (qPos >= 0) queue.splice(qPos, 1)
+        bestCar.turnStartAngle = bestCar.curAngle
+        bestCar.phase = 'processing'
+        bestCar.progress = 0
+        processingLotRef.current = { lotIndex: bestIdx, remaining: QUEEN_PROCESS_SEC }
       }
     }
 
     if (gateLampRef.current) {
       gateLampRef.current.material = processingLotRef.current !== null ? gateSignalAmber : gateSignalGreen
     }
-
-    const MIN_CAR_ARC_GAP = Math.max(0.15, (0.36 + 0.14) / innerBoulevardR)
-    const GATE_STOP_ANGLE = computeQueenGateStopAngle(innerBoulevardR)
-    const RING_ENTRY_STOP_PROGRESS = computeRingEntryStopProgress(innerBoulevardR, homeEdgeR)
     const normalizeBehindGate = (a: number): number => {
       let res = a
       while (res > QUEEN_GATE_ANGLE) res -= Math.PI * 2
