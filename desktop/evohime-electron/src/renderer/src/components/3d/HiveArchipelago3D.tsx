@@ -1779,9 +1779,14 @@ function QueenRoads3D({
       const hdz = Math.sin(homeAngle)
       const laneRForU = (u: number): number => {
         if (backArc <= Math.PI * 0.45) return innerBoulevardR + 0.3
-        const s = Math.min(1, Math.max(0, (u - 0.65) / 0.17))
+        const s = Math.min(1, Math.max(0, (u - 0.48) / 0.28))
         const smooth = s * s * (3 - 2 * s)
         return innerBoulevardR + 0.11 + smooth * 0.19
+      }
+      const laneRDerivForU = (u: number): number => {
+        if (backArc <= Math.PI * 0.45 || u <= 0.48 || u >= 0.76) return 0
+        const s = (u - 0.48) / 0.28
+        return ((6 * s * (1 - s)) / 0.28) * 0.19
       }
 
       if (t < 0.17) {
@@ -1810,11 +1815,16 @@ function QueenRoads3D({
         const u = (t - 0.25) / 0.5
         const curA = QUEEN_GATE_ANGLE - backArc * u
         const laneR = laneRForU(u)
+        const dRdu = laneRDerivForU(u)
+        const dAdu = -backArc
+        const rawDx = -Math.sin(curA) * laneR * dAdu + Math.cos(curA) * dRdu
+        const rawDz = Math.cos(curA) * laneR * dAdu + Math.sin(curA) * dRdu
+        const len = Math.hypot(rawDx, rawDz) || 1
         return {
           x: view.x + Math.cos(curA) * laneR,
           z: view.z + Math.sin(curA) * laneR,
-          dx: Math.sin(curA),
-          dz: -Math.cos(curA)
+          dx: rawDx / len,
+          dz: rawDz / len
         }
       }
       if (t <= 0.83) {
@@ -1998,10 +2008,11 @@ function QueenRoads3D({
           car.phase = 'queued'
           if (!queue.includes(index)) queue.push(index)
         }
-        // Плавное перестроение в полосу очереди (0.11 -> 0.30) без телепортации.
+        // Плавное перестроение в полосу очереди (0.11 -> 0.30) только при движении вперёд (машины не ездят боком!).
         const desiredLaneOffset = car.phase === 'queued' || GATE_STOP_ANGLE - car.curAngle <= 0.72 ? 0.3 : 0.11
         const laneDiff = desiredLaneOffset - car.curLaneOffset
-        const maxLaneStep = dt * 0.45
+        const arcMove = angleStep * (innerBoulevardR - car.curLaneOffset)
+        const maxLaneStep = arcMove * 0.36
         const laneStep = Math.abs(laneDiff) <= maxLaneStep ? laneDiff : Math.sign(laneDiff) * maxLaneStep
         car.curLaneOffset += laneStep
         const laneR = innerBoulevardR - car.curLaneOffset
@@ -2009,14 +2020,12 @@ function QueenRoads3D({
         z = view.z + Math.sin(car.curAngle) * laneR
         const tx = -Math.sin(car.curAngle)
         const tz = Math.cos(car.curAngle)
-        if (angleStep > 1e-5 && Math.abs(laneStep) > 1e-5) {
-          const arcMove = Math.max(1e-4, angleStep * laneR)
-          const radialVel = -laneStep / arcMove
-          dirX = tx + Math.cos(car.curAngle) * radialVel
-          dirZ = tz + Math.sin(car.curAngle) * radialVel
-          const dLen = Math.hypot(dirX, dirZ) || 1
-          dirX /= dLen
-          dirZ /= dLen
+        if (arcMove > 1e-5 && Math.abs(laneStep) > 1e-6) {
+          const moveX = tx * arcMove - Math.cos(car.curAngle) * laneStep
+          const moveZ = tz * arcMove - Math.sin(car.curAngle) * laneStep
+          const dLen = Math.hypot(moveX, moveZ) || 1
+          dirX = moveX / dLen
+          dirZ = moveZ / dLen
         } else {
           dirX = tx
           dirZ = tz
