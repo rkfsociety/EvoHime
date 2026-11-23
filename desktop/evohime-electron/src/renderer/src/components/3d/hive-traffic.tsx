@@ -800,13 +800,6 @@ export function isPoseCollidingWithPeers(
     if (prevX !== undefined && prevZ !== undefined) {
       const aheadDot = (other.lastX - prevX) * dirX + (other.lastZ - prevZ) * dirZ
       if (aheadDot < -0.05) continue
-      if (
-        (peers[selfIndex]?.blockedSec ?? 0) > 0.8 &&
-        (other.blockedSec ?? 0) > 0.8 &&
-        selfIndex < i
-      ) {
-        continue
-      }
     }
     const nextDist = Math.hypot(other.lastX - x, other.lastZ - z)
     if (nextDist >= broadRadius) continue

@@ -300,10 +300,22 @@ export function QueenRoads3D({
       let best = QUEEN_GATE_ANGLE
       let bestScore = Infinity
       for (const cand of RING_CONNECTOR_ANGLES) {
-        const score = angularDistance(fromAngle, cand) + angularDistance(cand, toAngle)
+        const dFrom = angularDistance(fromAngle, cand)
+        const dTo = angularDistance(cand, toAngle)
+        if (dFrom < 0.16 || dTo < 0.16) continue
+        const score = dFrom + dTo
         if (score < bestScore) {
           bestScore = score
           best = cand
+        }
+      }
+      if (bestScore === Infinity) {
+        for (const cand of RING_CONNECTOR_ANGLES) {
+          const score = angularDistance(fromAngle, cand) + angularDistance(cand, toAngle)
+          if (score < bestScore) {
+            bestScore = score
+            best = cand
+          }
         }
       }
       return best
