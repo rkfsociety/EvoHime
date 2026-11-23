@@ -27,6 +27,8 @@ import {
   isRadialTrafficGreen,
   isRingTrafficGreen,
   isIntersectionClearForEntry,
+  isPathStepBlocked,
+  isPoseCollidingWithPeers,
   isVehicleAheadBlocked,
   posArc,
   type PathSegment,
@@ -682,36 +684,55 @@ export function QueenRoads3D({
           visible = false
         } else {
           const curPose = evalSegmentedPose(queenOutPath.segments, Math.min(1, Math.max(0, car.progress)))
-          const aheadBlocked =
-            car.lastVisible === true &&
-            isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
-          if (!aheadBlocked) {
-            const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
-            const canEnterInner =
-              radialGreen &&
-              isIntersectionClearForEntry(
-                innerIx,
-                innerIz,
-                curPose.x,
-                curPose.z,
-                curPose.dx,
-                curPose.dz,
-                index,
-                cars
-              )
-            if (!canEnterInner && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
-              car.progress = queenOutPath.stopProgress
-            } else {
-              car.progress = nextP
+          if (
+            !car.lastVisible &&
+            isPoseCollidingWithPeers(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+          ) {
+            visible = false
+          } else {
+            const aheadBlocked =
+              car.lastVisible === true &&
+              isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+            if (!aheadBlocked) {
+              const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
+              const canEnterInner =
+                radialGreen &&
+                isIntersectionClearForEntry(
+                  innerIx,
+                  innerIz,
+                  curPose.x,
+                  curPose.z,
+                  curPose.dx,
+                  curPose.dz,
+                  index,
+                  cars
+                )
+              const candidateP =
+                !canEnterInner && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress
+                  ? queenOutPath.stopProgress
+                  : nextP
+              if (
+                !isPathStepBlocked(
+                  queenOutPath.segments,
+                  queenOutPath.totalLength,
+                  candidateP,
+                  index,
+                  cars,
+                  curPose.x,
+                  curPose.z
+                )
+              ) {
+                car.progress = candidateP
+              }
             }
-          }
-          if (car.progress >= 1) {
-            deliveredMapRef.current.set(lot.slot, true)
-            car.moduleStep = 0
-            car.moduleTotalSteps = 1 + (index % 2)
-            car.phase = 'at_home_briefing'
-            car.progress = 0
-            car.cooldown = 0.45
+            if (car.progress >= 1) {
+              deliveredMapRef.current.set(lot.slot, true)
+              car.moduleStep = 0
+              car.moduleTotalSteps = 1 + (index % 2)
+              car.phase = 'at_home_briefing'
+              car.progress = 0
+              car.cooldown = 0.45
+            }
           }
         }
         const t = Math.min(1, Math.max(0, car.progress))
@@ -739,61 +760,84 @@ export function QueenRoads3D({
         } else {
           const modOutPath = modStep.outPath
           const curPose = evalSegmentedPose(modOutPath.segments, Math.min(1, Math.max(0, car.progress)))
-          const aheadBlocked =
-            car.lastVisible === true &&
-            isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
-          if (!aheadBlocked) {
-            const nextP = car.progress + dt * (HIVE_CAR_SPEED / modOutPath.totalLength)
-            const canEnterInner =
-              ringGreen &&
-              isIntersectionClearForEntry(
-                innerIx,
-                innerIz,
-                curPose.x,
-                curPose.z,
-                curPose.dx,
-                curPose.dz,
-                index,
-                cars
-              )
-            const canEnterAvenue =
-              radialGreen &&
-              isIntersectionClearForEntry(
-                avenueIx,
-                avenueIz,
-                curPose.x,
-                curPose.z,
-                curPose.dx,
-                curPose.dz,
-                index,
-                cars
-              )
-            if (
-              !canEnterInner &&
-              car.progress <= modOutPath.ringStopProgress &&
-              nextP >= modOutPath.ringStopProgress
-            ) {
-              car.progress = modOutPath.ringStopProgress
-            } else if (
-              !canEnterAvenue &&
-              car.progress <= modOutPath.avenueStopProgress &&
-              nextP >= modOutPath.avenueStopProgress
-            ) {
-              car.progress = modOutPath.avenueStopProgress
-            } else {
-              car.progress = nextP
+          if (
+            !car.lastVisible &&
+            isPoseCollidingWithPeers(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+          ) {
+            visible = false
+            x = curPose.x
+            z = curPose.z
+            dirX = curPose.dx
+            dirZ = curPose.dz
+          } else {
+            const aheadBlocked =
+              car.lastVisible === true &&
+              isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+            if (!aheadBlocked) {
+              const nextP = car.progress + dt * (HIVE_CAR_SPEED / modOutPath.totalLength)
+              const canEnterInner =
+                ringGreen &&
+                isIntersectionClearForEntry(
+                  innerIx,
+                  innerIz,
+                  curPose.x,
+                  curPose.z,
+                  curPose.dx,
+                  curPose.dz,
+                  index,
+                  cars
+                )
+              const canEnterAvenue =
+                radialGreen &&
+                isIntersectionClearForEntry(
+                  avenueIx,
+                  avenueIz,
+                  curPose.x,
+                  curPose.z,
+                  curPose.dx,
+                  curPose.dz,
+                  index,
+                  cars
+                )
+              let candidateP = nextP
+              if (
+                !canEnterInner &&
+                car.progress <= modOutPath.ringStopProgress &&
+                nextP >= modOutPath.ringStopProgress
+              ) {
+                candidateP = modOutPath.ringStopProgress
+              } else if (
+                !canEnterAvenue &&
+                car.progress <= modOutPath.avenueStopProgress &&
+                nextP >= modOutPath.avenueStopProgress
+              ) {
+                candidateP = modOutPath.avenueStopProgress
+              }
+              if (
+                !isPathStepBlocked(
+                  modOutPath.segments,
+                  modOutPath.totalLength,
+                  candidateP,
+                  index,
+                  cars,
+                  curPose.x,
+                  curPose.z
+                )
+              ) {
+                car.progress = candidateP
+              }
             }
+            if (car.progress >= 1) {
+              car.phase = 'at_module'
+              car.progress = 0
+              car.cooldown = 0.65
+            }
+            const pose = evalSegmentedPose(modOutPath.segments, Math.min(1, Math.max(0, car.progress)))
+            x = pose.x
+            z = pose.z
+            dirX = pose.dx
+            dirZ = pose.dz
           }
-          if (car.progress >= 1) {
-            car.phase = 'at_module'
-            car.progress = 0
-            car.cooldown = 0.65
-          }
-          const pose = evalSegmentedPose(modOutPath.segments, Math.min(1, Math.max(0, car.progress)))
-          x = pose.x
-          z = pose.z
-          dirX = pose.dx
-          dirZ = pose.dz
         }
       } else if (car.phase === 'at_module') {
         const modStep = routes.moduleSteps[car.moduleStep % Math.max(1, routes.moduleSteps.length)]
@@ -818,61 +862,84 @@ export function QueenRoads3D({
         } else {
           const modInPath = modStep.inPath
           const curPose = evalSegmentedPose(modInPath.segments, Math.min(1, Math.max(0, car.progress)))
-          const aheadBlocked =
-            car.lastVisible === true &&
-            isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
-          if (!aheadBlocked) {
-            const nextP = car.progress + dt * (HIVE_CAR_SPEED / modInPath.totalLength)
-            const canEnterAvenue =
-              ringGreen &&
-              isIntersectionClearForEntry(
-                avenueIx,
-                avenueIz,
-                curPose.x,
-                curPose.z,
-                curPose.dx,
-                curPose.dz,
-                index,
-                cars
-              )
-            const canEnterInner =
-              radialGreen &&
-              isIntersectionClearForEntry(
-                innerIx,
-                innerIz,
-                curPose.x,
-                curPose.z,
-                curPose.dx,
-                curPose.dz,
-                index,
-                cars
-              )
-            if (
-              !canEnterAvenue &&
-              car.progress <= modInPath.avenueStopProgress &&
-              nextP >= modInPath.avenueStopProgress
-            ) {
-              car.progress = modInPath.avenueStopProgress
-            } else if (
-              !canEnterInner &&
-              car.progress <= modInPath.ringStopProgress &&
-              nextP >= modInPath.ringStopProgress
-            ) {
-              car.progress = modInPath.ringStopProgress
-            } else {
-              car.progress = nextP
+          if (
+            !car.lastVisible &&
+            isPoseCollidingWithPeers(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+          ) {
+            visible = false
+            x = curPose.x
+            z = curPose.z
+            dirX = curPose.dx
+            dirZ = curPose.dz
+          } else {
+            const aheadBlocked =
+              car.lastVisible === true &&
+              isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+            if (!aheadBlocked) {
+              const nextP = car.progress + dt * (HIVE_CAR_SPEED / modInPath.totalLength)
+              const canEnterAvenue =
+                ringGreen &&
+                isIntersectionClearForEntry(
+                  avenueIx,
+                  avenueIz,
+                  curPose.x,
+                  curPose.z,
+                  curPose.dx,
+                  curPose.dz,
+                  index,
+                  cars
+                )
+              const canEnterInner =
+                radialGreen &&
+                isIntersectionClearForEntry(
+                  innerIx,
+                  innerIz,
+                  curPose.x,
+                  curPose.z,
+                  curPose.dx,
+                  curPose.dz,
+                  index,
+                  cars
+                )
+              let candidateP = nextP
+              if (
+                !canEnterAvenue &&
+                car.progress <= modInPath.avenueStopProgress &&
+                nextP >= modInPath.avenueStopProgress
+              ) {
+                candidateP = modInPath.avenueStopProgress
+              } else if (
+                !canEnterInner &&
+                car.progress <= modInPath.ringStopProgress &&
+                nextP >= modInPath.ringStopProgress
+              ) {
+                candidateP = modInPath.ringStopProgress
+              }
+              if (
+                !isPathStepBlocked(
+                  modInPath.segments,
+                  modInPath.totalLength,
+                  candidateP,
+                  index,
+                  cars,
+                  curPose.x,
+                  curPose.z
+                )
+              ) {
+                car.progress = candidateP
+              }
             }
+            if (car.progress >= 1) {
+              car.phase = 'at_home_study'
+              car.progress = 0
+              car.cooldown = 0.75
+            }
+            const pose = evalSegmentedPose(modInPath.segments, Math.min(1, Math.max(0, car.progress)))
+            x = pose.x
+            z = pose.z
+            dirX = pose.dx
+            dirZ = pose.dz
           }
-          if (car.progress >= 1) {
-            car.phase = 'at_home_study'
-            car.progress = 0
-            car.cooldown = 0.75
-          }
-          const pose = evalSegmentedPose(modInPath.segments, Math.min(1, Math.max(0, car.progress)))
-          x = pose.x
-          z = pose.z
-          dirX = pose.dx
-          dirZ = pose.dz
         }
       } else if (car.phase === 'at_home_study') {
         visible = false
@@ -895,6 +962,31 @@ export function QueenRoads3D({
       } else if (car.phase === 'to_ring') {
         const hdx = -Math.cos(homeAngle)
         const hdz = -Math.sin(homeAngle)
+        const targetEntryAngle = homeAngle - 0.06
+        const targetLaneOffset = 0.3
+        const targetLaneR = innerBoulevardR + targetLaneOffset
+        const evalToRingPose = (p: number) => {
+          const clampedP = Math.min(1, Math.max(0, p))
+          if (clampedP <= RING_ENTRY_STOP_PROGRESS) {
+            const r = homeGarageR - clampedP * (homeGarageR - innerBoulevardR)
+            return {
+              x: view.x + Math.cos(homeAngle) * r - hdz * laneOffset,
+              z: view.z + Math.sin(homeAngle) * r + hdx * laneOffset,
+              dx: hdx,
+              dz: hdz
+            }
+          }
+          const turnU = (clampedP - RING_ENTRY_STOP_PROGRESS) / Math.max(0.05, 1 - RING_ENTRY_STOP_PROGRESS)
+          const stopR = homeGarageR - RING_ENTRY_STOP_PROGRESS * (homeGarageR - innerBoulevardR)
+          const ax = view.x + Math.cos(homeAngle) * stopR - hdz * laneOffset
+          const az = view.z + Math.sin(homeAngle) * stopR + hdx * laneOffset
+          const cx = view.x + Math.cos(homeAngle) * targetLaneR - hdz * laneOffset
+          const cz = view.z + Math.sin(homeAngle) * targetLaneR + hdx * laneOffset
+          const bx = view.x + Math.cos(targetEntryAngle) * targetLaneR
+          const bz = view.z + Math.sin(targetEntryAngle) * targetLaneR
+          return evalTurnBezier(ax, az, cx, cz, bx, bz, turnU)
+        }
+
         if (car.cooldown > 0) {
           car.cooldown -= dt
           visible = false
@@ -903,67 +995,88 @@ export function QueenRoads3D({
           x = view.x + Math.cos(homeAngle) * homeGarageR - dirZ * laneOffset
           z = view.z + Math.sin(homeAngle) * homeGarageR + dirX * laneOffset
         } else {
-          // Выезд от дома агента ТОЛЬКО НАПРАВО (-angle) на внешнее полукольцо (без пересечения сплошной!).
-          const ringBlocked = cars.some((other, oIdx) => {
-            if (oIdx === index) return false
-            if (other.lastVisible && other.lastX !== undefined && other.lastZ !== undefined) {
-              const entryX = view.x + Math.cos(homeAngle) * (innerBoulevardR + 0.22)
-              const entryZ = view.z + Math.sin(homeAngle) * (innerBoulevardR + 0.22)
-              if (Math.hypot(other.lastX - entryX, other.lastZ - entryZ) < 0.72) {
-                return true
-              }
-            }
-            if (other.phase === 'outer_to_uturn') {
-              return angularDistance(other.curAngle, homeAngle) < MIN_CAR_ARC_GAP * 1.25
-            }
-            if ((other.phase === 'delivering' || other.phase === 'returning_ring') && other.progress >= 0.25 && other.progress < 0.78) {
-              const otherHome = houseAngles[oIdx]
-              if (otherHome === undefined) return false
-              const otherArc = posArc(QUEEN_GATE_ANGLE - otherHome)
-              const u = (other.progress - 0.25) / 0.53
-              const otherA = QUEEN_GATE_ANGLE - 0.1 - Math.max(0, otherArc - 0.2) * u
-              return angularDistance(otherA, homeAngle) < MIN_CAR_ARC_GAP * 1.25
-            }
-            return false
-          })
-          const toRingLen = Math.max(0.8, (homeGarageR - innerBoulevardR) + 0.45)
-          const nextProgress = car.progress + dt * (HIVE_CAR_SPEED / toRingLen)
-          if (car.progress > RING_ENTRY_STOP_PROGRESS) {
-            car.progress = Math.min(1, nextProgress)
-          } else if (car.progress < RING_ENTRY_STOP_PROGRESS) {
-            car.progress = ringBlocked ? Math.min(RING_ENTRY_STOP_PROGRESS, nextProgress) : Math.min(1, nextProgress)
-          } else if (!ringBlocked) {
-            car.progress = Math.min(1, nextProgress)
-          }
-          const targetEntryAngle = homeAngle - 0.06
-          const targetLaneOffset = 0.3
-          const targetLaneR = innerBoulevardR + targetLaneOffset
-          if (car.progress >= 1) {
-            car.phase = 'outer_to_uturn'
-            car.progress = 0
-            car.curAngle = targetEntryAngle
-            car.curLaneOffset = targetLaneOffset
-          }
-          if (car.progress <= RING_ENTRY_STOP_PROGRESS) {
-            const r = homeGarageR - Math.min(1, car.progress) * (homeGarageR - innerBoulevardR)
-            dirX = hdx
-            dirZ = hdz
-            x = view.x + Math.cos(homeAngle) * r - dirZ * laneOffset
-            z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
+          const curPose = evalToRingPose(car.progress)
+          if (
+            !car.lastVisible &&
+            isPoseCollidingWithPeers(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+          ) {
+            visible = false
+            x = curPose.x
+            z = curPose.z
+            dirX = curPose.dx
+            dirZ = curPose.dz
           } else {
-            const turnU = (car.progress - RING_ENTRY_STOP_PROGRESS) / Math.max(0.05, 1 - RING_ENTRY_STOP_PROGRESS)
-            const stopR = homeGarageR - RING_ENTRY_STOP_PROGRESS * (homeGarageR - innerBoulevardR)
-            const ax = view.x + Math.cos(homeAngle) * stopR - hdz * laneOffset
-            const az = view.z + Math.sin(homeAngle) * stopR + hdx * laneOffset
-            const cx = view.x + Math.cos(homeAngle) * targetLaneR - hdz * laneOffset
-            const cz = view.z + Math.sin(homeAngle) * targetLaneR + hdx * laneOffset
-            const bx = view.x + Math.cos(targetEntryAngle) * targetLaneR
-            const bz = view.z + Math.sin(targetEntryAngle) * targetLaneR
-            const pose = evalTurnBezier(ax, az, cx, cz, bx, bz, turnU)
-            x = pose.x
-            z = pose.z
-            dirX = pose.dx
-            dirZ = pose.dz
+            // Выезд от дома агента ТОЛЬКО НАПРАВО (-angle) на внешнее полукольцо (без пересечения сплошной!).
+            const ringBlocked = cars.some((other, oIdx) => {
+              if (oIdx === index) return false
+              if (other.lastVisible && other.lastX !== undefined && other.lastZ !== undefined) {
+                const entryX = view.x + Math.cos(homeAngle) * (innerBoulevardR + 0.22)
+                const entryZ = view.z + Math.sin(homeAngle) * (innerBoulevardR + 0.22)
+                if (Math.hypot(other.lastX - entryX, other.lastZ - entryZ) < 0.72) {
+                  return true
+                }
+              }
+              if (other.phase === 'outer_to_uturn') {
+                return angularDistance(other.curAngle, homeAngle) < MIN_CAR_ARC_GAP * 1.25
+              }
+              if ((other.phase === 'delivering' || other.phase === 'returning_ring') && other.progress >= 0.25 && other.progress < 0.78) {
+                const otherHome = houseAngles[oIdx]
+                if (otherHome === undefined) return false
+                const otherArc = posArc(QUEEN_GATE_ANGLE - otherHome)
+                const u = (other.progress - 0.25) / 0.53
+                const otherA = QUEEN_GATE_ANGLE - 0.1 - Math.max(0, otherArc - 0.2) * u
+                return angularDistance(otherA, homeAngle) < MIN_CAR_ARC_GAP * 1.25
+              }
+              return false
+            })
+            const toRingLen = Math.max(0.8, (homeGarageR - innerBoulevardR) + 0.45)
+            const nextProgress = car.progress + dt * (HIVE_CAR_SPEED / toRingLen)
+            let candidateP = car.progress
+            if (car.progress > RING_ENTRY_STOP_PROGRESS) {
+              candidateP = Math.min(1, nextProgress)
+            } else if (car.progress < RING_ENTRY_STOP_PROGRESS) {
+              candidateP = ringBlocked ? Math.min(RING_ENTRY_STOP_PROGRESS, nextProgress) : Math.min(1, nextProgress)
+            } else if (!ringBlocked) {
+              candidateP = Math.min(1, nextProgress)
+            }
+            const nextPose = evalToRingPose(candidateP)
+            const lookPose = evalToRingPose(Math.min(1, candidateP + 0.16 / toRingLen))
+            const obbBlocked =
+              isPoseCollidingWithPeers(
+                nextPose.x,
+                nextPose.z,
+                nextPose.dx,
+                nextPose.dz,
+                index,
+                cars,
+                car.lastVisible ? curPose.x : undefined,
+                car.lastVisible ? curPose.z : undefined
+              ) ||
+              (car.lastVisible &&
+                isPoseCollidingWithPeers(
+                  lookPose.x,
+                  lookPose.z,
+                  lookPose.dx,
+                  lookPose.dz,
+                  index,
+                  cars,
+                  curPose.x,
+                  curPose.z
+                ))
+            if (!obbBlocked) {
+              car.progress = candidateP
+            }
+            const finalPose = evalToRingPose(car.progress)
+            x = finalPose.x
+            z = finalPose.z
+            dirX = finalPose.dx
+            dirZ = finalPose.dz
+            if (car.progress >= 1) {
+              car.phase = 'outer_to_uturn'
+              car.progress = 0
+              car.curAngle = targetEntryAngle
+              car.curLaneOffset = targetLaneOffset
+            }
           }
         }
       } else if (car.phase === 'outer_to_uturn') {
@@ -1010,17 +1123,69 @@ export function QueenRoads3D({
           maxTravel = 0
         }
         const outerAngularSpeed = HIVE_CAR_SPEED / Math.max(1.5, innerBoulevardR + car.curLaneOffset)
-        const allowedStep = uTurnBlocked ? 0 : Math.min(Math.max(0, maxTravel), dt * outerAngularSpeed)
+        let allowedStep = uTurnBlocked ? 0 : Math.min(Math.max(0, maxTravel), dt * outerAngularSpeed)
+        const desiredOuterOffset = 0.13
+        if (allowedStep > 0) {
+          const candAngle = car.curAngle - allowedStep
+          const candArcToIntersection = Math.max(0, arcToIntersection - allowedStep)
+          const candUTurnZone =
+            candArcToIntersection < intersectionEntryArc
+              ? 1 - candArcToIntersection / intersectionEntryArc
+              : 0
+          let candX = curRingX
+          let candZ = curRingZ
+          let candDx = curRingDx
+          let candDz = curRingDz
+          if (candUTurnZone > 0) {
+            const gdx = -Math.cos(QUEEN_GATE_ANGLE)
+            const gdz = -Math.sin(QUEEN_GATE_ANGLE)
+            const enterR = innerBoulevardR - 0.52
+            const ax = view.x + Math.cos(QUEEN_GATE_ANGLE + intersectionEntryArc) * (innerBoulevardR + 0.13)
+            const az = view.z + Math.sin(QUEEN_GATE_ANGLE + intersectionEntryArc) * (innerBoulevardR + 0.13)
+            const cx = view.x + Math.cos(QUEEN_GATE_ANGLE) * innerBoulevardR
+            const cz = view.z + Math.sin(QUEEN_GATE_ANGLE) * innerBoulevardR
+            const bx = view.x + Math.cos(QUEEN_GATE_ANGLE) * enterR - gdz * laneOffset
+            const bz = view.z + Math.sin(QUEEN_GATE_ANGLE) * enterR + gdx * laneOffset
+            const candPose = evalTurnBezier(ax, az, cx, cz, bx, bz, candUTurnZone)
+            candX = candPose.x
+            candZ = candPose.z
+            candDx = candPose.dx
+            candDz = candPose.dz
+          } else {
+            const laneDiff = desiredOuterOffset - car.curLaneOffset
+            const arcMove = allowedStep * (innerBoulevardR + car.curLaneOffset)
+            const maxStep = arcMove * 0.36
+            const laneStep = Math.abs(laneDiff) <= maxStep ? laneDiff : Math.sign(laneDiff) * maxStep
+            const candLaneR = innerBoulevardR + car.curLaneOffset + laneStep
+            candX = view.x + Math.cos(candAngle) * candLaneR
+            candZ = view.z + Math.sin(candAngle) * candLaneR
+            candDx = Math.sin(candAngle)
+            candDz = -Math.cos(candAngle)
+          }
+          if (
+            isPoseCollidingWithPeers(
+              candX,
+              candZ,
+              candDx,
+              candDz,
+              index,
+              cars,
+              car.lastVisible ? (car.lastX ?? curRingX) : undefined,
+              car.lastVisible ? (car.lastZ ?? curRingZ) : undefined
+            )
+          ) {
+            allowedStep = 0
+          }
+        }
         car.curAngle -= allowedStep
         const newArcToIntersection = Math.max(0, arcToIntersection - allowedStep)
-        if (newArcToIntersection <= 0.01 && !uTurnBlocked) {
+        if (newArcToIntersection <= 0.01 && !uTurnBlocked && allowedStep > 0) {
           car.phase = 'queued'
           car.progress = 0
           car.curAngle = QUEEN_GATE_ANGLE
           car.curLaneOffset = 0.11
           if (!queue.includes(index)) queue.push(index)
         }
-        const desiredOuterOffset = 0.13
         const uTurnZone =
           newArcToIntersection < intersectionEntryArc ? 1 - newArcToIntersection / intersectionEntryArc : 0
         if (uTurnZone > 0) {
@@ -1081,9 +1246,29 @@ export function QueenRoads3D({
       } else if (car.phase === 'processing') {
         const enterR = innerBoulevardR - 0.52
         const procLen = Math.max(0.4, enterR - gateEntryR)
-        car.progress = Math.min(1, car.progress + dt * (HIVE_CAR_SPEED / procLen))
+        const nextProgress = Math.min(1, car.progress + dt * (HIVE_CAR_SPEED / procLen))
         const gdx = -Math.cos(QUEEN_GATE_ANGLE)
         const gdz = -Math.sin(QUEEN_GATE_ANGLE)
+        const curR = enterR - car.progress * (enterR - gateEntryR)
+        const curProcX = view.x + Math.cos(QUEEN_GATE_ANGLE) * curR - gdz * laneOffset
+        const curProcZ = view.z + Math.sin(QUEEN_GATE_ANGLE) * curR + gdx * laneOffset
+        const candR = enterR - nextProgress * (enterR - gateEntryR)
+        const candProcX = view.x + Math.cos(QUEEN_GATE_ANGLE) * candR - gdz * laneOffset
+        const candProcZ = view.z + Math.sin(QUEEN_GATE_ANGLE) * candR + gdx * laneOffset
+        if (
+          !isPoseCollidingWithPeers(
+            candProcX,
+            candProcZ,
+            gdx,
+            gdz,
+            index,
+            cars,
+            car.lastVisible ? curProcX : undefined,
+            car.lastVisible ? curProcZ : undefined
+          )
+        ) {
+          car.progress = nextProgress
+        }
         const r = enterR - car.progress * (enterR - gateEntryR)
         dirX = gdx
         dirZ = gdz
@@ -1092,36 +1277,55 @@ export function QueenRoads3D({
       } else if (car.phase === 'returning_ring') {
         const queenOutPath = routes.queenOutPath
         const curPose = evalSegmentedPose(queenOutPath.segments, Math.min(1, Math.max(0, car.progress)))
-        const aheadBlocked =
-          car.lastVisible === true &&
-          isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
-        if (!aheadBlocked) {
-          const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
-          const canEnterInner =
-            radialGreen &&
-            isIntersectionClearForEntry(
-              innerIx,
-              innerIz,
-              curPose.x,
-              curPose.z,
-              curPose.dx,
-              curPose.dz,
-              index,
-              cars
-            )
-          if (!canEnterInner && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
-            car.progress = queenOutPath.stopProgress
-          } else {
-            car.progress = nextP
+        if (
+          !car.lastVisible &&
+          isPoseCollidingWithPeers(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+        ) {
+          visible = false
+        } else {
+          const aheadBlocked =
+            car.lastVisible === true &&
+            isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+          if (!aheadBlocked) {
+            const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
+            const canEnterInner =
+              radialGreen &&
+              isIntersectionClearForEntry(
+                innerIx,
+                innerIz,
+                curPose.x,
+                curPose.z,
+                curPose.dx,
+                curPose.dz,
+                index,
+                cars
+              )
+            const candidateP =
+              !canEnterInner && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress
+                ? queenOutPath.stopProgress
+                : nextP
+            if (
+              !isPathStepBlocked(
+                queenOutPath.segments,
+                queenOutPath.totalLength,
+                candidateP,
+                index,
+                cars,
+                curPose.x,
+                curPose.z
+              )
+            ) {
+              car.progress = candidateP
+            }
           }
-        }
-        if (car.progress >= 1) {
-          deliveredMapRef.current.set(lot.slot, true)
-          car.moduleStep = 0
-          car.moduleTotalSteps = 1 + ((car.moduleTotalSteps + 1) % 2)
-          car.phase = 'at_home_briefing'
-          car.progress = 0
-          car.cooldown = 0.55
+          if (car.progress >= 1) {
+            deliveredMapRef.current.set(lot.slot, true)
+            car.moduleStep = 0
+            car.moduleTotalSteps = 1 + ((car.moduleTotalSteps + 1) % 2)
+            car.phase = 'at_home_briefing'
+            car.progress = 0
+            car.cooldown = 0.55
+          }
         }
         const t = Math.min(1, car.progress)
         const pose = evalSegmentedPose(queenOutPath.segments, t)

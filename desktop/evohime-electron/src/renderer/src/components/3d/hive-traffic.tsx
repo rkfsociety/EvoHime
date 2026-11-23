@@ -9,6 +9,8 @@ export const AVENUE_RING_STEP = 3.2
 export const QUEEN_PROCESS_SEC = 1.15
 export const INTERSECTION_STOP_HALF_EXTENT = 0.49
 export const CAR_FRONT_BUMPER_OFFSET = 0.21
+export const CAR_HALF_WIDTH = 0.082
+export const CAR_HALF_LENGTH = 0.20
 
 const TRAFFIC_LIGHT_CYCLE_SEC = 9.0
 
@@ -526,4 +528,125 @@ export function isIntersectionClearForEntry(
     }
   }
   return true
+}
+
+/**
+ * Точная проверка пересечения двух ориентированных 2D-прямоугольников машин (2D OBB / SAT).
+ */
+export function doCarBoxesOverlap(
+  ax: number,
+  az: number,
+  aDirX: number,
+  aDirZ: number,
+  bx: number,
+  bz: number,
+  bDirX: number,
+  bDirZ: number,
+  halfWidth = CAR_HALF_WIDTH,
+  halfLength = CAR_HALF_LENGTH
+): boolean {
+  const aLen = Math.hypot(aDirX, aDirZ) || 1
+  const adx = aDirX / aLen
+  const adz = aDirZ / aLen
+  const bLen = Math.hypot(bDirX, bDirZ) || 1
+  const bdx = bDirX / bLen
+  const bdz = bDirZ / bLen
+
+  const dx = bx - ax
+  const dz = bz - az
+
+  const axes: readonly [number, number][] = [
+    [adx, adz],
+    [-adz, adx],
+    [bdx, bdz],
+    [-bdz, bdx]
+  ]
+
+  for (let i = 0; i < axes.length; i += 1) {
+    const axis = axes[i]!
+    const ux = axis[0]
+    const uz = axis[1]
+    const projDist = Math.abs(dx * ux + dz * uz)
+    const ra = halfLength * Math.abs(adx * ux + adz * uz) + halfWidth * Math.abs(-adz * ux + adx * uz)
+    const rb = halfLength * Math.abs(bdx * ux + bdz * uz) + halfWidth * Math.abs(-bdz * ux + bdx * uz)
+    if (projDist >= ra + rb) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * Проверяет, сталкивается ли поза (x, z, dirX, dirZ) с габаритом любой другой видимой машины.
+ * При переданных prevX/prevZ шаг, строго увеличивающий дистанцию до задетой машины, разрешается.
+ */
+export function isPoseCollidingWithPeers(
+  x: number,
+  z: number,
+  dirX: number,
+  dirZ: number,
+  selfIndex: number,
+  peers: readonly VehiclePoseState[],
+  prevX?: number,
+  prevZ?: number
+): boolean {
+  const broadRadius = CAR_HALF_LENGTH * 2 + 0.08
+  for (let i = 0; i < peers.length; i += 1) {
+    if (i === selfIndex) continue
+    const other = peers[i]
+    if (!other || !other.lastVisible) continue
+    if (other.lastX === undefined || other.lastZ === undefined) continue
+    const nextDist = Math.hypot(other.lastX - x, other.lastZ - z)
+    if (nextDist >= broadRadius) continue
+    if (
+      doCarBoxesOverlap(
+        x,
+        z,
+        dirX,
+        dirZ,
+        other.lastX,
+        other.lastZ,
+        other.lastDirX ?? dirX,
+        other.lastDirZ ?? dirZ
+      )
+    ) {
+      if (prevX !== undefined && prevZ !== undefined) {
+        const prevDist = Math.hypot(other.lastX - prevX, other.lastZ - prevZ)
+        if (nextDist > prevDist + 0.002) {
+          continue
+        }
+      }
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Проверяет, безопасен ли следующий шаг по сегментному маршруту (включая упреждение по траектории),
+ * чтобы машина не поворачивала к зданию и не заезжала в коридор, занятый другой машиной.
+ */
+export function isPathStepBlocked(
+  segments: readonly PathSegment[],
+  totalLength: number,
+  candidateProgress: number,
+  selfIndex: number,
+  peers: readonly VehiclePoseState[],
+  curX: number,
+  curZ: number,
+  lookaheadDist = 0.18
+): boolean {
+  const clampedP = Math.min(1, Math.max(0, candidateProgress))
+  const nextPose = evalSegmentedPose(segments, clampedP)
+  if (isPoseCollidingWithPeers(nextPose.x, nextPose.z, nextPose.dx, nextPose.dz, selfIndex, peers, curX, curZ)) {
+    return true
+  }
+  if (clampedP < 1) {
+    const lookP = Math.min(1, clampedP + lookaheadDist / Math.max(1.5, totalLength))
+    const lookPose = evalSegmentedPose(segments, lookP)
+    if (isPoseCollidingWithPeers(lookPose.x, lookPose.z, lookPose.dx, lookPose.dz, selfIndex, peers, curX, curZ)) {
+      return true
+    }
+  }
+  return false
 }

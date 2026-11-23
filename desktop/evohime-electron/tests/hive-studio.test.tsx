@@ -38,8 +38,13 @@ import {
   HIVE_STUDIO_DEPARTMENTS
 } from '../src/renderer/src/hive-studio-simulation'
 import {
+  doCarBoxesOverlap,
+  evalTurnBezier,
   isIntersectionClearForEntry,
+  isPathStepBlocked,
+  isPoseCollidingWithPeers,
   isVehicleAheadBlocked,
+  type PathSegment,
   type VehiclePoseState
 } from '../src/renderer/src/components/3d/hive-traffic'
 
@@ -264,5 +269,49 @@ describe('Hive Studio app', () => {
       { lastVisible: true, lastX: -0.7, lastZ: 5.13, lastDirX: 1, lastDirZ: 0 }
     ]
     expect(isIntersectionClearForEntry(0, 5, 0.13, 4.3, 0, 1, 0, behindStopLine)).toBe(true)
+  })
+
+  it('enforces 2D OBB car collision geometry and blocks turning into occupied building corridors', () => {
+    // 1. doCarBoxesOverlap: пересечения под 45° и 90° блокируются, соседние/встречные полосы — нет.
+    expect(doCarBoxesOverlap(0, 0, 1, 0, 0.1, 0.1, Math.SQRT1_2, Math.SQRT1_2)).toBe(true)
+    expect(doCarBoxesOverlap(0, 0, 1, 0, 0.1, 0.1, 0, 1)).toBe(true)
+    expect(doCarBoxesOverlap(0, 0, 1, 0, 0, 0.17, 1, 0)).toBe(false)
+    expect(doCarBoxesOverlap(0, 0, 1, 0, 0, 0.26, -1, 0)).toBe(false)
+
+    // 2. isPoseCollidingWithPeers: шаг в сторону столкновения блокируется, шаг прочь разрешается.
+    const obstaclePeers: VehiclePoseState[] = [
+      { lastVisible: true, lastX: 0, lastZ: 0, lastDirX: 0, lastDirZ: 1 },
+      { lastVisible: true, lastX: 0.2, lastZ: 0, lastDirX: 0, lastDirZ: 1 }
+    ]
+    // Перемещение ближе к мешающей машине (из x=0 в x=0.05) запрещено.
+    expect(isPoseCollidingWithPeers(0.05, 0, 1, 0, 0, obstaclePeers, 0, 0)).toBe(true)
+    // Разъезд от перекрытия (из x=0 в x=-0.05, дистанция увеличивается 0.20 -> 0.25) разрешён.
+    expect(isPoseCollidingWithPeers(-0.05, 0, 1, 0, 0, obstaclePeers, 0, 0)).toBe(false)
+
+    // 3. isPathStepBlocked: запрещает поворот к зданию, если в коридоре поворота мешает другая машина.
+    const turnSegments: PathSegment[] = [
+      {
+        len: 0.5,
+        eval: (u) => ({ x: 0, z: u * 0.5, dx: 0, dz: 1 })
+      },
+      {
+        len: 1.0,
+        eval: (u) => evalTurnBezier(0, 0.5, 0, 1.0, 0.5, 1.0, u)
+      }
+    ]
+    const totalLength = 1.5
+    // Машина на пути заезда к зданию в коридоре поворота:
+    const blockedPeers: VehiclePoseState[] = [
+      { lastVisible: true, lastX: 0, lastZ: 0.65, lastDirX: 0, lastDirZ: 1 },
+      { lastVisible: true, lastX: 0.08, lastZ: 0.82, lastDirX: 1, lastDirZ: 0 }
+    ]
+    expect(isPathStepBlocked(turnSegments, totalLength, 0.48, 0, blockedPeers, 0, 0.65)).toBe(true)
+
+    // После того как мешающая машина уехала:
+    const clearPeers: VehiclePoseState[] = [
+      { lastVisible: true, lastX: 0, lastZ: 0.65, lastDirX: 0, lastDirZ: 1 },
+      { lastVisible: true, lastX: 0.08, lastZ: 2.0, lastDirX: 1, lastDirZ: 0 }
+    ]
+    expect(isPathStepBlocked(turnSegments, totalLength, 0.48, 0, clearPeers, 0, 0.65)).toBe(false)
   })
 })
