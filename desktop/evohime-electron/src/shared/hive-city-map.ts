@@ -701,18 +701,43 @@ function buildIslandView(
   if (quarter.length > 0) {
     // Единая радиально-кольцевая застройка Королевы для всех городов:
     // кольца кварталов вокруг центра города со свободным проездом от главных ворот / магистрали.
+    // Углы зданий задаются общей сеткой спиц для всех колец: каждое кольцо
+    // занимает спицы с постоянным шагом (stride), поэтому столбцы кварталов
+    // сходятся в прямые лучи и город читается выровненным, а не смятой сеткой.
     const ringStart = isCapital ? innerRadius + 1.2 : SATELLITE_MAIN_AVENUE_RADIUS + 1.6
     const ringStep = 3.2
-    let ringIndex = 0
+    const spokesTotal = 32
+    const spokeArc = (2 * Math.PI) / spokesTotal
+    // Ворота: свободный коридор по центру въезда. Сетка сдвинута на полслота
+    // от направления ворот, поэтому коридор просто выкалывает по два спица-
+    // слота с каждой стороны, а спицы никогда не попадают на кардинальные
+    // коннекторы развязок (RING_CONNECTOR_ANGLES кратны четвертям окружности,
+    // тогда как спицы сдвинуты на полслота).
+    const gateHalfGap = Math.min(
+      Math.PI * 0.42,
+      Math.max((isCapital ? 1.7 : 1.5) / Math.max(1, ringStart), 2 * spokeArc)
+    )
+    const freeSpokes: number[] = []
+    for (let t = 0; t < spokesTotal; t += 1) {
+      // Угол спицы относительно ворот; сетка сдвинута на полслота.
+      const spokeOffset = ((t + 0.5) / spokesTotal) * 2 * Math.PI
+      const distanceFromGate = Math.min(spokeOffset, 2 * Math.PI - spokeOffset)
+      if (distanceFromGate >= gateHalfGap) freeSpokes.push(t)
+    }
     let ringRadius = ringStart
     let offset = 0
     while (offset < quarter.length) {
-      const capacity = Math.max(
-        isCapital ? 8 : 4,
-        Math.floor((2 * Math.PI * ringRadius) / (isCapital ? 3.5 : 3.3))
+      const stride = Math.max(
+        1,
+        Math.ceil(((isCapital ? 2.8 : 2.6) * spokesTotal) / (2 * Math.PI * ringRadius))
       )
-      const slice = quarter.slice(offset, offset + capacity)
-      const countOnRing = slice.length
+      let countOnRing = Math.max(
+        isCapital ? 8 : 4,
+        Math.floor(freeSpokes.length / stride),
+        1
+      )
+      countOnRing = Math.min(countOnRing, quarter.length - offset)
+      const slice = quarter.slice(offset, offset + countOnRing)
       // В режиме оптимизации Королевы самые приоритетные здания ставятся симметрично
       // ближе всего к прямому въездному проспекту, оставляя проезд свободным.
       const orderedRingSlice = optimizeByQueen
@@ -725,20 +750,17 @@ function buildIslandView(
             return arranged
           })()
         : slice
-      const gateHalfGap = Math.min(
-        Math.PI * 0.42,
-        Math.max(Math.PI / Math.max(2, countOnRing), (isCapital ? 1.55 : 1.45) / Math.max(1, ringRadius))
-      )
-      const usableArc = Math.PI * 2 - gateHalfGap * 2
+      // Блок спиц кольца строится с постоянным шагом `stride` и центрируется
+      // на дуге напротив ворот — соседние кольца с тем же stride занимают
+      // те же спицы, поэтому застройка сходится в лучи.
+      const usedSlots = countOnRing * stride
+      const startSlot = Math.floor((freeSpokes.length - Math.min(usedSlots, freeSpokes.length)) / 2)
       for (let i = 0; i < countOnRing; i += 1) {
         const building = orderedRingSlice[i]
         if (!building) continue
-        const frac = countOnRing <= 1 ? 0.5 : i / (countOnRing - 1)
-        const angle = optimizeByQueen
-          ? gateAngle + gateHalfGap + frac * usableArc
-          : gateAngle +
-            gateHalfGap +
-            (((i + (ringIndex % 2) * 0.5) / Math.max(1, countOnRing)) % 1) * usableArc
+        const spokeT = freeSpokes[startSlot + i * stride]
+        if (spokeT === undefined) continue
+        const angle = gateAngle + ((spokeT + 0.5) / spokesTotal) * 2 * Math.PI
         buildings.push({
           building,
           x: Math.cos(angle) * ringRadius,
@@ -748,7 +770,6 @@ function buildIslandView(
         })
       }
       offset += countOnRing
-      ringIndex += 1
       if (offset < quarter.length) {
         ringRadius += ringStep
       }
