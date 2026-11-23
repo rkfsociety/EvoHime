@@ -602,29 +602,44 @@ export function buildCityMapView(
   const visible = snapshot.satellites.filter(
     (island) => phases === null || phases.get(island.id) !== undefined
   )
-  const satBaseDist = Math.max(28, capital.radius + 13)
-  const satellites: CityIslandView[] = visible.map((island, index) => {
-    const ring = index < 6 ? 0 : 1
-    const slot = index < 6 ? index : index - 6
-    const countInRing = ring === 0 ? Math.min(visible.length, 6) : visible.length - 6
-    const angle =
-      (2 * Math.PI * slot) / Math.max(1, countInRing) + ring * (Math.PI / 6)
-    const distance = ring === 0
-      ? satBaseDist
-      : satBaseDist + islandRadiusEstimate(snapshot, index) + 15
-    const x = Math.cos(angle) * distance
-    const z = Math.sin(angle) * distance
-    return buildIslandView(island, x, z, phaseOf(island.id), options)
+  // Сотовая (гексагональная) раскладка городов-спутников вокруг столицы:
+  // плоские грани соседних шестиугольников обращены строго друг к другу.
+  const hexFaceAngles = [
+    Math.PI / 6,
+    (5 * Math.PI) / 6,
+    -Math.PI / 2,
+    -Math.PI / 6,
+    (-5 * Math.PI) / 6,
+    Math.PI / 2
+  ] as const
+  const prebuiltSatellites = visible.map((island) =>
+    buildIslandView(island, 0, 0, phaseOf(island.id), options)
+  )
+  const firstRingMaxR = prebuiltSatellites
+    .slice(0, 6)
+    .reduce((max, item) => Math.max(max, item.radius), 4)
+  const hexApothem = Math.cos(Math.PI / 6)
+  const ring1Distance = (capital.radius + firstRingMaxR) * hexApothem + 3.8
+
+  const satellites: CityIslandView[] = prebuiltSatellites.map((satView, index) => {
+    let x = 0
+    let z = 0
+    if (index < 6) {
+      const angle = hexFaceAngles[index] ?? 0
+      x = Math.cos(angle) * ring1Distance
+      z = Math.sin(angle) * ring1Distance
+    } else {
+      const outerSlot = index - 6
+      const outerCount = Math.max(1, prebuiltSatellites.length - 6)
+      const angle = (2 * Math.PI * outerSlot) / outerCount + Math.PI / 6
+      const outerDistance = ring1Distance * 1.78 + satView.radius * hexApothem
+      x = Math.cos(angle) * outerDistance
+      z = Math.sin(angle) * outerDistance
+    }
+    return buildIslandView(satView.island, x, z, phaseOf(satView.island.id), options)
   })
 
   return { capital, satellites }
-}
-
-/** Conservative outer radius of a satellite from its building count. */
-function islandRadiusEstimate(snapshot: HiveCityMapSnapshot, satelliteIndex: number): number {
-  const island = snapshot.satellites[satelliteIndex]
-  if (!island) return 6
-  return Math.min(9, Math.max(4, 2.2 * Math.sqrt(island.buildings.length)))
 }
 
 function buildIslandView(

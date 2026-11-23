@@ -178,6 +178,19 @@ describe('Hive Studio app', () => {
     expect(minExpandedDist).toBeGreaterThan(minCompactDist + 3)
   })
 
+  it('places satellite cities along hexagonal honeycomb face normals around capital', () => {
+    const snapshot = buildHiveStudioSimulation({ satelliteCount: 3 })
+    const view = buildCityMapView(snapshot, null, { optimizeByQueen: true, totalHouses: 18 })
+    const expectedAngles = [Math.PI / 6, (5 * Math.PI) / 6, -Math.PI / 2]
+    const distances = view.satellites.map((sat) => Math.hypot(sat.x, sat.z))
+    expect(Math.abs((distances[0] ?? 0) - (distances[1] ?? 0))).toBeLessThan(1e-6)
+    expect(Math.abs((distances[1] ?? 0) - (distances[2] ?? 0))).toBeLessThan(1e-6)
+    view.satellites.forEach((sat, index) => {
+      const actualAngle = Math.atan2(sat.z, sat.x)
+      expect(actualAngle).toBeCloseTo(expectedAngles[index] ?? 0, 5)
+    })
+  })
+
   it('optimizes building and department placement when Queen optimization is enabled', async () => {
     const snapshot = buildHiveStudioSimulation({ satelliteCount: 0 })
     const standardView = buildCityMapView(snapshot, null, { optimizeByQueen: false }).capital

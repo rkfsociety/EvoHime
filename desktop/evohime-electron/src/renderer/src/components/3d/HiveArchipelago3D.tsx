@@ -44,8 +44,6 @@ const MAX_ZOOM = 70
 
 /** Reusable per-frame scratch objects: no 60 Hz allocations inside useFrame. */
 const FRAME_DUMMY = new THREE.Object3D()
-const FRAME_VEC_A = new THREE.Vector3()
-const FRAME_VEC_B = new THREE.Vector3()
 
 /**
  * Visual height of a tower: low-weight buildings stay readable instead of
@@ -645,111 +643,195 @@ function GroundLabel3D({
  * импульсами информации, ориентированными по касательной к дуге.
  */
 function ConnectingBridges({
+  capital,
   satellites,
   paused
 }: {
+  capital: CityIslandView
   satellites: readonly CityIslandView[]
   paused: boolean
 }) {
-  const pulsesRef = useRef<THREE.InstancedMesh>(null)
-  const pulseMaterial = useMemo(
+  const skin = useCitySkin()
+  const carsRef = useRef<THREE.InstancedMesh>(null)
+  const carMaterial = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
         color: new THREE.Color('#ffffff'),
         transparent: true,
-        opacity: 0.94
+        opacity: 0.96
       }),
     []
   )
-  useEffect(() => () => pulseMaterial.dispose(), [pulseMaterial])
-
-  const bridgeData = useMemo(
+  const centerLineMaterial = useMemo(
     () =>
-      satellites.map((view) => {
-        const from = new THREE.Vector3(0, 0.7, 0)
-        const to = new THREE.Vector3(view.x, 0.7, view.z)
-        const mid = from.clone().add(to).multiplyScalar(0.5)
-        mid.y += 4.5
-        const curve = new THREE.QuadraticBezierCurve3(from, mid, to)
+      new THREE.MeshBasicMaterial({
+        color: '#ffd980',
+        transparent: true,
+        opacity: 0.78,
+        depthWrite: false
+      }),
+    []
+  )
+  const deckMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: '#151d36',
+        roughness: 0.75,
+        metalness: 0.2
+      }),
+    []
+  )
+  useEffect(() => () => {
+    carMaterial.dispose()
+    centerLineMaterial.dispose()
+    deckMaterial.dispose()
+  }, [carMaterial, centerLineMaterial, deckMaterial])
+
+  const roadData = useMemo(() => {
+    const hexApothem = Math.cos(Math.PI / 6)
+    const capOuterRingR = capital.radius * 0.78
+    const capEdgeR = capital.radius * hexApothem
+    return satellites
+      .map((view) => {
+        const dist = Math.hypot(view.x, view.z)
+        if (dist < 1) return null
+        const dirX = view.x / dist
+        const dirZ = view.z / dist
+        const angle = Math.atan2(dirZ, dirX)
+        const satOuterRingR = view.radius * 0.78
+        const satEdgeR = view.radius * hexApothem
+        const startR = capOuterRingR + 0.41
+        const endR = Math.max(startR + 0.4, dist - satOuterRingR - 0.41)
+        const deckStart = Math.max(startR, capEdgeR - 0.1)
+        const deckEnd = Math.max(deckStart + 0.2, dist - satEdgeR + 0.1)
         const hue = displayIslandHue(view.island.id, view.island.role)
         return {
           islandId: view.island.id,
-          curve,
+          angle,
+          dirX,
+          dirZ,
+          from: [dirX * startR, dirZ * startR] as readonly [number, number],
+          to: [dirX * endR, dirZ * endR] as readonly [number, number],
+          junctionCap: [dirX * startR, dirZ * startR] as readonly [number, number],
+          junctionSat: [dirX * endR, dirZ * endR] as readonly [number, number],
+          deckCenter: [
+            dirX * ((deckStart + deckEnd) / 2),
+            dirZ * ((deckStart + deckEnd) / 2)
+          ] as readonly [number, number],
+          deckLen: Math.max(0.2, deckEnd - deckStart),
+          length: Math.max(0.4, endR - startR),
           color: `hsl(${hue}, 82%, 68%)`
         }
-      }),
-    [satellites]
-  )
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+  }, [capital.radius, satellites])
 
-  // По 4 пакета на каждый мост: 2 туда (золотые от Столицы), 2 обратно (цвет спутника).
-  const packetsPerBridge = 4
-  const pulseCount = Math.max(0, bridgeData.length * packetsPerBridge)
+  // По 4 машины на каждую дорогу между городами: 2 туда (правая полоса), 2 обратно (встречная правая полоса).
+  const carsPerRoad = 4
+  const carCount = Math.max(0, roadData.length * carsPerRoad)
   const instanceColor = useMemo(() => new THREE.Color(), [])
 
   useLayoutEffect(() => {
-    const pulses = pulsesRef.current
-    if (!pulses || pulseCount === 0) return
-    bridgeData.forEach((bridge, bIdx) => {
-      for (let p = 0; p < packetsPerBridge; p += 1) {
-        const idx = bIdx * packetsPerBridge + p
+    const cars = carsRef.current
+    if (!cars || carCount === 0) return
+    roadData.forEach((road, bIdx) => {
+      for (let p = 0; p < carsPerRoad; p += 1) {
+        const idx = bIdx * carsPerRoad + p
         const isOutbound = p < 2
-        instanceColor.set(isOutbound ? '#ffe082' : bridge.color)
-        pulses.setColorAt(idx, instanceColor)
+        instanceColor.set(isOutbound ? '#ffe082' : road.color)
+        cars.setColorAt(idx, instanceColor)
       }
     })
-    if (pulses.instanceColor !== null) pulses.instanceColor.needsUpdate = true
-  }, [bridgeData, pulseCount, instanceColor])
+    if (cars.instanceColor !== null) cars.instanceColor.needsUpdate = true
+  }, [roadData, carCount, instanceColor])
 
   useFrame((state) => {
-    const pulses = pulsesRef.current
-    if (!pulses || pulseCount === 0) return
+    const cars = carsRef.current
+    if (!cars || carCount === 0) return
     const dummy = FRAME_DUMMY
     const time = paused ? 0 : state.clock.elapsedTime
-    bridgeData.forEach((bridge, bIdx) => {
-      for (let p = 0; p < packetsPerBridge; p += 1) {
-        const idx = bIdx * packetsPerBridge + p
-        if (idx >= pulses.count) continue
+    const laneOffset = 0.21
+    const carY = 0.13
+    roadData.forEach((road, bIdx) => {
+      const roadSpeed = HIVE_CAR_SPEED / Math.max(1.5, road.length)
+      for (let p = 0; p < carsPerRoad; p += 1) {
+        const idx = bIdx * carsPerRoad + p
+        if (idx >= cars.count) continue
         const isOutbound = p < 2
-        const phase = (p % 2) * 0.5 + bIdx * 0.17
-        const rawT = paused ? 0.3 + p * 0.15 : (time * 0.24 + phase) % 1
+        const phase = (p % 2) * 0.5 + ((bIdx * 0.19) % 0.5)
+        const rawT = paused ? 0.25 + p * 0.18 : (time * roadSpeed + phase) % 1
         const t = isOutbound ? rawT : 1 - rawT
-        bridge.curve.getPoint(t, FRAME_VEC_A)
-        bridge.curve.getTangent(t, FRAME_VEC_B)
-        if (!isOutbound) FRAME_VEC_B.negate()
-        dummy.position.copy(FRAME_VEC_A)
-        dummy.lookAt(
-          FRAME_VEC_A.x + FRAME_VEC_B.x,
-          FRAME_VEC_A.y + FRAME_VEC_B.y,
-          FRAME_VEC_A.z + FRAME_VEC_B.z
-        )
-        dummy.scale.set(0.16, 0.16, 0.65)
+        const rx = road.from[0] + (road.to[0] - road.from[0]) * t
+        const rz = road.from[1] + (road.to[1] - road.from[1]) * t
+        const dirSign = isOutbound ? 1 : -1
+        const dx = road.dirX * dirSign
+        const dz = road.dirZ * dirSign
+        const px = rx - dz * laneOffset
+        const pz = rz + dx * laneOffset
+        dummy.position.set(px, carY, pz)
+        dummy.lookAt(px + dx, carY, pz + dz)
+        dummy.scale.set(0.16, 0.11, 0.36)
         dummy.updateMatrix()
-        pulses.setMatrixAt(idx, dummy.matrix)
+        cars.setMatrixAt(idx, dummy.matrix)
       }
     })
-    pulses.instanceMatrix.needsUpdate = true
+    cars.instanceMatrix.needsUpdate = true
   })
 
-  if (bridgeData.length === 0) return <></>
+  if (roadData.length === 0) return <></>
 
   return (
     <group>
-      {bridgeData.map((bridge) => (
-        <group key={`bridge-group-${bridge.islandId}`}>
-          <mesh>
-            <tubeGeometry args={[bridge.curve, 28, 0.11, 6, false]} />
-            <meshBasicMaterial color="#2a4475" transparent opacity={0.45} />
+      {roadData.map((road) => (
+        <group key={`bridge-group-${road.islandId}`}>
+          {/* Несущий пролёт моста между шестиугольными гранями городов-сот. */}
+          <mesh
+            position={[road.deckCenter[0], -0.09, road.deckCenter[1]]}
+            rotation={[0, -road.angle, 0]}
+            material={deckMaterial}
+          >
+            <boxGeometry args={[road.deckLen, 0.18, 1.16]} />
           </mesh>
-          <mesh>
-            <tubeGeometry args={[bridge.curve, 28, 0.04, 6, false]} />
-            <meshBasicMaterial color={bridge.color} transparent opacity={0.78} />
+          {/* Подсветка краёв пролёта цветом города-спутника. */}
+          <mesh
+            position={[road.deckCenter[0], 0.015, road.deckCenter[1]]}
+            rotation={[0, -road.angle, 0]}
+          >
+            <boxGeometry args={[road.deckLen, 0.025, 0.98]} />
+            <meshBasicMaterial color={road.color} transparent opacity={0.45} />
+          </mesh>
+          {/* Наземная 4-полосная дорога между внешними кольцами столицы и спутника. */}
+          <RoadSegment3D
+            from={road.from}
+            to={road.to}
+            bedMaterial={skin.roadBed}
+            curbMaterial={skin.roadCurb}
+            lineMaterial={centerLineMaterial}
+            width={0.84}
+            lanes={4}
+            y={0.02}
+          />
+          {/* Стыки с внешними кольцевыми проспектами обоих городов. */}
+          <mesh
+            position={[road.junctionCap[0], 0.032, road.junctionCap[1]]}
+            rotation={[-Math.PI / 2, 0, -road.angle + Math.PI / 2]}
+            material={skin.roadBed}
+          >
+            <planeGeometry args={[0.78, 0.08]} />
+          </mesh>
+          <mesh
+            position={[road.junctionSat[0], 0.032, road.junctionSat[1]]}
+            rotation={[-Math.PI / 2, 0, -road.angle + Math.PI / 2]}
+            material={skin.roadBed}
+          >
+            <planeGeometry args={[0.78, 0.08]} />
           </mesh>
         </group>
       ))}
       <instancedMesh
-        ref={pulsesRef}
-        args={[undefined, pulseMaterial, Math.max(1, pulseCount)]}
-        visible={pulseCount > 0}
+        ref={carsRef}
+        args={[undefined, carMaterial, Math.max(1, carCount)]}
+        visible={carCount > 0}
         frustumCulled={false}
       >
         <boxGeometry args={[1, 1, 1]} />
@@ -3935,7 +4017,7 @@ export function HiveArchipelago3D({
             onHoverBuilding={onHoverBuilding}
             onBackgroundClick={onBackgroundClick}
           />
-          <ConnectingBridges satellites={visibleSatellites} paused={paused} />
+          <ConnectingBridges capital={capital} satellites={visibleSatellites} paused={paused} />
         </CitySkinProvider>
       </Canvas>
     </div>
