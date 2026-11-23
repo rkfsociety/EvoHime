@@ -438,13 +438,14 @@ function IslandGround({
       const distance = 0.52 + (((seed >>> (index * 3 + 2)) % 100) / 100) * 0.24
       return {
         x: Math.cos(angle) * view.radius * distance,
-        y: -0.75 - (((seed >>> (index * 4 + 1)) % 100) / 100) * view.radius * 0.22,
+        y: -1.6 - (((seed >>> (index * 4 + 1)) % 100) / 100) * view.radius * 0.22,
         z: Math.sin(angle) * view.radius * distance,
-        size: 0.45 + (((seed >>> (index * 6)) % 100) / 100) * 0.65,
+        size: 0.45 + (((seed >>> (index * 6)) % 100) / 100) * 0.55,
         rotation: (index * Math.PI) / 5
       }
     })
   }, [view.island.id, view.radius])
+  const rockHeight = view.radius * 0.48
 
   return (
     <group ref={ref}>
@@ -470,9 +471,9 @@ function IslandGround({
           <boxGeometry args={[seg.length, 0.09, 0.14]} />
         </mesh>
       ))}
-      {/* Скальное основание: перевёрнутая усечённая пирамида. */}
-      <mesh position={[0, -0.75 - view.radius * 0.22, 0]} rotation={[Math.PI, 0, 0]} material={rockMaterial}>
-        <cylinderGeometry args={[view.radius * 0.24, view.radius * 0.88, view.radius * 0.72, 6]} />
+      {/* Скальное основание: перевёрнутая усечённая пирамида строго под плитой (y <= -0.75). */}
+      <mesh position={[0, -0.75 - rockHeight / 2, 0]} rotation={[Math.PI, 0, 0]} material={rockMaterial}>
+        <cylinderGeometry args={[view.radius * 0.24, view.radius * 0.88, rockHeight, 6]} />
       </mesh>
       <group>
         {rocks.map((rock, index) => (
