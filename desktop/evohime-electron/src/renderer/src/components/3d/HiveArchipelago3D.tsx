@@ -1120,15 +1120,15 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
   }, [laneMaterial, greenLightMaterial, redLightMaterial, lampPoleMaterial, lampBulbMaterial, treeTrunkMaterial, treeCrownMaterial])
 
   const ringRadii = useMemo(() => {
-    const outer = view.radius * 0.78
+    const outer = view.radius * 0.72
     if (isCapital) {
       // Динамические кольцевые проспекты под любой масштаб города (шаг 3.2 между кольцами зданий).
       const rings: number[] = []
-      for (let r = 6.0; r <= view.radius * 0.76; r += 3.2) {
+      for (let r = 6.0; r <= view.radius * 0.7; r += 3.2) {
         rings.push(Number(r.toFixed(2)))
       }
       if (rings.length === 0 || outer - (rings[rings.length - 1] ?? 0) > 1.4) {
-        rings.push(outer)
+        rings.push(Number(outer.toFixed(2)))
       }
       return rings
     }
@@ -2640,7 +2640,7 @@ function DepartmentHouses3D({
     [houseMaterials]
   )
 
-  // Одна плоская надпись на каждый департамент строго на плите внутри его сектора.
+  // Одна крупная плоская надпись на каждый департамент на внешнем поясе его сектора (читаема без приближения).
   const sectorLabels = useMemo(() => {
     const groups = new Map<string, { label: string; accent: string; slots: number[]; activeCount: number }>()
     for (const lot of lots) {
@@ -2658,27 +2658,24 @@ function DepartmentHouses3D({
         })
       }
     }
-    const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
-    const labelR = Math.max(ringRadius + 0.78, Math.min(5.42, (ringRadius + 0.52 + 5.64) / 2))
+    const labelR = view.radius * 0.795
     const total = Math.max(1, lots[0]?.total ?? lots.length)
     return Array.from(groups.entries()).map(([key, info]) => {
-      const sortedSlots = [...info.slots].sort((a, b) => a - b)
-      const minSlot = sortedSlots[0] ?? 0
-      // Размещаем подпись в свободном окне между съездами домов на территории сектора (вне кольца Королевы).
-      const slotPos = sortedSlots.length >= 2 ? minSlot + 0.5 : minSlot + 0.35
-      const angle = capitalHouseAngle(slotPos, total)
+      const minSlot = Math.min(...info.slots)
+      const maxSlot = Math.max(...info.slots)
+      const angle = capitalHouseAngle((minSlot + maxSlot) / 2, total)
       const rotZ = Math.sin(angle) < 0 ? -angle - Math.PI / 2 : Math.PI / 2 - angle
       return {
         key,
         label: info.label,
         accent: info.accent,
         x: view.x + Math.cos(angle) * labelR,
-        y: 0.025,
+        y: 0.03,
         z: view.z + Math.sin(angle) * labelR,
         rotZ
       }
     })
-  }, [lots, view.x, view.z])
+  }, [lots, view.x, view.z, view.radius])
 
   // Выделенные сектора города для каждой группы агентов (расширяются при увеличении числа слотов).
   const sectors = useMemo(() => {
@@ -2716,7 +2713,7 @@ function DepartmentHouses3D({
   const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
   const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
   const sectorInnerR = innerBoulevardR + 0.44
-  const sectorOuterR = Math.min(view.radius * 0.74, 11.8)
+  const sectorOuterR = view.radius * 0.845
 
   return (
     <group>
@@ -2785,9 +2782,9 @@ function DepartmentHouses3D({
           text={sector.label}
           accentColor={sector.accent}
           position={[sector.x, sector.y, sector.z]}
-          size={[1.28, 0.28]}
+          size={[3.2, 0.68]}
           rotationZ={sector.rotZ}
-          fontSize={36}
+          fontSize={48}
         />
       ))}
     </group>

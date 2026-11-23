@@ -641,7 +641,7 @@ function buildIslandView(
     4.8,
     2.2 * Math.sqrt(Math.max(1, buildings.length)) * hexApothemFactor,
     ((Math.max(columns, rows) * BUILDING_CELL) / 2 + 1.5) * hexApothemFactor,
-    reserveCenter ? (outerRingRadius + 2.0) * hexApothemFactor : 0
+    reserveCenter ? (outerRingRadius + 3.0) * hexApothemFactor : 0
   )
   const radius = layoutRadius
 
