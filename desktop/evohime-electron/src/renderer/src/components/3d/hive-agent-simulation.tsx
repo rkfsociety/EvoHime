@@ -803,7 +803,7 @@ export function QueenRoads3D({
                 index,
                 cars,
                 0.56,
-                car.progress > 0.9 ? 'driveway' : 'main'
+                car.progress < 0.08 || car.progress > 0.92 ? 'driveway' : 'main'
               )
             if (!aheadBlocked) {
               const nextP = car.progress + dt * (HIVE_CAR_SPEED / modOutPath.totalLength)
@@ -914,7 +914,7 @@ export function QueenRoads3D({
                 index,
                 cars,
                 0.56,
-                car.progress > 0.9 ? 'driveway' : 'main'
+                car.progress < 0.08 || car.progress > 0.92 ? 'driveway' : 'main'
               )
             if (!aheadBlocked) {
               const nextP = car.progress + dt * (HIVE_CAR_SPEED / modInPath.totalLength)

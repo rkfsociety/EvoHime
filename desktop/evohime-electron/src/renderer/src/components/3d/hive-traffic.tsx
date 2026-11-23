@@ -638,13 +638,6 @@ export function isVehicleAheadBlocked(
       if (other.yieldingTo === selfIndex) {
         continue
       }
-      if (selfBlocked > 0.5 && (other.blockedSec ?? 0) > 0.5) {
-        if (selfIndex < i) {
-          continue
-        }
-        if (selfState) selfState.yieldingTo = i
-        return true
-      }
       if (selfPriority === 'driveway' && otherPriority === 'main') {
         // ПДД РФ п. 8.3: выезд с прилегающей территории уступает потоку на главной дороге.
         if (dist < 0.95 && dot > -0.15) {
@@ -658,6 +651,13 @@ export function isVehicleAheadBlocked(
           return true
         }
       } else {
+        if (selfBlocked > 0.5 && (other.blockedSec ?? 0) > 0.5) {
+          if (selfIndex < i) {
+            continue
+          }
+          if (selfState) selfState.yieldingTo = i
+          return true
+        }
         // Равные приоритеты: ближний конфликт или короткий прогноз (0.18с, ~0.30м) + помеха справа (ПДД РФ п. 8.9).
         const nearConflict = dist < 0.54 && dot > 0.02 && cross < 0.28
         let predictedConflict = false
