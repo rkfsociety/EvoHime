@@ -645,23 +645,13 @@ function GroundLabel3D({
 function ConnectingBridges({
   capital,
   satellites,
-  paused
+  paused: _paused
 }: {
   capital: CityIslandView
   satellites: readonly CityIslandView[]
   paused: boolean
 }) {
   const skin = useCitySkin()
-  const carsRef = useRef<THREE.InstancedMesh>(null)
-  const carMaterial = useMemo(
-    () =>
-      new THREE.MeshBasicMaterial({
-        color: new THREE.Color('#ffffff'),
-        transparent: true,
-        opacity: 0.96
-      }),
-    []
-  )
   const centerLineMaterial = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
@@ -682,10 +672,9 @@ function ConnectingBridges({
     []
   )
   useEffect(() => () => {
-    carMaterial.dispose()
     centerLineMaterial.dispose()
     deckMaterial.dispose()
-  }, [carMaterial, centerLineMaterial, deckMaterial])
+  }, [centerLineMaterial, deckMaterial])
 
   const roadData = useMemo(() => {
     const hexApothem = Math.cos(Math.PI / 6)
@@ -708,8 +697,6 @@ function ConnectingBridges({
         return {
           islandId: view.island.id,
           angle,
-          dirX,
-          dirZ,
           from: [dirX * startR, dirZ * startR] as readonly [number, number],
           to: [dirX * endR, dirZ * endR] as readonly [number, number],
           junctionCap: [dirX * startR, dirZ * startR] as readonly [number, number],
@@ -719,64 +706,11 @@ function ConnectingBridges({
             dirZ * ((deckStart + deckEnd) / 2)
           ] as readonly [number, number],
           deckLen: Math.max(0.2, deckEnd - deckStart),
-          length: Math.max(0.4, endR - startR),
           color: `hsl(${hue}, 82%, 68%)`
         }
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
   }, [capital.radius, satellites])
-
-  // По 4 машины на каждую дорогу между городами: 2 туда (правая полоса), 2 обратно (встречная правая полоса).
-  const carsPerRoad = 4
-  const carCount = Math.max(0, roadData.length * carsPerRoad)
-  const instanceColor = useMemo(() => new THREE.Color(), [])
-
-  useLayoutEffect(() => {
-    const cars = carsRef.current
-    if (!cars || carCount === 0) return
-    roadData.forEach((road, bIdx) => {
-      for (let p = 0; p < carsPerRoad; p += 1) {
-        const idx = bIdx * carsPerRoad + p
-        const isOutbound = p < 2
-        instanceColor.set(isOutbound ? '#ffe082' : road.color)
-        cars.setColorAt(idx, instanceColor)
-      }
-    })
-    if (cars.instanceColor !== null) cars.instanceColor.needsUpdate = true
-  }, [roadData, carCount, instanceColor])
-
-  useFrame((state) => {
-    const cars = carsRef.current
-    if (!cars || carCount === 0) return
-    const dummy = FRAME_DUMMY
-    const time = paused ? 0 : state.clock.elapsedTime
-    const laneOffset = 0.21
-    const carY = 0.13
-    roadData.forEach((road, bIdx) => {
-      const roadSpeed = HIVE_CAR_SPEED / Math.max(1.5, road.length)
-      for (let p = 0; p < carsPerRoad; p += 1) {
-        const idx = bIdx * carsPerRoad + p
-        if (idx >= cars.count) continue
-        const isOutbound = p < 2
-        const phase = (p % 2) * 0.5 + ((bIdx * 0.19) % 0.5)
-        const rawT = paused ? 0.25 + p * 0.18 : (time * roadSpeed + phase) % 1
-        const t = isOutbound ? rawT : 1 - rawT
-        const rx = road.from[0] + (road.to[0] - road.from[0]) * t
-        const rz = road.from[1] + (road.to[1] - road.from[1]) * t
-        const dirSign = isOutbound ? 1 : -1
-        const dx = road.dirX * dirSign
-        const dz = road.dirZ * dirSign
-        const px = rx - dz * laneOffset
-        const pz = rz + dx * laneOffset
-        dummy.position.set(px, carY, pz)
-        dummy.lookAt(px + dx, carY, pz + dz)
-        dummy.scale.set(0.16, 0.11, 0.36)
-        dummy.updateMatrix()
-        cars.setMatrixAt(idx, dummy.matrix)
-      }
-    })
-    cars.instanceMatrix.needsUpdate = true
-  })
 
   if (roadData.length === 0) return <></>
 
@@ -800,7 +734,7 @@ function ConnectingBridges({
             <boxGeometry args={[road.deckLen, 0.025, 0.98]} />
             <meshBasicMaterial color={road.color} transparent opacity={0.45} />
           </mesh>
-          {/* Наземная 4-полосная дорога между внешними кольцами столицы и спутника. */}
+          {/* Наземная 4-полосная дорога между внешними кольцами столицы и спутника (без фиктивного трафика: 1 агент = 1 машина). */}
           <RoadSegment3D
             from={road.from}
             to={road.to}
@@ -828,14 +762,6 @@ function ConnectingBridges({
           </mesh>
         </group>
       ))}
-      <instancedMesh
-        ref={carsRef}
-        args={[undefined, carMaterial, Math.max(1, carCount)]}
-        visible={carCount > 0}
-        frustumCulled={false}
-      >
-        <boxGeometry args={[1, 1, 1]} />
-      </instancedMesh>
     </group>
   )
 }
