@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode
 } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
@@ -35,6 +36,8 @@ import type { HiveCityHouseLot } from './HiveCityScene'
 
 /** Fixed isometric camera offset (angle never changes; only zoom/pan). */
 const CAMERA_OFFSET = new THREE.Vector3(34, 30, 34)
+/** Top-down camera offset (micro X/Z offset prevents lookAt gimbal flip). */
+const TOP_CAMERA_OFFSET = new THREE.Vector3(0.01, 56, 0.01)
 
 const OVERVIEW_ZOOM_SOLO = 22
 const OVERVIEW_ZOOM_ARCHIPELAGO = 14
@@ -2147,19 +2150,22 @@ function QueenTower3D({ view, skin, paused }: { view: CityIslandView; skin: City
   )
 }
 
-/** Fixed-angle isometric rig: pans the look target and lerps the ortho zoom. */
+/** Fixed-angle rig: pans the look target, lerps ortho zoom and switches iso/top-down. */
 function CameraRig({
   focus,
   overviewZoom,
+  topView,
   paused
 }: {
   focus: { readonly x: number; readonly z: number } | null
   overviewZoom: number
+  topView: boolean
   paused: boolean
 }) {
   const { camera, gl } = useThree()
   const look = useRef(new THREE.Vector3(0, 0, 0))
   const desired = useRef(new THREE.Vector3(0, 0, 0))
+  const currentOffset = useRef(CAMERA_OFFSET.clone())
   const desiredZoom = useRef(overviewZoom)
 
   useEffect(() => {
@@ -2186,7 +2192,8 @@ function CameraRig({
   useFrame((_, delta) => {
     const factor = paused ? 1 : 1 - Math.exp(-5 * Math.min(delta, 0.1))
     look.current.lerp(desired.current, factor)
-    camera.position.copy(look.current).add(CAMERA_OFFSET)
+    currentOffset.current.lerp(topView ? TOP_CAMERA_OFFSET : CAMERA_OFFSET, factor)
+    camera.position.copy(look.current).add(currentOffset.current)
     camera.lookAt(look.current)
     const ortho = camera as THREE.OrthographicCamera
     if (typeof ortho.zoom === 'number') {
@@ -2329,6 +2336,7 @@ export function HiveArchipelago3D({
   onBackgroundClick,
   onContextLost
 }: HiveArchipelago3DProps): React.JSX.Element {
+  const [topView, setTopView] = useState(false)
   const visibleSatellites = satellites.slice(0, CITY_MAP_MAX_SATELLITES)
   const focus = useMemo(() => {
     if (selectedIslandId === capital.island.id) return { x: 0, z: 0 }
@@ -2375,7 +2383,7 @@ export function HiveArchipelago3D({
         <directionalLight position={[26, 40, 18]} intensity={1.25} color="#eef3ff" />
         <directionalLight position={[-22, 18, -20]} intensity={0.45} color="#78a2ff" />
         <pointLight position={[0, 12, 0]} intensity={55} distance={60} decay={1.5} color="#ffd98a" />
-        <CameraRig focus={focus} overviewZoom={overviewZoom} paused={paused} />
+        <CameraRig focus={focus} overviewZoom={overviewZoom} topView={topView} paused={paused} />
         <Starfield />
 
         <CitySkinProvider>
@@ -2397,6 +2405,28 @@ export function HiveArchipelago3D({
           <ConnectingBridges satellites={visibleSatellites} paused={paused} />
         </CitySkinProvider>
       </Canvas>
+      <button
+        type="button"
+        data-testid="hive-archipelago-view-toggle"
+        aria-pressed={topView}
+        onClick={() => setTopView((value) => !value)}
+        style={{
+          position: 'absolute',
+          right: '16px',
+          bottom: '16px',
+          zIndex: 6,
+          cursor: 'pointer',
+          padding: '6px 12px',
+          borderRadius: '999px',
+          border: '1px solid rgba(141, 130, 232, 0.42)',
+          background: topView ? 'rgba(141, 130, 232, 0.28)' : 'rgba(10, 10, 20, 0.72)',
+          color: '#e6e4f2',
+          fontSize: '12px',
+          backdropFilter: 'blur(8px)'
+        }}
+      >
+        {topView ? 'Изометрия' : 'Вид сверху'}
+      </button>
     </div>
   )
 }
