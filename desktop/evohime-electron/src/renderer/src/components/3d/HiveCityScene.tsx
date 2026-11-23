@@ -110,21 +110,21 @@ const ISLAND_ENTER_MS = 650
  * Точки расположены поверх кварталов и не пересекаются с верхними и нижним HUD-панелями.
  */
 const DEPARTMENT_COORDS: Record<string, DistrictAnchor> = {
-  analytics: { x: 21, y: 25, accent: '#5ea8ff' },
-  planning: { x: 32, y: 36, accent: '#a78bfa' },
-  research: { x: 63, y: 23, accent: '#818cf8' },
-  development: { x: 74, y: 37, accent: '#38bdf8' },
-  testing: { x: 82, y: 50, accent: '#4ec9a4' },
-  integrations: { x: 70, y: 63, accent: '#60a5fa' },
-  documentation: { x: 30, y: 63, accent: '#34d399' },
-  support: { x: 18, y: 49, accent: '#c084fc' }
+  analytics: { x: 21, y: 25, accent: '#38bdf8' },
+  planning: { x: 32, y: 36, accent: '#f59e0b' },
+  research: { x: 63, y: 23, accent: '#a855f7' },
+  development: { x: 74, y: 37, accent: '#3b82f6' },
+  testing: { x: 82, y: 50, accent: '#22c55e' },
+  integrations: { x: 70, y: 63, accent: '#fb7185' },
+  documentation: { x: 30, y: 63, accent: '#eab308' },
+  support: { x: 18, y: 49, accent: '#2dd4bf' }
 }
 
 const FALLBACK_COORDS: readonly DistrictAnchor[] = [
-  { x: 40, y: 66, accent: '#8d82e8' },
-  { x: 60, y: 66, accent: '#5ea8ff' },
-  { x: 24, y: 39, accent: '#4ec9a4' },
-  { x: 76, y: 43, accent: '#e0b341' }
+  { x: 40, y: 66, accent: '#f97316' },
+  { x: 60, y: 66, accent: '#38bdf8' },
+  { x: 24, y: 39, accent: '#22c55e' },
+  { x: 76, y: 43, accent: '#e879f9' }
 ]
 
 interface ParticleSeed {

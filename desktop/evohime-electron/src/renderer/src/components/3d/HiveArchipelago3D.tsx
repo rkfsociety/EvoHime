@@ -2723,10 +2723,11 @@ function AgentModuleCouriers3D({
     const mesh = meshRef.current
     if (!mesh) return
     routes.forEach((route, index) => {
-      // Две машины на маршрут: туда (к модулю) и обратно (к агенту).
+      // Две машины на маршрут: туда (к модулю — насыщенный цвет департамента)
+      // и обратно (к агенту — осветлённый оттенок того же департамента).
       instanceColor.set(route.color)
       mesh.setColorAt(index * 2, instanceColor)
-      instanceColor.set('#ffe494')
+      instanceColor.lerp(new THREE.Color('#ffffff'), 0.45)
       mesh.setColorAt(index * 2 + 1, instanceColor)
     })
     if (mesh.instanceColor !== null) mesh.instanceColor.needsUpdate = true
@@ -2903,13 +2904,17 @@ function DepartmentHouse3D({
         <cylinderGeometry args={[0.45, 0.45, 0.055, 6]} />
         <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.92 : 0.42} />
       </mesh>
-      {/* Ступенчатая 6-гранная крыша с чётким контуром сверху. */}
+      {/* Ступенчатая 6-гранная крыша с чётким контуром и цветным знаком департамента сверху. */}
       <mesh position={[0, 0.69, 0]} rotation={[0, Math.PI / 6, 0]} material={roof}>
         <cylinderGeometry args={[0.25, 0.43, 0.22, 6]} />
       </mesh>
-      <mesh position={[0, 0.81, 0]} rotation={[Math.PI / 2, 0, Math.PI / 6]}>
-        <torusGeometry args={[0.19, 0.028, 6, 6]} />
-        <meshBasicMaterial ref={coreRingMatRef} color={lot.accent} transparent opacity={0.4} />
+      <mesh position={[0, 0.805, 0]} rotation={[0, Math.PI / 6, 0]}>
+        <cylinderGeometry args={[0.2, 0.22, 0.025, 6]} />
+        <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.96 : 0.48} />
+      </mesh>
+      <mesh position={[0, 0.82, 0]} rotation={[Math.PI / 2, 0, Math.PI / 6]}>
+        <torusGeometry args={[0.23, 0.028, 6, 6]} />
+        <meshBasicMaterial ref={coreRingMatRef} color={lot.accent} transparent opacity={0.5} />
       </mesh>
       {/* Парящий индикатор активности над мини-хабом работающего агента. */}
       {lot.active ? (
