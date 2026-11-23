@@ -1438,6 +1438,7 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
 }
 
 export const QUEEN_GATE_ANGLE = Math.PI * 0.38
+const QUEEN_U_TURN_ANGLE = QUEEN_GATE_ANGLE - Math.PI
 
 export function computeQueenGateStopAngle(innerBoulevardR: number): number {
   // Дорога ворот имеет ширину 0.64 (полуширина 0.32), длина машины — 0.36 (полудлина 0.18).
@@ -1569,7 +1570,7 @@ function evalRingRoutePose(
 const QUEEN_PROCESS_SEC = 1.15
 
 interface AgentCarSim {
-  phase: 'delivering' | 'to_ring' | 'along_ring' | 'queued' | 'processing' | 'returning_ring' | 'returning_home' | 'cooldown'
+  phase: 'delivering' | 'to_ring' | 'outer_to_uturn' | 'along_ring' | 'queued' | 'processing' | 'returning_ring' | 'cooldown'
   progress: number
   curAngle: number
   cooldown: number
@@ -1764,31 +1765,31 @@ function QueenRoads3D({
     if (gateLampRef.current) {
       gateLampRef.current.material = processingLotRef.current !== null ? gateSignalAmber : gateSignalGreen
     }
-    const normalizeBehindGate = (a: number): number => {
-      let res = a
-      while (res > QUEEN_GATE_ANGLE) res -= Math.PI * 2
-      while (res <= QUEEN_GATE_ANGLE - Math.PI * 2) res += Math.PI * 2
-      return res
-    }
-    const evalQueenOutPose = (t: number, homeAngle: number, backArc: number) => {
+    const evalQueenOutPose = (t: number, homeAngle: number) => {
       const gdx = Math.cos(QUEEN_GATE_ANGLE)
       const gdz = Math.sin(QUEEN_GATE_ANGLE)
       const hdx = Math.cos(homeAngle)
       const hdz = Math.sin(homeAngle)
-      const laneRForU = (u: number): number => {
-        if (backArc <= Math.PI * 0.45) return innerBoulevardR + 0.3
-        const s = Math.min(1, Math.max(0, (u - 0.48) / 0.28))
+      const innerLaneR = innerBoulevardR - 0.13
+      let arcFromUTurn = QUEEN_U_TURN_ANGLE - homeAngle
+      while (arcFromUTurn < 0) arcFromUTurn += Math.PI * 2
+      while (arcFromUTurn >= Math.PI * 2) arcFromUTurn -= Math.PI * 2
+      const outerRForU = (u: number): number => {
+        if (arcFromUTurn <= Math.PI * 0.35) return innerBoulevardR + 0.3
+        const s = Math.min(1, Math.max(0, (u - 0.45) / 0.32))
         const smooth = s * s * (3 - 2 * s)
-        return innerBoulevardR + 0.11 + smooth * 0.19
+        return innerBoulevardR + 0.13 + smooth * 0.17
       }
-      const laneRDerivForU = (u: number): number => {
-        if (backArc <= Math.PI * 0.45 || u <= 0.48 || u >= 0.76) return 0
-        const s = (u - 0.48) / 0.28
-        return ((6 * s * (1 - s)) / 0.28) * 0.19
+      const outerRDerivForU = (u: number): number => {
+        if (arcFromUTurn <= Math.PI * 0.35 || u <= 0.45 || u >= 0.77) return 0
+        const s = (u - 0.45) / 0.32
+        return ((6 * s * (1 - s)) / 0.32) * 0.17
       }
+      const gateTurnR = Math.max(gateEntryR + 0.25, innerBoulevardR - 0.56)
 
-      if (t < 0.17) {
-        const r = gateEntryR + (t / 0.25) * (innerBoulevardR - gateEntryR)
+      if (t < 0.12) {
+        const u = t / 0.12
+        const r = gateEntryR + u * (gateTurnR - gateEntryR)
         return {
           x: view.x + gdx * r - gdz * laneOffset,
           z: view.z + gdz * r + gdx * laneOffset,
@@ -1796,25 +1797,46 @@ function QueenRoads3D({
           dz: gdz
         }
       }
-      if (t <= 0.33) {
-        const rIn = gateEntryR + (0.17 / 0.25) * (innerBoulevardR - gateEntryR)
-        const ax = view.x + gdx * rIn - gdz * laneOffset
-        const az = view.z + gdz * rIn + gdx * laneOffset
-        const outU = (0.33 - 0.25) / 0.5
-        const laneR = laneRForU(outU)
-        const cx = view.x + gdx * laneR - gdz * laneOffset
-        const cz = view.z + gdz * laneR + gdx * laneOffset
-        const outA = QUEEN_GATE_ANGLE - backArc * outU
-        const bx = view.x + Math.cos(outA) * laneR
-        const bz = view.z + Math.sin(outA) * laneR
-        return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.17) / 0.16)
+      if (t <= 0.22) {
+        // Выезд из ворот Королевы: поворот ТОЛЬКО НАПРАВО (+angle) на внутреннее полукольцо.
+        const ax = view.x + gdx * gateTurnR - gdz * laneOffset
+        const az = view.z + gdz * gateTurnR + gdx * laneOffset
+        const cx = view.x + gdx * innerLaneR - gdz * laneOffset
+        const cz = view.z + gdz * innerLaneR + gdx * laneOffset
+        const outA = QUEEN_GATE_ANGLE + 0.12
+        const bx = view.x + Math.cos(outA) * innerLaneR
+        const bz = view.z + Math.sin(outA) * innerLaneR
+        return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.12) / 0.1)
       }
-      if (t < 0.67) {
-        const u = (t - 0.25) / 0.5
-        const curA = QUEEN_GATE_ANGLE - backArc * u
-        const laneR = laneRForU(u)
-        const dRdu = laneRDerivForU(u)
-        const dAdu = -backArc
+      if (t < 0.44) {
+        const u = (t - 0.22) / 0.22
+        const curA = QUEEN_GATE_ANGLE + 0.12 + u * (Math.PI - 0.24)
+        return {
+          x: view.x + Math.cos(curA) * innerLaneR,
+          z: view.z + Math.sin(curA) * innerLaneR,
+          dx: -Math.sin(curA),
+          dz: Math.cos(curA)
+        }
+      }
+      if (t <= 0.54) {
+        // Разворот в официальном разрыве сплошной линии (QUEEN_U_TURN_ANGLE) на внешнее полукольцо (-angle).
+        const inA = QUEEN_GATE_ANGLE + Math.PI - 0.12
+        const outA = QUEEN_U_TURN_ANGLE - 0.08
+        const ax = view.x + Math.cos(inA) * innerLaneR
+        const az = view.z + Math.sin(inA) * innerLaneR
+        const cx = view.x + Math.cos(QUEEN_U_TURN_ANGLE) * innerBoulevardR
+        const cz = view.z + Math.sin(QUEEN_U_TURN_ANGLE) * innerBoulevardR
+        const outLaneR = outerRForU(0.05)
+        const bx = view.x + Math.cos(outA) * outLaneR
+        const bz = view.z + Math.sin(outA) * outLaneR
+        return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.44) / 0.1)
+      }
+      if (t < 0.8) {
+        const u = (t - 0.54) / 0.26
+        const curA = QUEEN_U_TURN_ANGLE - 0.08 - Math.max(0, arcFromUTurn - 0.16) * u
+        const laneR = outerRForU(u)
+        const dRdu = outerRDerivForU(u)
+        const dAdu = -Math.max(0.05, arcFromUTurn - 0.16)
         const rawDx = -Math.sin(curA) * laneR * dAdu + Math.cos(curA) * dRdu
         const rawDz = Math.cos(curA) * laneR * dAdu + Math.sin(curA) * dRdu
         const len = Math.hypot(rawDx, rawDz) || 1
@@ -1825,20 +1847,22 @@ function QueenRoads3D({
           dz: rawDz / len
         }
       }
-      if (t <= 0.83) {
-        const inU = (0.67 - 0.25) / 0.5
-        const laneR = laneRForU(inU)
-        const inA = QUEEN_GATE_ANGLE - backArc * inU
-        const ax = view.x + Math.cos(inA) * laneR
-        const az = view.z + Math.sin(inA) * laneR
-        const cx = view.x + hdx * laneR - hdz * laneOffset
-        const cz = view.z + hdz * laneR + hdx * laneOffset
-        const rOut = innerBoulevardR + ((0.83 - 0.75) / 0.25) * (homeEdgeR - innerBoulevardR)
+      if (t <= 0.9) {
+        // Поворот НАПРАВО с внешнего полукольца на съезд к дому.
+        const inA = homeAngle + 0.08
+        const inLaneR = outerRForU(1)
+        const ax = view.x + Math.cos(inA) * inLaneR
+        const az = view.z + Math.sin(inA) * inLaneR
+        const cx = view.x + hdx * inLaneR - hdz * laneOffset
+        const cz = view.z + hdz * inLaneR + hdx * laneOffset
+        const rOut = Math.min(homeEdgeR, innerBoulevardR + 0.56)
         const bx = view.x + hdx * rOut - hdz * laneOffset
         const bz = view.z + hdz * rOut + hdx * laneOffset
-        return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.67) / 0.16)
+        return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.8) / 0.1)
       }
-      const r = innerBoulevardR + ((t - 0.75) / 0.25) * (homeEdgeR - innerBoulevardR)
+      const u = (t - 0.9) / 0.1
+      const rStart = Math.min(homeEdgeR, innerBoulevardR + 0.56)
+      const r = rStart + u * (homeEdgeR - rStart)
       return {
         x: view.x + hdx * r - hdz * laneOffset,
         z: view.z + hdz * r + hdx * laneOffset,
@@ -1898,7 +1922,7 @@ function QueenRoads3D({
           }
         }
         const t = Math.min(1, Math.max(0, car.progress))
-        const pose = evalQueenOutPose(t, homeAngle, backArc)
+        const pose = evalQueenOutPose(t, homeAngle)
         x = pose.x
         z = pose.z
         dirX = pose.dx
@@ -1913,48 +1937,37 @@ function QueenRoads3D({
           x = view.x + Math.cos(homeAngle) * homeEdgeR - dirZ * laneOffset
           z = view.z + Math.sin(homeAngle) * homeEdgeR + dirX * laneOffset
         } else {
-          const entryAngle = normalizeBehindGate(homeAngle)
-          // Правила проезда перекрёстка: нельзя выезжать на кольцо, если перекрёсток занят,
-          // за ним сразу пробка или по внешним полосам кольца проезжает встречный/поперечный транспорт.
-          const nearGateBlocked =
-            entryAngle > GATE_STOP_ANGLE - MIN_CAR_ARC_GAP * 0.5 && processingLotRef.current !== null
-          const ringBlocked =
-            nearGateBlocked ||
-            cars.some((other, oIdx) => {
-              if (oIdx === index) return false
-              if (other.phase === 'along_ring' || other.phase === 'queued') {
-                return (
-                  other.curAngle >= entryAngle - MIN_CAR_ARC_GAP &&
-                  other.curAngle <= entryAngle + MIN_CAR_ARC_GAP * 1.65
-                )
-              }
-              if ((other.phase === 'delivering' || other.phase === 'returning_ring') && other.progress >= 0.25 && other.progress < 0.75) {
-                const otherHomeAngle = houseAngles[oIdx]
-                if (otherHomeAngle === undefined) return false
-                let otherBackArc = QUEEN_GATE_ANGLE - otherHomeAngle
-                while (otherBackArc < 0) otherBackArc += Math.PI * 2
-                while (otherBackArc >= Math.PI * 2) otherBackArc -= Math.PI * 2
-                const otherU = (other.progress - 0.25) / 0.5
-                const otherAngle = QUEEN_GATE_ANGLE - otherBackArc * otherU
-                return angularDistance(otherAngle, homeAngle) < MIN_CAR_ARC_GAP
-              }
-              return false
-            })
+          // Выезд от дома агента ТОЛЬКО НАПРАВО (-angle) на внешнее полукольцо (без пересечения сплошной!).
+          const ringBlocked = cars.some((other, oIdx) => {
+            if (oIdx === index) return false
+            if (other.phase === 'outer_to_uturn') {
+              return angularDistance(other.curAngle, homeAngle) < MIN_CAR_ARC_GAP * 1.25
+            }
+            if ((other.phase === 'delivering' || other.phase === 'returning_ring') && other.progress >= 0.52 && other.progress < 0.85) {
+              const otherHome = houseAngles[oIdx]
+              if (otherHome === undefined) return false
+              let otherArc = QUEEN_U_TURN_ANGLE - otherHome
+              while (otherArc < 0) otherArc += Math.PI * 2
+              while (otherArc >= Math.PI * 2) otherArc -= Math.PI * 2
+              const u = (other.progress - 0.54) / 0.26
+              const otherA = QUEEN_U_TURN_ANGLE - 0.08 - Math.max(0, otherArc - 0.16) * u
+              return angularDistance(otherA, homeAngle) < MIN_CAR_ARC_GAP * 1.25
+            }
+            return false
+          })
           const nextProgress = car.progress + dt * 1.4
           if (car.progress > RING_ENTRY_STOP_PROGRESS) {
-            // Машина уже выехала на перекрёсток — завершает вливание, не телепортируясь обратно.
             car.progress = Math.min(1, nextProgress)
           } else if (car.progress < RING_ENTRY_STOP_PROGRESS) {
             car.progress = ringBlocked ? Math.min(RING_ENTRY_STOP_PROGRESS, nextProgress) : Math.min(1, nextProgress)
           } else if (!ringBlocked) {
             car.progress = Math.min(1, nextProgress)
           }
-          const turnLeadArc = Math.min(0.08, Math.max(0.02, (GATE_STOP_ANGLE - entryAngle) * 0.35))
-          const targetEntryAngle = Math.min(GATE_STOP_ANGLE, entryAngle + turnLeadArc)
-          const targetLaneOffset = GATE_STOP_ANGLE - targetEntryAngle <= 0.72 ? 0.3 : 0.11
-          const targetLaneR = innerBoulevardR - targetLaneOffset
+          const targetEntryAngle = homeAngle - 0.06
+          const targetLaneOffset = 0.3
+          const targetLaneR = innerBoulevardR + targetLaneOffset
           if (car.progress >= 1) {
-            car.phase = 'along_ring'
+            car.phase = 'outer_to_uturn'
             car.progress = 0
             car.curAngle = targetEntryAngle
             car.curLaneOffset = targetLaneOffset
@@ -1979,6 +1992,78 @@ function QueenRoads3D({
             z = pose.z
             dirX = pose.dx
             dirZ = pose.dz
+          }
+        }
+      } else if (car.phase === 'outer_to_uturn') {
+        // Движение по внешнему полукольцу (-angle) до разрыва сплошной (QUEEN_U_TURN_ANGLE) и разворот на внутреннее (+angle).
+        let arcToUTurn = car.curAngle - QUEEN_U_TURN_ANGLE
+        while (arcToUTurn < 0) arcToUTurn += Math.PI * 2
+        while (arcToUTurn >= Math.PI * 2) arcToUTurn -= Math.PI * 2
+        let maxTravel = arcToUTurn
+        for (let oIdx = 0; oIdx < cars.length; oIdx += 1) {
+          if (oIdx === index) continue
+          const other = cars[oIdx]
+          if (!other || other.phase !== 'outer_to_uturn') continue
+          let otherArc = other.curAngle - QUEEN_U_TURN_ANGLE
+          while (otherArc < 0) otherArc += Math.PI * 2
+          while (otherArc >= Math.PI * 2) otherArc -= Math.PI * 2
+          if (otherArc < arcToUTurn) {
+            maxTravel = Math.min(maxTravel, arcToUTurn - otherArc - MIN_CAR_ARC_GAP)
+          }
+        }
+        // Не выезжаем в точку разворота, если начало внутреннего кольца у разворота занято.
+        const uTurnBlocked =
+          arcToUTurn <= 0.16 &&
+          cars.some(
+            (other, oIdx) =>
+              oIdx !== index &&
+              (other.phase === 'along_ring' || other.phase === 'queued') &&
+              Math.abs(other.curAngle - QUEEN_U_TURN_ANGLE) < MIN_CAR_ARC_GAP * 1.25
+          )
+        const allowedStep = uTurnBlocked ? 0 : Math.min(Math.max(0, maxTravel), dt * 1.15)
+        car.curAngle -= allowedStep
+        const newArcToUTurn = Math.max(0, arcToUTurn - allowedStep)
+        if (newArcToUTurn <= 0.02 && !uTurnBlocked) {
+          car.phase = 'along_ring'
+          car.progress = 0
+          car.curAngle = QUEEN_U_TURN_ANGLE
+          car.curLaneOffset = 0.11
+        }
+        // На развороте (последние 0.18 рад) плавно пересекаем разрыв сплошной с внешнего на внутреннее полукольцо.
+        const desiredOuterOffset = newArcToUTurn > 0.35 ? 0.13 : 0.13
+        const uTurnZone = newArcToUTurn < 0.18 ? 1 - newArcToUTurn / 0.18 : 0
+        if (uTurnZone > 0) {
+          const ax = view.x + Math.cos(QUEEN_U_TURN_ANGLE + 0.18) * (innerBoulevardR + 0.13)
+          const az = view.z + Math.sin(QUEEN_U_TURN_ANGLE + 0.18) * (innerBoulevardR + 0.13)
+          const cx = view.x + Math.cos(QUEEN_U_TURN_ANGLE) * innerBoulevardR
+          const cz = view.z + Math.sin(QUEEN_U_TURN_ANGLE) * innerBoulevardR
+          const bx = view.x + Math.cos(QUEEN_U_TURN_ANGLE) * (innerBoulevardR - 0.11)
+          const bz = view.z + Math.sin(QUEEN_U_TURN_ANGLE) * (innerBoulevardR - 0.11)
+          const pose = evalTurnBezier(ax, az, cx, cz, bx, bz, uTurnZone)
+          x = pose.x
+          z = pose.z
+          dirX = pose.dx
+          dirZ = pose.dz
+        } else {
+          const laneDiff = desiredOuterOffset - car.curLaneOffset
+          const arcMove = allowedStep * (innerBoulevardR + car.curLaneOffset)
+          const maxStep = arcMove * 0.36
+          const laneStep = Math.abs(laneDiff) <= maxStep ? laneDiff : Math.sign(laneDiff) * maxStep
+          car.curLaneOffset += laneStep
+          const laneR = innerBoulevardR + car.curLaneOffset
+          x = view.x + Math.cos(car.curAngle) * laneR
+          z = view.z + Math.sin(car.curAngle) * laneR
+          const tx = Math.sin(car.curAngle)
+          const tz = -Math.cos(car.curAngle)
+          if (arcMove > 1e-5 && Math.abs(laneStep) > 1e-6) {
+            const moveX = tx * arcMove + Math.cos(car.curAngle) * laneStep
+            const moveZ = tz * arcMove + Math.sin(car.curAngle) * laneStep
+            const dLen = Math.hypot(moveX, moveZ) || 1
+            dirX = moveX / dLen
+            dirZ = moveZ / dLen
+          } else {
+            dirX = tx
+            dirZ = tz
           }
         }
       } else if (car.phase === 'along_ring' || car.phase === 'queued') {
@@ -2070,7 +2155,7 @@ function QueenRoads3D({
           car.cooldown = 0.25 + (index % 5) * 0.15
         }
         const t = Math.min(1, car.progress)
-        const pose = evalQueenOutPose(t, homeAngle, backArc)
+        const pose = evalQueenOutPose(t, homeAngle)
         x = pose.x
         z = pose.z
         dirX = pose.dx
@@ -2189,6 +2274,18 @@ function QueenRoads3D({
       {/* Главная осевая разделительная линия. */}
       <mesh position={[view.x, 0.036, view.z]} rotation={[Math.PI / 2, 0, 0]} material={ringLineMaterial}>
         <torusGeometry args={[innerBoulevardR, 0.03, 6, 72]} />
+      </mesh>
+      {/* Официальный разрыв сплошной линии на противоположной стороне кольца (место разворота). */}
+      <mesh
+        position={[
+          view.x + Math.cos(QUEEN_U_TURN_ANGLE) * innerBoulevardR,
+          0.037,
+          view.z + Math.sin(QUEEN_U_TURN_ANGLE) * innerBoulevardR
+        ]}
+        rotation={[-Math.PI / 2, 0, -QUEEN_U_TURN_ANGLE + Math.PI / 2]}
+        material={skin.roadBed}
+      >
+        <planeGeometry args={[0.56, 0.14]} />
       </mesh>
       {/* Чистый перекрёсток на въезде в Цитадель Королевы (убирает только внутренний бордюр в проёме въезда). */}
       <mesh
