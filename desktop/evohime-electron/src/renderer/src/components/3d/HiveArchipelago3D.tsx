@@ -1906,9 +1906,14 @@ function QueenRoads3D({
         dirX = pose.dx
         dirZ = pose.dz
       } else if (car.phase === 'to_ring') {
+        const hdx = -Math.cos(homeAngle)
+        const hdz = -Math.sin(homeAngle)
         if (car.cooldown > 0) {
           car.cooldown -= dt
-          visible = false
+          dirX = hdx
+          dirZ = hdz
+          x = view.x + Math.cos(homeAngle) * homeEdgeR - dirZ * laneOffset
+          z = view.z + Math.sin(homeAngle) * homeEdgeR + dirX * laneOffset
         } else {
           const entryAngle = normalizeBehindGate(homeAngle)
           // Правила проезда перекрёстка: нельзя выезжать на кольцо, если перекрёсток занят,
@@ -1938,25 +1943,24 @@ function QueenRoads3D({
               return false
             })
           const nextProgress = car.progress + dt * 1.4
-          if (car.progress < RING_ENTRY_STOP_PROGRESS && ringBlocked) {
-            car.progress = Math.min(RING_ENTRY_STOP_PROGRESS, nextProgress)
+          if (car.progress > RING_ENTRY_STOP_PROGRESS) {
+            // Машина уже выехала на перекрёсток — завершает вливание, не телепортируясь обратно.
+            car.progress = Math.min(1, nextProgress)
+          } else if (car.progress < RING_ENTRY_STOP_PROGRESS) {
+            car.progress = ringBlocked ? Math.min(RING_ENTRY_STOP_PROGRESS, nextProgress) : Math.min(1, nextProgress)
           } else if (!ringBlocked) {
             car.progress = Math.min(1, nextProgress)
-          } else {
-            car.progress = Math.min(car.progress, RING_ENTRY_STOP_PROGRESS)
           }
           const turnLeadArc = Math.min(0.08, Math.max(0.02, (GATE_STOP_ANGLE - entryAngle) * 0.35))
           const targetEntryAngle = Math.min(GATE_STOP_ANGLE, entryAngle + turnLeadArc)
           const targetLaneOffset = GATE_STOP_ANGLE - targetEntryAngle <= 0.72 ? 0.3 : 0.11
           const targetLaneR = innerBoulevardR - targetLaneOffset
-          if (car.progress >= 1 && !ringBlocked) {
+          if (car.progress >= 1) {
             car.phase = 'along_ring'
             car.progress = 0
             car.curAngle = targetEntryAngle
             car.curLaneOffset = targetLaneOffset
           }
-          const hdx = -Math.cos(homeAngle)
-          const hdz = -Math.sin(homeAngle)
           if (car.progress <= RING_ENTRY_STOP_PROGRESS) {
             const r = homeEdgeR - Math.min(1, car.progress) * (homeEdgeR - innerBoulevardR)
             dirX = hdx
@@ -2074,7 +2078,11 @@ function QueenRoads3D({
         dirX = pose.dx
         dirZ = pose.dz
       } else {
-        visible = false
+        // Ожидание у подъезда дома без пропадания/мигания.
+        dirX = -Math.cos(homeAngle)
+        dirZ = -Math.sin(homeAngle)
+        x = view.x + Math.cos(homeAngle) * homeEdgeR - dirZ * laneOffset
+        z = view.z + Math.sin(homeAngle) * homeEdgeR + dirX * laneOffset
         car.cooldown -= dt
         if (car.cooldown <= 0) {
           car.phase = 'to_ring'
@@ -2089,8 +2097,9 @@ function QueenRoads3D({
         return
       }
 
-      dummy.position.set(x, 0.13, z)
-      dummy.lookAt(x + dirX, 0.13, z + dirZ)
+      const carY = 0.13 + (index % 7) * 0.0008
+      dummy.position.set(x, carY, z)
+      dummy.lookAt(x + dirX, carY, z + dirZ)
       dummy.scale.set(0.16, 0.11, 0.36)
       dummy.updateMatrix()
       mesh.setMatrixAt(index, dummy.matrix)
@@ -2390,8 +2399,9 @@ function AgentModuleCouriers3D({
                 laneOffset
               )
 
-        dummy.position.set(pose.x, 0.12, pose.z)
-        dummy.lookAt(pose.x + pose.dx, 0.12, pose.z + pose.dz)
+        const courierY = 0.12 + (instIdx % 7) * 0.0008
+        dummy.position.set(pose.x, courierY, pose.z)
+        dummy.lookAt(pose.x + pose.dx, courierY, pose.z + pose.dz)
         dummy.scale.set(route.active ? 0.14 : 0.11, 0.1, route.active ? 0.34 : 0.24)
         dummy.updateMatrix()
         mesh.setMatrixAt(instIdx, dummy.matrix)
@@ -2549,8 +2559,9 @@ function ModuleRoads3D({
         laneOffset
       )
 
-      dummy.position.set(pose.x, 0.12, pose.z)
-      dummy.lookAt(pose.x + pose.dx, 0.12, pose.z + pose.dz)
+      const pulseY = 0.12 + (index % 7) * 0.0008
+      dummy.position.set(pose.x, pulseY, pose.z)
+      dummy.lookAt(pose.x + pose.dx, pulseY, pose.z + pose.dz)
       dummy.scale.set(isLit ? 0.14 : 0.1, 0.09, isLit ? 0.34 : 0.24)
       dummy.updateMatrix()
       mesh.setMatrixAt(index, dummy.matrix)
