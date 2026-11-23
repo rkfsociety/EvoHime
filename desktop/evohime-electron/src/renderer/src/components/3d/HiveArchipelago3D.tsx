@@ -2324,10 +2324,91 @@ function DepartmentHouses3D({
     })
   }, [lots, view.x, view.z])
 
+  // Выделенные сектора города для каждой группы агентов (расширяются при увеличении числа слотов).
+  const sectors = useMemo(() => {
+    const groups = new Map<string, { accent: string; minSlot: number; maxSlot: number }>()
+    const total = Math.max(1, lots[0]?.total ?? lots.length)
+    for (const lot of lots) {
+      const existing = groups.get(lot.departmentKey)
+      if (existing) {
+        existing.minSlot = Math.min(existing.minSlot, lot.slot)
+        existing.maxSlot = Math.max(existing.maxSlot, lot.slot)
+      } else {
+        groups.set(lot.departmentKey, {
+          accent: lot.accent,
+          minSlot: lot.slot,
+          maxSlot: lot.slot
+        })
+      }
+    }
+    const shadowCenter = -Math.PI * 0.5
+    const shadowHalf = 0.34
+    const fullArc = Math.PI * 2 - shadowHalf * 2
+    const gap = 0.025
+    return Array.from(groups.entries()).map(([key, info]) => {
+      const a0 = shadowCenter + shadowHalf + (info.minSlot / total) * fullArc + gap
+      const a1 = shadowCenter + shadowHalf + ((info.maxSlot + 1) / total) * fullArc - gap
+      return {
+        key,
+        accent: info.accent,
+        startAngle: a0,
+        endAngle: Math.max(a0 + 0.04, a1)
+      }
+    })
+  }, [lots])
+
   if (lots.length === 0) return <></>
+  const sectorOuterR = Math.min(view.radius * 0.74, 11.8)
 
   return (
     <group>
+      {/* Выделенные цветовые сектора групп агентов на плите города. */}
+      {sectors.map((sector) => {
+        const isSelected = selectedDepartment === sector.key
+        const thetaStart = -sector.endAngle
+        const thetaLength = sector.endAngle - sector.startAngle
+        return (
+          <group key={`dept-sector-${sector.key}`}>
+            <mesh position={[view.x, 0.008, view.z]} rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[2.55, sectorOuterR, 24, 1, thetaStart, thetaLength]} />
+              <meshBasicMaterial
+                color={sector.accent}
+                transparent
+                opacity={isSelected ? 0.24 : 0.11}
+                depthWrite={false}
+              />
+            </mesh>
+            <mesh position={[view.x, 0.014, view.z]} rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[5.55, 5.65, 24, 1, thetaStart, thetaLength]} />
+              <meshBasicMaterial
+                color={sector.accent}
+                transparent
+                opacity={isSelected ? 0.92 : 0.62}
+                depthWrite={false}
+              />
+            </mesh>
+            {[sector.startAngle, sector.endAngle].map((boundAngle, bIdx) => {
+              const rMid = (2.6 + 5.6) / 2
+              const len = 3.0
+              return (
+                <mesh
+                  key={`sector-bound-${sector.key}-${bIdx}`}
+                  position={[view.x + Math.cos(boundAngle) * rMid, 0.014, view.z + Math.sin(boundAngle) * rMid]}
+                  rotation={[0, -boundAngle, 0]}
+                >
+                  <boxGeometry args={[len, 0.012, 0.035]} />
+                  <meshBasicMaterial
+                    color={sector.accent}
+                    transparent
+                    opacity={isSelected ? 0.85 : 0.5}
+                    depthWrite={false}
+                  />
+                </mesh>
+              )
+            })}
+          </group>
+        )
+      })}
       {lots.map((lot) => (
         <DepartmentHouse3D
           key={`${lot.departmentKey}-${lot.slot}`}

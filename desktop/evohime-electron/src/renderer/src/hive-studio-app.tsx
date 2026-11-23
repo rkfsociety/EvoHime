@@ -101,17 +101,21 @@ export function StudioApp(): React.JSX.Element {
 
   const adjustActive = useCallback((key: string, delta: number): void => {
     setDepartments((current) =>
-      current.map((department) =>
-        department.key === key
-          ? {
-              ...department,
-              activeCount: Math.min(
-                department.maxCapacity,
-                Math.max(0, department.activeCount + delta)
-              )
-            }
-          : department
-      )
+      current.map((department) => {
+        if (department.key !== key) return department
+        if (delta > 0 && department.activeCount >= department.maxCapacity && department.maxCapacity < 5) {
+          // Расширение сектора при добавлении нового агента сверх текущей вместимости.
+          const nextCap = department.maxCapacity + 1
+          return { ...department, maxCapacity: nextCap, activeCount: nextCap }
+        }
+        return {
+          ...department,
+          activeCount: Math.min(
+            department.maxCapacity,
+            Math.max(0, department.activeCount + delta)
+          )
+        }
+      })
     )
   }, [])
 
