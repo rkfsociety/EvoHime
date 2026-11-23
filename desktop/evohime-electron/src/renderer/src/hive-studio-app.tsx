@@ -226,6 +226,9 @@ export function StudioApp(): React.JSX.Element {
     setSelectedDepartment((current) => (current === key ? null : key))
   }, [])
 
+  const pins = useMemo(() => departmentPins(departments), [departments])
+  const activeAgentHints = useMemo(() => agentHints(departments), [departments])
+
   const selected = departments.find((item) => item.key === selectedDepartment) ?? null
 
   const optimizationSummary = useMemo(() => {
@@ -373,13 +376,13 @@ export function StudioApp(): React.JSX.Element {
       <main className="hive-stage hive-stage--studio">
         <HiveCityScene
           status={status}
-          departments={departmentPins(departments)}
+          departments={pins}
           selectedDepartment={selectedDepartment}
           onSelectDepartment={handleSelectDepartment}
           queenWorking={queenWorking}
           queenOptimized={queenOptimized}
           cityMap={cityMap}
-          activeAgents={agentHints(departments)}
+          activeAgents={activeAgentHints}
         />
       </main>
     </div>

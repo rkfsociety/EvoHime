@@ -1789,17 +1789,44 @@ function QueenRoads3D({
   const carsRef = useRef<AgentCarSim[]>([])
   const queueRef = useRef<number[]>([])
   const processingLotRef = useRef<{ lotIndex: number; remaining: number } | null>(null)
+  const layoutSignatureRef = useRef<string>('')
 
   useLayoutEffect(() => {
-    carsRef.current = lots.map((lot, idx) => ({
-      phase: lot.active ? 'delivering' : 'cooldown',
-      progress: 0,
-      curAngle: QUEEN_GATE_ANGLE,
-      cooldown: (idx % 6) * 0.28,
-      curLaneOffset: 0.11
-    }))
-    queueRef.current = []
-    processingLotRef.current = null
+    const layoutSignature = lots
+      .map((lot) => `${lot.slot}:${lot.total}:${lot.departmentKey}`)
+      .join('|')
+    const layoutChanged =
+      layoutSignatureRef.current !== layoutSignature || carsRef.current.length !== lots.length
+
+    if (layoutChanged) {
+      layoutSignatureRef.current = layoutSignature
+      carsRef.current = lots.map((lot, idx) => ({
+        phase: lot.active ? 'delivering' : 'cooldown',
+        progress: 0,
+        curAngle: QUEEN_GATE_ANGLE,
+        cooldown: (idx % 6) * 0.28,
+        curLaneOffset: 0.11
+      }))
+      queueRef.current = []
+      processingLotRef.current = null
+    } else {
+      lots.forEach((lot, idx) => {
+        if (!lot.active) {
+          deliveredMapRef.current.delete(lot.slot)
+          const car = carsRef.current[idx]
+          if (car && car.phase !== 'cooldown') {
+            car.phase = 'cooldown'
+            car.progress = 0
+            car.cooldown = (idx % 6) * 0.28
+            const qPos = queueRef.current.indexOf(idx)
+            if (qPos >= 0) queueRef.current.splice(qPos, 1)
+            if (processingLotRef.current?.lotIndex === idx) {
+              processingLotRef.current = null
+            }
+          }
+        }
+      })
+    }
 
     const mesh = meshRef.current
     if (!mesh) return
@@ -1808,7 +1835,7 @@ function QueenRoads3D({
       mesh.setColorAt(index, instanceColor)
     })
     if (mesh.instanceColor !== null) mesh.instanceColor.needsUpdate = true
-  }, [lots, instanceColor])
+  }, [lots, instanceColor, deliveredMapRef])
 
   useFrame((_, delta) => {
     const mesh = meshRef.current
@@ -2708,8 +2735,24 @@ function AgentModuleCouriers3D({
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const instanceColor = useMemo(() => new THREE.Color(), [])
   const activatedAtRef = useRef<Map<number, number>>(new Map())
+  const routeSignatureRef = useRef<Map<number, string>>(new Map())
   useLayoutEffect(() => {
-    activatedAtRef.current.clear()
+    const activeSlots = new Set<number>()
+    for (const route of routes) {
+      if (!route.active) continue
+      activeSlots.add(route.lotSlot)
+      const sig = `${route.outboundLength.toFixed(3)}:${route.inboundLength.toFixed(3)}`
+      if (routeSignatureRef.current.get(route.lotSlot) !== sig) {
+        activatedAtRef.current.delete(route.lotSlot)
+        routeSignatureRef.current.set(route.lotSlot, sig)
+      }
+    }
+    for (const slot of Array.from(activatedAtRef.current.keys())) {
+      if (!activeSlots.has(slot)) {
+        activatedAtRef.current.delete(slot)
+        routeSignatureRef.current.delete(slot)
+      }
+    }
     const mesh = meshRef.current
     if (!mesh) return
     routes.forEach((route, index) => {
