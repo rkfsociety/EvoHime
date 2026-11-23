@@ -457,18 +457,6 @@ function districtOrderIndex(kind: string): number {
 }
 
 /**
- * Deterministic pseudo-random in `[0, 1)` with an extra integer salt stream.
- */
-function mixSeed(seed: string, salt: number): number {
-  // FNV-1a over `seed` with the salt folded in as a little-endian byte.
-  const mixed = fnv1a32(`${seed}#${(salt >>> 0).toString(36)}`)
-  return ((mixed >>> 8) & 0xffffff) / 16_777_216
-}
-
-const BUILDING_CELL = 2.4
-const BUILDING_MAX_COLUMNS = 8
-
-/**
  * Радиус кольца домов работников департаментов в столице. Кольцо живёт между
  * башней Королевы (центр) и кварталами модулей проекта, поэтому радиус слегка
  * растёт с числом лотов, но остаётся внутри [`CAPITAL_TOWER_INNER_RADIUS`].
@@ -508,6 +496,7 @@ export function capitalHouseAngle(slot: number, total: number): number {
  * Королевы и кольцу домов работников.
  */
 export const CAPITAL_TOWER_INNER_RADIUS = 7.6
+export const SATELLITE_MAIN_AVENUE_RADIUS = 2.6
 
 /**
  * Shared deterministic island renderer model: sorted districts, a compact
@@ -573,8 +562,15 @@ export function computeCityLayoutEfficiency(view: CityIslandView): CityLayoutEff
     edgeSum += Math.hypot(to.x - from.x, to.z - from.z)
     edgeCount += 1
   }
-  const gateX = view.x
-  const gateZ = view.z + CAPITAL_TOWER_INNER_RADIUS
+  const gateAngle =
+    view.island.role === 'capital'
+      ? Math.PI / 2
+      : view.x !== 0 || view.z !== 0
+        ? Math.atan2(-view.z, -view.x)
+        : Math.PI / 2
+  const gateR = view.island.role === 'capital' ? CAPITAL_TOWER_INNER_RADIUS : view.radius * 0.78
+  const gateX = Math.cos(gateAngle) * gateR
+  const gateZ = Math.sin(gateAngle) * gateR
   let gateWeightedSum = 0
   let weightSum = 0
   for (const b of view.buildings) {
@@ -692,27 +688,33 @@ function buildIslandView(
     })
   })
 
-  const columns = Math.max(1, Math.min(BUILDING_MAX_COLUMNS, Math.ceil(Math.sqrt(quarter.length))))
-  const rows = Math.ceil(quarter.length / columns)
-  const reserveCenter = island.role === 'capital'
-  const innerRadius = reserveCenter ? capitalInnerRadius(options?.totalHouses ?? 0) : CAPITAL_TOWER_INNER_RADIUS
-  /** Радиус самого внешнего кольца радиальной застройки столицы. */
-  let outerRingRadius = innerRadius + 0.8
+  const isCapital = island.role === 'capital'
+  const innerRadius = isCapital ? capitalInnerRadius(options?.totalHouses ?? 0) : CAPITAL_TOWER_INNER_RADIUS
+  /** Радиус самого внешнего кольца радиальной застройки города. */
+  let outerRingRadius = isCapital ? innerRadius + 0.8 : SATELLITE_MAIN_AVENUE_RADIUS
+  const gateAngle = isCapital
+    ? Math.PI * 0.5
+    : x !== 0 || z !== 0
+      ? Math.atan2(-z, -x)
+      : Math.PI * 0.5
 
-  if (reserveCenter && quarter.length > 0) {
-    // Радиальная застройка столицы: кольца кварталов вокруг внутреннего
-    // двора Королевы (вид сверху, строго по окружности без разброса и перекосов).
-    const ringStart = innerRadius + 1.2
+  if (quarter.length > 0) {
+    // Единая радиально-кольцевая застройка Королевы для всех городов:
+    // кольца кварталов вокруг центра города со свободным проездом от главных ворот / магистрали.
+    const ringStart = isCapital ? innerRadius + 1.2 : SATELLITE_MAIN_AVENUE_RADIUS + 1.6
     const ringStep = 3.2
     let ringIndex = 0
     let ringRadius = ringStart
     let offset = 0
     while (offset < quarter.length) {
-      const capacity = Math.max(8, Math.floor((2 * Math.PI * ringRadius) / 3.5))
+      const capacity = Math.max(
+        isCapital ? 8 : 4,
+        Math.floor((2 * Math.PI * ringRadius) / (isCapital ? 3.5 : 3.3))
+      )
       const slice = quarter.slice(offset, offset + capacity)
       const countOnRing = slice.length
       // В режиме оптимизации Королевы самые приоритетные здания ставятся симметрично
-      // ближе всего к прямому проспекту от ворот (Math.PI / 2), оставляя проезд свободным.
+      // ближе всего к прямому въездному проспекту, оставляя проезд свободным.
       const orderedRingSlice = optimizeByQueen
         ? (() => {
             const arranged: CityBuilding[] = new Array(countOnRing)
@@ -723,17 +725,18 @@ function buildIslandView(
             return arranged
           })()
         : slice
-      // Оставляем гарантированный прямой проезд от ворот Королевы (Math.PI / 2)
-      // через все кольца модулей, независимо от режима оптимизации и числа зданий.
-      const gateHalfGap = Math.min(Math.PI * 0.45, Math.max(Math.PI / countOnRing, 1.55 / Math.max(1, ringRadius)))
+      const gateHalfGap = Math.min(
+        Math.PI * 0.42,
+        Math.max(Math.PI / Math.max(2, countOnRing), (isCapital ? 1.55 : 1.45) / Math.max(1, ringRadius))
+      )
       const usableArc = Math.PI * 2 - gateHalfGap * 2
       for (let i = 0; i < countOnRing; i += 1) {
         const building = orderedRingSlice[i]
         if (!building) continue
         const frac = countOnRing <= 1 ? 0.5 : i / (countOnRing - 1)
         const angle = optimizeByQueen
-          ? Math.PI * 0.5 + gateHalfGap + frac * usableArc
-          : Math.PI * 0.5 +
+          ? gateAngle + gateHalfGap + frac * usableArc
+          : gateAngle +
             gateHalfGap +
             (((i + (ringIndex % 2) * 0.5) / Math.max(1, countOnRing)) % 1) * usableArc
         buildings.push({
@@ -751,33 +754,14 @@ function buildIslandView(
       }
     }
     outerRingRadius = ringRadius
-  } else {
-    quarter.forEach((building, index) => {
-      const column = index % columns
-      const row = Math.floor(index / columns)
-      const seed = `${island.id}/${building.id}`
-      const jitterX = (mixSeed(seed, 1) - 0.5) * 0.9
-      const jitterZ = (mixSeed(seed, 2) - 0.5) * 0.9
-      const bx = (column - (columns - 1) / 2) * BUILDING_CELL + jitterX
-      const bz = (row - (rows - 1) / 2) * BUILDING_CELL * 0.8 + jitterZ
-      buildings.push({
-        building,
-        x: bx,
-        z: bz,
-        height: Math.max(0.15, building.height_weight_bp / 1000),
-        isEdgeTarget: false
-      })
-    })
   }
 
   // Шестиугольная плита вписана в окружность радиуса R, её апофема равна R * cos(30°).
   // Умножаем на 1 / cos(30°), чтобы крайние башни стояли на платформе с запасом.
   const hexApothemFactor = 1 / Math.cos(Math.PI / 6)
   const layoutRadius = Math.max(
-    4.8,
-    2.2 * Math.sqrt(Math.max(1, buildings.length)) * hexApothemFactor,
-    ((Math.max(columns, rows) * BUILDING_CELL) / 2 + 1.5) * hexApothemFactor,
-    reserveCenter ? (outerRingRadius + 3.0) * hexApothemFactor : 0
+    isCapital ? 4.8 : 6.2,
+    (outerRingRadius + (isCapital ? 3.0 : 2.4)) * hexApothemFactor
   )
   const radius = layoutRadius
 

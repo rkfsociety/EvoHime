@@ -38,6 +38,7 @@ import {
   HIVE_STUDIO_DEPARTMENTS
 } from '../src/renderer/src/hive-studio-simulation'
 import {
+  angularDistance,
   doCarBoxesOverlap,
   evalTurnBezier,
   isIntersectionClearForEntry,
@@ -313,5 +314,39 @@ describe('Hive Studio app', () => {
       { lastVisible: true, lastX: 0.08, lastZ: 2.0, lastDirX: 1, lastDirZ: 0 }
     ]
     expect(isPathStepBlocked(turnSegments, totalLength, 0.48, 0, clearPeers, 0, 0.65)).toBe(false)
+  })
+
+  it('builds and optimizes all satellite cities using Queen radial-ring planning without overlaps', () => {
+    const snapshot = buildHiveStudioSimulation({ satelliteCount: 3 })
+    const stdView = buildCityMapView(snapshot, null, { optimizeByQueen: false, totalHouses: 18 })
+    const optView = buildCityMapView(snapshot, null, { optimizeByQueen: true, totalHouses: 18 })
+
+    expect(optView.satellites.length).toBe(3)
+    optView.satellites.forEach((sat, satIdx) => {
+      const modules = sat.buildings.filter((b) => b.building.kind !== 'citadel')
+      expect(modules.length).toBeGreaterThan(0)
+      const gateAngle = Math.atan2(-sat.z, -sat.x)
+
+      for (let i = 0; i < modules.length; i += 1) {
+        const a = modules[i]!
+        // Не перекрывает центральную площадь маяка.
+        expect(Math.hypot(a.x, a.z)).toBeGreaterThanOrEqual(3.5)
+        // Въездной проспект со стороны столицы свободен от зданий.
+        const buildingAngle = Math.atan2(a.z, a.x)
+        expect(angularDistance(buildingAngle, gateAngle)).toBeGreaterThanOrEqual(0.25)
+
+        for (let j = i + 1; j < modules.length; j += 1) {
+          const b = modules[j]!
+          expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThanOrEqual(2.0)
+        }
+      }
+
+      if (modules.length > 1) {
+        const stdSat = stdView.satellites[satIdx]!
+        const stdEff = computeCityLayoutEfficiency(stdSat)
+        const optEff = computeCityLayoutEfficiency(sat)
+        expect(optEff.avgGateDistance).toBeLessThanOrEqual(stdEff.avgGateDistance)
+      }
+    })
   })
 })

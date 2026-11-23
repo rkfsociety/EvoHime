@@ -10,6 +10,7 @@ import * as THREE from 'three'
 
 import {
   CITY_MAP_MAX_SATELLITES,
+  SATELLITE_MAIN_AVENUE_RADIUS,
   capitalHouseAngle,
   capitalHouseRingRadius,
   capitalMainAvenueRadius,
@@ -513,10 +514,7 @@ function BuildingComplex3D({
   const facade = skin.facades[variant % skin.facades.length]?.material ?? skin.roof
   const wallWithRoof = useMemo(() => [facade, facade, skin.roof, skin.roof, facade, facade], [facade, skin.roof])
 
-  const radialRotY =
-    view.island.role === 'capital' && (item.x !== 0 || item.z !== 0)
-      ? -Math.atan2(item.z, item.x)
-      : 0
+  const radialRotY = item.x !== 0 || item.z !== 0 ? -Math.atan2(item.z, item.x) : 0
 
   return (
     <group
@@ -675,6 +673,11 @@ function CityStreets3D({
   paused?: boolean
 }) {
   const isCapital = view.island.role === 'capital'
+  const gateAngle = isCapital
+    ? QUEEN_GATE_ANGLE
+    : view.x !== 0 || view.z !== 0
+      ? Math.atan2(-view.z, -view.x)
+      : QUEEN_GATE_ANGLE
   const laneMaterial = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
@@ -717,18 +720,17 @@ function CityStreets3D({
 
   const ringRadii = useMemo(() => {
     const outer = view.radius * 0.78
-    if (isCapital) {
-      const rings: number[] = []
-      const baseRingR = Math.max(MAIN_AVENUES_RADIUS, mainAvenueRadius)
-      for (let r = baseRingR; r <= view.radius * 0.76; r += AVENUE_RING_STEP) {
-        rings.push(Number(r.toFixed(2)))
-      }
-      if (rings.length === 0 || outer - (rings[rings.length - 1] ?? 0) > 1.4) {
-        rings.push(Number(outer.toFixed(2)))
-      }
-      return rings
+    const rings: number[] = []
+    const baseRingR = isCapital
+      ? Math.max(MAIN_AVENUES_RADIUS, mainAvenueRadius)
+      : SATELLITE_MAIN_AVENUE_RADIUS
+    for (let r = baseRingR; r <= view.radius * 0.76; r += AVENUE_RING_STEP) {
+      rings.push(Number(r.toFixed(2)))
     }
-    return [view.radius * 0.42, outer].filter((r) => r >= 2.2)
+    if (rings.length === 0 || outer - (rings[rings.length - 1] ?? 0) > 1.4) {
+      rings.push(Number(outer.toFixed(2)))
+    }
+    return rings
   }, [isCapital, mainAvenueRadius, view.radius])
 
   const moduleDriveways = useMemo(() => {
@@ -805,15 +807,15 @@ function CityStreets3D({
         return minDist
       }
 
-      let bestAngle = QUEEN_GATE_ANGLE
-      let bestMinClearance = isCapital ? clearanceAt(QUEEN_GATE_ANGLE) : -1
+      let bestAngle = gateAngle
+      let bestMinClearance = clearanceAt(gateAngle)
       if (bestMinClearance < 1.15) {
         bestMinClearance = -1
         let bestGateDist = Infinity
         for (let slot = 0; slot < 72; slot += 1) {
           const angle = (slot / 72) * Math.PI * 2
           const minDist = clearanceAt(angle)
-          const gateDist = isCapital ? angularDistance(angle, QUEEN_GATE_ANGLE) : 0
+          const gateDist = angularDistance(angle, gateAngle)
           if (
             (minDist >= 1.35 && (bestMinClearance < 1.35 || gateDist < bestGateDist)) ||
             (bestMinClearance < 1.35 && minDist > bestMinClearance)
@@ -835,7 +837,7 @@ function CityStreets3D({
       }
     }
     return list
-  }, [isCapital, ringRadii, view.buildings, view.x, view.z])
+  }, [gateAngle, ringRadii, view.buildings, view.x, view.z])
 
   const lampPositions = useMemo(() => {
     const list: Array<readonly [number, number]> = []
@@ -859,7 +861,8 @@ function CityStreets3D({
     for (let i = 0; i < candidateCount; i += 1) {
       const seed = fnv1a32(`${view.island.id}/tree-${i}`)
       const angle = ((i / candidateCount) * Math.PI * 2) + ((seed % 100) / 100) * 0.18
-      const r = (isCapital ? 6.6 : 1.8) + (((seed >>> 6) % 100) / 100) * Math.max(1.2, outerR - (isCapital ? 6.8 : 2.0))
+      const minTreeR = isCapital ? 6.6 : SATELLITE_MAIN_AVENUE_RADIUS + 0.8
+      const r = minTreeR + (((seed >>> 6) % 100) / 100) * Math.max(1.2, outerR - minTreeR - 0.2)
       const tx = Math.cos(angle) * r
       const tz = Math.sin(angle) * r
       const nearBuilding = view.buildings.some((b) => Math.hypot(b.x - tx, b.z - tz) < 1.85)
@@ -933,16 +936,14 @@ function CityStreets3D({
           <mesh position={[view.x, 0.026, view.z]} rotation={[Math.PI / 2, 0, 0]} material={laneMaterial}>
             <torusGeometry args={[r, 0.03, 6, 72]} />
           </mesh>
-          {isCapital ? (
-            <RegulatedIntersection3D
-              x={view.x}
-              z={view.z}
-              radius={r}
-              angle={QUEEN_GATE_ANGLE}
-              bedMaterial={skin.roadBed}
-              paused={paused}
-            />
-          ) : null}
+          <RegulatedIntersection3D
+            x={view.x}
+            z={view.z}
+            radius={r}
+            angle={gateAngle}
+            bedMaterial={skin.roadBed}
+            paused={paused}
+          />
         </group>
       ))}
       {ringConnectors.map((conn, idx) => (
