@@ -77,13 +77,13 @@ function agentHints(departments: readonly HiveStudioDepartmentState[]): {
 
 /** Экспортирован для smoke-тестов стенда (tests/hive-studio.test.tsx). */
 export function StudioApp(): React.JSX.Element {
-  const [status, setStatus] = useState<StudioStatus>('observing')
-  const [queenWorking, setQueenWorking] = useState(false)
+  const [status, setStatus] = useState<StudioStatus>('active')
+  const [queenWorking, setQueenWorking] = useState(true)
   const [departments, setDepartments] = useState<readonly HiveStudioDepartmentState[]>(
     HIVE_STUDIO_DEPARTMENTS
   )
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
-  const [satelliteCount, setSatelliteCount] = useState(2)
+  const [satelliteCount, setSatelliteCount] = useState(0)
   const [rescanTick, setRescanTick] = useState(0)
 
   const simulation = useMemo(
@@ -119,48 +119,6 @@ export function StudioApp(): React.JSX.Element {
   }, [])
 
   const selected = departments.find((item) => item.key === selectedDepartment) ?? null
-
-  const queenOverlay = (
-    <div className="hive-queen-card">
-      <div className="hive-queen-card__head">
-        <div className="hive-queen-card__identity">
-          <span className="hive-queen-card__emblem" aria-hidden="true">
-            <BrandLotus size={20} />
-          </span>
-          <div>
-            <p className="hive-queen__eyebrow">Eva core · EvoHime</p>
-            <h2>Королева Ева</h2>
-            <p className="hive-queen__role">Центр управления</p>
-          </div>
-        </div>
-        <p className={`hive-queen__status hive-queen__status--${queenWorking ? 'active' : 'observing'}`}>
-          <span className="hive-dot" aria-hidden="true" />
-          {queenWorking ? 'Работает' : 'Наблюдение'}
-        </p>
-      </div>
-      <label className="hive-settings-toggle" htmlFor="studio-queen-autonomy">
-        <span>Автономность Королевы</span>
-        <input
-          id="studio-queen-autonomy"
-          type="checkbox"
-          role="switch"
-          aria-label="Автономность Королевы"
-          checked={queenWorking}
-          onChange={(changeEvent) => setQueenWorking(changeEvent.target.checked)}
-        />
-      </label>
-      <div className="hive-queen-card__foot">
-        <p className="hive-queen__note">
-          {queenWorking
-            ? 'Анализирует результат инструмента'
-            : 'Координирует агентов и выполняет задачи'}
-        </p>
-        <button type="button" className="hive-queen-card__chat-btn" disabled>
-          Написать Еве
-        </button>
-      </div>
-    </div>
-  )
 
   return (
     <div className="hive-studio">
@@ -271,7 +229,6 @@ export function StudioApp(): React.JSX.Element {
           selectedDepartment={selectedDepartment}
           onSelectDepartment={handleSelectDepartment}
           queenWorking={queenWorking}
-          queenOverlay={queenOverlay}
           cityMap={cityMap}
           activeAgents={agentHints(departments)}
         />

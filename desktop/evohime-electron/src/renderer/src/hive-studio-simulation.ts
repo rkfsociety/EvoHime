@@ -309,12 +309,12 @@ export interface HiveStudioDepartmentState {
  * (`step`) имитирует смену занятости, чтобы можно было смотреть оживление домов.
  */
 export const HIVE_STUDIO_DEPARTMENTS: readonly HiveStudioDepartmentState[] = [
-  { key: 'analytics', label: 'Аналитика', subtitle: 'Анализ данных', icon: 'activity', activeCount: 1, maxCapacity: 3 },
-  { key: 'planning', label: 'Планирование', subtitle: 'Планирование задач', icon: 'compass', activeCount: 0, maxCapacity: 2 },
-  { key: 'research', label: 'Исследования', subtitle: 'Поиск решений', icon: 'target', activeCount: 1, maxCapacity: 2 },
-  { key: 'development', label: 'Разработка', subtitle: 'Разработка кода', icon: 'terminal', activeCount: 2, maxCapacity: 3 },
-  { key: 'testing', label: 'Тестирование', subtitle: 'Проверка качества', icon: 'check-circle', activeCount: 0, maxCapacity: 2 },
-  { key: 'integrations', label: 'Интеграции', subtitle: 'Инфраструктура и API', icon: 'link', activeCount: 1, maxCapacity: 2 },
-  { key: 'documentation', label: 'Документация', subtitle: 'База знаний и доки', icon: 'folder', activeCount: 0, maxCapacity: 2 },
-  { key: 'support', label: 'Поддержка', subtitle: 'Помощь и сервис', icon: 'message', activeCount: 0, maxCapacity: 2 }
+  { key: 'analytics', label: 'Аналитика', subtitle: 'Анализ данных', icon: 'activity', activeCount: 3, maxCapacity: 3 },
+  { key: 'planning', label: 'Планирование', subtitle: 'Планирование задач', icon: 'compass', activeCount: 2, maxCapacity: 2 },
+  { key: 'research', label: 'Исследования', subtitle: 'Поиск решений', icon: 'target', activeCount: 2, maxCapacity: 2 },
+  { key: 'development', label: 'Разработка', subtitle: 'Разработка кода', icon: 'terminal', activeCount: 3, maxCapacity: 3 },
+  { key: 'testing', label: 'Тестирование', subtitle: 'Проверка качества', icon: 'check-circle', activeCount: 2, maxCapacity: 2 },
+  { key: 'integrations', label: 'Интеграции', subtitle: 'Инфраструктура и API', icon: 'link', activeCount: 2, maxCapacity: 2 },
+  { key: 'documentation', label: 'Документация', subtitle: 'База знаний и доки', icon: 'folder', activeCount: 2, maxCapacity: 2 },
+  { key: 'support', label: 'Поддержка', subtitle: 'Помощь и сервис', icon: 'message', activeCount: 2, maxCapacity: 2 }
 ]

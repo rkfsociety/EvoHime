@@ -84,13 +84,21 @@ describe('Hive Studio app', () => {
     const planningBefore = Array.from(
       document.querySelectorAll('[data-testid^="hive-archipelago-house-planning-"]')
     ).filter((house) => house.getAttribute('data-active') === 'true').length
+    const totalBefore = activeHouseCount()
+
+    await user.click(screen.getByRole('button', { name: 'Меньше: Планирование' }))
+
+    const planningAfterDown = Array.from(
+      document.querySelectorAll('[data-testid^="hive-archipelago-house-planning-"]')
+    ).filter((house) => house.getAttribute('data-active') === 'true').length
+    expect(planningAfterDown).toBe(planningBefore - 1)
+    expect(activeHouseCount()).toBe(totalBefore - 1)
 
     await user.click(screen.getByRole('button', { name: 'Больше: Планирование' }))
 
-    const planningAfter = Array.from(
+    const planningAfterUp = Array.from(
       document.querySelectorAll('[data-testid^="hive-archipelago-house-planning-"]')
     ).filter((house) => house.getAttribute('data-active') === 'true').length
-    expect(planningAfter).toBe(planningBefore + 1)
-    expect(activeHouseCount()).toBeGreaterThan(planningBefore)
+    expect(planningAfterUp).toBe(planningBefore)
   })
 })
