@@ -67,6 +67,7 @@ describe('buildHiveStudioSimulation', () => {
 describe('Hive Studio app', () => {
   afterEach(() => {
     cleanup()
+    window.localStorage.clear()
   })
 
   it('renders the live scene in simulation mode with archipelago data', () => {
@@ -101,5 +102,20 @@ describe('Hive Studio app', () => {
       document.querySelectorAll('[data-testid^="hive-archipelago-house-planning-"]')
     ).filter((house) => house.getAttribute('data-active') === 'true').length
     expect(planningAfterUp).toBe(planningBefore)
+  })
+
+  it('persists studio settings across remounts in localStorage', async () => {
+    const user = userEvent.setup()
+    const { unmount } = render(<StudioApp />)
+
+    await user.click(screen.getByRole('button', { name: 'Открыть пульт' }))
+    await user.click(screen.getByRole('button', { name: 'Добавить спутник' }))
+    await user.selectOptions(screen.getByLabelText('Статус'), 'sleeping')
+    unmount()
+
+    render(<StudioApp />)
+    expect(screen.getByLabelText('Пульт Hive Studio')).toBeTruthy()
+    expect(screen.getByText('спутников: 1')).toBeTruthy()
+    expect((screen.getByLabelText('Статус') as HTMLSelectElement).value).toBe('sleeping')
   })
 })

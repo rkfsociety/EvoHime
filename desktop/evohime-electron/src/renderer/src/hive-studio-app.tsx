@@ -14,7 +14,7 @@
  * production-бандл (rollup input перечисляет только index.html).
  */
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { BrandLotus } from './BrandLotus'
 import { HiveCityScene, type HiveCityDepartmentPin } from './components/3d'
@@ -75,17 +75,112 @@ function agentHints(departments: readonly HiveStudioDepartmentState[]): {
   return hints
 }
 
+const STUDIO_SETTINGS_STORAGE_KEY = 'evohime:hive-studio:settings:v1'
+
+interface PersistedStudioSettings {
+  readonly status: StudioStatus
+  readonly queenWorking: boolean
+  readonly satelliteCount: number
+  readonly selectedDepartment: string | null
+  readonly panelOpen: boolean
+  readonly departments: readonly HiveStudioDepartmentState[]
+}
+
+function loadStudioSettings(): PersistedStudioSettings {
+  const defaults: PersistedStudioSettings = {
+    status: 'active',
+    queenWorking: true,
+    satelliteCount: 0,
+    selectedDepartment: null,
+    panelOpen: false,
+    departments: HIVE_STUDIO_DEPARTMENTS
+  }
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return defaults
+    const raw = window.localStorage.getItem(STUDIO_SETTINGS_STORAGE_KEY)
+    if (!raw) return defaults
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const statusCandidate = parsed.status
+    const validStatus = STATUS_OPTIONS.some((item) => item.value === statusCandidate)
+      ? (statusCandidate as StudioStatus)
+      : defaults.status
+    const queenWorking = typeof parsed.queenWorking === 'boolean' ? parsed.queenWorking : defaults.queenWorking
+    const satelliteCount =
+      typeof parsed.satelliteCount === 'number' && Number.isInteger(parsed.satelliteCount)
+        ? Math.max(0, Math.min(6, parsed.satelliteCount))
+        : defaults.satelliteCount
+    const panelOpen = typeof parsed.panelOpen === 'boolean' ? parsed.panelOpen : defaults.panelOpen
+    const savedDepts = Array.isArray(parsed.departments) ? parsed.departments : []
+    const byKey = new Map<string, { activeCount?: unknown; maxCapacity?: unknown }>()
+    for (const entry of savedDepts) {
+      if (entry && typeof entry === 'object' && typeof (entry as { key?: unknown }).key === 'string') {
+        byKey.set((entry as { key: string }).key, entry as { activeCount?: unknown; maxCapacity?: unknown })
+      }
+    }
+    const departments = HIVE_STUDIO_DEPARTMENTS.map((base) => {
+      const saved = byKey.get(base.key)
+      if (!saved) return base
+      const maxCapacity =
+        typeof saved.maxCapacity === 'number' && Number.isInteger(saved.maxCapacity)
+          ? Math.max(1, Math.min(5, saved.maxCapacity))
+          : base.maxCapacity
+      const activeCount =
+        typeof saved.activeCount === 'number' && Number.isInteger(saved.activeCount)
+          ? Math.max(0, Math.min(maxCapacity, saved.activeCount))
+          : Math.min(maxCapacity, base.activeCount)
+      return { ...base, maxCapacity, activeCount }
+    })
+    const selectedDepartment =
+      typeof parsed.selectedDepartment === 'string' &&
+      departments.some((item) => item.key === parsed.selectedDepartment)
+        ? parsed.selectedDepartment
+        : null
+    return {
+      status: validStatus,
+      queenWorking,
+      satelliteCount,
+      selectedDepartment,
+      panelOpen,
+      departments
+    }
+  } catch {
+    return defaults
+  }
+}
+
 /** Экспортирован для smoke-тестов стенда (tests/hive-studio.test.tsx). */
 export function StudioApp(): React.JSX.Element {
-  const [status, setStatus] = useState<StudioStatus>('active')
-  const [queenWorking, setQueenWorking] = useState(true)
+  const [initial] = useState<PersistedStudioSettings>(loadStudioSettings)
+  const [status, setStatus] = useState<StudioStatus>(initial.status)
+  const [queenWorking, setQueenWorking] = useState(initial.queenWorking)
   const [departments, setDepartments] = useState<readonly HiveStudioDepartmentState[]>(
-    HIVE_STUDIO_DEPARTMENTS
+    initial.departments
   )
-  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
-  const [satelliteCount, setSatelliteCount] = useState(0)
+  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(initial.selectedDepartment)
+  const [satelliteCount, setSatelliteCount] = useState(initial.satelliteCount)
   const [rescanTick, setRescanTick] = useState(0)
-  const [panelOpen, setPanelOpen] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(initial.panelOpen)
+
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return
+      const payload = {
+        status,
+        queenWorking,
+        satelliteCount,
+        selectedDepartment,
+        panelOpen,
+        departments: departments.map((item) => ({
+          key: item.key,
+          activeCount: item.activeCount,
+          maxCapacity: item.maxCapacity
+        }))
+      }
+      window.localStorage.setItem(STUDIO_SETTINGS_STORAGE_KEY, JSON.stringify(payload))
+    } catch {
+      // Игнорируем ограничения квоты/приватного режима.
+    }
+  }, [status, queenWorking, satelliteCount, selectedDepartment, panelOpen, departments])
 
   const simulation = useMemo(
     () =>
