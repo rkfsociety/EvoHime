@@ -1897,11 +1897,27 @@ function isVehicleAheadBlocked(
 }
 
 interface AgentCarSim extends VehiclePoseState {
-  phase: 'delivering' | 'to_ring' | 'outer_to_uturn' | 'along_ring' | 'queued' | 'processing' | 'returning_ring' | 'cooldown'
+  phase:
+    | 'delivering'
+    | 'at_home_briefing'
+    | 'to_module'
+    | 'at_module'
+    | 'from_module'
+    | 'at_home_study'
+    | 'to_ring'
+    | 'outer_to_uturn'
+    | 'along_ring'
+    | 'queued'
+    | 'processing'
+    | 'returning_ring'
+    | 'cooldown'
   progress: number
   curAngle: number
   cooldown: number
   curLaneOffset: number
+  moduleStep: number
+  moduleTotalSteps: number
+  moduleIdx: number
   turnStartAngle?: number
 }
 
@@ -1987,6 +2003,11 @@ function QueenRoads3D({
     [lots]
   )
 
+  const moduleBuildings = useMemo(
+    () => view.buildings.filter((item) => item.building.kind !== 'citadel'),
+    [view.buildings]
+  )
+
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const gateLampRef = useRef<THREE.Mesh>(null)
   const instanceColor = useMemo(() => new THREE.Color(), [])
@@ -2009,8 +2030,11 @@ function QueenRoads3D({
         phase: lot.active ? 'delivering' : 'cooldown',
         progress: 0,
         curAngle: QUEEN_GATE_ANGLE,
-        cooldown: idx * 0.32,
-        curLaneOffset: 0.11
+        cooldown: idx * 0.38,
+        curLaneOffset: 0.11,
+        moduleStep: 0,
+        moduleTotalSteps: 1 + (idx % 2),
+        moduleIdx: idx % Math.max(1, moduleBuildings.length)
       }))
       queueRef.current = []
       processingLotRef.current = null
@@ -2228,6 +2252,190 @@ function QueenRoads3D({
       return { segments, totalLength, stopProgress: gateApproachLen / totalLength }
     }
 
+    const pickTargetModule = (homeAngle: number, step: number) => {
+      if (moduleBuildings.length === 0) return undefined
+      const hx = Math.cos(homeAngle) * ringRadius
+      const hz = Math.sin(homeAngle) * ringRadius
+      const sorted = [...moduleBuildings].sort((a, b) => {
+        const da = Math.hypot(a.x - hx, a.z - hz)
+        const db = Math.hypot(b.x - hx, b.z - hz)
+        return da - db
+      })
+      return sorted[step % sorted.length]
+    }
+
+    const buildHomeToModulePath = (
+      homeAngle: number,
+      target: { x: number; z: number }
+    ): {
+      segments: readonly PathSegment[]
+      totalLength: number
+      ringStopProgress: number
+      avenueStopProgress: number
+    } => {
+      const targetAngle = Math.atan2(target.z, target.x)
+      const targetR = Math.hypot(target.x, target.z)
+      const targetEntryR = Math.max(mainAvenueR + 0.41, targetR - 0.25)
+      const outerLaneR = innerBoulevardR + 0.28
+      const innerBorderR = innerBoulevardR + 0.41
+      const bridgeLen = Math.max(0.1, mainAvenueR - 0.41 - innerBorderR)
+      const outHdx = -Math.cos(homeAngle)
+      const outHdz = -Math.sin(homeAngle)
+      const outBdx = Math.cos(QUEEN_GATE_ANGLE)
+      const outBdz = Math.sin(QUEEN_GATE_ANGLE)
+      const outArc = posArc(homeAngle - QUEEN_GATE_ANGLE)
+      const seg0Len = Math.max(0.1, homeGarageR - innerBorderR)
+      const seg1Len = outArc * outerLaneR
+      const segments: PathSegment[] = [
+        {
+          len: seg0Len,
+          eval: (u) => {
+            const r = homeGarageR - u * (homeGarageR - innerBorderR)
+            return {
+              x: view.x + Math.cos(homeAngle) * r - outHdz * laneOffset,
+              z: view.z + Math.sin(homeAngle) * r + outHdx * laneOffset,
+              dx: outHdx,
+              dz: outHdz
+            }
+          }
+        },
+        {
+          len: seg1Len,
+          eval: (u) => {
+            const curA = homeAngle - outArc * u
+            return {
+              x: view.x + Math.cos(curA) * outerLaneR,
+              z: view.z + Math.sin(curA) * outerLaneR,
+              dx: Math.sin(curA),
+              dz: -Math.cos(curA)
+            }
+          }
+        },
+        {
+          len: bridgeLen,
+          eval: (u) => {
+            const r = innerBorderR + u * (mainAvenueR - 0.41 - innerBorderR)
+            return {
+              x: view.x + Math.cos(QUEEN_GATE_ANGLE) * r - outBdz * laneOffset,
+              z: view.z + Math.sin(QUEEN_GATE_ANGLE) * r + outBdx * laneOffset,
+              dx: outBdx,
+              dz: outBdz
+            }
+          }
+        },
+        ...buildMainRingPddSegments(
+          view.x,
+          view.z,
+          QUEEN_GATE_ANGLE,
+          mainAvenueR - 0.41,
+          targetAngle,
+          targetEntryR,
+          mainAvenueR,
+          QUEEN_GATE_ANGLE,
+          true,
+          laneOffset
+        )
+      ]
+      const totalLength = Math.max(
+        1.5,
+        segments.reduce((sum, seg) => sum + seg.len, 0)
+      )
+      const ringStopDist = Math.max(0, seg0Len + seg1Len - 0.48)
+      const avenueStopDist = Math.max(ringStopDist + 0.2, seg0Len + seg1Len + bridgeLen - 0.12)
+      return {
+        segments,
+        totalLength,
+        ringStopProgress: ringStopDist / totalLength,
+        avenueStopProgress: avenueStopDist / totalLength
+      }
+    }
+
+    const buildModuleToHomePath = (
+      homeAngle: number,
+      target: { x: number; z: number }
+    ): {
+      segments: readonly PathSegment[]
+      totalLength: number
+      avenueStopProgress: number
+      ringStopProgress: number
+    } => {
+      const targetAngle = Math.atan2(target.z, target.x)
+      const targetR = Math.hypot(target.x, target.z)
+      const targetEntryR = Math.max(mainAvenueR + 0.41, targetR - 0.25)
+      const outerLaneR = innerBoulevardR + 0.28
+      const innerBorderR = innerBoulevardR + 0.41
+      const bridgeLen = Math.max(0.1, mainAvenueR - 0.41 - innerBorderR)
+      const inBdx = -Math.cos(QUEEN_GATE_ANGLE)
+      const inBdz = -Math.sin(QUEEN_GATE_ANGLE)
+      const inHdx = Math.cos(homeAngle)
+      const inHdz = Math.sin(homeAngle)
+      const inArc = posArc(QUEEN_GATE_ANGLE - homeAngle)
+      const mainRingSegs = buildMainRingPddSegments(
+        view.x,
+        view.z,
+        targetAngle,
+        targetEntryR,
+        QUEEN_GATE_ANGLE,
+        mainAvenueR - 0.41,
+        mainAvenueR,
+        QUEEN_GATE_ANGLE,
+        false,
+        laneOffset
+      )
+      const mainRingLen = mainRingSegs.reduce((sum, seg) => sum + seg.len, 0)
+      const segments: PathSegment[] = [
+        ...mainRingSegs,
+        {
+          len: bridgeLen,
+          eval: (u) => {
+            const r = mainAvenueR - 0.41 - u * (mainAvenueR - 0.41 - innerBorderR)
+            return {
+              x: view.x + Math.cos(QUEEN_GATE_ANGLE) * r - inBdz * laneOffset,
+              z: view.z + Math.sin(QUEEN_GATE_ANGLE) * r + inBdx * laneOffset,
+              dx: inBdx,
+              dz: inBdz
+            }
+          }
+        },
+        {
+          len: inArc * outerLaneR,
+          eval: (u) => {
+            const curA = QUEEN_GATE_ANGLE - inArc * u
+            return {
+              x: view.x + Math.cos(curA) * outerLaneR,
+              z: view.z + Math.sin(curA) * outerLaneR,
+              dx: Math.sin(curA),
+              dz: -Math.cos(curA)
+            }
+          }
+        },
+        {
+          len: Math.max(0.1, homeGarageR - innerBorderR),
+          eval: (u) => {
+            const r = innerBorderR + u * (homeGarageR - innerBorderR)
+            return {
+              x: view.x + Math.cos(homeAngle) * r - inHdz * laneOffset,
+              z: view.z + Math.sin(homeAngle) * r + inHdx * laneOffset,
+              dx: inHdx,
+              dz: inHdz
+            }
+          }
+        }
+      ]
+      const totalLength = Math.max(
+        1.5,
+        segments.reduce((sum, seg) => sum + seg.len, 0)
+      )
+      const avenueStopDist = Math.max(0, mainRingLen - 0.48)
+      const ringStopDist = Math.max(avenueStopDist + 0.2, mainRingLen + bridgeLen - 0.12)
+      return {
+        segments,
+        totalLength,
+        avenueStopProgress: avenueStopDist / totalLength,
+        ringStopProgress: ringStopDist / totalLength
+      }
+    }
+
     // Шаг 2: двигаем каждую машину и обновляем её матрицу (с запретом проезда сквозь впереди идущую машину).
     lots.forEach((lot, index) => {
       if (index >= mesh.count) return
@@ -2280,9 +2488,11 @@ function QueenRoads3D({
           }
           if (car.progress >= 1) {
             deliveredMapRef.current.set(lot.slot, true)
-            car.phase = 'to_ring'
+            car.moduleStep = 0
+            car.moduleTotalSteps = 1 + (index % 2)
+            car.phase = 'at_home_briefing'
             car.progress = 0
-            car.cooldown = 0.25
+            car.cooldown = 0.45
           }
         }
         const t = Math.min(1, Math.max(0, car.progress))
@@ -2291,6 +2501,131 @@ function QueenRoads3D({
         z = pose.z
         dirX = pose.dx
         dirZ = pose.dz
+      } else if (car.phase === 'at_home_briefing') {
+        visible = false
+        dirX = -Math.cos(homeAngle)
+        dirZ = -Math.sin(homeAngle)
+        x = view.x + Math.cos(homeAngle) * homeGarageR - dirZ * laneOffset
+        z = view.z + Math.sin(homeAngle) * homeGarageR + dirX * laneOffset
+        car.cooldown -= dt
+        if (car.cooldown <= 0) {
+          car.phase = moduleBuildings.length > 0 ? 'to_module' : 'to_ring'
+          car.progress = 0
+        }
+      } else if (car.phase === 'to_module') {
+        const target = pickTargetModule(homeAngle, car.moduleStep)
+        if (!target) {
+          car.phase = 'to_ring'
+          car.progress = 0
+        } else {
+          const modOutPath = buildHomeToModulePath(homeAngle, target)
+          const curPose = evalSegmentedPose(modOutPath.segments, Math.min(1, Math.max(0, car.progress)))
+          const aheadBlocked =
+            car.lastVisible === true &&
+            isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+          if (!aheadBlocked) {
+            const nextP = car.progress + dt * (HIVE_CAR_SPEED / modOutPath.totalLength)
+            if (
+              !ringGreen &&
+              car.progress <= modOutPath.ringStopProgress &&
+              nextP >= modOutPath.ringStopProgress
+            ) {
+              car.progress = modOutPath.ringStopProgress
+            } else if (
+              !radialGreen &&
+              car.progress <= modOutPath.avenueStopProgress &&
+              nextP >= modOutPath.avenueStopProgress
+            ) {
+              car.progress = modOutPath.avenueStopProgress
+            } else {
+              car.progress = nextP
+            }
+          }
+          if (car.progress >= 1) {
+            car.phase = 'at_module'
+            car.progress = 0
+            car.cooldown = 0.65
+          }
+          const pose = evalSegmentedPose(modOutPath.segments, Math.min(1, Math.max(0, car.progress)))
+          x = pose.x
+          z = pose.z
+          dirX = pose.dx
+          dirZ = pose.dz
+        }
+      } else if (car.phase === 'at_module') {
+        const target = pickTargetModule(homeAngle, car.moduleStep)
+        visible = false
+        if (target) {
+          const modOutPath = buildHomeToModulePath(homeAngle, target)
+          const pose = evalSegmentedPose(modOutPath.segments, 1)
+          x = pose.x
+          z = pose.z
+          dirX = pose.dx
+          dirZ = pose.dz
+        }
+        car.cooldown -= dt
+        if (car.cooldown <= 0) {
+          car.phase = 'from_module'
+          car.progress = 0
+        }
+      } else if (car.phase === 'from_module') {
+        const target = pickTargetModule(homeAngle, car.moduleStep)
+        if (!target) {
+          car.phase = 'to_ring'
+          car.progress = 0
+        } else {
+          const modInPath = buildModuleToHomePath(homeAngle, target)
+          const curPose = evalSegmentedPose(modInPath.segments, Math.min(1, Math.max(0, car.progress)))
+          const aheadBlocked =
+            car.lastVisible === true &&
+            isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+          if (!aheadBlocked) {
+            const nextP = car.progress + dt * (HIVE_CAR_SPEED / modInPath.totalLength)
+            if (
+              !ringGreen &&
+              car.progress <= modInPath.avenueStopProgress &&
+              nextP >= modInPath.avenueStopProgress
+            ) {
+              car.progress = modInPath.avenueStopProgress
+            } else if (
+              !radialGreen &&
+              car.progress <= modInPath.ringStopProgress &&
+              nextP >= modInPath.ringStopProgress
+            ) {
+              car.progress = modInPath.ringStopProgress
+            } else {
+              car.progress = nextP
+            }
+          }
+          if (car.progress >= 1) {
+            car.phase = 'at_home_study'
+            car.progress = 0
+            car.cooldown = 0.75
+          }
+          const pose = evalSegmentedPose(modInPath.segments, Math.min(1, Math.max(0, car.progress)))
+          x = pose.x
+          z = pose.z
+          dirX = pose.dx
+          dirZ = pose.dz
+        }
+      } else if (car.phase === 'at_home_study') {
+        visible = false
+        dirX = -Math.cos(homeAngle)
+        dirZ = -Math.sin(homeAngle)
+        x = view.x + Math.cos(homeAngle) * homeGarageR - dirZ * laneOffset
+        z = view.z + Math.sin(homeAngle) * homeGarageR + dirX * laneOffset
+        car.cooldown -= dt
+        if (car.cooldown <= 0) {
+          car.moduleStep += 1
+          if (car.moduleStep < car.moduleTotalSteps && moduleBuildings.length > 0) {
+            car.phase = 'to_module'
+            car.progress = 0
+          } else {
+            car.phase = 'to_ring'
+            car.progress = 0
+            car.cooldown = 0.15
+          }
+        }
       } else if (car.phase === 'to_ring') {
         const hdx = -Math.cos(homeAngle)
         const hdz = -Math.sin(homeAngle)
@@ -2493,9 +2828,12 @@ function QueenRoads3D({
           }
         }
         if (car.progress >= 1) {
-          car.phase = 'cooldown'
+          deliveredMapRef.current.set(lot.slot, true)
+          car.moduleStep = 0
+          car.moduleTotalSteps = 1 + ((car.moduleTotalSteps + 1) % 2)
+          car.phase = 'at_home_briefing'
           car.progress = 0
-          car.cooldown = 0.25 + (index % 5) * 0.15
+          car.cooldown = 0.55
         }
         const t = Math.min(1, car.progress)
         const pose = evalSegmentedPose(queenOutPath.segments, t)
@@ -2504,7 +2842,7 @@ function QueenRoads3D({
         dirX = pose.dx
         dirZ = pose.dz
       } else {
-        // Ожидание внутри гаража дома перед плавным выездом.
+        // Ожидание внутри гаража дома перед следующей поездкой к файлу или к Королеве с отчётом.
         visible = false
         dirX = -Math.cos(homeAngle)
         dirZ = -Math.sin(homeAngle)
@@ -2512,7 +2850,7 @@ function QueenRoads3D({
         z = view.z + Math.sin(homeAngle) * homeGarageR + dirX * laneOffset
         car.cooldown -= dt
         if (car.cooldown <= 0) {
-          car.phase = 'to_ring'
+          car.phase = moduleBuildings.length > 0 ? 'to_module' : 'to_ring'
           car.progress = 0
         }
       }
@@ -2690,347 +3028,6 @@ function QueenRoads3D({
         ref={meshRef}
         args={[undefined, packetMaterial, Math.max(1, lots.length)]}
         visible={lots.length > 0}
-        frustumCulled={false}
-      >
-        <boxGeometry args={[1, 1, 1]} />
-      </instancedMesh>
-    </group>
-  )
-}
-
-/**
- * Дороги от домов активных агентов (или кольца агентов при droneCount > 0)
- * к кварталам модулей города: курьерские пакеты доставляют задачи и забирают
- * результаты прямо по дорогам, а не летают бесцельно в космосе.
- */
-function AgentModuleCouriers3D({
-  view,
-  lots,
-  deliveredMapRef,
-  active,
-  paused
-}: {
-  view: CityIslandView
-  lots: readonly HiveCityHouseLot[]
-  deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
-  active: boolean
-  paused: boolean
-}) {
-  const packetMaterial = useMemo(
-    () =>
-      new THREE.MeshBasicMaterial({
-        color: '#ffffff',
-        transparent: true,
-        opacity: 0.95
-      }),
-    []
-  )
-  useEffect(() => () => {
-    packetMaterial.dispose()
-  }, [packetMaterial])
-
-  const routes = useMemo(() => {
-    const modules = view.buildings.filter((item) => item.building.kind !== 'citadel')
-    if (modules.length === 0 || lots.length === 0) return []
-    const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
-    const mainAvenueR = capitalMainAvenueRadius(lots[0]?.total ?? lots.length)
-    const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
-    const homeEdgeR = Math.max(innerBoulevardR + 0.35, ringRadius - 0.55)
-    const bridgeAngle = QUEEN_GATE_ANGLE
-    const sourceLots = lots.filter((lot) => lot.active)
-
-    const list: Array<{
-      readonly lotSlot: number
-      readonly color: string
-      readonly phase: number
-      readonly active: boolean
-      readonly outboundSegments: readonly PathSegment[]
-      readonly inboundSegments: readonly PathSegment[]
-      readonly outboundLength: number
-      readonly inboundLength: number
-    }> = []
-
-    const laneOffset = 0.11
-
-    sourceLots.forEach((lot, idx) => {
-      const houseAngle = capitalHouseAngle(lot.slot, lot.total)
-      const hx = Math.cos(houseAngle) * ringRadius
-      const hz = Math.sin(houseAngle) * ringRadius
-      const sorted = [...modules].sort((a, b) => {
-        const da = Math.hypot(a.x - hx, a.z - hz)
-        const db = Math.hypot(b.x - hx, b.z - hz)
-        return da - db
-      })
-      const target = sorted[0]
-      if (!target) return
-      const targetAngle = Math.atan2(target.z, target.x)
-      const targetR = Math.hypot(target.x, target.z)
-      const houseGarageR = Math.max(homeEdgeR + 0.35, ringRadius)
-      const targetEntryR = Math.max(mainAvenueR + 0.41, targetR - 0.25)
-
-      const outerLaneR = innerBoulevardR + 0.28
-      const innerBorderR = innerBoulevardR + 0.41
-      const bridgeLen = Math.max(0.1, mainAvenueR - 0.41 - innerBorderR)
-
-      const outHdx = -Math.cos(houseAngle)
-      const outHdz = -Math.sin(houseAngle)
-      const outBdx = Math.cos(bridgeAngle)
-      const outBdz = Math.sin(bridgeAngle)
-      const outArc = posArc(houseAngle - bridgeAngle)
-      const outboundSegments: PathSegment[] = [
-        {
-          len: Math.max(0.1, houseGarageR - innerBorderR),
-          eval: (u) => {
-            const r = houseGarageR - u * (houseGarageR - innerBorderR)
-            return {
-              x: view.x + Math.cos(houseAngle) * r - outHdz * laneOffset,
-              z: view.z + Math.sin(houseAngle) * r + outHdx * laneOffset,
-              dx: outHdx,
-              dz: outHdz
-            }
-          }
-        },
-        {
-          len: outArc * outerLaneR,
-          eval: (u) => {
-            const curA = houseAngle - outArc * u
-            return {
-              x: view.x + Math.cos(curA) * outerLaneR,
-              z: view.z + Math.sin(curA) * outerLaneR,
-              dx: Math.sin(curA),
-              dz: -Math.cos(curA)
-            }
-          }
-        },
-        {
-          len: bridgeLen,
-          eval: (u) => {
-            const r = innerBorderR + u * (mainAvenueR - 0.41 - innerBorderR)
-            return {
-              x: view.x + Math.cos(bridgeAngle) * r - outBdz * laneOffset,
-              z: view.z + Math.sin(bridgeAngle) * r + outBdx * laneOffset,
-              dx: outBdx,
-              dz: outBdz
-            }
-          }
-        },
-        ...buildMainRingPddSegments(
-          view.x,
-          view.z,
-          bridgeAngle,
-          mainAvenueR - 0.41,
-          targetAngle,
-          targetEntryR,
-          mainAvenueR,
-          QUEEN_GATE_ANGLE,
-          true,
-          laneOffset
-        )
-      ]
-
-      const inBdx = -Math.cos(bridgeAngle)
-      const inBdz = -Math.sin(bridgeAngle)
-      const inHdx = Math.cos(houseAngle)
-      const inHdz = Math.sin(houseAngle)
-      const inArc = posArc(bridgeAngle - houseAngle)
-      const inboundSegments: PathSegment[] = [
-        ...buildMainRingPddSegments(
-          view.x,
-          view.z,
-          targetAngle,
-          targetEntryR,
-          bridgeAngle,
-          mainAvenueR - 0.41,
-          mainAvenueR,
-          QUEEN_GATE_ANGLE,
-          false,
-          laneOffset
-        ),
-        {
-          len: bridgeLen,
-          eval: (u) => {
-            const r = mainAvenueR - 0.41 - u * (mainAvenueR - 0.41 - innerBorderR)
-            return {
-              x: view.x + Math.cos(bridgeAngle) * r - inBdz * laneOffset,
-              z: view.z + Math.sin(bridgeAngle) * r + inBdx * laneOffset,
-              dx: inBdx,
-              dz: inBdz
-            }
-          }
-        },
-        {
-          len: inArc * outerLaneR,
-          eval: (u) => {
-            const curA = bridgeAngle - inArc * u
-            return {
-              x: view.x + Math.cos(curA) * outerLaneR,
-              z: view.z + Math.sin(curA) * outerLaneR,
-              dx: Math.sin(curA),
-              dz: -Math.cos(curA)
-            }
-          }
-        },
-        {
-          len: Math.max(0.1, houseGarageR - innerBorderR),
-          eval: (u) => {
-            const r = innerBorderR + u * (houseGarageR - innerBorderR)
-            return {
-              x: view.x + Math.cos(houseAngle) * r - inHdz * laneOffset,
-              z: view.z + Math.sin(houseAngle) * r + inHdx * laneOffset,
-              dx: inHdx,
-              dz: inHdz
-            }
-          }
-        }
-      ]
-
-      const outboundLength = Math.max(
-        1.5,
-        outboundSegments.reduce((sum, seg) => sum + seg.len, 0)
-      )
-      const inboundLength = Math.max(
-        1.5,
-        inboundSegments.reduce((sum, seg) => sum + seg.len, 0)
-      )
-
-      list.push({
-        lotSlot: lot.slot,
-        color: lot.active ? lot.accent : '#7ef2c4',
-        phase: idx / Math.max(1, sourceLots.length),
-        active: lot.active,
-        outboundSegments,
-        inboundSegments,
-        outboundLength,
-        inboundLength
-      })
-    })
-    return list.slice(0, 18)
-  }, [view, lots])
-
-  const meshRef = useRef<THREE.InstancedMesh>(null)
-  const instanceColor = useMemo(() => new THREE.Color(), [])
-  const courierProgressRef = useRef<Map<number, number>>(new Map())
-  const courierPosesRef = useRef<VehiclePoseState[]>([])
-  const routeSignatureRef = useRef<Map<number, string>>(new Map())
-  useLayoutEffect(() => {
-    const activeSlots = new Set<number>()
-    for (const route of routes) {
-      if (!route.active) continue
-      activeSlots.add(route.lotSlot)
-      const sig = `${route.outboundLength.toFixed(3)}:${route.inboundLength.toFixed(3)}`
-      if (routeSignatureRef.current.get(route.lotSlot) !== sig) {
-        courierProgressRef.current.delete(route.lotSlot * 2)
-        courierProgressRef.current.delete(route.lotSlot * 2 + 1)
-        routeSignatureRef.current.set(route.lotSlot, sig)
-      }
-    }
-    for (const slot of Array.from(routeSignatureRef.current.keys())) {
-      if (!activeSlots.has(slot)) {
-        courierProgressRef.current.delete(slot * 2)
-        courierProgressRef.current.delete(slot * 2 + 1)
-        routeSignatureRef.current.delete(slot)
-      }
-    }
-    const mesh = meshRef.current
-    if (!mesh) return
-    routes.forEach((route, index) => {
-      // Две машины на маршрут: туда (к модулю — насыщенный цвет департамента)
-      // и обратно (к агенту — осветлённый оттенок того же департамента).
-      instanceColor.set(route.color)
-      mesh.setColorAt(index * 2, instanceColor)
-      instanceColor.lerp(new THREE.Color('#ffffff'), 0.45)
-      mesh.setColorAt(index * 2 + 1, instanceColor)
-    })
-    if (mesh.instanceColor !== null) mesh.instanceColor.needsUpdate = true
-  }, [routes, instanceColor])
-
-  useFrame((_, delta) => {
-    const mesh = meshRef.current
-    if (!mesh || !active || routes.length === 0) return
-    const dt = paused ? 0 : Math.min(delta, 0.05)
-    const dummy = FRAME_DUMMY
-    const poses = courierPosesRef.current
-
-    routes.forEach((route, index) => {
-      for (let dir = 0; dir < 2; dir += 1) {
-        const instIdx = index * 2 + dir
-        if (instIdx >= mesh.count) continue
-        let poseState = poses[instIdx]
-        if (!poseState) {
-          poseState = {}
-          poses[instIdx] = poseState
-        }
-        // Пока машина от Королевы не доехала до этого дома-агента, он не отправляет курьеров к модулям.
-        if (route.active && !paused && deliveredMapRef.current.get(route.lotSlot) !== true) {
-          courierProgressRef.current.delete(route.lotSlot * 2 + dir)
-          poseState.lastVisible = false
-          dummy.scale.setScalar(0)
-          dummy.updateMatrix()
-          mesh.setMatrixAt(instIdx, dummy.matrix)
-          continue
-        }
-        const flowSpeed = HIVE_CAR_SPEED / (dir === 0 ? route.outboundLength : route.inboundLength)
-        const segments = dir === 0 ? route.outboundSegments : route.inboundSegments
-        let p: number
-        if (paused) {
-          p = (route.phase + dir * 0.5) % 1
-        } else {
-          const key = route.lotSlot * 2 + dir
-          let rawProgress = courierProgressRef.current.get(key)
-          if (rawProgress === undefined) {
-            rawProgress = dir === 1 ? -0.5 : (index % 6) * 0.08
-            courierProgressRef.current.set(key, rawProgress)
-          }
-          if (rawProgress < 0) {
-            rawProgress = Math.min(0, rawProgress + dt * flowSpeed)
-            courierProgressRef.current.set(key, rawProgress)
-            if (rawProgress <= 0) {
-              poseState.lastVisible = false
-              dummy.scale.setScalar(0)
-              dummy.updateMatrix()
-              mesh.setMatrixAt(instIdx, dummy.matrix)
-              continue
-            }
-          } else {
-            const curPose = evalSegmentedPose(segments, rawProgress % 1)
-            const blocked =
-              poseState.lastVisible === true &&
-              isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, instIdx, poses, 0.5)
-            if (!blocked) {
-              rawProgress = (rawProgress + dt * flowSpeed) % 1
-              courierProgressRef.current.set(key, rawProgress)
-            }
-          }
-          p = rawProgress % 1
-        }
-        const pose = evalSegmentedPose(segments, p)
-        poseState.lastVisible = true
-        poseState.lastX = pose.x
-        poseState.lastZ = pose.z
-        poseState.lastDirX = pose.dx
-        poseState.lastDirZ = pose.dz
-
-        const courierY = 0.12 + (instIdx % 7) * 0.0008
-        dummy.position.set(pose.x, courierY, pose.z)
-        dummy.lookAt(pose.x + pose.dx, courierY, pose.z + pose.dz)
-        dummy.scale.set(route.active ? 0.14 : 0.11, 0.1, route.active ? 0.34 : 0.24)
-        dummy.updateMatrix()
-        mesh.setMatrixAt(instIdx, dummy.matrix)
-      }
-    })
-    mesh.instanceMatrix.needsUpdate = true
-  })
-
-  if (routes.length === 0) return <></>
-
-  return (
-    <group>
-      {/* Подъезды к домам и модулям уже построены без пересечений в QueenRoads3D и CityStreets3D;
-          здесь рисуются только курьерские машины-потоки. */}
-      <instancedMesh
-        ref={meshRef}
-        args={[undefined, packetMaterial, Math.max(1, routes.length * 2)]}
-        visible={active && routes.length > 0}
         frustumCulled={false}
       >
         <boxGeometry args={[1, 1, 1]} />
@@ -3785,23 +3782,14 @@ function IslandGroup3D({
         paused={paused}
       />
       {departmentHouses !== undefined && departmentHouses.length > 0 ? (
-        <>
-          <QueenRoads3D
-            view={view}
-            lots={departmentHouses}
-            skin={skin}
-            deliveredMapRef={deliveredMapRef}
-            active={queenActive}
-            paused={paused}
-          />
-          <AgentModuleCouriers3D
-            view={view}
-            lots={departmentHouses}
-            deliveredMapRef={deliveredMapRef}
-            active={queenActive}
-            paused={paused}
-          />
-        </>
+        <QueenRoads3D
+          view={view}
+          lots={departmentHouses}
+          skin={skin}
+          deliveredMapRef={deliveredMapRef}
+          active={queenActive}
+          paused={paused}
+        />
       ) : null}
       <IslandTowers
         view={view}
