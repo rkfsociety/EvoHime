@@ -36,8 +36,8 @@ import type { HiveCityHouseLot } from './HiveCityScene'
 
 /** Fixed isometric camera offset (angle never changes; only zoom/pan). */
 const CAMERA_OFFSET = new THREE.Vector3(34, 30, 34)
-/** Top-down camera offset (micro X/Z offset prevents lookAt gimbal flip). */
-const TOP_CAMERA_OFFSET = new THREE.Vector3(0.01, 56, 0.01)
+/** Top-down camera offset (micro Z offset prevents lookAt gimbal flip and aligns X/Z axes). */
+const TOP_CAMERA_OFFSET = new THREE.Vector3(0, 56, 0.01)
 
 const OVERVIEW_ZOOM_SOLO = 22
 const OVERVIEW_ZOOM_ARCHIPELAGO = 14
@@ -413,12 +413,13 @@ function IslandGround({
     rockMaterial.dispose()
   }, [top, side, rim, rockMaterial])
 
-  // 6 рёбер контурного обода ровно по вершинам CylinderGeometry (не перекрывают верхнюю плиту).
+  // 6 рёбер контурного обода ровно по вершинам повёрнутого на 30° CylinderGeometry
+  // (верхняя и нижняя грани соты горизонтальны по оси X).
   const rimSegments = useMemo(() => {
     const r = view.radius
     return Array.from({ length: 6 }, (_, index) => {
-      const a0 = (index * Math.PI) / 3
-      const a1 = ((index + 1) * Math.PI) / 3
+      const a0 = (index * Math.PI) / 3 + Math.PI / 6
+      const a1 = ((index + 1) * Math.PI) / 3 + Math.PI / 6
       const x0 = Math.sin(a0) * r
       const z0 = Math.cos(a0) * r
       const x1 = Math.sin(a1) * r
@@ -453,9 +454,10 @@ function IslandGround({
 
   return (
     <group ref={ref}>
-      {/* Плита города: шестиугольная, верхняя поверхность ровно на y = 0. */}
+      {/* Плита города: шестиугольная (flat-top: верхняя и нижняя грани горизонтальны). */}
       <mesh
         position={[0, -0.375, 0]}
+        rotation={[0, Math.PI / 6, 0]}
         material={[side, top, side]}
         onPointerDown={(event: ThreeEvent<PointerEvent>) => {
           event.stopPropagation()
@@ -476,7 +478,7 @@ function IslandGround({
         </mesh>
       ))}
       {/* Скальное основание: перевёрнутая усечённая пирамида строго под плитой (y <= -0.75). */}
-      <mesh position={[0, -0.75 - rockHeight / 2, 0]} rotation={[Math.PI, 0, 0]} material={rockMaterial}>
+      <mesh position={[0, -0.75 - rockHeight / 2, 0]} rotation={[Math.PI, Math.PI / 6, 0]} material={rockMaterial}>
         <cylinderGeometry args={[view.radius * 0.24, view.radius * 0.88, rockHeight, 6]} />
       </mesh>
       <group>
