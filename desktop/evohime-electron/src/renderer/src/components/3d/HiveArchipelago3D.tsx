@@ -1810,7 +1810,46 @@ function buildMainRingPddSegments(
 }
 const QUEEN_PROCESS_SEC = 1.15
 
-interface AgentCarSim {
+interface VehiclePoseState {
+  lastX?: number
+  lastZ?: number
+  lastDirX?: number
+  lastDirZ?: number
+  lastVisible?: boolean
+}
+
+function isVehicleAheadBlocked(
+  x: number,
+  z: number,
+  dirX: number,
+  dirZ: number,
+  selfIndex: number,
+  peers: readonly VehiclePoseState[],
+  minGap = 0.56
+): boolean {
+  for (let i = 0; i < peers.length; i += 1) {
+    if (i === selfIndex) continue
+    const other = peers[i]
+    if (!other || !other.lastVisible) continue
+    if (other.lastX === undefined || other.lastZ === undefined) continue
+    const dx = other.lastX - x
+    const dz = other.lastZ - z
+    const dist = Math.hypot(dx, dz)
+    if (dist >= minGap) continue
+    const dot = dx * dirX + dz * dirZ
+    const cross = Math.abs(dx * -dirZ + dz * dirX)
+    const sameDir =
+      other.lastDirX !== undefined && other.lastDirZ !== undefined
+        ? other.lastDirX * dirX + other.lastDirZ * dirZ
+        : 1
+    if (dot >= -0.02 && cross < 0.22 && sameDir > 0.25) {
+      return true
+    }
+  }
+  return false
+}
+
+interface AgentCarSim extends VehiclePoseState {
   phase: 'delivering' | 'to_ring' | 'outer_to_uturn' | 'along_ring' | 'queued' | 'processing' | 'returning_ring' | 'cooldown'
   progress: number
   curAngle: number
@@ -2177,11 +2216,17 @@ function QueenRoads3D({
           car.cooldown -= dt
           visible = false
         } else {
-          const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
-          if (ringGreen && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
-            car.progress = queenOutPath.stopProgress
-          } else {
-            car.progress = nextP
+          const curPose = evalSegmentedPose(queenOutPath.segments, Math.min(1, Math.max(0, car.progress)))
+          const aheadBlocked =
+            car.lastVisible === true &&
+            isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+          if (!aheadBlocked) {
+            const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
+            if (ringGreen && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
+              car.progress = queenOutPath.stopProgress
+            } else {
+              car.progress = nextP
+            }
           }
           if (car.progress >= 1) {
             deliveredMapRef.current.set(lot.slot, true)
@@ -2210,6 +2255,13 @@ function QueenRoads3D({
           // Выезд от дома агента ТОЛЬКО НАПРАВО (-angle) на внешнее полукольцо (без пересечения сплошной!).
           const ringBlocked = cars.some((other, oIdx) => {
             if (oIdx === index) return false
+            if (other.lastVisible && other.lastX !== undefined && other.lastZ !== undefined) {
+              const entryX = view.x + Math.cos(homeAngle) * (innerBoulevardR + 0.22)
+              const entryZ = view.z + Math.sin(homeAngle) * (innerBoulevardR + 0.22)
+              if (Math.hypot(other.lastX - entryX, other.lastZ - entryZ) < 0.72) {
+                return true
+              }
+            }
             if (other.phase === 'outer_to_uturn') {
               return angularDistance(other.curAngle, homeAngle) < MIN_CAR_ARC_GAP * 1.25
             }
@@ -2288,6 +2340,16 @@ function QueenRoads3D({
               (other.phase === 'along_ring' || other.phase === 'queued') &&
               Math.abs(other.curAngle - GATE_STOP_ANGLE) < MIN_CAR_ARC_GAP * 1.25
           )
+        const curRingX = view.x + Math.cos(car.curAngle) * (innerBoulevardR + car.curLaneOffset)
+        const curRingZ = view.z + Math.sin(car.curAngle) * (innerBoulevardR + car.curLaneOffset)
+        const curRingDx = Math.sin(car.curAngle)
+        const curRingDz = -Math.cos(car.curAngle)
+        if (
+          car.lastVisible &&
+          isVehicleAheadBlocked(curRingX, curRingZ, curRingDx, curRingDz, index, cars)
+        ) {
+          maxTravel = 0
+        }
         const outerAngularSpeed = HIVE_CAR_SPEED / Math.max(1.5, innerBoulevardR + car.curLaneOffset)
         const allowedStep = uTurnBlocked ? 0 : Math.min(Math.max(0, maxTravel), dt * outerAngularSpeed)
         car.curAngle -= allowedStep
@@ -2421,11 +2483,17 @@ function QueenRoads3D({
       } else if (car.phase === 'returning_ring') {
         // Возврат по выездной полосе ворот через регулируемый перекрёсток на внешнюю полосу кольца (-angle).
         const queenOutPath = buildQueenOutPath(homeAngle)
-        const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
-        if (ringGreen && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
-          car.progress = queenOutPath.stopProgress
-        } else {
-          car.progress = nextP
+        const curPose = evalSegmentedPose(queenOutPath.segments, Math.min(1, Math.max(0, car.progress)))
+        const aheadBlocked =
+          car.lastVisible === true &&
+          isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
+        if (!aheadBlocked) {
+          const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
+          if (ringGreen && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
+            car.progress = queenOutPath.stopProgress
+          } else {
+            car.progress = nextP
+          }
         }
         if (car.progress >= 1) {
           car.phase = 'cooldown'
@@ -2451,6 +2519,12 @@ function QueenRoads3D({
           car.progress = 0
         }
       }
+
+      car.lastVisible = visible
+      car.lastX = x
+      car.lastZ = z
+      car.lastDirX = dirX
+      car.lastDirZ = dirZ
 
       if (!visible) {
         dummy.scale.setScalar(0)
@@ -2837,7 +2911,8 @@ function AgentModuleCouriers3D({
 
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const instanceColor = useMemo(() => new THREE.Color(), [])
-  const activatedAtRef = useRef<Map<number, number>>(new Map())
+  const courierProgressRef = useRef<Map<number, number>>(new Map())
+  const courierPosesRef = useRef<VehiclePoseState[]>([])
   const routeSignatureRef = useRef<Map<number, string>>(new Map())
   useLayoutEffect(() => {
     const activeSlots = new Set<number>()
@@ -2846,13 +2921,15 @@ function AgentModuleCouriers3D({
       activeSlots.add(route.lotSlot)
       const sig = `${route.outboundLength.toFixed(3)}:${route.inboundLength.toFixed(3)}`
       if (routeSignatureRef.current.get(route.lotSlot) !== sig) {
-        activatedAtRef.current.delete(route.lotSlot)
+        courierProgressRef.current.delete(route.lotSlot * 2)
+        courierProgressRef.current.delete(route.lotSlot * 2 + 1)
         routeSignatureRef.current.set(route.lotSlot, sig)
       }
     }
-    for (const slot of Array.from(activatedAtRef.current.keys())) {
+    for (const slot of Array.from(routeSignatureRef.current.keys())) {
       if (!activeSlots.has(slot)) {
-        activatedAtRef.current.delete(slot)
+        courierProgressRef.current.delete(slot * 2)
+        courierProgressRef.current.delete(slot * 2 + 1)
         routeSignatureRef.current.delete(slot)
       }
     }
@@ -2869,45 +2946,71 @@ function AgentModuleCouriers3D({
     if (mesh.instanceColor !== null) mesh.instanceColor.needsUpdate = true
   }, [routes, instanceColor])
 
-  useFrame((state) => {
+  useFrame((_, delta) => {
     const mesh = meshRef.current
     if (!mesh || !active || routes.length === 0) return
-    const time = paused ? 0 : state.clock.elapsedTime
+    const dt = paused ? 0 : Math.min(delta, 0.05)
     const dummy = FRAME_DUMMY
+    const poses = courierPosesRef.current
 
     routes.forEach((route, index) => {
       for (let dir = 0; dir < 2; dir += 1) {
         const instIdx = index * 2 + dir
         if (instIdx >= mesh.count) continue
+        let poseState = poses[instIdx]
+        if (!poseState) {
+          poseState = {}
+          poses[instIdx] = poseState
+        }
         // Пока машина от Королевы не доехала до этого дома-агента, он не отправляет курьеров к модулям.
         if (route.active && !paused && deliveredMapRef.current.get(route.lotSlot) !== true) {
-          activatedAtRef.current.delete(route.lotSlot)
+          courierProgressRef.current.delete(route.lotSlot * 2 + dir)
+          poseState.lastVisible = false
           dummy.scale.setScalar(0)
           dummy.updateMatrix()
           mesh.setMatrixAt(instIdx, dummy.matrix)
           continue
         }
         const flowSpeed = HIVE_CAR_SPEED / (dir === 0 ? route.outboundLength : route.inboundLength)
+        const segments = dir === 0 ? route.outboundSegments : route.inboundSegments
         let p: number
         if (paused) {
           p = (route.phase + dir * 0.5) % 1
         } else {
-          let startAt = activatedAtRef.current.get(route.lotSlot)
-          if (startAt === undefined) {
-            startAt = time
-            activatedAtRef.current.set(route.lotSlot, startAt)
+          const key = route.lotSlot * 2 + dir
+          let rawProgress = courierProgressRef.current.get(key)
+          if (rawProgress === undefined) {
+            rawProgress = dir === 1 ? -0.5 : 0
+            courierProgressRef.current.set(key, rawProgress)
           }
-          const progress = Math.max(0, time - startAt) * flowSpeed
-          if (dir === 1 && progress < 0.5) {
-            dummy.scale.setScalar(0)
-            dummy.updateMatrix()
-            mesh.setMatrixAt(instIdx, dummy.matrix)
-            continue
+          if (rawProgress < 0) {
+            rawProgress = Math.min(0, rawProgress + dt * flowSpeed)
+            courierProgressRef.current.set(key, rawProgress)
+            if (rawProgress <= 0) {
+              poseState.lastVisible = false
+              dummy.scale.setScalar(0)
+              dummy.updateMatrix()
+              mesh.setMatrixAt(instIdx, dummy.matrix)
+              continue
+            }
+          } else {
+            const curPose = evalSegmentedPose(segments, rawProgress % 1)
+            const blocked =
+              poseState.lastVisible === true &&
+              isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, instIdx, poses, 0.5)
+            if (!blocked) {
+              rawProgress = (rawProgress + dt * flowSpeed) % 1
+              courierProgressRef.current.set(key, rawProgress)
+            }
           }
-          p = (dir === 0 ? progress : progress - 0.5) % 1
+          p = rawProgress % 1
         }
-        const segments = dir === 0 ? route.outboundSegments : route.inboundSegments
         const pose = evalSegmentedPose(segments, p)
+        poseState.lastVisible = true
+        poseState.lastX = pose.x
+        poseState.lastZ = pose.z
+        poseState.lastDirX = pose.dx
+        poseState.lastDirZ = pose.dz
 
         const courierY = 0.12 + (instIdx % 7) * 0.0008
         dummy.position.set(pose.x, courierY, pose.z)
