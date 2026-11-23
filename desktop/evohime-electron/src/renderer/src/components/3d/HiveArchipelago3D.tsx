@@ -1319,7 +1319,7 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
   )
 }
 
-const QUEEN_GATE_ANGLE = Math.PI / 2
+const QUEEN_GATE_ANGLE = Math.PI * 0.38
 const QUEEN_PROCESS_SEC = 1.15
 
 interface AgentCarSim {
@@ -1444,7 +1444,7 @@ function QueenRoads3D({
     const dt = paused ? 0 : Math.min(delta, 0.05)
     const dummy = FRAME_DUMMY
     const laneOffset = 0.13
-    const gateEntryR = 2.35
+    const gateEntryR = 2.45
     const homeEdgeR = Math.max(innerBoulevardR + 0.35, ringRadius - 0.55)
     const cars = carsRef.current
     const queue = queueRef.current
@@ -1671,27 +1671,36 @@ function QueenRoads3D({
 
   if (lots.length === 0) return <></>
   const homeEdgeR = Math.max(innerBoulevardR + 0.35, ringRadius - 0.55)
+  const gateX = view.x + Math.cos(QUEEN_GATE_ANGLE) * 2.52
+  const gateZ = view.z + Math.sin(QUEEN_GATE_ANGLE) * 2.52
 
   return (
     <group>
-      {/* ЕДИНСТВЕННЫЙ парадный въезд в Цитадель Королевы (спереди, по +Z). */}
+      {/* ЕДИНСТВЕННЫЙ парадный въезд в Цитадель Королевы с золотой аркой ворот. */}
       <RoadSegment3D
-        from={[view.x + Math.cos(QUEEN_GATE_ANGLE) * 2.25, view.z + Math.sin(QUEEN_GATE_ANGLE) * 2.25]}
+        from={[view.x + Math.cos(QUEEN_GATE_ANGLE) * 2.4, view.z + Math.sin(QUEEN_GATE_ANGLE) * 2.4]}
         to={[view.x + Math.cos(QUEEN_GATE_ANGLE) * innerBoulevardR, view.z + Math.sin(QUEEN_GATE_ANGLE) * innerBoulevardR]}
         bedMaterial={skin.roadBed}
         curbMaterial={skin.roadCurb}
         lineMaterial={spokeLineMaterial}
-        width={0.62}
+        width={0.64}
         y={0.025}
       />
-      {/* Индикатор занятости ворот Королевы (зелёный = свободна, янтарный = обрабатывает запрос). */}
-      <mesh
-        ref={gateLampRef}
-        position={[view.x + 0.42, 0.55, view.z + 2.55]}
-        material={gateSignalGreen}
-      >
-        <sphereGeometry args={[0.11, 8, 8]} />
-      </mesh>
+      {/* Золотая арка единственного въезда и индикатор занятости Королевы. */}
+      <group position={[gateX, 0, gateZ]} rotation={[0, -QUEEN_GATE_ANGLE + Math.PI / 2, 0]}>
+        <mesh position={[-0.36, 0.32, 0]} material={skin.gold}>
+          <boxGeometry args={[0.1, 0.64, 0.1]} />
+        </mesh>
+        <mesh position={[0.36, 0.32, 0]} material={skin.gold}>
+          <boxGeometry args={[0.1, 0.64, 0.1]} />
+        </mesh>
+        <mesh position={[0, 0.66, 0]} material={skin.gold}>
+          <boxGeometry args={[0.84, 0.1, 0.12]} />
+        </mesh>
+        <mesh ref={gateLampRef} position={[0, 0.82, 0]} material={gateSignalGreen}>
+          <sphereGeometry args={[0.1, 8, 8]} />
+        </mesh>
+      </group>
 
       {/* Съезды от каждого дома агента до внутреннего кольцевого бульвара (не входят в Цитадель!). */}
       {lots.map((lot, index) => {
