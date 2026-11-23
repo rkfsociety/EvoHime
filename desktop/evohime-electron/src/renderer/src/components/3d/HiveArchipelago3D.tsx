@@ -1564,8 +1564,8 @@ function QueenRoads3D({
         } else if (t < 0.75) {
           const u = (t - 0.25) / 0.5
           const curA = QUEEN_GATE_ANGLE - backArc * u
-          // 4-полосное движение: дальние едут по скоростной (-0.11), ближние к съезду — по крайней (-0.30).
-          const laneR = innerBoulevardR - (backArc > Math.PI * 0.45 && u < 0.8 ? 0.11 : 0.3)
+          // Правостороннее движение (-angle): справа от водителя — внешняя сторона (+0.11 скоростная, +0.30 крайняя).
+          const laneR = innerBoulevardR + (backArc > Math.PI * 0.45 && u < 0.8 ? 0.11 : 0.3)
           x = view.x + Math.cos(curA) * laneR
           z = view.z + Math.sin(curA) * laneR
           dirX = Math.sin(curA)
@@ -1625,7 +1625,8 @@ function QueenRoads3D({
           car.phase = 'queued'
           if (!queue.includes(index)) queue.push(index)
         }
-        const laneR = innerBoulevardR + (isInQueueZone ? 0.3 : 0.11)
+        // Правостороннее движение (+angle): справа от водителя — внутренняя сторона (-0.30 полоса очереди, -0.11 скоростная).
+        const laneR = innerBoulevardR - (isInQueueZone ? 0.3 : 0.11)
         x = view.x + Math.cos(car.curAngle) * laneR
         z = view.z + Math.sin(car.curAngle) * laneR
         dirX = -Math.sin(car.curAngle)
@@ -1656,8 +1657,8 @@ function QueenRoads3D({
         } else if (t < 0.75) {
           const u = (t - 0.25) / 0.5
           const curA = QUEEN_GATE_ANGLE - backArc * u
-          // 4-полосное движение: дальние едут по скоростной (-0.11), ближние к съезду — по крайней (-0.30).
-          const laneR = innerBoulevardR - (backArc > Math.PI * 0.45 && u < 0.8 ? 0.11 : 0.3)
+          // Правостороннее движение (-angle): справа от водителя — внешняя сторона (+0.11 скоростная, +0.30 крайняя).
+          const laneR = innerBoulevardR + (backArc > Math.PI * 0.45 && u < 0.8 ? 0.11 : 0.3)
           x = view.x + Math.cos(curA) * laneR
           z = view.z + Math.sin(curA) * laneR
           dirX = Math.sin(curA)
@@ -1935,7 +1936,7 @@ function AgentModuleCouriers3D({
           const u = (t - 0.2) / 0.6
           const curAngle = route.houseAngle + deltaAngle * u
           const ringSign = (deltaAngle >= 0 ? 1 : -1) * (dir === 0 ? 1 : -1)
-          const laneR = MAIN_AVENUES_RADIUS + (dir === 0 ? 0.13 : -0.13)
+          const laneR = MAIN_AVENUES_RADIUS - ringSign * 0.13
           x = view.x + Math.cos(curAngle) * laneR
           z = view.z + Math.sin(curAngle) * laneR
           dirX = -Math.sin(curAngle) * ringSign
@@ -2115,7 +2116,7 @@ function ModuleRoads3D({
         const u = (t - 0.2) / 0.6
         const curAngle = road.fromAngle + road.deltaAngle * u
         const ringSign = road.deltaAngle >= 0 ? 1 : -1
-        const laneR = road.ringR + (ringSign > 0 ? 0.13 : -0.13)
+        const laneR = road.ringR - ringSign * 0.13
         x = view.x + Math.cos(curAngle) * laneR
         z = view.z + Math.sin(curAngle) * laneR
         dirX = -Math.sin(curAngle) * ringSign
