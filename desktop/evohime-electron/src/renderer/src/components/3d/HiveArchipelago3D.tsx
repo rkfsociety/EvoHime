@@ -2863,13 +2863,12 @@ function DepartmentHouses3D({
         })
       }
     }
-    const shadowCenter = -Math.PI * 0.5
-    const shadowHalf = 0.34
-    const fullArc = Math.PI * 2 - shadowHalf * 2
+    const startOrigin = -Math.PI * 0.5
+    const fullArc = Math.PI * 2
     const gap = 0.025
     return Array.from(groups.entries()).map(([key, info]) => {
-      const a0 = shadowCenter + shadowHalf + (info.minSlot / total) * fullArc + gap
-      const a1 = shadowCenter + shadowHalf + ((info.maxSlot + 1) / total) * fullArc - gap
+      const a0 = startOrigin + (info.minSlot / total) * fullArc + gap
+      const a1 = startOrigin + ((info.maxSlot + 1) / total) * fullArc - gap
       return {
         key,
         accent: info.accent,

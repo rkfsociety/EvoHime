@@ -487,15 +487,11 @@ export function capitalInnerRadius(totalHouses: number): number {
 }
 
 /**
- * Угол дома департамента на кольце столицы. Распределяет дома по дуге,
- * оставляя свободным узкий сектор прямо за башней Королевы (`-π/2` от камеры),
- * чтобы ни один дом и табличка не прятались за шпилем в фиксированном ракурсе.
+ * Угол дома департамента на кольце столицы. Распределяет дома равномерно по
+ * полному кругу `360°` (при виде сверху слепых зон за шпилем больше нет).
  */
 export function capitalHouseAngle(slot: number, total: number): number {
-  const shadowCenter = -Math.PI * 0.5
-  const shadowHalf = 0.34
-  const arc = Math.PI * 2 - shadowHalf * 2
-  return shadowCenter + shadowHalf + ((slot + 0.5) / Math.max(1, total)) * arc
+  return -Math.PI * 0.5 + ((slot + 0.5) / Math.max(1, total)) * Math.PI * 2
 }
 
 /**
