@@ -13,6 +13,8 @@ import {
   CAR_FRONT_BUMPER_OFFSET,
   HIVE_CAR_SPEED,
   INTERSECTION_STOP_HALF_EXTENT,
+  LEFT_LANE_OFFSET,
+  RIGHT_LANE_OFFSET,
   QUEEN_GATE_ANGLE,
   QUEEN_PROCESS_SEC,
   RegulatedIntersection3D,
@@ -311,7 +313,10 @@ export function QueenRoads3D({
       const turnLeadArc = Math.min(innerIntersectionLeadArc, fullOutArc * 0.42)
       const ringArcSpan = Math.max(0, fullOutArc - turnLeadArc)
       const turnStartA = QUEEN_GATE_ANGLE + turnLeadArc
-      const bridgeLaneOffset = 0.26
+      const bridgeLaneOffset =
+        posArc(targetAngle - QUEEN_GATE_ANGLE) <= posArc(QUEEN_GATE_ANGLE - targetAngle)
+          ? LEFT_LANE_OFFSET
+          : RIGHT_LANE_OFFSET
       const tAx = view.x + Math.cos(turnStartA) * outerLaneR
       const tAz = view.z + Math.sin(turnStartA) * outerLaneR
       const tCx = view.x + outBdx * outerLaneR - outBdz * bridgeLaneOffset
@@ -412,7 +417,10 @@ export function QueenRoads3D({
       const turnLeadArc = Math.min(innerIntersectionLeadArc, fullInArc * 0.42)
       const ringArcSpan = Math.max(0, fullInArc - turnLeadArc)
       const turnEndA = QUEEN_GATE_ANGLE - turnLeadArc
-      const bridgeLaneOffset = 0.26
+      const bridgeLaneOffset =
+        posArc(targetAngle - QUEEN_GATE_ANGLE) <= posArc(QUEEN_GATE_ANGLE - targetAngle)
+          ? LEFT_LANE_OFFSET
+          : RIGHT_LANE_OFFSET
       const tAx = view.x + Math.cos(QUEEN_GATE_ANGLE) * bridgeEndR - inBdz * bridgeLaneOffset
       const tAz = view.z + Math.sin(QUEEN_GATE_ANGLE) * bridgeEndR + inBdx * bridgeLaneOffset
       const tCx = view.x + Math.cos(QUEEN_GATE_ANGLE) * outerLaneR - inBdz * bridgeLaneOffset

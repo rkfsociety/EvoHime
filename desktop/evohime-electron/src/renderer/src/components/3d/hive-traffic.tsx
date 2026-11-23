@@ -463,8 +463,8 @@ export function evalSegmentedPose(segments: readonly PathSegment[], t: number): 
   return segments[segments.length - 1]!.eval(1)
 }
 
-const LEFT_LANE_OFFSET = 0.13
-const RIGHT_LANE_OFFSET = 0.29
+export const LEFT_LANE_OFFSET = 0.13
+export const RIGHT_LANE_OFFSET = 0.29
 
 export function buildMainRingPddSegments(
   viewX: number,
