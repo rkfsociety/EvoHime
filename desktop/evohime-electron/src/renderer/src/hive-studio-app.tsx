@@ -92,7 +92,7 @@ function loadStudioSettings(): PersistedStudioSettings {
   const defaults: PersistedStudioSettings = {
     status: 'active',
     queenWorking: true,
-    queenOptimized: false,
+    queenOptimized: true,
     satelliteCount: 0,
     selectedDepartment: null,
     panelOpen: false,

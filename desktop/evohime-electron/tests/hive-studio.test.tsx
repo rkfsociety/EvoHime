@@ -172,13 +172,14 @@ describe('Hive Studio app', () => {
     const { unmount } = render(<StudioApp />)
     await user.click(screen.getByRole('button', { name: 'Открыть пульт' }))
     const toggle = screen.getByLabelText('Королева оптимизирует город') as HTMLInputElement
-    expect(toggle.checked).toBe(false)
-    await user.click(toggle)
     expect(toggle.checked).toBe(true)
     expect(screen.getByTestId('hive-studio-optimization-metric').textContent).toContain('Оптимизировано')
+    await user.click(toggle)
+    expect(toggle.checked).toBe(false)
+    expect(screen.getByTestId('hive-studio-optimization-metric').textContent).toContain('Стандартная раскладка')
     unmount()
 
     render(<StudioApp />)
-    expect((screen.getByLabelText('Королева оптимизирует город') as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText('Королева оптимизирует город') as HTMLInputElement).checked).toBe(false)
   })
 })

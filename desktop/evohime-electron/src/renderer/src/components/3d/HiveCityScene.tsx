@@ -551,7 +551,7 @@ export function HiveCityScene({
   cityMap = null,
   suppressLegacyPanorama = false,
   activeAgents,
-  queenOptimized = false
+  queenOptimized = true
 }: HiveCitySceneProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [hoveredDepartment, setHoveredDepartment] = useState<string | null>(null)
