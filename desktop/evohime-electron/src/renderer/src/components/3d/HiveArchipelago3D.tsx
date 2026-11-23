@@ -1554,7 +1554,8 @@ function QueenRoads3D({
         } else if (t < 0.75) {
           const u = (t - 0.25) / 0.5
           const curA = QUEEN_GATE_ANGLE - backArc * u
-          const laneR = innerBoulevardR - 0.13
+          // 4-полосное движение: дальние едут по скоростной (-0.11), ближние к съезду — по крайней (-0.30).
+          const laneR = innerBoulevardR - (backArc > Math.PI * 0.45 && u < 0.8 ? 0.11 : 0.3)
           x = view.x + Math.cos(curA) * laneR
           z = view.z + Math.sin(curA) * laneR
           dirX = Math.sin(curA)
@@ -1594,27 +1595,27 @@ function QueenRoads3D({
           z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
         }
       } else if (car.phase === 'along_ring' || car.phase === 'queued') {
-        // Все машины к воротам едут по внешней полосе (+angle) и держат строгую дистанцию >= MIN_CAR_ARC_GAP!
+        // 4-полосное движение: транзитные/дальние машины едут по скоростной (+0.11) мимо пробки,
+        // а на подъезде к воротам перестраиваются в полосу очереди (+0.30) с соблюдением дистанции.
+        const isInQueueZone = car.phase === 'queued' || GATE_STOP_ANGLE - car.curAngle <= 0.65
         let maxAllowedAngle = GATE_STOP_ANGLE
-        for (let oIdx = 0; oIdx < cars.length; oIdx += 1) {
-          if (oIdx === index) continue
-          const other = cars[oIdx]
-          if (!other || (other.phase !== 'along_ring' && other.phase !== 'queued')) continue
-          if (other.curAngle > car.curAngle) {
-            maxAllowedAngle = Math.min(maxAllowedAngle, other.curAngle - MIN_CAR_ARC_GAP)
+        if (isInQueueZone) {
+          for (let oIdx = 0; oIdx < cars.length; oIdx += 1) {
+            if (oIdx === index) continue
+            const other = cars[oIdx]
+            if (!other || (other.phase !== 'along_ring' && other.phase !== 'queued')) continue
+            if (other.curAngle > car.curAngle && GATE_STOP_ANGLE - other.curAngle <= 0.65) {
+              maxAllowedAngle = Math.min(maxAllowedAngle, other.curAngle - MIN_CAR_ARC_GAP)
+            }
           }
         }
-        const nextAngle = Math.min(maxAllowedAngle, car.curAngle + dt * 0.95)
+        const nextAngle = Math.min(maxAllowedAngle, car.curAngle + dt * (isInQueueZone ? 0.85 : 1.15))
         car.curAngle = Math.max(car.curAngle, nextAngle)
-        if (car.phase === 'along_ring' && car.curAngle >= GATE_STOP_ANGLE - 0.02) {
-          car.phase = 'queued'
-          if (!queue.includes(index)) queue.push(index)
-        } else if (car.phase === 'along_ring' && maxAllowedAngle - car.curAngle < 0.02) {
-          // Уперлись в хвост пробки — встаём в очередь к воротам!
+        if (car.phase === 'along_ring' && (car.curAngle >= GATE_STOP_ANGLE - 0.02 || (isInQueueZone && maxAllowedAngle - car.curAngle < 0.02))) {
           car.phase = 'queued'
           if (!queue.includes(index)) queue.push(index)
         }
-        const laneR = innerBoulevardR + 0.13
+        const laneR = innerBoulevardR + (isInQueueZone ? 0.3 : 0.11)
         x = view.x + Math.cos(car.curAngle) * laneR
         z = view.z + Math.sin(car.curAngle) * laneR
         dirX = -Math.sin(car.curAngle)
@@ -1645,7 +1646,8 @@ function QueenRoads3D({
         } else if (t < 0.75) {
           const u = (t - 0.25) / 0.5
           const curA = QUEEN_GATE_ANGLE - backArc * u
-          const laneR = innerBoulevardR - 0.13
+          // 4-полосное движение: дальние едут по скоростной (-0.11), ближние к съезду — по крайней (-0.30).
+          const laneR = innerBoulevardR - (backArc > Math.PI * 0.45 && u < 0.8 ? 0.11 : 0.3)
           x = view.x + Math.cos(curA) * laneR
           z = view.z + Math.sin(curA) * laneR
           dirX = Math.sin(curA)
@@ -1734,18 +1736,26 @@ function QueenRoads3D({
         )
       })}
 
-      {/* Двухполосный кольцевой бульвар перед домами агентов. */}
+      {/* 4-полосный кольцевой бульвар перед домами агентов (2 полосы к воротам + 2 скоростных/обратных). */}
       <mesh position={[view.x, 0.022, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={ringBedMaterial}>
-        <ringGeometry args={[innerBoulevardR - 0.28, innerBoulevardR + 0.28, 72]} />
+        <ringGeometry args={[innerBoulevardR - 0.42, innerBoulevardR + 0.42, 72]} />
       </mesh>
       <mesh position={[view.x, 0.032, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
-        <torusGeometry args={[innerBoulevardR - 0.27, 0.018, 6, 72]} />
+        <torusGeometry args={[innerBoulevardR - 0.41, 0.018, 6, 72]} />
       </mesh>
       <mesh position={[view.x, 0.032, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
-        <torusGeometry args={[innerBoulevardR + 0.27, 0.018, 6, 72]} />
+        <torusGeometry args={[innerBoulevardR + 0.41, 0.018, 6, 72]} />
       </mesh>
+      {/* Межполосная разметка внутри каждого из 2 направлений (делит дорогу на 4 полосы). */}
+      <mesh position={[view.x, 0.034, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
+        <torusGeometry args={[innerBoulevardR - 0.205, 0.012, 6, 72]} />
+      </mesh>
+      <mesh position={[view.x, 0.034, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
+        <torusGeometry args={[innerBoulevardR + 0.205, 0.012, 6, 72]} />
+      </mesh>
+      {/* Главная осевая разделительная линия. */}
       <mesh position={[view.x, 0.036, view.z]} rotation={[Math.PI / 2, 0, 0]} material={ringLineMaterial}>
-        <torusGeometry args={[innerBoulevardR, 0.028, 6, 72]} />
+        <torusGeometry args={[innerBoulevardR, 0.03, 6, 72]} />
       </mesh>
 
       {/* Машины в очереди и на выезде. */}
