@@ -479,11 +479,11 @@ export function capitalHouseRingRadius(total: number): number {
 
 /**
  * Угол дома департамента на кольце столицы. Распределяет дома по дуге,
- * оставляя свободным узкий сектор прямо за башней Королевы (`-3π/4` от камеры),
- * чтобы ни один дом и табличка не прятались за шпилем в фиксированной изометрии.
+ * оставляя свободным узкий сектор прямо за башней Королевы (`-π/2` от камеры),
+ * чтобы ни один дом и табличка не прятались за шпилем в фиксированном ракурсе.
  */
 export function capitalHouseAngle(slot: number, total: number): number {
-  const shadowCenter = -Math.PI * 0.75
+  const shadowCenter = -Math.PI * 0.5
   const shadowHalf = 0.34
   const arc = Math.PI * 2 - shadowHalf * 2
   return shadowCenter + shadowHalf + ((slot + 0.5) / Math.max(1, total)) * arc
@@ -599,9 +599,9 @@ function buildIslandView(
       const radiusOnRing = ringRadius + jitterRadius
       let bx = Math.cos(angle) * radiusOnRing
       let bz = Math.sin(angle) * radiusOnRing
-      // Выводим здания из узкой «слепой зоны» строго за башней Королевы (-X, -Z).
-      if (bx < 0 && bz < 0 && Math.abs(bx - bz) < 2.2) {
-        const pushDir = bx - bz >= 0 ? 1 : -1
+      // Выводим здания из узкой «слепой зоны» строго за башней Королевы (-Z).
+      if (bz < 0 && Math.abs(bx) < 2.2) {
+        const pushDir = bx >= 0 ? 1 : -1
         angle += pushDir * 0.26
         bx = Math.cos(angle) * radiusOnRing
         bz = Math.sin(angle) * radiusOnRing

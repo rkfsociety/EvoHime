@@ -34,9 +34,9 @@ import type { HiveCityHouseLot } from './HiveCityScene'
  * материалы и CanvasTexture явно освобождаются (`dispose`) при размонтировании.
  */
 
-/** Fixed isometric camera offset (angle never changes; only zoom/pan). */
-const CAMERA_OFFSET = new THREE.Vector3(34, 30, 34)
-/** Top-down camera offset (small Z offset keeps X/Z axes strictly aligned without 45deg drift). */
+/** Fixed front-isometric camera offset aligned with +Z so top/bottom hex edges stay horizontal. */
+const CAMERA_OFFSET = new THREE.Vector3(0, 34, 42)
+/** Top-down camera offset (small Z offset keeps X/Z axes strictly aligned). */
 const TOP_CAMERA_OFFSET = new THREE.Vector3(0, 56, 0.35)
 
 const OVERVIEW_ZOOM_SOLO = 22
@@ -730,7 +730,7 @@ function BuildingComplex3D({
   // Изометрический амфитеатр высот: ближние к камере здания ниже, дальние — выше,
   // чтобы при фиксированном ракурсе без вращения здания не перекрывали друг друга.
   const depthFactor = THREE.MathUtils.clamp(
-    0.92 - ((item.x + item.z) / Math.max(8, view.radius * 1.4)) * 0.36,
+    0.92 - (item.z / Math.max(6, view.radius)) * 0.36,
     0.58,
     1.32
   )
