@@ -3092,6 +3092,11 @@ function CameraRig({
   const look = useRef(new THREE.Vector3(0, 0, 0))
   const desired = useRef(new THREE.Vector3(0, 0, 0))
   const desiredZoom = useRef(overviewZoom)
+  const panRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
+    active: false,
+    lastX: 0,
+    lastY: 0
+  })
 
   useEffect(() => {
     const dom = gl.domElement
@@ -3100,9 +3105,66 @@ function CameraRig({
       const scale = event.deltaY < 0 ? 1.12 : 1 / 1.12
       desiredZoom.current = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, desiredZoom.current * scale))
     }
+    const onMouseDown = (event: MouseEvent): void => {
+      if (event.button === 1) event.preventDefault()
+    }
+    const onAuxClick = (event: MouseEvent): void => {
+      if (event.button === 1) event.preventDefault()
+    }
+    const onPointerDown = (event: PointerEvent): void => {
+      if (event.button !== 1) return
+      event.preventDefault()
+      panRef.current = { active: true, lastX: event.clientX, lastY: event.clientY }
+      dom.style.cursor = 'grabbing'
+      try {
+        dom.setPointerCapture?.(event.pointerId)
+      } catch {
+        // Игнорируем в средах без pointer capture.
+      }
+    }
+    const onPointerMove = (event: PointerEvent): void => {
+      if (!panRef.current.active) return
+      const dx = event.clientX - panRef.current.lastX
+      const dy = event.clientY - panRef.current.lastY
+      panRef.current.lastX = event.clientX
+      panRef.current.lastY = event.clientY
+      const ortho = camera as THREE.OrthographicCamera
+      const zoom = typeof ortho.zoom === 'number' && ortho.zoom > 0 ? ortho.zoom : desiredZoom.current
+      const worldPerPx = 1 / Math.max(1, zoom)
+      desired.current.x = Math.max(-120, Math.min(120, desired.current.x - dx * worldPerPx))
+      desired.current.z = Math.max(-120, Math.min(120, desired.current.z - dy * worldPerPx))
+    }
+    const stopPan = (event: PointerEvent): void => {
+      if (!panRef.current.active) return
+      panRef.current.active = false
+      dom.style.cursor = ''
+      try {
+        dom.releasePointerCapture?.(event.pointerId)
+      } catch {
+        // Игнорируем, если захват уже снят.
+      }
+    }
+
     dom.addEventListener('wheel', onWheel, { passive: false })
-    return () => dom.removeEventListener('wheel', onWheel)
-  }, [gl])
+    dom.addEventListener('mousedown', onMouseDown)
+    dom.addEventListener('auxclick', onAuxClick)
+    dom.addEventListener('pointerdown', onPointerDown)
+    dom.addEventListener('pointermove', onPointerMove)
+    dom.addEventListener('pointerup', stopPan)
+    dom.addEventListener('pointercancel', stopPan)
+    window.addEventListener('pointerup', stopPan)
+    return () => {
+      dom.removeEventListener('wheel', onWheel)
+      dom.removeEventListener('mousedown', onMouseDown)
+      dom.removeEventListener('auxclick', onAuxClick)
+      dom.removeEventListener('pointerdown', onPointerDown)
+      dom.removeEventListener('pointermove', onPointerMove)
+      dom.removeEventListener('pointerup', stopPan)
+      dom.removeEventListener('pointercancel', stopPan)
+      window.removeEventListener('pointerup', stopPan)
+      dom.style.cursor = ''
+    }
+  }, [camera, gl])
 
   useEffect(() => {
     if (focus) {
