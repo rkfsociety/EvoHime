@@ -3211,7 +3211,8 @@ function IslandGroup3D({
   onSelectDepartment,
   onSelectIsland,
   onSelectBuilding,
-  onHoverBuilding
+  onHoverBuilding,
+  onBackgroundClick
 }: {
   view: CityIslandView
   paused: boolean
@@ -3226,6 +3227,7 @@ function IslandGroup3D({
   onSelectIsland: (islandId: string) => void
   onSelectBuilding: (islandId: string, buildingId: string) => void
   onHoverBuilding: (buildingId: string | null) => void
+  onBackgroundClick: () => void
 }) {
   const groupRef = useRef<THREE.Group>(null)
   const deliveredMapRef = useRef<Map<number, boolean>>(new Map())
@@ -3252,7 +3254,17 @@ function IslandGroup3D({
 
   return (
     <group ref={groupRef}>
-      <IslandGround view={view} selected={selectedIsland} onSelect={() => onSelectIsland(view.island.id)} />
+      <IslandGround
+        view={view}
+        selected={selectedIsland}
+        onSelect={() => {
+          if (selectedIsland || selectedBuildingId !== null || (selectedDepartment ?? null) !== null) {
+            onBackgroundClick()
+            return
+          }
+          onSelectIsland(view.island.id)
+        }}
+      />
       {/* Уличная сеть города: проспекты, фонари, скверы, светофоры. */}
       <CityStreets3D view={view} skin={skin} />
       {departmentHouses !== undefined && departmentHouses.length > 0 ? (
@@ -3398,6 +3410,7 @@ export function HiveArchipelago3D({
             onSelectIsland={onSelectIsland}
             onSelectBuilding={onSelectBuilding}
             onHoverBuilding={onHoverBuilding}
+            onBackgroundClick={onBackgroundClick}
           />
           <ConnectingBridges satellites={visibleSatellites} paused={paused} />
         </CitySkinProvider>
@@ -3420,7 +3433,8 @@ function FloatingCityGroup({
   onSelectDepartment,
   onSelectIsland,
   onSelectBuilding,
-  onHoverBuilding
+  onHoverBuilding,
+  onBackgroundClick
 }: {
   readonly capital: CityIslandView
   readonly satellites: readonly CityIslandView[]
@@ -3436,6 +3450,7 @@ function FloatingCityGroup({
   readonly onSelectIsland: (islandId: string) => void
   readonly onSelectBuilding: (islandId: string, buildingId: string) => void
   readonly onHoverBuilding: (buildingId: string | null) => void
+  readonly onBackgroundClick: () => void
 }): React.JSX.Element {
   return (
     <group>
@@ -3453,6 +3468,7 @@ function FloatingCityGroup({
         onSelectIsland={onSelectIsland}
         onSelectBuilding={onSelectBuilding}
         onHoverBuilding={onHoverBuilding}
+        onBackgroundClick={onBackgroundClick}
       />
       {satellites.map((view) => (
         <IslandGroup3D
@@ -3462,9 +3478,11 @@ function FloatingCityGroup({
           selectedIsland={selectedIslandId === view.island.id}
           selectedBuildingId={selectedBuildingId}
           hoveredBuildingId={hoveredBuildingId}
+          selectedDepartment={selectedDepartment}
           onSelectIsland={onSelectIsland}
           onSelectBuilding={onSelectBuilding}
           onHoverBuilding={onHoverBuilding}
+          onBackgroundClick={onBackgroundClick}
         />
       ))}
     </group>
