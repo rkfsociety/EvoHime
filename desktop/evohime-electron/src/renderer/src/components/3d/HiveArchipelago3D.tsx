@@ -1080,20 +1080,29 @@ function IslandTowers({
   )
 }
 
-/** Плоская табличка названия острова у передней грани плиты. */
-function IslandNameplate({ view }: { view: CityIslandView }) {
+/** Плоская табличка названия острова у передней грани плиты (смещается в сторону, если грань занята дорогой). */
+function IslandNameplate({
+  view,
+  hasSouthBridge = false
+}: {
+  view: CityIslandView
+  hasSouthBridge?: boolean
+}) {
   const hue = displayIslandHue(view.island.id, view.island.role)
   const accent = `hsl(${hue}, 78%, 64%)`
   const subtitle =
     view.island.status === 'unavailable'
       ? 'Недоступен'
       : `${view.buildings.length} мод. · ${view.island.total_files} ф.`
+  const isNorthSatellite = view.island.role !== 'capital' && view.z < -view.radius * 0.4 && Math.abs(view.x) < view.radius * 1.4
+  const labelX = view.island.role === 'capital' && hasSouthBridge ? view.x + 3.2 : view.x
+  const labelZ = isNorthSatellite ? view.z - view.radius - 0.95 : view.z + view.radius + 0.95
   return (
     <GroundLabel3D
       text={view.island.name}
       subtitle={subtitle}
       accentColor={accent}
-      position={[view.x, 0.025, view.z + view.radius + 0.95]}
+      position={[labelX, 0.025, labelZ]}
       size={[4.8, 1.2]}
       fontSize={34}
     />
@@ -3779,6 +3788,7 @@ function IslandGroup3D({
   departmentHouses,
   selectedDepartment,
   onSelectDepartment,
+  hasSouthBridge = false,
   onSelectIsland,
   onSelectBuilding,
   onHoverBuilding,
@@ -3794,6 +3804,7 @@ function IslandGroup3D({
   departmentHouses?: readonly HiveCityHouseLot[]
   selectedDepartment?: string | null
   onSelectDepartment?: ((departmentKey: string) => void) | undefined
+  hasSouthBridge?: boolean
   onSelectIsland: (islandId: string) => void
   onSelectBuilding: (islandId: string, buildingId: string) => void
   onHoverBuilding: (buildingId: string | null) => void
@@ -3889,7 +3900,7 @@ function IslandGroup3D({
           onSelectDepartment={onSelectDepartment}
         />
       ) : null}
-      <IslandNameplate view={view} />
+      <IslandNameplate view={view} hasSouthBridge={hasSouthBridge} />
     </group>
   )
 }
@@ -4031,6 +4042,9 @@ function FloatingCityGroup({
   readonly onHoverBuilding: (buildingId: string | null) => void
   readonly onBackgroundClick: () => void
 }): React.JSX.Element {
+  const hasSouthBridge = satellites.some(
+    (sat) => sat.z > capital.radius * 0.5 && Math.abs(sat.x) < 2.2
+  )
   return (
     <group>
       <IslandGroup3D
@@ -4044,6 +4058,7 @@ function FloatingCityGroup({
         departmentHouses={departmentHouses}
         selectedDepartment={selectedDepartment}
         onSelectDepartment={onSelectDepartment}
+        hasSouthBridge={hasSouthBridge}
         onSelectIsland={onSelectIsland}
         onSelectBuilding={onSelectBuilding}
         onHoverBuilding={onHoverBuilding}
