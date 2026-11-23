@@ -509,8 +509,8 @@ export function buildCityMapView(
     const angle =
       (2 * Math.PI * slot) / Math.max(1, countInRing) + ring * (Math.PI / 6)
     const distance = ring === 0
-      ? 24
-      : 24 + islandRadiusEstimate(snapshot, index) + 14
+      ? 28
+      : 28 + islandRadiusEstimate(snapshot, index) + 15
     const x = Math.cos(angle) * distance
     const z = Math.sin(angle) * distance
     return buildIslandView(island, x, z, phaseOf(island.id))
@@ -619,13 +619,16 @@ function buildIslandView(
     })
   }
 
+  // Шестиугольная плита вписана в окружность радиуса R, её апофема равна R * cos(30°).
+  // Умножаем на 1 / cos(30°), чтобы крайние башни стояли на платформе с запасом.
+  const hexApothemFactor = 1 / Math.cos(Math.PI / 6)
   const layoutRadius = Math.max(
-    3.6,
-    2.2 * Math.sqrt(Math.max(1, buildings.length)),
-    (Math.max(columns, rows) * BUILDING_CELL) / 2 + 1.2,
-    reserveCenter ? outerRingRadius + 1.6 : 0
+    4.8,
+    2.2 * Math.sqrt(Math.max(1, buildings.length)) * hexApothemFactor,
+    ((Math.max(columns, rows) * BUILDING_CELL) / 2 + 1.5) * hexApothemFactor,
+    reserveCenter ? (outerRingRadius + 1.8) * hexApothemFactor : 0
   )
-  const radius = Math.min(reserveCenter ? 14 : 12, layoutRadius)
+  const radius = Math.min(reserveCenter ? 15.5 : 13, layoutRadius)
 
   return { island, x, z, radius, buildings, phase }
 }

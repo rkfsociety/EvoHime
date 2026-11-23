@@ -46,6 +46,8 @@ export interface HiveCityAgentHint {
 export interface HiveCityHouseLot {
   /** Ключ департамента (клик по дому выбирает департамент). */
   readonly departmentKey: string
+  /** Читаемое название департамента для 3D-подписи сектора. */
+  readonly departmentLabel?: string | undefined
   /** Стабильный индекс лота в общей застройке (0..total-1). */
   readonly slot: number
   readonly total: number
@@ -582,6 +584,7 @@ export function HiveCityScene({
       for (let index = 0; index < capacity; index += 1) {
         lots.push({
           departmentKey: department.key,
+          departmentLabel: department.label,
           slot,
           total: Math.max(1, total),
           active: index < department.activeCount,
