@@ -23,7 +23,6 @@ import {
 import type { HiveCityHouseLot } from './HiveCityScene'
 import {
   CitySkinProvider,
-  FRAME_DUMMY,
   GroundLabel3D,
   LabelSprite3D,
   buildingKindColor,
@@ -692,35 +691,9 @@ function CityStreets3D({
       }),
     []
   )
-  const lampPoleMaterial = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#1b2238', roughness: 0.7, metalness: 0.4 }),
-    []
-  )
-  const lampBulbMaterial = useMemo(
-    () => new THREE.MeshBasicMaterial({ color: '#ffdf8e' }),
-    []
-  )
-  const treeTrunkMaterial = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#3b2e2a', roughness: 0.9 }),
-    []
-  )
-  const treeCrownMaterial = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: '#2a8f7a',
-        emissive: '#144d42',
-        emissiveIntensity: 0.3,
-        roughness: 0.65
-      }),
-    []
-  )
   useEffect(() => () => {
     laneMaterial.dispose()
-    lampPoleMaterial.dispose()
-    lampBulbMaterial.dispose()
-    treeTrunkMaterial.dispose()
-    treeCrownMaterial.dispose()
-  }, [laneMaterial, lampPoleMaterial, lampBulbMaterial, treeTrunkMaterial, treeCrownMaterial])
+  }, [laneMaterial])
 
   const ringRadii = useMemo(() => {
     const outer = view.radius * 0.78
@@ -843,81 +816,6 @@ function CityStreets3D({
     return list
   }, [gateAngle, ringRadii, view.buildings, view.x, view.z])
 
-  const lampPositions = useMemo(() => {
-    const list: Array<readonly [number, number]> = []
-    ringRadii.forEach((r, rIdx) => {
-      const count = Math.max(8, Math.floor((2 * Math.PI * r) / 4.2))
-      for (let i = 0; i < count; i += 1) {
-        const angle = (i / count) * Math.PI * 2 + rIdx * 0.25
-        const lx = Math.cos(angle) * (r + 0.34)
-        const lz = Math.sin(angle) * (r + 0.34)
-        const tooClose = view.buildings.some((b) => Math.hypot(b.x - lx, b.z - lz) < 1.25)
-        if (!tooClose) list.push([view.x + lx, view.z + lz])
-      }
-    })
-    return list
-  }, [ringRadii, view.buildings, view.x, view.z])
-
-  const treePositions = useMemo(() => {
-    const list: Array<readonly [number, number, number]> = []
-    const outerR = view.radius * 0.74
-    const candidateCount = isCapital ? 24 : 10
-    for (let i = 0; i < candidateCount; i += 1) {
-      const seed = fnv1a32(`${view.island.id}/tree-${i}`)
-      const angle = ((i / candidateCount) * Math.PI * 2) + ((seed % 100) / 100) * 0.18
-      const minTreeR = isCapital ? 6.6 : SATELLITE_MAIN_AVENUE_RADIUS + 0.8
-      const r = minTreeR + (((seed >>> 6) % 100) / 100) * Math.max(1.2, outerR - minTreeR - 0.2)
-      const tx = Math.cos(angle) * r
-      const tz = Math.sin(angle) * r
-      const nearBuilding = view.buildings.some((b) => Math.hypot(b.x - tx, b.z - tz) < 1.85)
-      const nearRoad = ringRadii.some((ringR) => Math.abs(r - ringR) < 0.65)
-      if (!nearBuilding && !nearRoad) {
-        const scale = 0.8 + ((seed >>> 12) % 45) / 100
-        list.push([view.x + tx, view.z + tz, scale])
-      }
-    }
-    return list
-  }, [isCapital, ringRadii, view])
-
-  const poleRef = useRef<THREE.InstancedMesh>(null)
-  const bulbRef = useRef<THREE.InstancedMesh>(null)
-  const trunkRef = useRef<THREE.InstancedMesh>(null)
-  const crownRef = useRef<THREE.InstancedMesh>(null)
-
-  useLayoutEffect(() => {
-    const dummy = FRAME_DUMMY
-    if (poleRef.current && bulbRef.current) {
-      lampPositions.forEach(([lx, lz], i) => {
-        dummy.position.set(lx, 0.24, lz)
-        dummy.rotation.set(0, 0, 0)
-        dummy.scale.set(1, 1, 1)
-        dummy.updateMatrix()
-        poleRef.current?.setMatrixAt(i, dummy.matrix)
-
-        dummy.position.set(lx, 0.5, lz)
-        dummy.updateMatrix()
-        bulbRef.current?.setMatrixAt(i, dummy.matrix)
-      })
-      poleRef.current.instanceMatrix.needsUpdate = true
-      bulbRef.current.instanceMatrix.needsUpdate = true
-    }
-    if (trunkRef.current && crownRef.current) {
-      treePositions.forEach(([tx, tz, sc], i) => {
-        dummy.position.set(tx, 0.14 * sc, tz)
-        dummy.rotation.set(0, 0, 0)
-        dummy.scale.set(sc, sc, sc)
-        dummy.updateMatrix()
-        trunkRef.current?.setMatrixAt(i, dummy.matrix)
-
-        dummy.position.set(tx, 0.42 * sc, tz)
-        dummy.updateMatrix()
-        crownRef.current?.setMatrixAt(i, dummy.matrix)
-      })
-      trunkRef.current.instanceMatrix.needsUpdate = true
-      crownRef.current.instanceMatrix.needsUpdate = true
-    }
-  }, [lampPositions, treePositions])
-
   return (
     <group>
       {ringRadii.map((r, idx) => (
@@ -1000,26 +898,6 @@ function CityStreets3D({
           </mesh>
         </group>
       ))}
-      {lampPositions.length > 0 ? (
-        <>
-          <instancedMesh ref={poleRef} args={[undefined, lampPoleMaterial, lampPositions.length]}>
-            <cylinderGeometry args={[0.025, 0.035, 0.48, 5]} />
-          </instancedMesh>
-          <instancedMesh ref={bulbRef} args={[undefined, lampBulbMaterial, lampPositions.length]}>
-            <sphereGeometry args={[0.06, 6, 6]} />
-          </instancedMesh>
-        </>
-      ) : null}
-      {treePositions.length > 0 ? (
-        <>
-          <instancedMesh ref={trunkRef} args={[undefined, treeTrunkMaterial, treePositions.length]}>
-            <cylinderGeometry args={[0.04, 0.06, 0.28, 5]} />
-          </instancedMesh>
-          <instancedMesh ref={crownRef} args={[undefined, treeCrownMaterial, treePositions.length]}>
-            <coneGeometry args={[0.24, 0.48, 6]} />
-          </instancedMesh>
-        </>
-      ) : null}
     </group>
   )
 }
