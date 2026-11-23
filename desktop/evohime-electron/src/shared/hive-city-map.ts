@@ -491,7 +491,7 @@ export function capitalInnerRadius(totalHouses: number): number {
  * полному кругу `360°` (при виде сверху слепых зон за шпилем больше нет).
  */
 export function capitalHouseAngle(slot: number, total: number): number {
-  return -Math.PI * 0.5 + ((slot + 0.5) / Math.max(1, total)) * Math.PI * 2
+  return Math.PI * 0.5 + ((slot + 0.5) / Math.max(1, total)) * Math.PI * 2
 }
 
 /**

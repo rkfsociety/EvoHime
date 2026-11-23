@@ -1188,10 +1188,7 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
       const startR = r0 + 0.33
       const endR = r1 - 0.33
       if (endR - startR < 0.25) continue
-      let bestAngle = 0
-      let bestMinClearance = -1
-      for (let slot = 0; slot < 72; slot += 1) {
-        const angle = (slot / 72) * Math.PI * 2
+      const clearanceAt = (angle: number): number => {
         const cosA = Math.cos(angle)
         const sinA = Math.sin(angle)
         let minDist = Infinity
@@ -1204,12 +1201,29 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
             if (d < minDist) minDist = d
           }
         }
-        if (minDist > bestMinClearance) {
-          bestMinClearance = minDist
-          bestAngle = angle
+        return minDist
+      }
+
+      let bestAngle = QUEEN_GATE_ANGLE
+      let bestMinClearance = isCapital ? clearanceAt(QUEEN_GATE_ANGLE) : -1
+      if (bestMinClearance < 1.15) {
+        bestMinClearance = -1
+        let bestGateDist = Infinity
+        for (let slot = 0; slot < 72; slot += 1) {
+          const angle = (slot / 72) * Math.PI * 2
+          const minDist = clearanceAt(angle)
+          const gateDist = isCapital ? angularDistance(angle, QUEEN_GATE_ANGLE) : 0
+          if (
+            (minDist >= 1.35 && (bestMinClearance < 1.35 || gateDist < bestGateDist)) ||
+            (bestMinClearance < 1.35 && minDist > bestMinClearance)
+          ) {
+            bestMinClearance = minDist
+            bestAngle = angle
+            bestGateDist = gateDist
+          }
         }
       }
-      if (bestMinClearance >= 1.35) {
+      if (bestMinClearance >= 1.15) {
         list.push({
           from: [view.x + Math.cos(bestAngle) * startR, view.z + Math.sin(bestAngle) * startR],
           to: [view.x + Math.cos(bestAngle) * endR, view.z + Math.sin(bestAngle) * endR],
@@ -1220,7 +1234,7 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
       }
     }
     return list
-  }, [ringRadii, view.buildings, view.x, view.z])
+  }, [isCapital, ringRadii, view.buildings, view.x, view.z])
 
   // Позиции уличных фонарей вдоль кольцевых проспектов и набережной.
   const lampPositions = useMemo(() => {
@@ -2376,7 +2390,7 @@ function QueenRoads3D({
       })}
       {/* Межкольцевой проспект в свободном зазоре между домами (связывает внутреннее кольцо и Главный проспект). */}
       {(() => {
-        const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_U_TURN_ANGLE, lots)
+        const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_GATE_ANGLE, lots)
         const startR = innerBoulevardR + 0.41
         const endR = Math.max(startR + 0.3, MAIN_AVENUES_RADIUS - 0.33)
         return (
@@ -2519,7 +2533,7 @@ function AgentModuleCouriers3D({
     const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
     const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
     const homeEdgeR = Math.max(innerBoulevardR + 0.35, ringRadius - 0.55)
-    const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_U_TURN_ANGLE, lots)
+    const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_GATE_ANGLE, lots)
     const sourceLots = lots.filter((lot) => lot.active)
 
     const list: Array<{
