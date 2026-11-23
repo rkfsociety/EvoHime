@@ -1484,7 +1484,16 @@ function QueenRoads3D({
       gateLampRef.current.material = processingLotRef.current !== null ? gateSignalAmber : gateSignalGreen
     }
 
-    // Шаг 2: двигаем каждую машину и обновляем её матрицу.
+    const MIN_CAR_ARC_GAP = 0.15
+    const GATE_STOP_ANGLE = QUEEN_GATE_ANGLE - 0.12
+    const normalizeBehindGate = (a: number): number => {
+      let res = a
+      while (res > QUEEN_GATE_ANGLE) res -= Math.PI * 2
+      while (res <= QUEEN_GATE_ANGLE - Math.PI * 2) res += Math.PI * 2
+      return res
+    }
+
+    // Шаг 2: двигаем каждую машину и обновляем её матрицу (с запретом проезда сквозь впереди идущую машину).
     lots.forEach((lot, index) => {
       if (index >= mesh.count) return
       const car = cars[index]
@@ -1500,9 +1509,8 @@ function QueenRoads3D({
       }
 
       if (paused) {
-        // В статичном режиме ставим машины аккуратно по кольцу.
-        const x = view.x + Math.cos(homeAngle) * (innerBoulevardR + 0.12)
-        const z = view.z + Math.sin(homeAngle) * (innerBoulevardR + 0.12)
+        const x = view.x + Math.cos(homeAngle) * (innerBoulevardR + 0.13)
+        const z = view.z + Math.sin(homeAngle) * (innerBoulevardR + 0.13)
         dummy.position.set(x, 0.12, z)
         dummy.lookAt(x - Math.sin(homeAngle), 0.12, z + Math.cos(homeAngle))
         dummy.scale.set(0.15, 0.11, 0.36)
@@ -1517,10 +1525,10 @@ function QueenRoads3D({
       let dirZ = 1
       let visible = true
 
-      // Кратчайший угловой путь по кольцу к воротам Королевы (и обратно).
-      let deltaToHome = homeAngle - QUEEN_GATE_ANGLE
-      while (deltaToHome > Math.PI) deltaToHome -= Math.PI * 2
-      while (deltaToHome < -Math.PI) deltaToHome += Math.PI * 2
+      // Обратный путь по внутренней полосе (-angle) от ворот к дому.
+      let backArc = QUEEN_GATE_ANGLE - homeAngle
+      while (backArc < 0) backArc += Math.PI * 2
+      while (backArc >= Math.PI * 2) backArc -= Math.PI * 2
 
       if (car.phase === 'delivering') {
         if (car.cooldown > 0) {
@@ -1532,10 +1540,9 @@ function QueenRoads3D({
             deliveredMapRef.current.set(lot.slot, true)
             car.phase = 'to_ring'
             car.progress = 0
-            car.cooldown = 0.3
+            car.cooldown = 0.25
           }
         }
-        // Доставка от Королевы к дому: ворота → кольцо → съезд дома.
         const t = Math.min(1, Math.max(0, car.progress))
         if (t < 0.25) {
           const u = t / 0.25
@@ -1546,13 +1553,12 @@ function QueenRoads3D({
           z = view.z + Math.sin(QUEEN_GATE_ANGLE) * r + dirX * laneOffset
         } else if (t < 0.75) {
           const u = (t - 0.25) / 0.5
-          const curA = QUEEN_GATE_ANGLE + deltaToHome * u
-          const sign = deltaToHome >= 0 ? 1 : -1
-          const laneR = innerBoulevardR + (sign > 0 ? 0.12 : -0.12)
+          const curA = QUEEN_GATE_ANGLE - backArc * u
+          const laneR = innerBoulevardR - 0.13
           x = view.x + Math.cos(curA) * laneR
           z = view.z + Math.sin(curA) * laneR
-          dirX = -Math.sin(curA) * sign
-          dirZ = Math.cos(curA) * sign
+          dirX = Math.sin(curA)
+          dirZ = -Math.cos(curA)
         } else {
           const u = (t - 0.75) / 0.25
           const r = innerBoulevardR + u * (homeEdgeR - innerBoulevardR)
@@ -1566,11 +1572,20 @@ function QueenRoads3D({
           car.cooldown -= dt
           visible = false
         } else {
-          car.progress += dt * 1.4
-          if (car.progress >= 1) {
+          const entryAngle = normalizeBehindGate(homeAngle)
+          // Проверяем, свободна ли внешняя полоса кольца перед вливанием со съезда.
+          const ringBlocked = cars.some((other, oIdx) => {
+            if (oIdx === index) return false
+            if (other.phase !== 'along_ring' && other.phase !== 'queued') return false
+            return Math.abs(other.curAngle - entryAngle) < MIN_CAR_ARC_GAP
+          })
+          if (car.progress < 0.92 || !ringBlocked) {
+            car.progress = Math.min(1, car.progress + dt * 1.4)
+          }
+          if (car.progress >= 1 && !ringBlocked) {
             car.phase = 'along_ring'
             car.progress = 0
-            car.curAngle = homeAngle
+            car.curAngle = entryAngle
           }
           const r = homeEdgeR - Math.min(1, car.progress) * (homeEdgeR - innerBoulevardR)
           dirX = -Math.cos(homeAngle)
@@ -1578,32 +1593,33 @@ function QueenRoads3D({
           x = view.x + Math.cos(homeAngle) * r - dirZ * laneOffset
           z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
         }
-      } else if (car.phase === 'along_ring') {
-        car.progress += dt * 0.52
-        if (car.progress >= 1) {
+      } else if (car.phase === 'along_ring' || car.phase === 'queued') {
+        // Все машины к воротам едут по внешней полосе (+angle) и держат строгую дистанцию >= MIN_CAR_ARC_GAP!
+        let maxAllowedAngle = GATE_STOP_ANGLE
+        for (let oIdx = 0; oIdx < cars.length; oIdx += 1) {
+          if (oIdx === index) continue
+          const other = cars[oIdx]
+          if (!other || (other.phase !== 'along_ring' && other.phase !== 'queued')) continue
+          if (other.curAngle > car.curAngle) {
+            maxAllowedAngle = Math.min(maxAllowedAngle, other.curAngle - MIN_CAR_ARC_GAP)
+          }
+        }
+        const nextAngle = Math.min(maxAllowedAngle, car.curAngle + dt * 0.95)
+        car.curAngle = Math.max(car.curAngle, nextAngle)
+        if (car.phase === 'along_ring' && car.curAngle >= GATE_STOP_ANGLE - 0.02) {
+          car.phase = 'queued'
+          if (!queue.includes(index)) queue.push(index)
+        } else if (car.phase === 'along_ring' && maxAllowedAngle - car.curAngle < 0.02) {
+          // Уперлись в хвост пробки — встаём в очередь к воротам!
           car.phase = 'queued'
           if (!queue.includes(index)) queue.push(index)
         }
-        const u = Math.min(1, car.progress)
-        const curA = homeAngle - deltaToHome * u
-        const sign = deltaToHome >= 0 ? -1 : 1
-        const laneR = innerBoulevardR + (sign > 0 ? 0.12 : -0.12)
-        x = view.x + Math.cos(curA) * laneR
-        z = view.z + Math.sin(curA) * laneR
-        dirX = -Math.sin(curA) * sign
-        dirZ = Math.cos(curA) * sign
-      } else if (car.phase === 'queued') {
-        // Позиция в пробке строго по индексу в очереди — машины стоят друг за другом на кольце перед воротами!
-        const qIdx = Math.max(0, queue.indexOf(index))
-        const queueArcStep = 0.13
-        const queueAngle = QUEEN_GATE_ANGLE - 0.12 - qIdx * queueArcStep
-        const laneR = innerBoulevardR + 0.12
-        x = view.x + Math.cos(queueAngle) * laneR
-        z = view.z + Math.sin(queueAngle) * laneR
-        dirX = -Math.sin(queueAngle)
-        dirZ = Math.cos(queueAngle)
+        const laneR = innerBoulevardR + 0.13
+        x = view.x + Math.cos(car.curAngle) * laneR
+        z = view.z + Math.sin(car.curAngle) * laneR
+        dirX = -Math.sin(car.curAngle)
+        dirZ = Math.cos(car.curAngle)
       } else if (car.phase === 'processing') {
-        // Машина внутри единственных ворот Королевы на обработке.
         car.progress = Math.min(1, car.progress + dt * 2.5)
         const r = innerBoulevardR - car.progress * (innerBoulevardR - gateEntryR)
         dirX = -Math.cos(QUEEN_GATE_ANGLE)
@@ -1611,7 +1627,7 @@ function QueenRoads3D({
         x = view.x + Math.cos(QUEEN_GATE_ANGLE) * r - dirZ * laneOffset
         z = view.z + Math.sin(QUEEN_GATE_ANGLE) * r + dirX * laneOffset
       } else if (car.phase === 'returning_ring') {
-        // Обратная дорога от ворот по выездной полосе к кольцу и к дому.
+        // Возврат по выездной полосе ворот и внутренней полосе кольца (-angle).
         car.progress += dt * 0.55
         if (car.progress >= 1) {
           car.phase = 'cooldown'
@@ -1628,13 +1644,12 @@ function QueenRoads3D({
           z = view.z + Math.sin(QUEEN_GATE_ANGLE) * r + dirX * laneOffset
         } else if (t < 0.75) {
           const u = (t - 0.25) / 0.5
-          const curA = QUEEN_GATE_ANGLE + deltaToHome * u
-          const sign = deltaToHome >= 0 ? 1 : -1
-          const laneR = innerBoulevardR + (sign > 0 ? 0.12 : -0.12)
+          const curA = QUEEN_GATE_ANGLE - backArc * u
+          const laneR = innerBoulevardR - 0.13
           x = view.x + Math.cos(curA) * laneR
           z = view.z + Math.sin(curA) * laneR
-          dirX = -Math.sin(curA) * sign
-          dirZ = Math.cos(curA) * sign
+          dirX = Math.sin(curA)
+          dirZ = -Math.cos(curA)
         } else {
           const u = (t - 0.75) / 0.25
           const r = innerBoulevardR + u * (homeEdgeR - innerBoulevardR)
@@ -1644,7 +1659,6 @@ function QueenRoads3D({
           z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
         }
       } else {
-        // cooldown дома перед следующим запросом к Королеве.
         visible = false
         car.cooldown -= dt
         if (car.cooldown <= 0) {
