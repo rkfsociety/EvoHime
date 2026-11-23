@@ -1018,8 +1018,8 @@ function IslandNameplate({ view }: { view: CityIslandView }) {
 }
 
 /**
- * Двухполосный отрезок дороги: контрастный тёмный асфальт, светлые бордюры по
- * обоим краям и яркая осевая разделительная линия посередине.
+ * Отрезок дороги (2-полосный для заездных или 4-полосный для магистралей/перемычек):
+ * контрастный тёмный асфальт, светлые бордюры по краям, осевая и межполосная разметка.
  */
 function RoadSegment3D({
   from,
@@ -1028,6 +1028,7 @@ function RoadSegment3D({
   curbMaterial,
   lineMaterial,
   width = 0.52,
+  lanes = 2,
   y = 0.025
 }: {
   from: readonly [number, number]
@@ -1036,6 +1037,7 @@ function RoadSegment3D({
   curbMaterial?: THREE.Material
   lineMaterial: THREE.Material
   width?: number
+  lanes?: 2 | 4
   y?: number
 }) {
   const dx = to[0] - from[0]
@@ -1046,18 +1048,30 @@ function RoadSegment3D({
   const cx = (from[0] + to[0]) / 2
   const cz = (from[1] + to[1]) / 2
   const curbMat = curbMaterial ?? lineMaterial
+  const curbOffset = lanes === 4 ? width * 0.488 : width * 0.46
   return (
     <group position={[cx, y, cz]} rotation={[0, -angle, 0]}>
       <mesh material={bedMaterial}>
         <boxGeometry args={[length, 0.02, width]} />
       </mesh>
-      {/* Левый и правый бордюры для чёткой читаемости двух полос. */}
-      <mesh position={[0, 0.014, -width * 0.46]} material={curbMat}>
+      {/* Левый и правый бордюры. */}
+      <mesh position={[0, 0.014, -curbOffset]} material={curbMat}>
         <boxGeometry args={[length, 0.014, 0.032]} />
       </mesh>
-      <mesh position={[0, 0.014, width * 0.46]} material={curbMat}>
+      <mesh position={[0, 0.014, curbOffset]} material={curbMat}>
         <boxGeometry args={[length, 0.014, 0.032]} />
       </mesh>
+      {/* Межполосная разметка для 4-полосной дороги. */}
+      {lanes === 4 ? (
+        <>
+          <mesh position={[0, 0.015, -width * 0.244]} material={curbMat}>
+            <boxGeometry args={[length, 0.012, 0.02]} />
+          </mesh>
+          <mesh position={[0, 0.015, width * 0.244]} material={curbMat}>
+            <boxGeometry args={[length, 0.012, 0.02]} />
+          </mesh>
+        </>
+      ) : null}
       {/* Осевая разделительная полоса. */}
       <mesh position={[0, 0.016, 0]} material={lineMaterial}>
         <boxGeometry args={[length, 0.015, 0.045]} />
@@ -1159,7 +1173,7 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
           break
         }
       }
-      const edgeR = r >= chosenRing ? chosenRing + 0.33 : chosenRing - 0.33
+      const edgeR = r >= chosenRing ? chosenRing + 0.41 : chosenRing - 0.41
       const entryR = r >= chosenRing ? Math.max(edgeR + 0.14, r - podiumHalf) : Math.min(edgeR - 0.14, r + podiumHalf)
       if (Math.abs(entryR - edgeR) < 0.12) continue
       list.push({
@@ -1186,8 +1200,8 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
       const r0 = ringRadii[rIdx]
       const r1 = ringRadii[rIdx + 1]
       if (r0 === undefined || r1 === undefined) continue
-      const startR = r0 + 0.33
-      const endR = r1 - 0.33
+      const startR = r0 + 0.41
+      const endR = r1 - 0.41
       if (endR - startR < 0.25) continue
       const clearanceAt = (angle: number): number => {
         const cosA = Math.cos(angle)
@@ -1315,17 +1329,24 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
 
   return (
     <group>
-      {/* Двухполосные кольцевые проспекты с бордюрами и осевой разметкой. */}
+      {/* 4-полосные кольцевые проспекты с бордюрами, межполосной и осевой разметкой. */}
       {ringRadii.map((r, idx) => (
         <group key={`avenue-ring-${idx}`}>
           <mesh position={[view.x, 0.015, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={skin.roadBed}>
-            <ringGeometry args={[r - 0.34, r + 0.34, 72]} />
+            <ringGeometry args={[r - 0.42, r + 0.42, 72]} />
           </mesh>
           <mesh position={[view.x, 0.024, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
-            <torusGeometry args={[r - 0.33, 0.02, 6, 72]} />
+            <torusGeometry args={[r - 0.41, 0.02, 6, 72]} />
           </mesh>
           <mesh position={[view.x, 0.024, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
-            <torusGeometry args={[r + 0.33, 0.02, 6, 72]} />
+            <torusGeometry args={[r + 0.41, 0.02, 6, 72]} />
+          </mesh>
+          {/* Межполосная разметка внутри каждого из 2 направлений. */}
+          <mesh position={[view.x, 0.025, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
+            <torusGeometry args={[r - 0.205, 0.012, 6, 72]} />
+          </mesh>
+          <mesh position={[view.x, 0.025, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
+            <torusGeometry args={[r + 0.205, 0.012, 6, 72]} />
           </mesh>
           <mesh position={[view.x, 0.026, view.z]} rotation={[Math.PI / 2, 0, 0]} material={laneMaterial}>
             <torusGeometry args={[r, 0.03, 6, 72]} />
@@ -1345,7 +1366,7 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
           ) : null}
         </group>
       ))}
-      {/* Межкольцевые проспекты в свободных секторах. */}
+      {/* Межкольцевые 4-полосные проспекты. */}
       {ringConnectors.map((conn, idx) => (
         <group key={`ring-conn-${idx}`}>
           <RoadSegment3D
@@ -1354,7 +1375,8 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
             bedMaterial={skin.roadBed}
             curbMaterial={skin.roadCurb}
             lineMaterial={laneMaterial}
-            width={0.54}
+            width={0.84}
+            lanes={4}
             y={0.016}
           />
           <mesh
@@ -1362,14 +1384,14 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
             rotation={[-Math.PI / 2, 0, -conn.angle + Math.PI / 2]}
             material={skin.roadBed}
           >
-            <planeGeometry args={[0.46, 0.08]} />
+            <planeGeometry args={[0.78, 0.08]} />
           </mesh>
           <mesh
             position={[view.x + Math.cos(conn.angle) * conn.r1, 0.026, view.z + Math.sin(conn.angle) * conn.r1]}
             rotation={[-Math.PI / 2, 0, -conn.angle + Math.PI / 2]}
             material={skin.roadBed}
           >
-            <planeGeometry args={[0.46, 0.08]} />
+            <planeGeometry args={[0.78, 0.08]} />
           </mesh>
         </group>
       ))}
@@ -2346,7 +2368,8 @@ function QueenRoads3D({
         bedMaterial={skin.roadBed}
         curbMaterial={skin.roadCurb}
         lineMaterial={spokeLineMaterial}
-        width={0.64}
+        width={0.84}
+        lanes={4}
         y={0.025}
       />
       {/* Золотая арка единственного въезда и индикатор занятости Королевы. */}
@@ -2383,11 +2406,11 @@ function QueenRoads3D({
           />
         )
       })}
-      {/* Межкольцевой проспект строго по прямой от ворот Королевы (связывает внутреннее кольцо и Главный проспект). */}
+      {/* Межкольцевой 4-полосный проспект строго по прямой от ворот Королевы (связывает внутреннее кольцо и Главный проспект). */}
       {(() => {
         const bridgeAngle = QUEEN_GATE_ANGLE
         const startR = innerBoulevardR + 0.41
-        const endR = Math.max(startR + 0.3, MAIN_AVENUES_RADIUS - 0.33)
+        const endR = Math.max(startR + 0.3, MAIN_AVENUES_RADIUS - 0.41)
         return (
           <group>
             <RoadSegment3D
@@ -2396,7 +2419,8 @@ function QueenRoads3D({
               bedMaterial={skin.roadBed}
               curbMaterial={skin.roadCurb}
               lineMaterial={spokeLineMaterial}
-              width={0.46}
+              width={0.84}
+              lanes={4}
               y={0.023}
             />
             <mesh
@@ -2404,14 +2428,14 @@ function QueenRoads3D({
               rotation={[-Math.PI / 2, 0, -bridgeAngle + Math.PI / 2]}
               material={skin.roadBed}
             >
-              <planeGeometry args={[0.38, 0.08]} />
+              <planeGeometry args={[0.78, 0.08]} />
             </mesh>
             <mesh
               position={[view.x + Math.cos(bridgeAngle) * endR, 0.037, view.z + Math.sin(bridgeAngle) * endR]}
               rotation={[-Math.PI / 2, 0, -bridgeAngle + Math.PI / 2]}
               material={skin.roadBed}
             >
-              <planeGeometry args={[0.38, 0.08]} />
+              <planeGeometry args={[0.78, 0.08]} />
             </mesh>
           </group>
         )
@@ -2460,7 +2484,7 @@ function QueenRoads3D({
         rotation={[-Math.PI / 2, 0, -QUEEN_GATE_ANGLE + Math.PI / 2]}
         material={skin.roadBed}
       >
-        <planeGeometry args={[0.56, 0.08]} />
+        <planeGeometry args={[0.78, 0.08]} />
       </mesh>
       {/* Чистые Т-образные стыки единственных съездов домов с внутренним кольцом. */}
       {houseAngles.map((angle, idx) => (
@@ -2558,11 +2582,11 @@ function AgentModuleCouriers3D({
       const targetAngle = Math.atan2(target.z, target.x)
       const targetR = Math.hypot(target.x, target.z)
       const houseGarageR = Math.max(homeEdgeR + 0.35, ringRadius)
-      const targetEntryR = Math.max(MAIN_AVENUES_RADIUS + 0.34, targetR - 0.25)
+      const targetEntryR = Math.max(MAIN_AVENUES_RADIUS + 0.41, targetR - 0.25)
 
       const outerLaneR = innerBoulevardR + 0.28
       const innerBorderR = innerBoulevardR + 0.41
-      const bridgeLen = Math.max(0.1, MAIN_AVENUES_RADIUS - 0.34 - innerBorderR)
+      const bridgeLen = Math.max(0.1, MAIN_AVENUES_RADIUS - 0.41 - innerBorderR)
 
       const outHdx = -Math.cos(houseAngle)
       const outHdz = -Math.sin(houseAngle)
@@ -2597,7 +2621,7 @@ function AgentModuleCouriers3D({
         {
           len: bridgeLen,
           eval: (u) => {
-            const r = innerBorderR + u * (MAIN_AVENUES_RADIUS - 0.34 - innerBorderR)
+            const r = innerBorderR + u * (MAIN_AVENUES_RADIUS - 0.41 - innerBorderR)
             return {
               x: view.x + Math.cos(bridgeAngle) * r - outBdz * laneOffset,
               z: view.z + Math.sin(bridgeAngle) * r + outBdx * laneOffset,
@@ -2610,7 +2634,7 @@ function AgentModuleCouriers3D({
           view.x,
           view.z,
           bridgeAngle,
-          MAIN_AVENUES_RADIUS - 0.34,
+          MAIN_AVENUES_RADIUS - 0.41,
           targetAngle,
           targetEntryR,
           MAIN_AVENUES_RADIUS,
@@ -2632,7 +2656,7 @@ function AgentModuleCouriers3D({
           targetAngle,
           targetEntryR,
           bridgeAngle,
-          MAIN_AVENUES_RADIUS - 0.34,
+          MAIN_AVENUES_RADIUS - 0.41,
           MAIN_AVENUES_RADIUS,
           QUEEN_U_TURN_ANGLE,
           false,
@@ -2641,7 +2665,7 @@ function AgentModuleCouriers3D({
         {
           len: bridgeLen,
           eval: (u) => {
-            const r = MAIN_AVENUES_RADIUS - 0.34 - u * (MAIN_AVENUES_RADIUS - 0.34 - innerBorderR)
+            const r = MAIN_AVENUES_RADIUS - 0.41 - u * (MAIN_AVENUES_RADIUS - 0.41 - innerBorderR)
             return {
               x: view.x + Math.cos(bridgeAngle) * r - inBdz * laneOffset,
               z: view.z + Math.sin(bridgeAngle) * r + inBdx * laneOffset,
