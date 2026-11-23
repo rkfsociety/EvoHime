@@ -1470,20 +1470,37 @@ function posArc(delta: number): number {
   return d
 }
 
-/** Находит свободный угол ровно между двумя домами агентов, ближайший к `targetAngle`. */
-function nearestInterHouseAngle(total: number, targetAngle: number): number {
+/** Находит свободный угол ровно между двумя домами агентов (предпочтительно на границе разных секторов), ближайший к `targetAngle`. */
+function nearestInterHouseAngle(
+  total: number,
+  targetAngle: number,
+  lots?: readonly HiveCityHouseLot[]
+): number {
   const count = Math.max(2, total)
-  let bestAngle = capitalHouseAngle(0.5, count)
-  let bestDist = Infinity
+  const orderedLots = lots && lots.length > 0 ? [...lots].sort((a, b) => a.slot - b.slot) : null
+  let bestBoundaryAngle: number | null = null
+  let bestBoundaryDist = Infinity
+  let bestAnyAngle = capitalHouseAngle(0.5, count)
+  let bestAnyDist = Infinity
   for (let i = 0; i < count; i += 1) {
     const a = capitalHouseAngle(i + 0.5, count)
     const d = angularDistance(a, targetAngle)
-    if (d < bestDist) {
-      bestDist = d
-      bestAngle = a
+    if (d < bestAnyDist) {
+      bestAnyDist = d
+      bestAnyAngle = a
+    }
+    if (orderedLots !== null && orderedLots.length === count) {
+      const curr = orderedLots[i]
+      const next = orderedLots[(i + 1) % count]
+      if (curr !== undefined && next !== undefined && curr.departmentKey !== next.departmentKey) {
+        if (d < bestBoundaryDist) {
+          bestBoundaryDist = d
+          bestBoundaryAngle = a
+        }
+      }
     }
   }
-  return bestAngle
+  return bestBoundaryAngle ?? bestAnyAngle
 }
 
 /**
@@ -2270,7 +2287,7 @@ function QueenRoads3D({
       })}
       {/* Межкольцевой проспект в свободном зазоре между домами (связывает внутреннее кольцо и Главный проспект). */}
       {(() => {
-        const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_U_TURN_ANGLE)
+        const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_U_TURN_ANGLE, lots)
         const startR = innerBoulevardR + 0.41
         const endR = Math.max(startR + 0.3, MAIN_AVENUES_RADIUS - 0.33)
         return (
@@ -2413,7 +2430,7 @@ function AgentModuleCouriers3D({
     const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
     const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
     const homeEdgeR = Math.max(innerBoulevardR + 0.35, ringRadius - 0.55)
-    const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_U_TURN_ANGLE)
+    const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_U_TURN_ANGLE, lots)
     const sourceLots = lots.filter((lot) => lot.active)
 
     const list: Array<{
@@ -2884,7 +2901,7 @@ function DepartmentHouses3D({
         label: info.label,
         accent: info.accent,
         x: view.x + Math.cos(angle) * labelR,
-        y: 0.03,
+        y: 0.052,
         z: view.z + Math.sin(angle) * labelR,
         rotZ
       }
