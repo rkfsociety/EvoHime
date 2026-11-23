@@ -169,11 +169,6 @@ fn prune_old_logs(logs_dir: &Path, now_ms: u64) {
                 }
             }
         } else if !is_dir && is_legacy_log_name(name) {
-            let days = day_catalog_epoch_days(name);
-            if days.is_none_or(|days| days < cutoff_days) {
-                let _ = fs::remove_dir_all(&path);
-            }
-        } else if !is_dir && is_legacy_log_name(name) {
             let modified_ms = entry
                 .metadata()
                 .and_then(|meta| meta.modified())
@@ -187,8 +182,14 @@ fn prune_old_logs(logs_dir: &Path, now_ms: u64) {
     }
 }
 
-/// Проверяет, является ли имя суточным каталогом логов (`YYYY-MM-DD`).
+/// Проверяет, является ли имя суточным каталогом логов
+/// (`YYYY-MM-DD`, месяц 01–12 и день 01–31).
 fn is_day_catalog_name(name: &str) -> bool {
+    is_day_catalog_format(name) && day_catalog_epoch_days(name).is_some()
+}
+
+/// Проверяет формат `YYYY-MM-DD` (десятичные цифры и разделители).
+fn is_day_catalog_format(name: &str) -> bool {
     let bytes = name.as_bytes();
     name.len() == 10
         && bytes[0..4].iter().all(u8::is_ascii_digit)
@@ -200,7 +201,7 @@ fn is_day_catalog_name(name: &str) -> bool {
 
 /// Разбирает имя суточного каталога в количество дней с Unix-epoch.
 fn day_catalog_epoch_days(name: &str) -> Option<i64> {
-    if name.len() != 10 {
+    if !is_day_catalog_format(name) {
         return None;
     }
     let year: i64 = name[0..4].parse().ok()?;
@@ -1764,7 +1765,8 @@ mod tests {
     #[test]
     fn utc_day_string_matches_known_dates() {
         assert_eq!(utc_day_string(0), "1970-01-01");
-        assert_eq!(utc_day_string(20_679 * 86_400_000), "2026-11-22");
+        // 2026-11-22 = 20779 дней с epoch.
+        assert_eq!(utc_day_string(20_779 * 86_400_000), "2026-11-22");
         assert_eq!(utc_day_string(19_782 * 86_400_000), "2024-02-29");
     }
 
@@ -1831,5 +1833,31 @@ mod tests {
         assert!(!old.exists(), "old day catalog removed");
         assert!(foreign.exists(), "foreign legacy log survives");
         assert!(not_a_day.exists(), "non-date directory survives");
+    }
+
+    #[test]
+    fn prune_removes_stale_legacy_jsonl_but_keeps_fresh_ones() {
+        use std::fs::FileTimes;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let logs_dir = dir.path().join("logs");
+        fs::create_dir_all(&logs_dir).expect("logs dir");
+        let fresh = logs_dir.join("core.jsonl");
+        let stale = logs_dir.join("supervisor.jsonl");
+        fs::write(&fresh, "{}\n").expect("fresh legacy log");
+        fs::write(&stale, "{}\n").expect("stale legacy log");
+        let old_time = std::time::SystemTime::UNIX_EPOCH
+            + std::time::Duration::from_secs(now_ms() / 1000 - 100 * 86_400);
+        let file = fs::OpenOptions::new()
+            .append(true)
+            .open(&stale)
+            .expect("stale open");
+        file.set_times(FileTimes::new().set_modified(old_time))
+            .expect("set mtime");
+        drop(file);
+
+        prune_old_logs(&logs_dir, now_ms());
+
+        assert!(fresh.exists(), "fresh legacy file survives");
+        assert!(!stale.exists(), "stale legacy file removed");
     }
 }
