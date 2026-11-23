@@ -474,7 +474,16 @@ const BUILDING_MAX_COLUMNS = 8
  * растёт с числом лотов, но остаётся внутри [`CAPITAL_TOWER_INNER_RADIUS`].
  */
 export function capitalHouseRingRadius(total: number): number {
-  return Math.min(4.8, Math.max(3.6, 0.26 * total))
+  return Math.max(4.6, (Math.max(1, total) * 1.52) / (Math.PI * 2) * 1.12)
+}
+
+/**
+ * Динамический внутренний радиус кварталов столицы: при росте числа домов
+ * агентов кольцо модулей автоматически отодвигается наружу, чтобы город
+ * масштабировался без наложений.
+ */
+export function capitalInnerRadius(totalHouses: number): number {
+  return Math.max(CAPITAL_TOWER_INNER_RADIUS, capitalHouseRingRadius(totalHouses) + 1.8)
 }
 
 /**
@@ -649,7 +658,7 @@ function buildIslandView(
     ((Math.max(columns, rows) * BUILDING_CELL) / 2 + 1.5) * hexApothemFactor,
     reserveCenter ? (outerRingRadius + 2.0) * hexApothemFactor : 0
   )
-  const radius = Math.min(reserveCenter ? 19.5 : 15, layoutRadius)
+  const radius = layoutRadius
 
   return { island, x, z, radius, buildings, phase }
 }

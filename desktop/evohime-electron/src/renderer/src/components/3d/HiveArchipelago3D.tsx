@@ -1057,13 +1057,20 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
   const ringRadii = useMemo(() => {
     const outer = view.radius * 0.78
     if (isCapital) {
-      // Кольцевые проспекты проходят строго между кольцами зданий (дома на 4.8, модули на 7.6, 10.8, 14.0).
-      return [6.0, 9.2, 12.4, outer].filter((r) => r <= view.radius * 0.82)
+      // Динамические кольцевые проспекты под любой масштаб города (шаг 3.2 между кольцами зданий).
+      const rings: number[] = []
+      for (let r = 6.0; r <= view.radius * 0.76; r += 3.2) {
+        rings.push(Number(r.toFixed(2)))
+      }
+      if (rings.length === 0 || outer - (rings[rings.length - 1] ?? 0) > 1.4) {
+        rings.push(outer)
+      }
+      return rings
     }
     return [view.radius * 0.42, outer].filter((r) => r >= 2.2)
   }, [isCapital, view.radius])
 
-  // Гарантированный съезд с ближайшей кольцевой дороги к КАЖДОМУ зданию-модулю (не заходит внутрь дома).
+  // Гарантированный съезд с ближайшего свободного кольцевого проспекта к КАЖДОМУ зданию-модулю (не заходит внутрь дома).
   const moduleDriveways = useMemo(() => {
     const list: Array<{ readonly from: readonly [number, number]; readonly to: readonly [number, number] }> = []
     if (ringRadii.length === 0) return list
@@ -1072,21 +1079,27 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
       const r = Math.hypot(item.x, item.z)
       if (r < 0.8) continue
       const angle = Math.atan2(item.z, item.x)
-      // Выбираем ближайшее кольцо, но не ближе 0.95 к центру подиума.
-      let bestRing = ringRadii[0] ?? 6.0
-      let bestDiff = Math.abs(r - bestRing)
-      for (const cand of ringRadii) {
-        const diff = Math.abs(r - cand)
-        if (diff < bestDiff) {
-          bestDiff = diff
-          bestRing = cand
+      const podiumHalf = 0.82
+      // Сортируем кольца по близости к зданию и берём ближайшее, путь от которого не пересекает другие здания.
+      const candidates = [...ringRadii].sort((a, b) => Math.abs(r - a) - Math.abs(r - b))
+      let chosenRing = candidates[0] ?? 6.0
+      for (const cand of candidates) {
+        const entryCand = r >= cand ? Math.max(cand + 0.25, r - podiumHalf) : Math.min(cand - 0.25, r + podiumHalf)
+        const midR = (cand + entryCand) / 2
+        const mx = Math.cos(angle) * midR
+        const mz = Math.sin(angle) * midR
+        const hitsOther = view.buildings.some(
+          (other) => other.building.id !== item.building.id && Math.hypot(other.x - mx, other.z - mz) < 1.15
+        )
+        if (!hitsOther) {
+          chosenRing = cand
+          break
         }
       }
-      const podiumHalf = 0.8
-      const entryR = r >= bestRing ? Math.max(bestRing + 0.25, r - podiumHalf) : Math.min(bestRing - 0.25, r + podiumHalf)
-      if (Math.abs(entryR - bestRing) < 0.2) continue
+      const entryR = r >= chosenRing ? Math.max(chosenRing + 0.25, r - podiumHalf) : Math.min(chosenRing - 0.25, r + podiumHalf)
+      if (Math.abs(entryR - chosenRing) < 0.18) continue
       list.push({
-        from: [view.x + Math.cos(angle) * bestRing, view.z + Math.sin(angle) * bestRing],
+        from: [view.x + Math.cos(angle) * chosenRing, view.z + Math.sin(angle) * chosenRing],
         to: [view.x + Math.cos(angle) * entryR, view.z + Math.sin(angle) * entryR]
       })
     }
@@ -1349,10 +1362,7 @@ function QueenRoads3D({
   deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
   paused: boolean
 }) {
-  const ringRadius = Math.min(
-    capitalHouseRingRadius(lots[0]?.total ?? 0),
-    CAPITAL_TOWER_INNER_RADIUS - 1.2
-  )
+  const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
   const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
 
   const spokeLineMaterial = useMemo(
@@ -1718,21 +1728,33 @@ function QueenRoads3D({
         </mesh>
       </group>
 
-      {/* Съезды от каждого дома агента до внутреннего кольцевого бульвара (не входят в Цитадель!). */}
+      {/* Отдельные подъезды к КАЖДОМУ дому агента: от внутреннего бульвара (спереди) и от Главного кольца (сзади). */}
       {lots.map((lot, index) => {
         const angle = houseAngles[index]
         if (angle === undefined) return null
+        const backExitR = ringRadius + 0.54
+        const mainRingR = Math.max(backExitR + 0.25, 6.0)
         return (
-          <RoadSegment3D
-            key={`road-${lot.departmentKey}-${lot.slot}`}
-            from={[view.x + Math.cos(angle) * innerBoulevardR, view.z + Math.sin(angle) * innerBoulevardR]}
-            to={[view.x + Math.cos(angle) * homeEdgeR, view.z + Math.sin(angle) * homeEdgeR]}
-            bedMaterial={skin.roadBed}
-            curbMaterial={skin.roadCurb}
-            lineMaterial={spokeLineMaterial}
-            width={0.46}
-            y={0.024}
-          />
+          <group key={`road-${lot.departmentKey}-${lot.slot}`}>
+            <RoadSegment3D
+              from={[view.x + Math.cos(angle) * innerBoulevardR, view.z + Math.sin(angle) * innerBoulevardR]}
+              to={[view.x + Math.cos(angle) * homeEdgeR, view.z + Math.sin(angle) * homeEdgeR]}
+              bedMaterial={skin.roadBed}
+              curbMaterial={skin.roadCurb}
+              lineMaterial={spokeLineMaterial}
+              width={0.46}
+              y={0.024}
+            />
+            <RoadSegment3D
+              from={[view.x + Math.cos(angle) * backExitR, view.z + Math.sin(angle) * backExitR]}
+              to={[view.x + Math.cos(angle) * mainRingR, view.z + Math.sin(angle) * mainRingR]}
+              bedMaterial={skin.roadBed}
+              curbMaterial={skin.roadCurb}
+              lineMaterial={spokeLineMaterial}
+              width={0.42}
+              y={0.022}
+            />
+          </group>
         )
       })}
 
@@ -1780,27 +1802,15 @@ function AgentModuleCouriers3D({
   view,
   lots,
   droneCount,
-  skin,
   deliveredMapRef,
   paused
 }: {
   view: CityIslandView
   lots: readonly HiveCityHouseLot[]
   droneCount: number
-  skin: CitySkin
   deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
   paused: boolean
 }) {
-  const courierLineMaterial = useMemo(
-    () =>
-      new THREE.MeshBasicMaterial({
-        color: '#6ce8c2',
-        transparent: true,
-        opacity: 0.42,
-        depthWrite: false
-      }),
-    []
-  )
   const packetMaterial = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
@@ -1811,19 +1821,15 @@ function AgentModuleCouriers3D({
     []
   )
   useEffect(() => () => {
-    courierLineMaterial.dispose()
     packetMaterial.dispose()
-  }, [courierLineMaterial, packetMaterial])
+  }, [packetMaterial])
 
   const MAIN_AVENUES_RADIUS = 6.0
 
   const routes = useMemo(() => {
     const modules = view.buildings.filter((item) => item.building.kind !== 'citadel')
     if (modules.length === 0 || lots.length === 0) return []
-    const ringRadius = Math.min(
-      capitalHouseRingRadius(lots[0]?.total ?? 0),
-      CAPITAL_TOWER_INNER_RADIUS - 1.2
-    )
+    const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
     const activeLots = lots.filter((lot) => lot.active)
     const sourceLots =
       activeLots.length > 0
@@ -1859,7 +1865,7 @@ function AgentModuleCouriers3D({
         houseAngle,
         houseExitR: ringRadius + 0.54,
         targetAngle,
-        targetEntryR: Math.max(MAIN_AVENUES_RADIUS + 0.25, targetR - 0.85),
+        targetEntryR: Math.max(MAIN_AVENUES_RADIUS + 0.25, Math.min(MAIN_AVENUES_RADIUS + 1.4, targetR - 0.85)),
         color: lot.active ? lot.accent : '#7ef2c4',
         phase: idx / Math.max(1, sourceLots.length),
         active: lot.active
@@ -1959,41 +1965,8 @@ function AgentModuleCouriers3D({
 
   return (
     <group>
-      {/* Двухполосные подъездные дороги от домов и от Главного кольца к модулям (не режут здания). */}
-      {routes.map((route, index) => (
-        <group key={`agent-module-road-${index}`}>
-          <RoadSegment3D
-            from={[
-              view.x + Math.cos(route.houseAngle) * route.houseExitR,
-              view.z + Math.sin(route.houseAngle) * route.houseExitR
-            ]}
-            to={[
-              view.x + Math.cos(route.houseAngle) * MAIN_AVENUES_RADIUS,
-              view.z + Math.sin(route.houseAngle) * MAIN_AVENUES_RADIUS
-            ]}
-            bedMaterial={skin.roadBed}
-            curbMaterial={skin.roadCurb}
-            lineMaterial={courierLineMaterial}
-            width={0.48}
-            y={0.02}
-          />
-          <RoadSegment3D
-            from={[
-              view.x + Math.cos(route.targetAngle) * MAIN_AVENUES_RADIUS,
-              view.z + Math.sin(route.targetAngle) * MAIN_AVENUES_RADIUS
-            ]}
-            to={[
-              view.x + Math.cos(route.targetAngle) * route.targetEntryR,
-              view.z + Math.sin(route.targetAngle) * route.targetEntryR
-            ]}
-            bedMaterial={skin.roadBed}
-            curbMaterial={skin.roadCurb}
-            lineMaterial={courierLineMaterial}
-            width={0.48}
-            y={0.02}
-          />
-        </group>
-      ))}
+      {/* Подъезды к домам и модулям уже построены без пересечений в QueenRoads3D и CityStreets3D;
+          здесь рисуются только курьерские машины-потоки. */}
       <instancedMesh
         ref={meshRef}
         args={[undefined, packetMaterial, Math.max(1, routes.length * 2)]}
@@ -2238,7 +2211,7 @@ function DepartmentHouse3D({
   onSelectDepartment: ((departmentKey: string) => void) | undefined
 }) {
   const angle = capitalHouseAngle(lot.slot, lot.total)
-  const ringRadius = Math.min(capitalHouseRingRadius(lot.total), CAPITAL_TOWER_INNER_RADIUS - 1.2)
+  const ringRadius = capitalHouseRingRadius(lot.total)
   const position = useMemo<[number, number, number]>(() => {
     const x = view.x + Math.cos(angle) * ringRadius
     const z = view.z + Math.sin(angle) * ringRadius
@@ -2451,10 +2424,7 @@ function DepartmentHouses3D({
         })
       }
     }
-    const ringRadius = Math.min(
-      capitalHouseRingRadius(lots[0]?.total ?? 0),
-      CAPITAL_TOWER_INNER_RADIUS - 1.2
-    )
+    const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
     const total = Math.max(1, lots[0]?.total ?? lots.length)
     return Array.from(groups.entries()).map(([key, info], index) => {
       const midSlot = info.slots[Math.floor(info.slots.length / 2)] ?? 0
@@ -2798,7 +2768,6 @@ function IslandGroup3D({
             view={view}
             lots={departmentHouses}
             droneCount={droneCount ?? 0}
-            skin={skin}
             deliveredMapRef={deliveredMapRef}
             paused={paused}
           />
@@ -2862,7 +2831,8 @@ export function HiveArchipelago3D({
     return selected ? { x: selected.x, z: selected.z } : null
   }, [capital.island.id, selectedIslandId, visibleSatellites])
 
-  const overviewZoom = visibleSatellites.length > 0 ? OVERVIEW_ZOOM_ARCHIPELAGO : OVERVIEW_ZOOM_SOLO
+  const soloZoom = Math.max(8, Math.min(24, (16.5 / Math.max(10, capital.radius)) * OVERVIEW_ZOOM_SOLO))
+  const overviewZoom = visibleSatellites.length > 0 ? OVERVIEW_ZOOM_ARCHIPELAGO : soloZoom
 
   const handleContextLost = useMemo(() => {
     return (event: Event): void => {
