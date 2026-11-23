@@ -474,7 +474,7 @@ const BUILDING_MAX_COLUMNS = 8
  * растёт с числом лотов, но остаётся внутри [`CAPITAL_TOWER_INNER_RADIUS`].
  */
 export function capitalHouseRingRadius(total: number): number {
-  return Math.min(4.2, Math.max(3.2, 0.2 * total))
+  return Math.min(4.8, Math.max(3.6, 0.26 * total))
 }
 
 /**
@@ -482,7 +482,7 @@ export function capitalHouseRingRadius(total: number): number {
  * башни капитального острова выталкиваются за него, уступая центр башне
  * Королевы и кольцу домов работников.
  */
-export const CAPITAL_TOWER_INNER_RADIUS = 5.4
+export const CAPITAL_TOWER_INNER_RADIUS = 6.2
 
 /**
  * Shared deterministic island renderer model: sorted districts, a compact

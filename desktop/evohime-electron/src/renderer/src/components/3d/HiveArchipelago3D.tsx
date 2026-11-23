@@ -35,9 +35,9 @@ import type { HiveCityHouseLot } from './HiveCityScene'
 /** Fixed isometric camera offset (angle never changes; only zoom/pan). */
 const CAMERA_OFFSET = new THREE.Vector3(34, 30, 34)
 
-const OVERVIEW_ZOOM_SOLO = 22
-const OVERVIEW_ZOOM_ARCHIPELAGO = 13.5
-const FOCUS_ZOOM = 27
+const OVERVIEW_ZOOM_SOLO = 26
+const OVERVIEW_ZOOM_ARCHIPELAGO = 14.5
+const FOCUS_ZOOM = 29
 const MIN_ZOOM = 8
 const MAX_ZOOM = 70
 
@@ -721,10 +721,33 @@ function BuildingComplex3D({
   }, [view.island.id, item.building.id, item.building.kind])
 
   const height = towerDisplayHeight(item.height)
-  const width = 1.1
+  const width = 1.0
   const x = view.x + item.x
   const z = view.z + item.z
   const kindColor = buildingKindColor(item.building.kind)
+
+  // Детерминированные соседние малоэтажные корпуса в этом же квартале (создают плотность города).
+  const annexes = useMemo(() => {
+    const seed = fnv1a32(`${view.island.id}/${item.building.id}/annex`)
+    const side1 = seed % 2 === 0 ? 1 : -1
+    const side2 = (seed >>> 3) % 2 === 0 ? 1 : -1
+    return [
+      {
+        dx: side1 * 0.62,
+        dz: -side2 * 0.56,
+        w: 0.56 + ((seed >>> 5) % 20) / 100,
+        d: 0.52 + ((seed >>> 8) % 20) / 100,
+        h: Math.max(0.55, height * (0.34 + ((seed >>> 11) % 18) / 100))
+      },
+      {
+        dx: -side1 * 0.58,
+        dz: side2 * 0.6,
+        w: 0.48 + ((seed >>> 14) % 18) / 100,
+        d: 0.54 + ((seed >>> 17) % 18) / 100,
+        h: Math.max(0.45, height * (0.26 + ((seed >>> 20) % 16) / 100))
+      }
+    ]
+  }, [view.island.id, item.building.id, height])
 
   const layers = useMemo<Array<{ w: number; h: number; accent: boolean; rot: number; y: number; dx: number }>>(() => {
     const baseH = 0.12
@@ -789,14 +812,26 @@ function BuildingComplex3D({
       }}
       onPointerOut={() => onHoverBuilding(null)}
     >
-      {/* Стилобат-основание с акцентной полоской категории модуля. */}
-      <mesh position={[0, 0.06, 0]} material={skin.plinth}>
-        <boxGeometry args={[width * 1.38, 0.12, width * 1.38]} />
+      {/* Квартальный тротуар-блок с тонкой акцентной окантовкой категории модуля. */}
+      <mesh position={[0, 0.05, 0]} material={skin.plinth}>
+        <boxGeometry args={[2.02, 0.1, 2.02]} />
       </mesh>
-      <mesh position={[0, 0.125, 0]}>
-        <boxGeometry args={[width * 1.32, 0.03, width * 1.32]} />
-        <meshBasicMaterial color={kindColor} transparent opacity={lit ? 0.95 : 0.55} />
+      <mesh position={[0, 0.105, 0]}>
+        <boxGeometry args={[1.96, 0.02, 1.96]} />
+        <meshBasicMaterial color={kindColor} transparent opacity={lit ? 0.9 : 0.42} />
       </mesh>
+
+      {/* Соседние малоэтажные здания квартала. */}
+      {annexes.map((annex, idx) => (
+        <mesh
+          key={`annex-${idx}`}
+          position={[annex.dx, 0.11 + annex.h / 2, annex.dz]}
+          material={wallWithRoof}
+          scale={[annex.w, annex.h, annex.d]}
+        >
+          <boxGeometry args={[1, 1, 1]} />
+        </mesh>
+      ))}
 
       {layers.map((layer, index) => (
         <mesh
@@ -810,10 +845,19 @@ function BuildingComplex3D({
         </mesh>
       ))}
 
+      {/* Крышная тех-надстройка и антенна-маячок. */}
+      <mesh position={[0.16, height + 0.08, -0.16]} material={skin.roof}>
+        <boxGeometry args={[0.26, 0.16, 0.26]} />
+      </mesh>
+      <mesh position={[-0.18, height + 0.22, 0.18]}>
+        <cylinderGeometry args={[0.02, 0.03, 0.44, 6]} />
+        <meshBasicMaterial color={kindColor} />
+      </mesh>
+
       {lit ? (
         <>
           <mesh position={[0, height / 2 + 0.1, 0]}>
-            <boxGeometry args={[width * 1.38, height + 0.35, width * 1.38]} />
+            <boxGeometry args={[2.06, height + 0.4, 2.06]} />
             <meshBasicMaterial color="#ffd98a" wireframe transparent opacity={0.45} />
           </mesh>
           <LabelSprite3D
@@ -924,6 +968,196 @@ function RoadSegment3D({
       <mesh position={[0, 0.015, 0]} material={lineMaterial}>
         <boxGeometry args={[length, 0.015, Math.max(0.05, width * 0.24)]} />
       </mesh>
+    </group>
+  )
+}
+
+/**
+ * Городская уличная сеть острова: кольцевые проспекты, радиальные авеню,
+ * уличные фонари с тёплыми огнями и зелёные скверы/деревья на бульварах.
+ */
+function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin }) {
+  const isCapital = view.island.role === 'capital'
+  const laneMaterial = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: '#4e6fb8',
+        transparent: true,
+        opacity: 0.36,
+        depthWrite: false
+      }),
+    []
+  )
+  const lampPoleMaterial = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: '#1b2238', roughness: 0.7, metalness: 0.4 }),
+    []
+  )
+  const lampBulbMaterial = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: '#ffdf8e' }),
+    []
+  )
+  const treeTrunkMaterial = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: '#3b2e2a', roughness: 0.9 }),
+    []
+  )
+  const treeCrownMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: '#2a8f7a',
+        emissive: '#144d42',
+        emissiveIntensity: 0.3,
+        roughness: 0.65
+      }),
+    []
+  )
+  useEffect(() => () => {
+    laneMaterial.dispose()
+    lampPoleMaterial.dispose()
+    lampBulbMaterial.dispose()
+    treeTrunkMaterial.dispose()
+    treeCrownMaterial.dispose()
+  }, [laneMaterial, lampPoleMaterial, lampBulbMaterial, treeTrunkMaterial, treeCrownMaterial])
+
+  const ringRadii = useMemo(() => {
+    const outer = view.radius * 0.76
+    if (isCapital) {
+      return [6.0, 9.2, outer].filter((r) => r <= view.radius * 0.82)
+    }
+    return [view.radius * 0.42, outer].filter((r) => r >= 2.2)
+  }, [isCapital, view.radius])
+
+  const avenues = useMemo(() => {
+    const count = isCapital ? 8 : 6
+    const startR = isCapital ? 2.4 : 1.1
+    const endR = view.radius * 0.78
+    return Array.from({ length: count }, (_, index) => {
+      const angle = (index / count) * Math.PI * 2 + Math.PI / 8
+      return {
+        from: [view.x + Math.cos(angle) * startR, view.z + Math.sin(angle) * startR] as const,
+        to: [view.x + Math.cos(angle) * endR, view.z + Math.sin(angle) * endR] as const
+      }
+    })
+  }, [isCapital, view.radius, view.x, view.z])
+
+  // Позиции уличных фонарей вдоль кольцевых проспектов и набережной.
+  const lampPositions = useMemo(() => {
+    const list: Array<readonly [number, number]> = []
+    ringRadii.forEach((r, rIdx) => {
+      const count = Math.max(8, Math.floor((2 * Math.PI * r) / 3.8))
+      for (let i = 0; i < count; i += 1) {
+        const angle = (i / count) * Math.PI * 2 + rIdx * 0.25
+        list.push([view.x + Math.cos(angle) * (r + 0.26), view.z + Math.sin(angle) * (r + 0.26)])
+      }
+    })
+    return list
+  }, [ringRadii, view.x, view.z])
+
+  // Позиции деревьев в скверах (на безопасном расстоянии от зданий).
+  const treePositions = useMemo(() => {
+    const list: Array<readonly [number, number, number]> = []
+    const outerR = view.radius * 0.72
+    const candidateCount = isCapital ? 26 : 12
+    for (let i = 0; i < candidateCount; i += 1) {
+      const seed = fnv1a32(`${view.island.id}/tree-${i}`)
+      const angle = ((i / candidateCount) * Math.PI * 2) + ((seed % 100) / 100) * 0.18
+      const r = (isCapital ? 5.6 : 1.8) + (((seed >>> 6) % 100) / 100) * Math.max(1.2, outerR - (isCapital ? 5.8 : 2.0))
+      const tx = Math.cos(angle) * r
+      const tz = Math.sin(angle) * r
+      const tooClose = view.buildings.some((b) => Math.hypot(b.x - tx, b.z - tz) < 1.65)
+      if (!tooClose) {
+        const scale = 0.8 + ((seed >>> 12) % 45) / 100
+        list.push([view.x + tx, view.z + tz, scale])
+      }
+    }
+    return list
+  }, [isCapital, view])
+
+  const poleRef = useRef<THREE.InstancedMesh>(null)
+  const bulbRef = useRef<THREE.InstancedMesh>(null)
+  const trunkRef = useRef<THREE.InstancedMesh>(null)
+  const crownRef = useRef<THREE.InstancedMesh>(null)
+
+  useLayoutEffect(() => {
+    const dummy = FRAME_DUMMY
+    if (poleRef.current && bulbRef.current) {
+      lampPositions.forEach(([lx, lz], i) => {
+        dummy.position.set(lx, 0.24, lz)
+        dummy.rotation.set(0, 0, 0)
+        dummy.scale.set(1, 1, 1)
+        dummy.updateMatrix()
+        poleRef.current?.setMatrixAt(i, dummy.matrix)
+
+        dummy.position.set(lx, 0.5, lz)
+        dummy.updateMatrix()
+        bulbRef.current?.setMatrixAt(i, dummy.matrix)
+      })
+      poleRef.current.instanceMatrix.needsUpdate = true
+      bulbRef.current.instanceMatrix.needsUpdate = true
+    }
+    if (trunkRef.current && crownRef.current) {
+      treePositions.forEach(([tx, tz, sc], i) => {
+        dummy.position.set(tx, 0.14 * sc, tz)
+        dummy.rotation.set(0, 0, 0)
+        dummy.scale.set(sc, sc, sc)
+        dummy.updateMatrix()
+        trunkRef.current?.setMatrixAt(i, dummy.matrix)
+
+        dummy.position.set(tx, 0.42 * sc, tz)
+        dummy.updateMatrix()
+        crownRef.current?.setMatrixAt(i, dummy.matrix)
+      })
+      trunkRef.current.instanceMatrix.needsUpdate = true
+      crownRef.current.instanceMatrix.needsUpdate = true
+    }
+  }, [lampPositions, treePositions])
+
+  return (
+    <group>
+      {/* Кольцевые проспекты. */}
+      {ringRadii.map((r, idx) => (
+        <group key={`avenue-ring-${idx}`}>
+          <mesh position={[view.x, 0.015, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={skin.roadBed}>
+            <ringGeometry args={[r - 0.24, r + 0.24, 48]} />
+          </mesh>
+          <mesh position={[view.x, 0.024, view.z]} rotation={[Math.PI / 2, 0, 0]} material={laneMaterial}>
+            <torusGeometry args={[r, 0.025, 6, 48]} />
+          </mesh>
+        </group>
+      ))}
+      {/* Радиальные улицы. */}
+      {avenues.map((av, idx) => (
+        <RoadSegment3D
+          key={`avenue-spoke-${idx}`}
+          from={av.from}
+          to={av.to}
+          bedMaterial={skin.roadBed}
+          lineMaterial={laneMaterial}
+          width={0.38}
+          y={0.016}
+        />
+      ))}
+      {/* Уличные фонари. */}
+      {lampPositions.length > 0 ? (
+        <>
+          <instancedMesh ref={poleRef} args={[undefined, lampPoleMaterial, lampPositions.length]}>
+            <cylinderGeometry args={[0.025, 0.035, 0.48, 5]} />
+          </instancedMesh>
+          <instancedMesh ref={bulbRef} args={[undefined, lampBulbMaterial, lampPositions.length]}>
+            <sphereGeometry args={[0.06, 6, 6]} />
+          </instancedMesh>
+        </>
+      ) : null}
+      {/* Деревья и скверы. */}
+      {treePositions.length > 0 ? (
+        <>
+          <instancedMesh ref={trunkRef} args={[undefined, treeTrunkMaterial, treePositions.length]}>
+            <cylinderGeometry args={[0.04, 0.06, 0.28, 5]} />
+          </instancedMesh>
+          <instancedMesh ref={crownRef} args={[undefined, treeCrownMaterial, treePositions.length]}>
+            <coneGeometry args={[0.24, 0.48, 6]} />
+          </instancedMesh>
+        </>
+      ) : null}
     </group>
   )
 }
@@ -1500,48 +1734,52 @@ function DepartmentHouse3D({
         onSelectDepartment(lot.departmentKey)
       }}
     >
-      {/* Светящаяся площадка-фундамент в цвете департамента. */}
-      <mesh position={[0, 0.04, 0]}>
-        <boxGeometry args={[1.45, 0.08, 1.45]} />
-        <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.42 : 0.18} />
+      {/* Аккуратный тёмный дворик с тонкой цветной каймой департамента. */}
+      <mesh position={[0, 0.03, 0]}>
+        <boxGeometry args={[1.02, 0.06, 1.02]} />
+        <meshBasicMaterial color="#182038" />
       </mesh>
-      {/* Стены дома ровно на фундаменте (низ на y = 0.08). */}
-      <mesh position={[0, 0.44, 0]} material={body}>
-        <boxGeometry args={[1.08, 0.72, 1.08]} />
+      <mesh position={[0, 0.065, 0]}>
+        <boxGeometry args={[0.98, 0.015, 0.98]} />
+        <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.72 : 0.3} />
+      </mesh>
+      {/* Стены дома ровно на фундаменте. */}
+      <mesh position={[0, 0.36, 0]} material={body}>
+        <boxGeometry args={[0.78, 0.58, 0.78]} />
       </mesh>
       {/* Акцентный пояс департамента под крышей. */}
-      <mesh position={[0, 0.82, 0]}>
-        <boxGeometry args={[1.14, 0.07, 1.14]} />
+      <mesh position={[0, 0.67, 0]}>
+        <boxGeometry args={[0.84, 0.06, 0.84]} />
         <meshBasicMaterial color={lot.accent} />
       </mesh>
       {/* Двускатная/пирамидальная крыша. */}
-      <mesh material={roof} position={[0, 1.16, 0]} rotation={[0, Math.PI / 4, 0]}>
-        <coneGeometry args={[0.92, 0.62, 4]} />
+      <mesh material={roof} position={[0, 0.95, 0]} rotation={[0, Math.PI / 4, 0]}>
+        <coneGeometry args={[0.68, 0.48, 4]} />
       </mesh>
       {/* Труба. */}
-      <mesh position={[0.28, 1.16, -0.28]}>
-        <boxGeometry args={[0.16, 0.36, 0.16]} />
+      <mesh position={[0.2, 0.96, -0.2]}>
+        <boxGeometry args={[0.12, 0.28, 0.12]} />
         <meshStandardMaterial color="#181c2c" roughness={0.9} />
       </mesh>
       {/* Окна на обеих видимых в изометрии гранях (+Z и +X). */}
-      <mesh position={[0, 0.44, 0.55]}>
-        <boxGeometry args={[0.42, 0.24, 0.02]} />
+      <mesh position={[0, 0.36, 0.4]}>
+        <boxGeometry args={[0.32, 0.2, 0.02]} />
         <meshBasicMaterial color={lot.active ? '#ffe18c' : '#3a4668'} />
       </mesh>
-      <mesh position={[0.55, 0.44, 0]}>
-        <boxGeometry args={[0.02, 0.24, 0.42]} />
+      <mesh position={[0.4, 0.36, 0]}>
+        <boxGeometry args={[0.02, 0.2, 0.32]} />
         <meshBasicMaterial color={lot.active ? '#ffe18c' : '#3a4668'} />
       </mesh>
       {/* Парящий индикатор активности над домом работающего агента. */}
       {lot.active ? (
-        <mesh ref={beaconRef} position={[0, 1.65, 0]}>
-          <octahedronGeometry args={[0.16, 0]} />
+        <mesh ref={beaconRef} position={[0, 1.38, 0]}>
+          <octahedronGeometry args={[0.13, 0]} />
           <meshBasicMaterial color={lot.accent} />
         </mesh>
       ) : null}
       {highlighted ? (
-        <mesh position={[0, 0.65, 0]}>
-          <boxGeometry args={[1.48, 1.25, 1.48]} />
+        <mesh position={[0, 0.55, 0]}>
+          <boxGeometry args={[1.1, 1.05, 1.1]} />
           <meshBasicMaterial color="#ffe9b0" wireframe transparent opacity={0.75} />
         </mesh>
       ) : null}
@@ -1672,16 +1910,16 @@ function DepartmentHouses3D({
       CAPITAL_TOWER_INNER_RADIUS - 1.2
     )
     const total = Math.max(1, lots[0]?.total ?? lots.length)
-    return Array.from(groups.entries()).map(([key, info]) => {
+    return Array.from(groups.entries()).map(([key, info], index) => {
       const midSlot = info.slots[Math.floor(info.slots.length / 2)] ?? 0
       const angle = (midSlot / total) * Math.PI * 2
       return {
         key,
         label: info.label,
-        subtitle: info.activeCount > 0 ? `Активно: ${info.activeCount}` : undefined,
         accent: info.accent,
-        x: view.x + Math.cos(angle) * (ringRadius + 0.35),
-        z: view.z + Math.sin(angle) * (ringRadius + 0.35)
+        x: view.x + Math.cos(angle) * (ringRadius + 0.65),
+        y: index % 2 === 0 ? 1.85 : 2.45,
+        z: view.z + Math.sin(angle) * (ringRadius + 0.65)
       }
     })
   }, [lots, view.x, view.z])
@@ -1705,10 +1943,9 @@ function DepartmentHouses3D({
         <LabelSprite3D
           key={`dept-label-${sector.key}`}
           text={sector.label}
-          subtitle={sector.subtitle}
           accentColor={sector.accent}
-          position={[sector.x, 2.3, sector.z]}
-          scale={[3.4, sector.subtitle ? 0.96 : 0.72, 1]}
+          position={[sector.x, sector.y, sector.z]}
+          scale={[2.25, 0.54, 1]}
           fontSize={22}
         />
       ))}
@@ -1903,6 +2140,8 @@ function IslandGroup3D({
   return (
     <group ref={groupRef}>
       <IslandGround view={view} selected={selectedIsland} onSelect={() => onSelectIsland(view.island.id)} />
+      {/* Уличная сеть города: проспекты, фонари, скверы. */}
+      <CityStreets3D view={view} skin={skin} />
       {/* Дороги под застройкой: связи модулей, двор Королевы и курьеры от агентов к модулям. */}
       <ModuleRoads3D
         view={view}
