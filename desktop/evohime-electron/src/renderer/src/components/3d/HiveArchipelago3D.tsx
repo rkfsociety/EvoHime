@@ -1486,39 +1486,6 @@ function posArc(delta: number): number {
   return d
 }
 
-/** Находит свободный угол ровно между двумя домами агентов (предпочтительно на границе разных секторов), ближайший к `targetAngle`. */
-function nearestInterHouseAngle(
-  total: number,
-  targetAngle: number,
-  lots?: readonly HiveCityHouseLot[]
-): number {
-  const count = Math.max(2, total)
-  const orderedLots = lots && lots.length > 0 ? [...lots].sort((a, b) => a.slot - b.slot) : null
-  let bestBoundaryAngle: number | null = null
-  let bestBoundaryDist = Infinity
-  let bestAnyAngle = capitalHouseAngle(0.5, count)
-  let bestAnyDist = Infinity
-  for (let i = 0; i < count; i += 1) {
-    const a = capitalHouseAngle(i + 0.5, count)
-    const d = angularDistance(a, targetAngle)
-    if (d < bestAnyDist) {
-      bestAnyDist = d
-      bestAnyAngle = a
-    }
-    if (orderedLots !== null && orderedLots.length === count) {
-      const curr = orderedLots[i]
-      const next = orderedLots[(i + 1) % count]
-      if (curr !== undefined && next !== undefined && curr.departmentKey !== next.departmentKey) {
-        if (d < bestBoundaryDist) {
-          bestBoundaryDist = d
-          bestBoundaryAngle = a
-        }
-      }
-    }
-  }
-  return bestBoundaryAngle ?? bestAnyAngle
-}
-
 /**
  * Траектория курьера на Главном кольце по ПДД РФ (правостороннее движение):
  * все выезды и заезды — только направо, пересечение сплошной осевой кольца
@@ -2416,9 +2383,9 @@ function QueenRoads3D({
           />
         )
       })}
-      {/* Межкольцевой проспект в свободном зазоре между домами (связывает внутреннее кольцо и Главный проспект). */}
+      {/* Межкольцевой проспект строго по прямой от ворот Королевы (связывает внутреннее кольцо и Главный проспект). */}
       {(() => {
-        const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_GATE_ANGLE, lots)
+        const bridgeAngle = QUEEN_GATE_ANGLE
         const startR = innerBoulevardR + 0.41
         const endR = Math.max(startR + 0.3, MAIN_AVENUES_RADIUS - 0.33)
         return (
@@ -2561,7 +2528,7 @@ function AgentModuleCouriers3D({
     const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
     const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
     const homeEdgeR = Math.max(innerBoulevardR + 0.35, ringRadius - 0.55)
-    const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_GATE_ANGLE, lots)
+    const bridgeAngle = QUEEN_GATE_ANGLE
     const sourceLots = lots.filter((lot) => lot.active)
 
     const list: Array<{

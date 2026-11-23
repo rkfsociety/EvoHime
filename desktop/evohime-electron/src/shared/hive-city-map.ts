@@ -697,12 +697,19 @@ function buildIslandView(
             return arranged
           })()
         : slice
+      // Оставляем гарантированный прямой проезд от ворот Королевы (Math.PI / 2)
+      // через все кольца модулей, независимо от режима оптимизации и числа зданий.
+      const gateHalfGap = Math.min(Math.PI * 0.45, Math.max(Math.PI / countOnRing, 1.55 / Math.max(1, ringRadius)))
+      const usableArc = Math.PI * 2 - gateHalfGap * 2
       for (let i = 0; i < countOnRing; i += 1) {
         const building = orderedRingSlice[i]
         if (!building) continue
+        const frac = countOnRing <= 1 ? 0.5 : i / (countOnRing - 1)
         const angle = optimizeByQueen
-          ? Math.PI * 0.5 + ((i + 0.5) / countOnRing) * Math.PI * 2
-          : (2 * Math.PI * i) / countOnRing + ringIndex * (Math.PI / countOnRing)
+          ? Math.PI * 0.5 + gateHalfGap + frac * usableArc
+          : Math.PI * 0.5 +
+            gateHalfGap +
+            (((i + (ringIndex % 2) * 0.5) / Math.max(1, countOnRing)) % 1) * usableArc
         buildings.push({
           building,
           x: Math.cos(angle) * ringRadius,
