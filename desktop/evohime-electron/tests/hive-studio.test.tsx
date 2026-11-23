@@ -93,11 +93,4 @@ describe('Hive Studio app', () => {
     expect(planningAfter).toBe(planningBefore + 1)
     expect(activeHouseCount()).toBeGreaterThan(planningBefore)
   })
-
-  it('switches to the panorama source when the daemon map is not used', async () => {
-    const user = userEvent.setup()
-    render(<StudioApp />)
-    await user.click(screen.getByText('Панорама (без карты)'))
-    expect(screen.getByTestId('hive-city-scene').getAttribute('data-mode')).toBe('panorama')
-  })
 })

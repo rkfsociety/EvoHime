@@ -4,9 +4,8 @@
  * Что даёт:
  * - настоящий `HiveCityScene` (тот же компонент, что в дашборде) в обычном
  *   браузере, без Electron и без собранного Core;
- * - источник данных по выбору: симуляция (детерминированный снапшот
- *   `hive-studio-simulation.ts`), реальный демон (вопрос `get_city_map` через
- *   dev-middleware из `vite.studio.config.ts`) или чистая панорама без карты;
+ * - отображает реальную 3D-визуализацию архипелага с симуляцией снапшота
+ *   (`hive-studio-simulation.ts`);
  * - живые переключатели сцены: занятость департаментов, статус наблюдения,
  *   работа Королевы, количество спутников (анимации появления/исчезновения).
  *
@@ -15,9 +14,8 @@
  * production-бандл (rollup input перечисляет только index.html).
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
-import type { HiveCityMapSnapshot } from '@shared/hive-city-map'
 import { BrandLotus } from './BrandLotus'
 import { HiveCityScene, type HiveCityDepartmentPin } from './components/3d'
 import {
@@ -30,8 +28,6 @@ import {
 // что классы оболочки, и при обратном порядке импортов проигрывают.
 import './styles.css'
 import './hive-studio.css'
-
-type StudioSource = 'simulation' | 'daemon' | 'panorama'
 
 type StudioStatus =
   | 'observing'
@@ -49,27 +45,6 @@ const STATUS_OPTIONS: readonly { value: StudioStatus; label: string }[] = [
   { value: 'disabled', label: 'Выключена' },
   { value: 'sleeping', label: 'Спит' }
 ]
-
-const LIVE_POLL_INTERVAL_MS = 2000
-
-type LiveOutcome =
-  | { readonly available: true; readonly snapshot: HiveCityMapSnapshot }
-  | { readonly available: false; readonly snapshot: null }
-
-const UNAVAILABLE: LiveOutcome = { available: false, snapshot: null }
-
-/** Один опрос наблюдательного pipe демона через dev-middleware. */
-async function pollLiveCityMap(signal: AbortSignal): Promise<LiveOutcome> {
-  try {
-    const response = await fetch('/hive-studio-api/city-map.json', { signal })
-    if (!response.ok) return UNAVAILABLE
-    const payload = (await response.json()) as LiveOutcome
-    if (typeof payload !== 'object' || payload === null) return UNAVAILABLE
-    return payload
-  } catch {
-    return UNAVAILABLE
-  }
-}
 
 function departmentPins(departments: readonly HiveStudioDepartmentState[]): HiveCityDepartmentPin[] {
   return departments.map((department) => ({
@@ -102,7 +77,6 @@ function agentHints(departments: readonly HiveStudioDepartmentState[]): {
 
 /** Экспортирован для smoke-тестов стенда (tests/hive-studio.test.tsx). */
 export function StudioApp(): React.JSX.Element {
-  const [source, setSource] = useState<StudioSource>('simulation')
   const [status, setStatus] = useState<StudioStatus>('observing')
   const [queenWorking, setQueenWorking] = useState(false)
   const [departments, setDepartments] = useState<readonly HiveStudioDepartmentState[]>(
@@ -111,42 +85,18 @@ export function StudioApp(): React.JSX.Element {
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
   const [satelliteCount, setSatelliteCount] = useState(2)
   const [rescanTick, setRescanTick] = useState(0)
-  const [liveOutcome, setLiveOutcome] = useState<LiveOutcome>(UNAVAILABLE)
-
-  useEffect(() => {
-    if (source !== 'daemon') return undefined
-    const controller = new AbortController()
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const run = async (): Promise<void> => {
-      const outcome = await pollLiveCityMap(controller.signal)
-      if (cancelled) return
-      setLiveOutcome(outcome)
-      timer = setTimeout(() => void run(), LIVE_POLL_INTERVAL_MS)
-    }
-    void run()
-    return () => {
-      cancelled = true
-      controller.abort()
-      if (timer !== null) clearTimeout(timer)
-    }
-  }, [source])
 
   const simulation = useMemo(
     () =>
       buildHiveStudioSimulation({
-        generatedAtMs: source === 'simulation' ? Date.now() + rescanTick : Date.now(),
+        generatedAtMs: Date.now() + rescanTick,
         satelliteCount,
         seed: 199 + rescanTick
       }),
-    [source, satelliteCount, rescanTick]
+    [satelliteCount, rescanTick]
   )
 
-  const cityMap = useMemo(() => {
-    if (source === 'panorama') return null
-    if (source === 'daemon') return liveOutcome
-    return { available: true, snapshot: simulation } as const
-  }, [source, simulation, liveOutcome])
+  const cityMap = useMemo(() => ({ available: true, snapshot: simulation }) as const, [simulation])
 
   const adjustActive = useCallback((key: string, delta: number): void => {
     setDepartments((current) =>
@@ -224,60 +174,30 @@ export function StudioApp(): React.JSX.Element {
         </div>
 
         <fieldset className="hive-studio__group">
-          <legend>Источник данных</legend>
-          {(
-            [
-              { value: 'simulation', label: 'Симуляция' },
-              { value: 'daemon', label: 'Реальный демон' },
-              { value: 'panorama', label: 'Панорама (без карты)' }
-            ] as const
-          ).map((option) => (
-            <label key={option.value} className="hive-studio__radio">
-              <input
-                type="radio"
-                name="studio-source"
-                checked={source === option.value}
-                onChange={() => setSource(option.value)}
-              />
-              <span>{option.label}</span>
-            </label>
-          ))}
-          {source === 'daemon' ? (
-            <p className="hive-studio__hint" data-testid="hive-studio-live-state">
-              {liveOutcome.available
-                ? `Демон отвечает · спутников: ${liveOutcome.snapshot.satellites.length} · опрос каждые ${LIVE_POLL_INTERVAL_MS / 1000} с`
-                : 'Демон недоступен — покажется статус «unavailable»'}
-            </p>
-          ) : null}
+          <legend>Архипелаг</legend>
+          <div className="hive-studio__row">
+            <button
+              type="button"
+              onClick={() => setSatelliteCount((value) => Math.max(0, value - 1))}
+              aria-label="Убрать спутник"
+            >
+              − спутник
+            </button>
+            <span className="hive-studio__count">спутников: {satelliteCount}</span>
+            <button
+              type="button"
+              onClick={() => setSatelliteCount((value) => Math.min(3, value + 1))}
+              aria-label="Добавить спутник"
+            >
+              + спутник
+            </button>
+          </div>
+          <div className="hive-studio__row">
+            <button type="button" onClick={() => setRescanTick((value) => value + 1)}>
+              Пересборка (перерисовать)
+            </button>
+          </div>
         </fieldset>
-
-        {source !== 'daemon' ? (
-          <fieldset className="hive-studio__group">
-            <legend>Архипелаг</legend>
-            <div className="hive-studio__row">
-              <button
-                type="button"
-                onClick={() => setSatelliteCount((value) => Math.max(0, value - 1))}
-                aria-label="Убрать спутник"
-              >
-                − спутник
-              </button>
-              <span className="hive-studio__count">спутников: {satelliteCount}</span>
-              <button
-                type="button"
-                onClick={() => setSatelliteCount((value) => Math.min(3, value + 1))}
-                aria-label="Добавить спутник"
-              >
-                + спутник
-              </button>
-            </div>
-            <div className="hive-studio__row">
-              <button type="button" onClick={() => setRescanTick((value) => value + 1)}>
-                Пересборка (перерисовать)
-              </button>
-            </div>
-          </fieldset>
-        ) : null}
 
         <fieldset className="hive-studio__group">
           <legend>Сцена</legend>
@@ -304,46 +224,44 @@ export function StudioApp(): React.JSX.Element {
           </label>
         </fieldset>
 
-        {source !== 'daemon' ? (
-          <fieldset className="hive-studio__group">
-            <legend>Департаменты (активные / всего)</legend>
-            <ul className="hive-studio__list">
-              {departments.map((department) => (
-                <li key={department.key}>
+        <fieldset className="hive-studio__group">
+          <legend>Департаменты (активные / всего)</legend>
+          <ul className="hive-studio__list">
+            {departments.map((department) => (
+              <li key={department.key}>
+                <button
+                  type="button"
+                  className={`hive-studio__dept${selectedDepartment === department.key ? ' hive-studio__dept--selected' : ''}`}
+                  onClick={() => handleSelectDepartment(department.key)}
+                >
+                  <span>{department.label}</span>
+                  <span className="hive-studio__dept-cap">
+                    {department.activeCount} / {department.maxCapacity}
+                  </span>
+                </button>
+                <span className="hive-studio__stepper">
                   <button
                     type="button"
-                    className={`hive-studio__dept${selectedDepartment === department.key ? ' hive-studio__dept--selected' : ''}`}
-                    onClick={() => handleSelectDepartment(department.key)}
+                    aria-label={`Меньше: ${department.label}`}
+                    onClick={() => adjustActive(department.key, -1)}
                   >
-                    <span>{department.label}</span>
-                    <span className="hive-studio__dept-cap">
-                      {department.activeCount} / {department.maxCapacity}
-                    </span>
+                    −
                   </button>
-                  <span className="hive-studio__stepper">
-                    <button
-                      type="button"
-                      aria-label={`Меньше: ${department.label}`}
-                      onClick={() => adjustActive(department.key, -1)}
-                    >
-                      −
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Больше: ${department.label}`}
-                      onClick={() => adjustActive(department.key, 1)}
-                    >
-                      +
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {selected !== null ? (
-              <p className="hive-studio__hint">Выбран департамент: {selected.label}</p>
-            ) : null}
-          </fieldset>
-        ) : null}
+                  <button
+                    type="button"
+                    aria-label={`Больше: ${department.label}`}
+                    onClick={() => adjustActive(department.key, 1)}
+                  >
+                    +
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+          {selected !== null ? (
+            <p className="hive-studio__hint">Выбран департамент: {selected.label}</p>
+          ) : null}
+        </fieldset>
       </aside>
 
       <main className="hive-stage hive-stage--studio">
