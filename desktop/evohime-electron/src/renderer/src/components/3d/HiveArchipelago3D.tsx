@@ -2805,24 +2805,21 @@ function DepartmentHouses3D({
       }
     }
     const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
-    const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
-    const labelR = Math.max(2.38, innerBoulevardR - 0.72)
+    const labelR = Math.max(ringRadius + 0.78, Math.min(5.42, (ringRadius + 0.52 + 5.64) / 2))
     const total = Math.max(1, lots[0]?.total ?? lots.length)
     return Array.from(groups.entries()).map(([key, info]) => {
-      const minSlot = Math.min(...info.slots)
-      const maxSlot = Math.max(...info.slots)
-      let angle = capitalHouseAngle((minSlot + maxSlot) / 2, total)
-      // Если дорога ворот Королевы пересекает середину этого сектора, смещаем табличку в свободную часть сектора.
-      if (angularDistance(angle, QUEEN_GATE_ANGLE) < 0.28) {
-        angle = QUEEN_GATE_ANGLE - 0.34
-      }
+      const sortedSlots = [...info.slots].sort((a, b) => a - b)
+      const minSlot = sortedSlots[0] ?? 0
+      // Размещаем подпись в свободном окне между съездами домов на территории сектора (вне кольца Королевы).
+      const slotPos = sortedSlots.length >= 2 ? minSlot + 0.5 : minSlot + 0.35
+      const angle = capitalHouseAngle(slotPos, total)
       const rotZ = Math.sin(angle) < 0 ? -angle - Math.PI / 2 : Math.PI / 2 - angle
       return {
         key,
         label: info.label,
         accent: info.accent,
         x: view.x + Math.cos(angle) * labelR,
-        y: 0.02,
+        y: 0.025,
         z: view.z + Math.sin(angle) * labelR,
         rotZ
       }
@@ -2863,11 +2860,14 @@ function DepartmentHouses3D({
   }, [lots])
 
   if (lots.length === 0) return <></>
+  const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
+  const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
+  const sectorInnerR = innerBoulevardR + 0.44
   const sectorOuterR = Math.min(view.radius * 0.74, 11.8)
 
   return (
     <group>
-      {/* Выделенные цветовые сектора групп агентов на плите города. */}
+      {/* Выделенные цветовые сектора групп агентов (начинаются за кольцом Королевы). */}
       {sectors.map((sector) => {
         const isSelected = selectedDepartment === sector.key
         const thetaStart = -sector.endAngle
@@ -2875,7 +2875,7 @@ function DepartmentHouses3D({
         return (
           <group key={`dept-sector-${sector.key}`}>
             <mesh position={[view.x, 0.008, view.z]} rotation={[-Math.PI / 2, 0, 0]}>
-              <ringGeometry args={[2.55, sectorOuterR, 24, 1, thetaStart, thetaLength]} />
+              <ringGeometry args={[sectorInnerR, sectorOuterR, 24, 1, thetaStart, thetaLength]} />
               <meshBasicMaterial
                 color={sector.accent}
                 transparent
@@ -2893,8 +2893,8 @@ function DepartmentHouses3D({
               />
             </mesh>
             {[sector.startAngle, sector.endAngle].map((boundAngle, bIdx) => {
-              const rMid = (2.6 + 5.6) / 2
-              const len = 3.0
+              const rMid = (sectorInnerR + 5.62) / 2
+              const len = Math.max(0.4, 5.62 - sectorInnerR)
               return (
                 <mesh
                   key={`sector-bound-${sector.key}-${bIdx}`}
@@ -2932,7 +2932,7 @@ function DepartmentHouses3D({
           text={sector.label}
           accentColor={sector.accent}
           position={[sector.x, sector.y, sector.z]}
-          size={[1.38, 0.30]}
+          size={[1.28, 0.28]}
           rotationZ={sector.rotZ}
           fontSize={36}
         />
