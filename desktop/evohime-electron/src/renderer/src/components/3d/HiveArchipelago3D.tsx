@@ -1408,6 +1408,7 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
 export const QUEEN_GATE_ANGLE = Math.PI * 0.38
 const QUEEN_U_TURN_ANGLE = QUEEN_GATE_ANGLE - Math.PI
 const MAIN_AVENUES_RADIUS = 7.2
+const HIVE_CAR_SPEED = 1.65
 const AVENUE_RING_STEP = 3.2
 
 export function computeQueenGateStopAngle(innerBoulevardR: number): number {
@@ -1952,12 +1953,17 @@ function QueenRoads3D({
       while (backArc < 0) backArc += Math.PI * 2
       while (backArc >= Math.PI * 2) backArc -= Math.PI * 2
 
+      const queenLoopLength = Math.max(
+        1.5,
+        (innerBoulevardR - gateEntryR) + backArc * innerBoulevardR + (homeEdgeR - innerBoulevardR)
+      )
+
       if (car.phase === 'delivering') {
         if (car.cooldown > 0) {
           car.cooldown -= dt
           visible = false
         } else {
-          car.progress += dt * 0.55
+          car.progress += dt * (HIVE_CAR_SPEED / queenLoopLength)
           if (car.progress >= 1) {
             deliveredMapRef.current.set(lot.slot, true)
             car.phase = 'to_ring'
@@ -1999,7 +2005,8 @@ function QueenRoads3D({
             }
             return false
           })
-          const nextProgress = car.progress + dt * 1.4
+          const toRingLen = Math.max(0.8, (homeEdgeR - innerBoulevardR) + 0.45)
+          const nextProgress = car.progress + dt * (HIVE_CAR_SPEED / toRingLen)
           if (car.progress > RING_ENTRY_STOP_PROGRESS) {
             car.progress = Math.min(1, nextProgress)
           } else if (car.progress < RING_ENTRY_STOP_PROGRESS) {
@@ -2064,7 +2071,8 @@ function QueenRoads3D({
               (other.phase === 'along_ring' || other.phase === 'queued') &&
               Math.abs(other.curAngle - QUEEN_U_TURN_ANGLE) < MIN_CAR_ARC_GAP * 1.25
           )
-        const allowedStep = uTurnBlocked ? 0 : Math.min(Math.max(0, maxTravel), dt * 1.15)
+        const outerAngularSpeed = HIVE_CAR_SPEED / Math.max(1.5, innerBoulevardR + car.curLaneOffset)
+        const allowedStep = uTurnBlocked ? 0 : Math.min(Math.max(0, maxTravel), dt * outerAngularSpeed)
         car.curAngle -= allowedStep
         const newArcToUTurn = Math.max(0, arcToUTurn - allowedStep)
         if (newArcToUTurn <= 0.02 && !uTurnBlocked) {
@@ -2128,7 +2136,8 @@ function QueenRoads3D({
             if (other.phase === 'queued') queuedAhead = true
           }
         }
-        const nextAngle = Math.min(maxAllowedAngle, car.curAngle + dt * (isInQueueZone ? 0.85 : 1.15))
+        const innerAngularSpeed = HIVE_CAR_SPEED / Math.max(1.5, innerBoulevardR - car.curLaneOffset)
+        const nextAngle = Math.min(maxAllowedAngle, car.curAngle + dt * innerAngularSpeed)
         const angleStep = Math.max(0, nextAngle - car.curAngle)
         car.curAngle = Math.max(car.curAngle, nextAngle)
         if (
@@ -2162,7 +2171,8 @@ function QueenRoads3D({
           dirZ = tz
         }
       } else if (car.phase === 'processing') {
-        car.progress = Math.min(1, car.progress + dt * 2.0)
+        const procLen = Math.max(0.8, (innerBoulevardR - gateEntryR) + 0.35)
+        car.progress = Math.min(1, car.progress + dt * (HIVE_CAR_SPEED / procLen))
         const gdx = -Math.cos(QUEEN_GATE_ANGLE)
         const gdz = -Math.sin(QUEEN_GATE_ANGLE)
         if (car.progress <= 0.42) {
@@ -2192,7 +2202,7 @@ function QueenRoads3D({
         }
       } else if (car.phase === 'returning_ring') {
         // Возврат по выездной полосе ворот и внешней полосе кольца (-angle) со скруглениями Безье.
-        car.progress += dt * 0.55
+        car.progress += dt * (HIVE_CAR_SPEED / queenLoopLength)
         if (car.progress >= 1) {
           car.phase = 'cooldown'
           car.progress = 0
@@ -2444,6 +2454,7 @@ function AgentModuleCouriers3D({
       readonly color: string
       readonly phase: number
       readonly active: boolean
+      readonly pathLength: number
     }> = []
 
     sourceLots.forEach((lot, idx) => {
@@ -2459,6 +2470,13 @@ function AgentModuleCouriers3D({
       if (!target) return
       const targetAngle = Math.atan2(target.z, target.x)
       const targetR = Math.hypot(target.x, target.z)
+      const targetEntryR = Math.max(MAIN_AVENUES_RADIUS + 0.34, Math.min(MAIN_AVENUES_RADIUS + 1.4, targetR - 0.85))
+      const innerArc = posArc(houseAngle - bridgeAngle) * (innerBoulevardR + 0.28)
+      const bridgeLen = Math.max(0.5, MAIN_AVENUES_RADIUS - (innerBoulevardR + 0.41))
+      const mainArc = posArc(bridgeAngle - targetAngle) * MAIN_AVENUES_RADIUS
+      const radialToTarget = Math.abs(targetEntryR - MAIN_AVENUES_RADIUS)
+      const houseSeg = Math.max(0.4, homeEdgeR - (innerBoulevardR + 0.41))
+      const pathLength = Math.max(3.0, houseSeg + innerArc + bridgeLen + mainArc + radialToTarget)
       list.push({
         lotSlot: lot.slot,
         houseAngle,
@@ -2466,10 +2484,11 @@ function AgentModuleCouriers3D({
         bridgeAngle,
         innerRingR: innerBoulevardR,
         targetAngle,
-        targetEntryR: Math.max(MAIN_AVENUES_RADIUS + 0.34, Math.min(MAIN_AVENUES_RADIUS + 1.4, targetR - 0.85)),
+        targetEntryR,
         color: lot.active ? lot.accent : '#7ef2c4',
         phase: idx / Math.max(1, sourceLots.length),
-        active: lot.active
+        active: lot.active,
+        pathLength
       })
     })
     return list.slice(0, 18)
@@ -2495,10 +2514,10 @@ function AgentModuleCouriers3D({
     if (!mesh || !active || routes.length === 0) return
     const time = paused ? 0 : state.clock.elapsedTime
     const dummy = FRAME_DUMMY
-    const flowSpeed = 0.16
     const laneOffset = 0.11
 
     routes.forEach((route, index) => {
+      const flowSpeed = HIVE_CAR_SPEED / route.pathLength
       for (let dir = 0; dir < 2; dir += 1) {
         const instIdx = index * 2 + dir
         if (instIdx >= mesh.count) continue
