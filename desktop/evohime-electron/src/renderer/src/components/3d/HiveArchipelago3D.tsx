@@ -1509,7 +1509,48 @@ function nearestInterHouseAngle(
  * все выезды и заезды — только направо, пересечение сплошной осевой кольца
  * происходит исключительно в официальном разрыве сплошной `uTurnAngle`.
  */
-function evalMainRingPddPose(
+type PathPose = { x: number; z: number; dx: number; dz: number }
+
+interface PathSegment {
+  readonly len: number
+  readonly eval: (u: number) => PathPose
+}
+
+function approxBezierLength(
+  ax: number,
+  az: number,
+  cx: number,
+  cz: number,
+  bx: number,
+  bz: number
+): number {
+  return Math.max(
+    0.05,
+    (Math.hypot(cx - ax, cz - az) + Math.hypot(bx - cx, bz - cz) + Math.hypot(bx - ax, bz - az)) * 0.5
+  )
+}
+
+function evalSegmentedPose(segments: readonly PathSegment[], t: number): PathPose {
+  let total = 0
+  for (const seg of segments) {
+    if (seg.len > 1e-4) total += seg.len
+  }
+  if (total <= 1e-4 || segments.length === 0) {
+    return segments[0]?.eval(0) ?? { x: 0, z: 0, dx: 0, dz: 1 }
+  }
+  const target = Math.min(total, Math.max(0, t) * total)
+  let acc = 0
+  for (const seg of segments) {
+    if (seg.len <= 1e-4) continue
+    if (target <= acc + seg.len) {
+      return seg.eval(Math.min(1, Math.max(0, (target - acc) / seg.len)))
+    }
+    acc += seg.len
+  }
+  return segments[segments.length - 1]!.eval(1)
+}
+
+function buildMainRingPddSegments(
   viewX: number,
   viewZ: number,
   startAngle: number,
@@ -1519,9 +1560,8 @@ function evalMainRingPddPose(
   ringR: number,
   uTurnAngle: number,
   startIsInner: boolean,
-  t: number,
   laneOffset: number
-): { x: number; z: number; dx: number; dz: number } {
+): readonly PathSegment[] {
   const ring1Sign = startIsInner ? 1 : -1
   const ring2Sign = -ring1Sign
   const ring1LaneR = ringR - ring1Sign * 0.13
@@ -1540,77 +1580,100 @@ function evalMainRingPddPose(
   const border2R = startIsInner ? ringR + 0.34 : ringR - 0.34
   const lead1 = Math.min(0.08, arc1 * 0.35)
   const lead2 = Math.min(0.08, arc2 * 0.35)
+  const uTurnInLead = Math.min(0.1, arc1 * 0.4)
+  const uTurnOutLead = Math.min(0.1, arc2 * 0.4)
 
-  if (t < 0.1) {
-    const u = t / 0.1
-    const r = startR + u * (border1R - startR)
-    return {
-      x: viewX + Math.cos(startAngle) * r - r1dz * laneOffset,
-      z: viewZ + Math.sin(startAngle) * r + r1dx * laneOffset,
-      dx: r1dx,
-      dz: r1dz
+  const t1ax = viewX + Math.cos(startAngle) * border1R - r1dz * laneOffset
+  const t1az = viewZ + Math.sin(startAngle) * border1R + r1dx * laneOffset
+  const t1cx = viewX + Math.cos(startAngle) * ring1LaneR - r1dz * laneOffset
+  const t1cz = viewZ + Math.sin(startAngle) * ring1LaneR + r1dx * laneOffset
+  const out1A = startAngle + ring1Sign * lead1
+  const t1bx = viewX + Math.cos(out1A) * ring1LaneR
+  const t1bz = viewZ + Math.sin(out1A) * ring1LaneR
+
+  const arc1Span = Math.max(0, arc1 - lead1 - uTurnInLead)
+
+  const uInA = uTurnAngle - ring1Sign * uTurnInLead
+  const uOutA = uTurnAngle + ring2Sign * uTurnOutLead
+  const uAx = viewX + Math.cos(uInA) * ring1LaneR
+  const uAz = viewZ + Math.sin(uInA) * ring1LaneR
+  const uCx = viewX + Math.cos(uTurnAngle) * ringR
+  const uCz = viewZ + Math.sin(uTurnAngle) * ringR
+  const uBx = viewX + Math.cos(uOutA) * ring2LaneR
+  const uBz = viewZ + Math.sin(uOutA) * ring2LaneR
+
+  const arc2Span = Math.max(0, arc2 - lead2 - uTurnOutLead)
+
+  const t2InA = endAngle - ring2Sign * lead2
+  const t2Ax = viewX + Math.cos(t2InA) * ring2LaneR
+  const t2Az = viewZ + Math.sin(t2InA) * ring2LaneR
+  const t2Cx = viewX + Math.cos(endAngle) * ring2LaneR - r2dz * laneOffset
+  const t2Cz = viewZ + Math.sin(endAngle) * ring2LaneR + r2dx * laneOffset
+  const t2Bx = viewX + Math.cos(endAngle) * border2R - r2dz * laneOffset
+  const t2Bz = viewZ + Math.sin(endAngle) * border2R + r2dx * laneOffset
+
+  return [
+    {
+      len: Math.abs(border1R - startR),
+      eval: (u) => {
+        const r = startR + u * (border1R - startR)
+        return {
+          x: viewX + Math.cos(startAngle) * r - r1dz * laneOffset,
+          z: viewZ + Math.sin(startAngle) * r + r1dx * laneOffset,
+          dx: r1dx,
+          dz: r1dz
+        }
+      }
+    },
+    {
+      len: approxBezierLength(t1ax, t1az, t1cx, t1cz, t1bx, t1bz),
+      eval: (u) => evalTurnBezier(t1ax, t1az, t1cx, t1cz, t1bx, t1bz, u)
+    },
+    {
+      len: arc1Span * ring1LaneR,
+      eval: (u) => {
+        const curA = out1A + ring1Sign * u * arc1Span
+        return {
+          x: viewX + Math.cos(curA) * ring1LaneR,
+          z: viewZ + Math.sin(curA) * ring1LaneR,
+          dx: -Math.sin(curA) * ring1Sign,
+          dz: Math.cos(curA) * ring1Sign
+        }
+      }
+    },
+    {
+      len: approxBezierLength(uAx, uAz, uCx, uCz, uBx, uBz),
+      eval: (u) => evalTurnBezier(uAx, uAz, uCx, uCz, uBx, uBz, u)
+    },
+    {
+      len: arc2Span * ring2LaneR,
+      eval: (u) => {
+        const curA = uOutA + ring2Sign * u * arc2Span
+        return {
+          x: viewX + Math.cos(curA) * ring2LaneR,
+          z: viewZ + Math.sin(curA) * ring2LaneR,
+          dx: -Math.sin(curA) * ring2Sign,
+          dz: Math.cos(curA) * ring2Sign
+        }
+      }
+    },
+    {
+      len: approxBezierLength(t2Ax, t2Az, t2Cx, t2Cz, t2Bx, t2Bz),
+      eval: (u) => evalTurnBezier(t2Ax, t2Az, t2Cx, t2Cz, t2Bx, t2Bz, u)
+    },
+    {
+      len: Math.abs(endR - border2R),
+      eval: (u) => {
+        const r = border2R + u * (endR - border2R)
+        return {
+          x: viewX + Math.cos(endAngle) * r - r2dz * laneOffset,
+          z: viewZ + Math.sin(endAngle) * r + r2dx * laneOffset,
+          dx: r2dx,
+          dz: r2dz
+        }
+      }
     }
-  }
-  if (t <= 0.2) {
-    const ax = viewX + Math.cos(startAngle) * border1R - r1dz * laneOffset
-    const az = viewZ + Math.sin(startAngle) * border1R + r1dx * laneOffset
-    const cx = viewX + Math.cos(startAngle) * ring1LaneR - r1dz * laneOffset
-    const cz = viewZ + Math.sin(startAngle) * ring1LaneR + r1dx * laneOffset
-    const outA = startAngle + ring1Sign * lead1
-    const bx = viewX + Math.cos(outA) * ring1LaneR
-    const bz = viewZ + Math.sin(outA) * ring1LaneR
-    return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.1) / 0.1)
-  }
-  if (t < 0.45) {
-    const u = (t - 0.2) / 0.25
-    const curA = startAngle + ring1Sign * (lead1 + u * Math.max(0, arc1 - lead1 * 2))
-    return {
-      x: viewX + Math.cos(curA) * ring1LaneR,
-      z: viewZ + Math.sin(curA) * ring1LaneR,
-      dx: -Math.sin(curA) * ring1Sign,
-      dz: Math.cos(curA) * ring1Sign
-    }
-  }
-  if (t <= 0.55) {
-    const inA = uTurnAngle - ring1Sign * Math.min(0.1, arc1 * 0.4)
-    const outA = uTurnAngle + ring2Sign * Math.min(0.1, arc2 * 0.4)
-    const ax = viewX + Math.cos(inA) * ring1LaneR
-    const az = viewZ + Math.sin(inA) * ring1LaneR
-    const cx = viewX + Math.cos(uTurnAngle) * ringR
-    const cz = viewZ + Math.sin(uTurnAngle) * ringR
-    const bx = viewX + Math.cos(outA) * ring2LaneR
-    const bz = viewZ + Math.sin(outA) * ring2LaneR
-    return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.45) / 0.1)
-  }
-  if (t < 0.8) {
-    const u = (t - 0.55) / 0.25
-    const start2A = uTurnAngle + ring2Sign * Math.min(0.1, arc2 * 0.4)
-    const curA = start2A + ring2Sign * u * Math.max(0, arc2 - lead2 - Math.min(0.1, arc2 * 0.4))
-    return {
-      x: viewX + Math.cos(curA) * ring2LaneR,
-      z: viewZ + Math.sin(curA) * ring2LaneR,
-      dx: -Math.sin(curA) * ring2Sign,
-      dz: Math.cos(curA) * ring2Sign
-    }
-  }
-  if (t <= 0.9) {
-    const inA = endAngle - ring2Sign * lead2
-    const ax = viewX + Math.cos(inA) * ring2LaneR
-    const az = viewZ + Math.sin(inA) * ring2LaneR
-    const cx = viewX + Math.cos(endAngle) * ring2LaneR - r2dz * laneOffset
-    const cz = viewZ + Math.sin(endAngle) * ring2LaneR + r2dx * laneOffset
-    const bx = viewX + Math.cos(endAngle) * border2R - r2dz * laneOffset
-    const bz = viewZ + Math.sin(endAngle) * border2R + r2dx * laneOffset
-    return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.8) / 0.1)
-  }
-  const u = (t - 0.9) / 0.1
-  const r = border2R + u * (endR - border2R)
-  return {
-    x: viewX + Math.cos(endAngle) * r - r2dz * laneOffset,
-    z: viewZ + Math.sin(endAngle) * r + r2dx * laneOffset,
-    dx: r2dx,
-    dz: r2dz
-  }
+  ]
 }
 const QUEEN_PROCESS_SEC = 1.15
 
@@ -1811,7 +1874,7 @@ function QueenRoads3D({
     if (gateLampRef.current) {
       gateLampRef.current.material = processingLotRef.current !== null ? gateSignalAmber : gateSignalGreen
     }
-    const evalQueenOutPose = (t: number, homeAngle: number) => {
+    const buildQueenOutPath = (homeAngle: number): { segments: readonly PathSegment[]; totalLength: number } => {
       const gdx = Math.cos(QUEEN_GATE_ANGLE)
       const gdz = Math.sin(QUEEN_GATE_ANGLE)
       const hdx = Math.cos(homeAngle)
@@ -1833,88 +1896,109 @@ function QueenRoads3D({
       }
       const gateTurnR = Math.max(gateEntryR + 0.25, innerBoulevardR - 0.56)
 
-      if (t < 0.12) {
-        const u = t / 0.12
-        const r = gateEntryR + u * (gateTurnR - gateEntryR)
-        return {
-          x: view.x + gdx * r - gdz * laneOffset,
-          z: view.z + gdz * r + gdx * laneOffset,
-          dx: gdx,
-          dz: gdz
+      const t1ax = view.x + gdx * gateTurnR - gdz * laneOffset
+      const t1az = view.z + gdz * gateTurnR + gdx * laneOffset
+      const t1cx = view.x + gdx * innerLaneR - gdz * laneOffset
+      const t1cz = view.z + gdz * innerLaneR + gdx * laneOffset
+      const out1A = QUEEN_GATE_ANGLE + 0.12
+      const t1bx = view.x + Math.cos(out1A) * innerLaneR
+      const t1bz = view.z + Math.sin(out1A) * innerLaneR
+
+      const uInA = QUEEN_GATE_ANGLE + Math.PI - 0.12
+      const uOutA = QUEEN_U_TURN_ANGLE - 0.08
+      const uAx = view.x + Math.cos(uInA) * innerLaneR
+      const uAz = view.z + Math.sin(uInA) * innerLaneR
+      const uCx = view.x + Math.cos(QUEEN_U_TURN_ANGLE) * innerBoulevardR
+      const uCz = view.z + Math.sin(QUEEN_U_TURN_ANGLE) * innerBoulevardR
+      const uOutLaneR = outerRForU(0.05)
+      const uBx = view.x + Math.cos(uOutA) * uOutLaneR
+      const uBz = view.z + Math.sin(uOutA) * uOutLaneR
+
+      const outerArcSpan = Math.max(0, arcFromUTurn - 0.16)
+
+      const t2InA = homeAngle + 0.08
+      const t2InLaneR = outerRForU(1)
+      const t2Ax = view.x + Math.cos(t2InA) * t2InLaneR
+      const t2Az = view.z + Math.sin(t2InA) * t2InLaneR
+      const t2Cx = view.x + hdx * t2InLaneR - hdz * laneOffset
+      const t2Cz = view.z + hdz * t2InLaneR + hdx * laneOffset
+      const rOut = Math.min(homeEdgeR, innerBoulevardR + 0.56)
+      const t2Bx = view.x + hdx * rOut - hdz * laneOffset
+      const t2Bz = view.z + hdz * rOut + hdx * laneOffset
+
+      const segments: PathSegment[] = [
+        {
+          len: Math.max(0.05, gateTurnR - gateEntryR),
+          eval: (u) => {
+            const r = gateEntryR + u * (gateTurnR - gateEntryR)
+            return {
+              x: view.x + gdx * r - gdz * laneOffset,
+              z: view.z + gdz * r + gdx * laneOffset,
+              dx: gdx,
+              dz: gdz
+            }
+          }
+        },
+        {
+          len: approxBezierLength(t1ax, t1az, t1cx, t1cz, t1bx, t1bz),
+          eval: (u) => evalTurnBezier(t1ax, t1az, t1cx, t1cz, t1bx, t1bz, u)
+        },
+        {
+          len: (Math.PI - 0.24) * innerLaneR,
+          eval: (u) => {
+            const curA = QUEEN_GATE_ANGLE + 0.12 + u * (Math.PI - 0.24)
+            return {
+              x: view.x + Math.cos(curA) * innerLaneR,
+              z: view.z + Math.sin(curA) * innerLaneR,
+              dx: -Math.sin(curA),
+              dz: Math.cos(curA)
+            }
+          }
+        },
+        {
+          len: approxBezierLength(uAx, uAz, uCx, uCz, uBx, uBz),
+          eval: (u) => evalTurnBezier(uAx, uAz, uCx, uCz, uBx, uBz, u)
+        },
+        {
+          len: outerArcSpan * (innerBoulevardR + 0.22),
+          eval: (u) => {
+            const curA = QUEEN_U_TURN_ANGLE - 0.08 - outerArcSpan * u
+            const laneR = outerRForU(u)
+            const dRdu = outerRDerivForU(u)
+            const dAdu = -Math.max(0.05, arcFromUTurn - 0.16)
+            const rawDx = -Math.sin(curA) * laneR * dAdu + Math.cos(curA) * dRdu
+            const rawDz = Math.cos(curA) * laneR * dAdu + Math.sin(curA) * dRdu
+            const len = Math.hypot(rawDx, rawDz) || 1
+            return {
+              x: view.x + Math.cos(curA) * laneR,
+              z: view.z + Math.sin(curA) * laneR,
+              dx: rawDx / len,
+              dz: rawDz / len
+            }
+          }
+        },
+        {
+          len: approxBezierLength(t2Ax, t2Az, t2Cx, t2Cz, t2Bx, t2Bz),
+          eval: (u) => evalTurnBezier(t2Ax, t2Az, t2Cx, t2Cz, t2Bx, t2Bz, u)
+        },
+        {
+          len: Math.max(0.05, homeGarageR - rOut),
+          eval: (u) => {
+            const r = rOut + u * (homeGarageR - rOut)
+            return {
+              x: view.x + hdx * r - hdz * laneOffset,
+              z: view.z + hdz * r + hdx * laneOffset,
+              dx: hdx,
+              dz: hdz
+            }
+          }
         }
-      }
-      if (t <= 0.22) {
-        // Выезд из ворот Королевы: поворот ТОЛЬКО НАПРАВО (+angle) на внутреннее полукольцо.
-        const ax = view.x + gdx * gateTurnR - gdz * laneOffset
-        const az = view.z + gdz * gateTurnR + gdx * laneOffset
-        const cx = view.x + gdx * innerLaneR - gdz * laneOffset
-        const cz = view.z + gdz * innerLaneR + gdx * laneOffset
-        const outA = QUEEN_GATE_ANGLE + 0.12
-        const bx = view.x + Math.cos(outA) * innerLaneR
-        const bz = view.z + Math.sin(outA) * innerLaneR
-        return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.12) / 0.1)
-      }
-      if (t < 0.44) {
-        const u = (t - 0.22) / 0.22
-        const curA = QUEEN_GATE_ANGLE + 0.12 + u * (Math.PI - 0.24)
-        return {
-          x: view.x + Math.cos(curA) * innerLaneR,
-          z: view.z + Math.sin(curA) * innerLaneR,
-          dx: -Math.sin(curA),
-          dz: Math.cos(curA)
-        }
-      }
-      if (t <= 0.54) {
-        // Разворот в официальном разрыве сплошной линии (QUEEN_U_TURN_ANGLE) на внешнее полукольцо (-angle).
-        const inA = QUEEN_GATE_ANGLE + Math.PI - 0.12
-        const outA = QUEEN_U_TURN_ANGLE - 0.08
-        const ax = view.x + Math.cos(inA) * innerLaneR
-        const az = view.z + Math.sin(inA) * innerLaneR
-        const cx = view.x + Math.cos(QUEEN_U_TURN_ANGLE) * innerBoulevardR
-        const cz = view.z + Math.sin(QUEEN_U_TURN_ANGLE) * innerBoulevardR
-        const outLaneR = outerRForU(0.05)
-        const bx = view.x + Math.cos(outA) * outLaneR
-        const bz = view.z + Math.sin(outA) * outLaneR
-        return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.44) / 0.1)
-      }
-      if (t < 0.8) {
-        const u = (t - 0.54) / 0.26
-        const curA = QUEEN_U_TURN_ANGLE - 0.08 - Math.max(0, arcFromUTurn - 0.16) * u
-        const laneR = outerRForU(u)
-        const dRdu = outerRDerivForU(u)
-        const dAdu = -Math.max(0.05, arcFromUTurn - 0.16)
-        const rawDx = -Math.sin(curA) * laneR * dAdu + Math.cos(curA) * dRdu
-        const rawDz = Math.cos(curA) * laneR * dAdu + Math.sin(curA) * dRdu
-        const len = Math.hypot(rawDx, rawDz) || 1
-        return {
-          x: view.x + Math.cos(curA) * laneR,
-          z: view.z + Math.sin(curA) * laneR,
-          dx: rawDx / len,
-          dz: rawDz / len
-        }
-      }
-      if (t <= 0.9) {
-        // Поворот НАПРАВО с внешнего полукольца на съезд к дому.
-        const inA = homeAngle + 0.08
-        const inLaneR = outerRForU(1)
-        const ax = view.x + Math.cos(inA) * inLaneR
-        const az = view.z + Math.sin(inA) * inLaneR
-        const cx = view.x + hdx * inLaneR - hdz * laneOffset
-        const cz = view.z + hdz * inLaneR + hdx * laneOffset
-        const rOut = Math.min(homeEdgeR, innerBoulevardR + 0.56)
-        const bx = view.x + hdx * rOut - hdz * laneOffset
-        const bz = view.z + hdz * rOut + hdx * laneOffset
-        return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.8) / 0.1)
-      }
-      const u = (t - 0.9) / 0.1
-      const rStart = Math.min(homeEdgeR, innerBoulevardR + 0.56)
-      const r = rStart + u * (homeGarageR - rStart)
-      return {
-        x: view.x + hdx * r - hdz * laneOffset,
-        z: view.z + hdz * r + hdx * laneOffset,
-        dx: hdx,
-        dz: hdz
-      }
+      ]
+      const totalLength = Math.max(
+        1.5,
+        segments.reduce((sum, seg) => sum + seg.len, 0)
+      )
+      return { segments, totalLength }
     }
 
     // Шаг 2: двигаем каждую машину и обновляем её матрицу (с запретом проезда сквозь впереди идущую машину).
@@ -1949,22 +2033,13 @@ function QueenRoads3D({
       let dirZ = 1
       let visible = true
 
-      // Обратный путь по внутренней полосе (-angle) от ворот к дому.
-      let backArc = QUEEN_GATE_ANGLE - homeAngle
-      while (backArc < 0) backArc += Math.PI * 2
-      while (backArc >= Math.PI * 2) backArc -= Math.PI * 2
-
-      const queenLoopLength = Math.max(
-        1.5,
-        (innerBoulevardR - gateEntryR) + backArc * innerBoulevardR + (homeGarageR - innerBoulevardR)
-      )
-
       if (car.phase === 'delivering') {
+        const queenOutPath = buildQueenOutPath(homeAngle)
         if (car.cooldown > 0) {
           car.cooldown -= dt
           visible = false
         } else {
-          car.progress += dt * (HIVE_CAR_SPEED / queenLoopLength)
+          car.progress += dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
           if (car.progress >= 1) {
             deliveredMapRef.current.set(lot.slot, true)
             car.phase = 'to_ring'
@@ -1973,7 +2048,7 @@ function QueenRoads3D({
           }
         }
         const t = Math.min(1, Math.max(0, car.progress))
-        const pose = evalQueenOutPose(t, homeAngle)
+        const pose = evalSegmentedPose(queenOutPath.segments, t)
         x = pose.x
         z = pose.z
         dirX = pose.dx
@@ -2204,14 +2279,15 @@ function QueenRoads3D({
         }
       } else if (car.phase === 'returning_ring') {
         // Возврат по выездной полосе ворот и внешней полосе кольца (-angle) со скруглениями Безье.
-        car.progress += dt * (HIVE_CAR_SPEED / queenLoopLength)
+        const queenOutPath = buildQueenOutPath(homeAngle)
+        car.progress += dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
         if (car.progress >= 1) {
           car.phase = 'cooldown'
           car.progress = 0
           car.cooldown = 0.25 + (index % 5) * 0.15
         }
         const t = Math.min(1, car.progress)
-        const pose = evalQueenOutPose(t, homeAngle)
+        const pose = evalSegmentedPose(queenOutPath.segments, t)
         x = pose.x
         z = pose.z
         dirX = pose.dx
@@ -2448,17 +2524,16 @@ function AgentModuleCouriers3D({
 
     const list: Array<{
       readonly lotSlot: number
-      readonly houseAngle: number
-      readonly houseExitR: number
-      readonly bridgeAngle: number
-      readonly innerRingR: number
-      readonly targetAngle: number
-      readonly targetEntryR: number
       readonly color: string
       readonly phase: number
       readonly active: boolean
-      readonly pathLength: number
+      readonly outboundSegments: readonly PathSegment[]
+      readonly inboundSegments: readonly PathSegment[]
+      readonly outboundLength: number
+      readonly inboundLength: number
     }> = []
+
+    const laneOffset = 0.11
 
     sourceLots.forEach((lot, idx) => {
       const houseAngle = capitalHouseAngle(lot.slot, lot.total)
@@ -2475,24 +2550,141 @@ function AgentModuleCouriers3D({
       const targetR = Math.hypot(target.x, target.z)
       const houseGarageR = Math.max(homeEdgeR + 0.35, ringRadius)
       const targetEntryR = Math.max(MAIN_AVENUES_RADIUS + 0.34, targetR - 0.25)
-      const innerArc = posArc(houseAngle - bridgeAngle) * (innerBoulevardR + 0.28)
-      const bridgeLen = Math.max(0.5, MAIN_AVENUES_RADIUS - (innerBoulevardR + 0.41))
-      const mainArc = posArc(bridgeAngle - targetAngle) * MAIN_AVENUES_RADIUS
-      const radialToTarget = Math.abs(targetEntryR - MAIN_AVENUES_RADIUS)
-      const houseSeg = Math.max(0.4, houseGarageR - (innerBoulevardR + 0.41))
-      const pathLength = Math.max(3.0, houseSeg + innerArc + bridgeLen + mainArc + radialToTarget)
+
+      const outerLaneR = innerBoulevardR + 0.28
+      const innerBorderR = innerBoulevardR + 0.41
+      const bridgeLen = Math.max(0.1, MAIN_AVENUES_RADIUS - 0.34 - innerBorderR)
+
+      const outHdx = -Math.cos(houseAngle)
+      const outHdz = -Math.sin(houseAngle)
+      const outBdx = Math.cos(bridgeAngle)
+      const outBdz = Math.sin(bridgeAngle)
+      const outArc = posArc(houseAngle - bridgeAngle)
+      const outboundSegments: PathSegment[] = [
+        {
+          len: Math.max(0.1, houseGarageR - innerBorderR),
+          eval: (u) => {
+            const r = houseGarageR - u * (houseGarageR - innerBorderR)
+            return {
+              x: view.x + Math.cos(houseAngle) * r - outHdz * laneOffset,
+              z: view.z + Math.sin(houseAngle) * r + outHdx * laneOffset,
+              dx: outHdx,
+              dz: outHdz
+            }
+          }
+        },
+        {
+          len: outArc * outerLaneR,
+          eval: (u) => {
+            const curA = houseAngle - outArc * u
+            return {
+              x: view.x + Math.cos(curA) * outerLaneR,
+              z: view.z + Math.sin(curA) * outerLaneR,
+              dx: Math.sin(curA),
+              dz: -Math.cos(curA)
+            }
+          }
+        },
+        {
+          len: bridgeLen,
+          eval: (u) => {
+            const r = innerBorderR + u * (MAIN_AVENUES_RADIUS - 0.34 - innerBorderR)
+            return {
+              x: view.x + Math.cos(bridgeAngle) * r - outBdz * laneOffset,
+              z: view.z + Math.sin(bridgeAngle) * r + outBdx * laneOffset,
+              dx: outBdx,
+              dz: outBdz
+            }
+          }
+        },
+        ...buildMainRingPddSegments(
+          view.x,
+          view.z,
+          bridgeAngle,
+          MAIN_AVENUES_RADIUS - 0.34,
+          targetAngle,
+          targetEntryR,
+          MAIN_AVENUES_RADIUS,
+          QUEEN_U_TURN_ANGLE,
+          true,
+          laneOffset
+        )
+      ]
+
+      const inBdx = -Math.cos(bridgeAngle)
+      const inBdz = -Math.sin(bridgeAngle)
+      const inHdx = Math.cos(houseAngle)
+      const inHdz = Math.sin(houseAngle)
+      const inArc = posArc(bridgeAngle - houseAngle)
+      const inboundSegments: PathSegment[] = [
+        ...buildMainRingPddSegments(
+          view.x,
+          view.z,
+          targetAngle,
+          targetEntryR,
+          bridgeAngle,
+          MAIN_AVENUES_RADIUS - 0.34,
+          MAIN_AVENUES_RADIUS,
+          QUEEN_U_TURN_ANGLE,
+          false,
+          laneOffset
+        ),
+        {
+          len: bridgeLen,
+          eval: (u) => {
+            const r = MAIN_AVENUES_RADIUS - 0.34 - u * (MAIN_AVENUES_RADIUS - 0.34 - innerBorderR)
+            return {
+              x: view.x + Math.cos(bridgeAngle) * r - inBdz * laneOffset,
+              z: view.z + Math.sin(bridgeAngle) * r + inBdx * laneOffset,
+              dx: inBdx,
+              dz: inBdz
+            }
+          }
+        },
+        {
+          len: inArc * outerLaneR,
+          eval: (u) => {
+            const curA = bridgeAngle - inArc * u
+            return {
+              x: view.x + Math.cos(curA) * outerLaneR,
+              z: view.z + Math.sin(curA) * outerLaneR,
+              dx: Math.sin(curA),
+              dz: -Math.cos(curA)
+            }
+          }
+        },
+        {
+          len: Math.max(0.1, houseGarageR - innerBorderR),
+          eval: (u) => {
+            const r = innerBorderR + u * (houseGarageR - innerBorderR)
+            return {
+              x: view.x + Math.cos(houseAngle) * r - inHdz * laneOffset,
+              z: view.z + Math.sin(houseAngle) * r + inHdx * laneOffset,
+              dx: inHdx,
+              dz: inHdz
+            }
+          }
+        }
+      ]
+
+      const outboundLength = Math.max(
+        1.5,
+        outboundSegments.reduce((sum, seg) => sum + seg.len, 0)
+      )
+      const inboundLength = Math.max(
+        1.5,
+        inboundSegments.reduce((sum, seg) => sum + seg.len, 0)
+      )
+
       list.push({
         lotSlot: lot.slot,
-        houseAngle,
-        houseExitR: houseGarageR,
-        bridgeAngle,
-        innerRingR: innerBoulevardR,
-        targetAngle,
-        targetEntryR,
         color: lot.active ? lot.accent : '#7ef2c4',
         phase: idx / Math.max(1, sourceLots.length),
         active: lot.active,
-        pathLength
+        outboundSegments,
+        inboundSegments,
+        outboundLength,
+        inboundLength
       })
     })
     return list.slice(0, 18)
@@ -2520,10 +2712,8 @@ function AgentModuleCouriers3D({
     if (!mesh || !active || routes.length === 0) return
     const time = paused ? 0 : state.clock.elapsedTime
     const dummy = FRAME_DUMMY
-    const laneOffset = 0.11
 
     routes.forEach((route, index) => {
-      const flowSpeed = HIVE_CAR_SPEED / route.pathLength
       for (let dir = 0; dir < 2; dir += 1) {
         const instIdx = index * 2 + dir
         if (instIdx >= mesh.count) continue
@@ -2535,6 +2725,7 @@ function AgentModuleCouriers3D({
           mesh.setMatrixAt(instIdx, dummy.matrix)
           continue
         }
+        const flowSpeed = HIVE_CAR_SPEED / (dir === 0 ? route.outboundLength : route.inboundLength)
         let p: number
         if (paused) {
           p = (route.phase + dir * 0.5) % 1
@@ -2553,116 +2744,8 @@ function AgentModuleCouriers3D({
           }
           p = (dir === 0 ? progress : progress - 0.5) % 1
         }
-        // Курьеры выезжают и возвращаются через ЕДИНСТВЕННЫЙ подъезд дома (на внутреннее кольцо),
-        // затем через межкольцевой проспект bridgeAngle выходят на Главный проспект 6.0.
-        let pose: { x: number; z: number; dx: number; dz: number }
-        if (dir === 0) {
-          if (p < 0.32) {
-            const subT = p / 0.32
-            const outerLaneR = route.innerRingR + 0.28
-            const innerBorderR = route.innerRingR + 0.41
-            const hdx = -Math.cos(route.houseAngle)
-            const hdz = -Math.sin(route.houseAngle)
-            const bdx = Math.cos(route.bridgeAngle)
-            const bdz = Math.sin(route.bridgeAngle)
-            const arc = posArc(route.houseAngle - route.bridgeAngle)
-            if (subT < 0.25) {
-              const u = subT / 0.25
-              const r = route.houseExitR - u * (route.houseExitR - innerBorderR)
-              pose = {
-                x: view.x + Math.cos(route.houseAngle) * r - hdz * laneOffset,
-                z: view.z + Math.sin(route.houseAngle) * r + hdx * laneOffset,
-                dx: hdx,
-                dz: hdz
-              }
-            } else if (subT < 0.75) {
-              const u = (subT - 0.25) / 0.5
-              const curA = route.houseAngle - arc * u
-              pose = {
-                x: view.x + Math.cos(curA) * outerLaneR,
-                z: view.z + Math.sin(curA) * outerLaneR,
-                dx: Math.sin(curA),
-                dz: -Math.cos(curA)
-              }
-            } else {
-              const u = (subT - 0.75) / 0.25
-              const r = innerBorderR + u * (MAIN_AVENUES_RADIUS - 0.34 - innerBorderR)
-              pose = {
-                x: view.x + Math.cos(route.bridgeAngle) * r - bdz * laneOffset,
-                z: view.z + Math.sin(route.bridgeAngle) * r + bdx * laneOffset,
-                dx: bdx,
-                dz: bdz
-              }
-            }
-          } else {
-            pose = evalMainRingPddPose(
-              view.x,
-              view.z,
-              route.bridgeAngle,
-              MAIN_AVENUES_RADIUS - 0.34,
-              route.targetAngle,
-              route.targetEntryR,
-              MAIN_AVENUES_RADIUS,
-              QUEEN_U_TURN_ANGLE,
-              true,
-              (p - 0.32) / 0.68,
-              laneOffset
-            )
-          }
-        } else {
-          if (p < 0.68) {
-            pose = evalMainRingPddPose(
-              view.x,
-              view.z,
-              route.targetAngle,
-              route.targetEntryR,
-              route.bridgeAngle,
-              MAIN_AVENUES_RADIUS - 0.34,
-              MAIN_AVENUES_RADIUS,
-              QUEEN_U_TURN_ANGLE,
-              false,
-              p / 0.68,
-              laneOffset
-            )
-          } else {
-            const subT = (p - 0.68) / 0.32
-            const outerLaneR = route.innerRingR + 0.28
-            const innerBorderR = route.innerRingR + 0.41
-            const bdx = -Math.cos(route.bridgeAngle)
-            const bdz = -Math.sin(route.bridgeAngle)
-            const hdx = Math.cos(route.houseAngle)
-            const hdz = Math.sin(route.houseAngle)
-            const arc = posArc(route.bridgeAngle - route.houseAngle)
-            if (subT < 0.25) {
-              const u = subT / 0.25
-              const r = MAIN_AVENUES_RADIUS - 0.34 - u * (MAIN_AVENUES_RADIUS - 0.34 - innerBorderR)
-              pose = {
-                x: view.x + Math.cos(route.bridgeAngle) * r - bdz * laneOffset,
-                z: view.z + Math.sin(route.bridgeAngle) * r + bdx * laneOffset,
-                dx: bdx,
-                dz: bdz
-              }
-            } else if (subT < 0.75) {
-              const u = (subT - 0.25) / 0.5
-              const curA = route.bridgeAngle - arc * u
-              pose = {
-                x: view.x + Math.cos(curA) * outerLaneR,
-                z: view.z + Math.sin(curA) * outerLaneR,
-                dx: Math.sin(curA),
-                dz: -Math.cos(curA)
-              }
-            } else {
-              const u = (subT - 0.75) / 0.25
-              const r = innerBorderR + u * (route.houseExitR - innerBorderR)
-              pose = {
-                x: view.x + Math.cos(route.houseAngle) * r - hdz * laneOffset,
-                z: view.z + Math.sin(route.houseAngle) * r + hdx * laneOffset,
-                dx: hdx,
-                dz: hdz
-              }
-            }
-          }
-        }
+        const segments = dir === 0 ? route.outboundSegments : route.inboundSegments
+        const pose = evalSegmentedPose(segments, p)
 
         const courierY = 0.12 + (instIdx % 7) * 0.0008
         dummy.position.set(pose.x, courierY, pose.z)
