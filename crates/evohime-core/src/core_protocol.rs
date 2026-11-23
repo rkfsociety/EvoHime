@@ -1237,10 +1237,11 @@ pub enum CoreCommand {
         /// Канал bounded/redacted snapshot или ошибки его формирования.
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
-    /// Exports the local `logs/core.jsonl` (and `supervisor.jsonl`, when
-    /// present) plus recent `run_tool_metrics` aggregates to a caller-chosen
-    /// destination path, redacted the same way hook payloads are. Never
-    /// touches eval fixtures or feedback storage.
+    /// Exports the local JSONL logs — legacy `logs/core.jsonl` and
+    /// `logs/supervisor.jsonl`, plus the dated `logs/<YYYY-MM-DD>/` catalogues
+    /// written by newer builds — and recent `run_tool_metrics` aggregates to a
+    /// caller-chosen destination path, redacted the same way hook payloads
+    /// are. Never touches eval fixtures or feedback storage.
     ExportDoctorLogs {
         /// Файловый путь назначения для ограниченного и очищенного экспорта.
         destination_path: String,

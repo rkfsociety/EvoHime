@@ -224,10 +224,11 @@ Core назначает маршрут Улья по подтверждённо�
 
 - **логи Улья** и диагностическую ленту/trace на вкладке «Улей» — состояние
   бюджета, маршрута, задач и approvals;
-- `%LOCALAPPDATA%\EvoHime\logs\core.jsonl` — события Core, EvaPulse, задачи,
-  лимиты и `EvaPulse: all good`;
-- `%LOCALAPPDATA%\EvoHime\logs\supervisor.jsonl` — запуск, остановку и
-  восстановление `evohime-core.exe`.
+- `%LOCALAPPDATA%\EvoHime\logs\<YYYY-MM-DD>\core.jsonl` — события Core, EvaPulse,
+  задачи, лимиты и `EvaPulse: all good` (имя каталога — текущая дата UTC);
+  старые версии писали их в `logs\core.jsonl`;
+- `%LOCALAPPDATA%\EvoHime\logs\<YYYY-MM-DD>\supervisor.jsonl` — запуск, остановку
+  и восстановление `evohime-core.exe` (старые версии — `logs\supervisor.jsonl`).
 
 Не отправляйте вместе с логами API-ключи. Перед передачей диагностики проверьте,
 что в файлах нет секретов и приватного содержимого тестового проекта.

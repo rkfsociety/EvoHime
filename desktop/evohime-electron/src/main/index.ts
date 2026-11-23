@@ -46,6 +46,12 @@ import { runBrowserBackend } from './browser-backend'
 const logger = new JsonlLogger({ directory: logDirectory(), stream: 'main' })
 const log: HardeningOptions['log'] = (level, event, fields) => logger.write(level, event, fields)
 
+// Core >= dated-log-layout writes its current-day logs into logs/<YYYY-MM-DD>/;
+// the UTC day string matches the Rust cores' catalogue naming.
+function coreLogDayDirectory(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function exitAfterLoggerFlush(code: number): void {
   void logger.flush().then((flushed) => {
     if (!flushed) process.stderr.write('EvoHime diagnostics flush timed out; exiting with a bounded log tail.\n')
@@ -266,12 +272,14 @@ if (process.argv.includes('--evohime-browser-backend')) {
         events: recentCoreEvents,
         // Include shell files only after a complete drain so the bundle never
         // races an in-progress JSONL append. Core/Supervisor remain bounded by
-        // the bundle reader.
+        // the bundle reader. Core >= log-dated layout writes current-day logs
+        // into logs/<YYYY-MM-DD>/; legacy flat files remain for older cores.
         logs: [
-          ...(shellLogsFlushed ? [logger.path] : []),
+          ...(shellLogsFlushed ? [logger.path, `${logger.path}.1`] : []),
+          join(logDirectory(), coreLogDayDirectory(), 'core.jsonl'),
+          join(logDirectory(), coreLogDayDirectory(), 'supervisor.jsonl'),
           join(logDirectory(), 'core.jsonl'),
-          join(logDirectory(), 'supervisor.jsonl'),
-          ...(shellLogsFlushed ? [`${logger.path}.1`] : [])
+          join(logDirectory(), 'supervisor.jsonl')
         ]
       })
       return { archive: serializeSupportBundle(files), issueDraft: files.issueDraft }

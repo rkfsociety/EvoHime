@@ -17,7 +17,7 @@ export interface SupportBundleFiles {
 
 const FORBIDDEN = /(?:bearer\s+|sk-|ghp_|gho_|github_pat_|xoxb-)[A-Za-z0-9._+\-/=]+|(?:[A-Za-z]:\\|\\\\\.\\pipe\\)[^\s"'<>|]+/i
 const MAX_LOG_LINES_PER_SOURCE = 40
-const MAX_LOG_FILES = 4
+const MAX_LOG_FILES = 8
 const MAX_LOG_BYTES = 64 * 1024
 
 /** Claims one live task failure for the automatic support report path. */

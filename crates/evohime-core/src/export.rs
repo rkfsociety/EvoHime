@@ -1,6 +1,8 @@
 // User-triggered Core Doctor export: writes the existing structured Core
-// logs (`logs/core.jsonl`, `logs/supervisor.jsonl` when present) plus recent
-// `run_tool_metrics` aggregates to a caller-chosen JSONL destination.
+// logs — legacy flat `logs/core.jsonl` and `logs/supervisor.jsonl` when
+// present, plus the dated `logs/<YYYY-MM-DD>/` catalogues written by newer
+// builds — plus recent `run_tool_metrics` aggregates to a caller-chosen JSONL
+// destination.
 //
 // Every line goes through the same redaction path as the hook/observability
 // contract (`crate::observability::redact_text`) before it is written, so a
@@ -106,6 +108,42 @@ fn redact_value(value: Value) -> Value {
     }
 }
 
+/// Перечисляет JSONL-файлы суточных каталогов `logs/<YYYY-MM-DD>/` в порядке
+/// возрастания дней: `(день, имя файла, полный путь)`.
+fn day_catalog_log_files(logs_dir: &Path) -> Vec<(String, String, PathBuf)> {
+    let Ok(entries) = fs::read_dir(logs_dir) else {
+        return Vec::new();
+    };
+    let mut days: Vec<(String, PathBuf)> = entries
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|file_type| file_type.is_dir()))
+        .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
+            crate::logging::is_day_catalog_name(&name).then(|| (name, entry.path()))
+        })
+        .collect();
+    days.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut result = Vec::new();
+    for (day, day_dir) in days {
+        let Ok(files) = fs::read_dir(&day_dir) else {
+            continue;
+        };
+        let mut files: Vec<(String, PathBuf)> = files
+            .flatten()
+            .filter(|file| file.file_type().is_ok_and(|file_type| file_type.is_file()))
+            .filter_map(|file| {
+                let name = file.file_name().into_string().ok()?;
+                name.ends_with(".jsonl").then(|| (name, file.path()))
+            })
+            .collect();
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        for (name, path) in files {
+            result.push((day.clone(), name, path));
+        }
+    }
+    result
+}
+
 fn export_jsonl_source(
     source_label: &str,
     path: &Path,
@@ -174,10 +212,11 @@ fn export_tool_metrics(out: &mut impl Write) -> Result<u64, ExportError> {
     Ok(exported)
 }
 
-/// Exports `logs/core.jsonl`, `logs/supervisor.jsonl` (when present), and
-/// recent `run_tool_metrics` rows to `destination`, one bounded, redacted
-/// JSON record per line. Missing source files are skipped, not an error;
-/// only I/O failures on the destination itself fail the export.
+/// Exports the local JSONL logs (legacy flat files plus the dated
+/// `logs/<YYYY-MM-DD>/` catalogues), and recent `run_tool_metrics` rows to
+/// `destination`, one bounded, redacted JSON record per line. Missing source
+/// files are skipped, not an error; only I/O failures on the destination
+/// itself fail the export.
 pub fn export_logs(destination: &Path) -> Result<ExportSummary, ExportError> {
     if destination.as_os_str().is_empty() {
         return Err(ExportError::InvalidDestination("empty path"));
@@ -210,6 +249,16 @@ pub fn export_logs(destination: &Path) -> Result<ExportSummary, ExportError> {
         sources_included.push("supervisor.jsonl".to_string());
     }
     lines_exported += supervisor_lines;
+
+    // Суточные каталоги новой раскладки: logs/<YYYY-MM-DD>/<stem>.jsonl.
+    for (day, source, path) in day_catalog_log_files(&logs_dir) {
+        let label = format!("{day}/{source}");
+        let lines = export_jsonl_source(&label, &path, &mut out)?;
+        if lines > 0 {
+            sources_included.push(label);
+        }
+        lines_exported += lines;
+    }
 
     let metrics_rows_exported = export_tool_metrics(&mut out)?;
     if metrics_rows_exported > 0 {
@@ -275,6 +324,41 @@ mod tests {
         assert!(!content.contains("verysecrettoken"));
         assert!(!content.contains("someone@example.com"));
         assert!(content.contains("[REDACTED]"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exports_dated_day_catalog_files() {
+        let dir = temp_dir("dated");
+        let logs_dir = dir.join("logs");
+        let day_dir = logs_dir.join("2026-01-01");
+        fs::create_dir_all(&day_dir).unwrap();
+        fs::write(
+            day_dir.join("core.jsonl"),
+            format!("{}\n", json!({"event": "core.test", "fields": {}})),
+        )
+        .unwrap();
+        fs::write(
+            logs_dir.join("listener.jsonl"),
+            format!("{}\n", json!({"event": "listener.test", "fields": {}})),
+        )
+        .unwrap();
+
+        let _guard = ENV_GUARD.lock().unwrap();
+        std::env::set_var("EVOHIME_DATA_DIR", &dir);
+        let destination = dir.join("export.jsonl");
+        let summary = export_logs(&destination).unwrap();
+        std::env::remove_var("EVOHIME_DATA_DIR");
+
+        assert!(summary
+            .sources_included
+            .iter()
+            .any(|source| source == "2026-01-01/core.jsonl"));
+        let content = fs::read_to_string(&destination).unwrap();
+        assert!(content.contains("core.test"));
+        // Файлы других компонентов вне обслуживаемых источников не
+        // экспортируются плоским перебором.
+        assert!(!content.contains("listener.test"));
         let _ = fs::remove_dir_all(&dir);
     }
 

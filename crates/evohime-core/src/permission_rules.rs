@@ -90,13 +90,12 @@ pub async fn apply_rules(permissions: &PermissionEngine, data_dir: &Path) {
 
     // Логируем ошибку, если она была
     if let Some(error) = error {
-        if let Ok(logger) = StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
-            let _ = logger.write(
-                "error",
-                "permissions.load_failed",
-                serde_json::json!({"path": path, "error": error, "fallback": "defaults"}),
-            );
-        }
+        let logger = StructuredLogger::open_dated(data_dir.join("logs"), "core");
+        let _ = logger.write(
+            "error",
+            "permissions.load_failed",
+            serde_json::json!({"path": path, "error": error, "fallback": "defaults"}),
+        );
     }
 }
 

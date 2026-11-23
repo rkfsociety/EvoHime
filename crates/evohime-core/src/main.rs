@@ -426,10 +426,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tracing::warn!("memory extraction recovery could not acquire a background slot");
     }
     let background_journal = journal.clone();
-    let logger = match evohime_core::StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
-        Ok(logger) => std::sync::Arc::new(logger),
-        Err(error) => return Err(format!("logging failed: {error}").into()),
-    };
+    let logs_dir = data_dir.join("logs");
+    evohime_core::prune_old_logs(&logs_dir, evohime_core::now_unix_millis());
+    let logger = std::sync::Arc::new(evohime_core::StructuredLogger::open_dated(
+        &logs_dir, "core",
+    ));
+    logger
+        .write(
+            "info",
+            "core.log_layout",
+            serde_json::json!({"layout": "dated", "logs_dir": logs_dir.display().to_string()}),
+        )
+        .ok();
     let observation_proxy =
         std::sync::Arc::new(evohime_core::external_pulse::ExternalHiveObservationProxy::new());
     let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(

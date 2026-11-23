@@ -770,8 +770,14 @@ updater, supervisor, receipts, security-файлы и `.env*`. Push допуск
 ## Данные и границы безопасности
 
 - данные и backup: `%LOCALAPPDATA%\EvoHime` или `EVOHIME_DATA_DIR`;
-- Core log: `%LOCALAPPDATA%\EvoHime\logs\core.jsonl`;
-- supervisor log: `%LOCALAPPDATA%\EvoHime\logs\supervisor.jsonl`;
+- Core log: `%LOCALAPPDATA%\EvoHime\logs\<YYYY-MM-DD>\core.jsonl` (суточный
+  каталог UTC, ротация сегментов `core.<n>.jsonl` по 32 MiB, хранение 14 дней),
+  плюс модельные трейсы `model-trace.jsonl` и `audit.jsonl` в том же суточном
+  каталоге; при старте Core удаляет суточные каталоги старше 14 дней и старые
+  корневые `core.jsonl` / `supervisor.jsonl` / `model-trace.jsonl` /
+  `audit.jsonl` старше 25 часов;
+- supervisor log: `%LOCALAPPDATA%\EvoHime\logs\<YYYY-MM-DD>\supervisor.jsonl`
+  (та же суточная раскладка и ротация, очистку выполняет supervisor);
 - состояние shell: `%LOCALAPPDATA%\EvoHime\shell\`;
 - update transaction: `%LOCALAPPDATA%\EvoHime\update-state\`; при ошибке worker сохраняются точная причина и отдельное поле `error`, а Electron отображает явную фазу `failed`;
 - экспорт событий выполняется JSONL через `LocalDatabase::export_events_jsonl`.

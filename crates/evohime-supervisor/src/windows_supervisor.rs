@@ -48,7 +48,179 @@ impl Drop for SupervisorLiveness {
     }
 }
 
-struct SupervisorLogger(Mutex<std::io::BufWriter<std::fs::File>>);
+/// Максимальный размер одного сегмента JSONL-лога; при превышении запись
+/// продолжается в следующий `supervisor.<n>.jsonl`.
+const LOG_SEGMENT_MAX_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Сколько ротированных сегментов допустимо в одном суточном каталоге.
+const LOG_SEGMENT_MAX_FILES: u32 = 8;
+
+/// Сколько суточных каталогов логов хранится.
+const LOG_RETENTION_DAYS: i64 = 14;
+
+struct SupervisorLogger(Mutex<SupervisorLogState>);
+
+struct SupervisorLogState {
+    logs_dir: PathBuf,
+    day: String,
+    segment_bytes: u64,
+    writer: Option<std::io::BufWriter<fs::File>>,
+}
+
+/// Количество дней с Unix-epoch в гражданской дате UTC
+/// (алгоритм Говарда Хиннанта, `civil_from_days`).
+fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
+    let z = days_since_epoch + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if month <= 2 { year + 1 } else { year }, month, day)
+}
+
+/// Имя суточного каталога логов (`YYYY-MM-DD`, UTC).
+fn utc_day_string(now_ms: u64) -> String {
+    let days = (now_ms / 86_400_000) as i64;
+    let (year, month, day) = civil_from_days(days);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+fn existing_size(path: &Path) -> Option<u64> {
+    fs::metadata(path).ok().map(|meta| meta.len())
+}
+
+/// Открывает очередной сегмент `stem.jsonl` в суточном каталоге: первый
+/// незаполненный до [`LOG_SEGMENT_MAX_BYTES`] сегмент.
+fn open_rotated_append(day_dir: &Path, stem: &str) -> io::Result<(PathBuf, fs::File)> {
+    open_rotated_append_limited(day_dir, stem, LOG_SEGMENT_MAX_BYTES, LOG_SEGMENT_MAX_FILES)
+}
+
+/// Вариант [`open_rotated_append`] с явными лимитами для тестов ротации.
+fn open_rotated_append_limited(
+    day_dir: &Path,
+    stem: &str,
+    segment_max_bytes: u64,
+    segment_max_files: u32,
+) -> io::Result<(PathBuf, fs::File)> {
+    fs::create_dir_all(day_dir)?;
+    let segment = |suffix: Option<u32>| -> PathBuf {
+        match suffix {
+            None => day_dir.join(format!("{stem}.jsonl")),
+            Some(index) => day_dir.join(format!("{stem}.{index}.jsonl")),
+        }
+    };
+    let mut target = segment(None);
+    if existing_size(&target).is_some_and(|size| size >= segment_max_bytes) {
+        let mut fallback = segment(None);
+        for index in 1..=segment_max_files {
+            let candidate = segment(Some(index));
+            match existing_size(&candidate) {
+                None => {
+                    target = candidate;
+                    break;
+                }
+                Some(size) if size < segment_max_bytes => {
+                    target = candidate;
+                    break;
+                }
+                Some(_) => fallback = candidate,
+            }
+        }
+        if target == segment(None) {
+            target = fallback;
+        }
+    }
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&target)?;
+    Ok((target, file))
+}
+
+/// Имя корневого JSONL-файла старой раскладки, обслуживаемого supervisor.
+fn is_legacy_log_name(name: &str) -> bool {
+    matches!(name, "core.jsonl" | "supervisor.jsonl")
+}
+
+/// Удаляет суточные каталоги старше [`LOG_RETENTION_DAYS`] валидной даты и
+/// корневые файлы старой плоской раскладки старше 25 часов. Каталоги,
+/// не разбирающиеся в валидную дату, не трогаются. Ошибки отдельных
+/// элементов игнорируются: очистка выполняется по принципу best effort.
+fn prune_old_logs(logs_dir: &Path, now_ms: u64) {
+    let cutoff_days = (now_ms / 86_400_000) as i64 - (LOG_RETENTION_DAYS - 1);
+    let legacy_cutoff_ms = now_ms.saturating_sub(25 * 3_600_000);
+    let Ok(entries) = fs::read_dir(logs_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let is_dir = entry.file_type().is_ok_and(|file_type| file_type.is_dir());
+        if is_day_catalog_name(name) && is_dir {
+            if let Some(days) = day_catalog_epoch_days(name) {
+                if days < cutoff_days {
+                    let _ = fs::remove_dir_all(&path);
+                }
+            }
+        } else if !is_dir && is_legacy_log_name(name) {
+            let days = day_catalog_epoch_days(name);
+            if days.is_none_or(|days| days < cutoff_days) {
+                let _ = fs::remove_dir_all(&path);
+            }
+        } else if !is_dir && is_legacy_log_name(name) {
+            let modified_ms = entry
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .ok()
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_millis() as u64);
+            if modified_ms.is_none_or(|modified| modified < legacy_cutoff_ms) {
+                let _ = fs::remove_file(&path);
+            }
+        }
+    }
+}
+
+/// Проверяет, является ли имя суточным каталогом логов (`YYYY-MM-DD`).
+fn is_day_catalog_name(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    name.len() == 10
+        && bytes[0..4].iter().all(u8::is_ascii_digit)
+        && bytes[4] == b'-'
+        && bytes[5..7].iter().all(u8::is_ascii_digit)
+        && bytes[7] == b'-'
+        && bytes[8..10].iter().all(u8::is_ascii_digit)
+}
+
+/// Разбирает имя суточного каталога в количество дней с Unix-epoch.
+fn day_catalog_epoch_days(name: &str) -> Option<i64> {
+    if name.len() != 10 {
+        return None;
+    }
+    let year: i64 = name[0..4].parse().ok()?;
+    let month: u32 = name[5..7].parse().ok()?;
+    let day: u32 = name[8..10].parse().ok()?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let shifted_year = if month <= 2 { year - 1 } else { year };
+    let era = if shifted_year >= 0 {
+        shifted_year
+    } else {
+        shifted_year - 399
+    } / 400;
+    let year_of_era = shifted_year - era * 400;
+    let day_of_year =
+        (153 * (if month > 2 { month - 3 } else { month + 9 }) as i64 + 2) / 5 + day as i64 - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    Some(day_of_era + era * 146_097 - 719_468)
+}
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -110,29 +282,23 @@ fn log_runtime_events(logger: &SupervisorLogger, events: &[TickEvent]) {
 
 impl SupervisorLogger {
     fn open() -> io::Result<Self> {
-        let dir = std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(".evohime"))
-            .join("EvoHime/logs");
-        std::fs::create_dir_all(&dir)?;
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(dir.join("supervisor.jsonl"))?;
-        Ok(Self(Mutex::new(std::io::BufWriter::new(file))))
+        let logs_dir = core_data_dir().join("logs");
+        fs::create_dir_all(&logs_dir)?;
+        prune_old_logs(&logs_dir, now_ms());
+        Ok(Self(Mutex::new(SupervisorLogState {
+            logs_dir,
+            day: String::new(),
+            segment_bytes: 0,
+            writer: None,
+        })))
     }
 
     fn write(&self, event: &str, fields: serde_json::Value) -> io::Result<()> {
-        let timestamp_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let mut file = self
-            .0
-            .lock()
-            .map_err(|_| io::Error::other("supervisor logger lock poisoned"))?;
+        use std::io::Write;
+        let timestamp_ms = now_ms() as u128;
+        let mut buffer = Vec::new();
         serde_json::to_writer(
-            &mut *file,
+            &mut buffer,
             &json!({
                 "timestamp_ms": timestamp_ms,
                 "level": "info",
@@ -140,9 +306,30 @@ impl SupervisorLogger {
                 "fields": fields,
             }),
         )?;
-        use std::io::Write;
-        file.write_all(b"\n")?;
-        file.flush()
+        buffer.push(b'\n');
+        let mut state = self
+            .0
+            .lock()
+            .map_err(|_| io::Error::other("supervisor logger lock poisoned"))?;
+        let today = utc_day_string(timestamp_ms as u64);
+        if state.day != today || state.writer.is_none() {
+            state.writer.take();
+            let (_, file) = open_rotated_append(&state.logs_dir.join(today.clone()), "supervisor")?;
+            state.day = today;
+            state.segment_bytes = 0;
+            state.writer = Some(std::io::BufWriter::new(file));
+        }
+        if let Some(writer) = state.writer.as_mut() {
+            writer.write_all(&buffer)?;
+            writer.flush()?;
+            state.segment_bytes += buffer.len() as u64;
+            if state.segment_bytes >= LOG_SEGMENT_MAX_BYTES {
+                // Закрыть писателя: следующая запись откроет следующий сегмент.
+                state.writer = None;
+                state.segment_bytes = 0;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1351,9 +1538,11 @@ async fn wait_for_core(
 #[cfg(test)]
 mod tests {
     use super::{
-        heartbeat_is_current_generation, heartbeat_is_stale, heartbeat_is_stale_for_generation,
-        is_deferred_update_recovery_error, recover_pending_update, restart_backoff,
-        should_reset_restart_budget, JobObject, SupervisorSession,
+        day_catalog_epoch_days, heartbeat_is_current_generation, heartbeat_is_stale,
+        heartbeat_is_stale_for_generation, is_day_catalog_name, is_deferred_update_recovery_error,
+        now_ms, open_rotated_append_limited, prune_old_logs, recover_pending_update,
+        restart_backoff, should_reset_restart_budget, utc_day_string, JobObject, SupervisorSession,
+        LOG_RETENTION_DAYS,
     };
     use evohime_tx::UpdateTransaction;
     use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
@@ -1570,5 +1759,77 @@ mod tests {
         );
         std::env::remove_var("EVOHIME_DATA_DIR");
         let _ = fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn utc_day_string_matches_known_dates() {
+        assert_eq!(utc_day_string(0), "1970-01-01");
+        assert_eq!(utc_day_string(20_679 * 86_400_000), "2026-11-22");
+        assert_eq!(utc_day_string(19_782 * 86_400_000), "2024-02-29");
+    }
+
+    #[test]
+    fn day_catalog_epoch_days_round_trips_utc_day_string() {
+        for days in [0i64, 59, 365, 19_782, 20_679] {
+            let day = utc_day_string(days as u64 * 86_400_000);
+            assert!(is_day_catalog_name(&day));
+            assert_eq!(day_catalog_epoch_days(&day), Some(days));
+        }
+        assert!(!is_day_catalog_name("2026-13-01"));
+        assert_eq!(day_catalog_epoch_days("2026-13-01"), None);
+        assert_eq!(day_catalog_epoch_days("not-a-day"), None);
+    }
+
+    #[test]
+    fn rotation_fills_segments_in_order() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let day_dir = dir.path().join("2026-01-01");
+        let (target, file) =
+            open_rotated_append_limited(&day_dir, "supervisor", 16, 3).expect("first segment");
+        assert_eq!(target.file_name().expect("filename"), "supervisor.jsonl");
+        drop(file);
+        fs::write(&target, "x".repeat(16)).expect("fill first segment");
+        let (target, file) =
+            open_rotated_append_limited(&day_dir, "supervisor", 16, 3).expect("second segment");
+        assert_eq!(target.file_name().expect("filename"), "supervisor.1.jsonl");
+        drop(file);
+        fs::write(&target, "y".repeat(16)).expect("fill second segment");
+        let (target, file) =
+            open_rotated_append_limited(&day_dir, "supervisor", 16, 3).expect("third segment");
+        assert_eq!(target.file_name().expect("filename"), "supervisor.2.jsonl");
+        drop(file);
+        fs::write(&target, "z".repeat(16)).expect("fill third segment");
+        let (target, _) =
+            open_rotated_append_limited(&day_dir, "supervisor", 16, 3).expect("fallback segment");
+        assert_eq!(target.file_name().expect("filename"), "supervisor.3.jsonl");
+    }
+
+    #[test]
+    fn prune_keeps_recent_day_catalogs_and_removes_old_ones() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let logs_dir = dir.path().join("logs");
+        let now_days = now_ms() / 86_400_000;
+        let recent = logs_dir.join(utc_day_string(now_days * 86_400_000));
+        let old = logs_dir.join(utc_day_string(
+            (now_days - LOG_RETENTION_DAYS as u64) * 86_400_000,
+        ));
+        fs::create_dir_all(&recent).expect("recent dir");
+        fs::create_dir_all(&old).expect("old dir");
+        fs::write(recent.join("supervisor.jsonl"), "{}\n").expect("recent log");
+        fs::write(old.join("supervisor.jsonl"), "{}\n").expect("old log");
+        let foreign = logs_dir.join("listener.jsonl");
+        fs::write(&foreign, "{}\n").expect("foreign file");
+        let not_a_day = logs_dir.join("update-staging");
+        fs::create_dir_all(&not_a_day).expect("bogus dir");
+
+        prune_old_logs(&logs_dir, now_ms());
+
+        assert!(
+            recent.join("supervisor.jsonl").exists(),
+            "recent day survives"
+        );
+        assert!(!old.exists(), "old day catalog removed");
+        assert!(foreign.exists(), "foreign legacy log survives");
+        assert!(not_a_day.exists(), "non-date directory survives");
     }
 }
