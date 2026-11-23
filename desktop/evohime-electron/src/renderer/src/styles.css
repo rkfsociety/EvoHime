@@ -9144,6 +9144,34 @@ body {
 
 /* Логи улья. */
 
+.hive-activity-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  max-height: 150px;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.hive-activity-row {
+  display: flex;
+  gap: 8px;
+  color: var(--fg);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.hive-activity-row time { flex: none; color: var(--fg-faint); font: 10px var(--mono); }
+.hive-activity-row--warning { color: var(--hive-amber); }
+.hive-technical-logs { flex: 0 0 auto; margin-top: 8px; border-top: 1px solid var(--border); }
+.hive-technical-logs[open] { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.hive-technical-logs summary { padding: 8px 0; color: var(--fg-muted); font-size: 11px; cursor: pointer; }
+.hive-technical-logs section { display: grid; gap: 6px; }
+
 .hive-log-list {
   display: grid;
   gap: 4px;

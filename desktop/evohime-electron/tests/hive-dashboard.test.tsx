@@ -272,7 +272,7 @@ describe('hive dashboard', () => {
     expect(screen.getByRole('heading', { name: 'Департаменты улья' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Королева Ева' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Метрики улья' })).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'Логи улья' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Ход работы Королевы' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Активные агенты (2)' })).toBeTruthy()
 
     // Департаменты теперь отрисовываются внутри сцены архипелага: в jsdom
@@ -620,9 +620,10 @@ describe('hive dashboard', () => {
       />
     )
 
-    expect(await screen.findByText('Задача завершена · task-9')).toBeTruthy()
-    expect(screen.getByText('Задача остановлена с ошибкой · task-10')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Все логи' })).toBeTruthy()
+    const activity = await screen.findByLabelText('Ход работы Королевы')
+    expect(within(activity).getByText('Задача завершена')).toBeTruthy()
+    expect(within(activity).getByText('Задача остановлена с ошибкой')).toBeTruthy()
+    expect((screen.getByText('Подробные логи').closest('details') as HTMLDetailsElement).open).toBe(false)
   })
 
   it('сохраняет выбранный интервал обновления и показывает время получения событий', async () => {
@@ -637,8 +638,21 @@ describe('hive dashboard', () => {
     await userEvent.selectOptions(interval, '5000')
     expect(JSON.parse(window.localStorage.getItem('evohime.hive.dashboard.v1') ?? '{}')).toMatchObject({ intervalMs: 5000 })
     await waitFor(() => {
-      expect(screen.getByText(/\d{2}:\d{2}:\d{2}/)).toBeTruthy()
+      expect(within(screen.getByLabelText('Ход работы Королевы')).getAllByText(/\d{2}:\d{2}:\d{2}/).length).toBeGreaterThan(0)
     })
+  })
+
+  it('shows queen actions without technical noise or unrelated tasks', async () => {
+    render(<HiveDashboard connection="connected" events={[
+      event('hive_state.snapshot', snapshot()),
+      event('tool.started', { tool_name: 'filesystem_read', arguments: '{"path":"README.md"}' }, 'eva-pulse-test'),
+      event('model.trace', { model: 'noise-model' }, 'eva-pulse-test'),
+      event('tool.started', { tool_name: 'filesystem_read', arguments: '{"path":"other.txt"}' }, 'unrelated-task')
+    ]} />)
+    const activity = await screen.findByLabelText('Ход работы Королевы')
+    expect(within(activity).getByText('Ева читает файл: README.md')).toBeTruthy()
+    expect(activity.textContent).not.toContain('noise-model')
+    expect(activity.textContent).not.toContain('other.txt')
   })
 
   it('читает опубликованную проекцию старой версии', async () => {
@@ -1145,6 +1159,8 @@ describe('hive dashboard', () => {
       ])
     ]
     const { rerender } = render(<HiveDashboard connection="connected" events={initialEvents} />)
+
+    await userEvent.setup().click(screen.getByText('Подробные логи'))
 
     const logsSection = await screen.findByLabelText('Логи улья')
     const list = logsSection.querySelector('.hive-log-list') as HTMLOListElement
@@ -1800,6 +1816,7 @@ describe('hive dashboard', () => {
         />
       )
 
+      await user.click(screen.getByText('Подробные логи'))
       const copyButton = await screen.findByRole('button', { name: 'Копировать' })
       await user.click(copyButton)
 

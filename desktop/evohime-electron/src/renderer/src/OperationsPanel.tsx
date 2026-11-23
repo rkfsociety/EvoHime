@@ -955,6 +955,11 @@ const HIVE_LOG_NOISE_EVENTS: ReadonlySet<string> = new Set([
   'tool.telemetry'
 ])
 
+const QUEEN_ACTIVITY_EVENTS: ReadonlySet<string> = new Set([
+  'task.started', 'task.completed', 'task.failed', 'task.stopped',
+  'approval.required', 'tool.started', 'tool.output', 'agent.message.delta'
+])
+
 const TOOL_ACTION_LABELS: Record<string, string> = {
   filesystem_read: 'читает файл',
   eva_workspace_read_file: 'читает файл',
@@ -1021,6 +1026,10 @@ function describeHiveEvent(event: CoreEvent): string {
     return `Задача завершена · ${event.taskId}`
   }
   switch (event.eventType) {
+    case 'agent.message.delta': {
+      const content = typeof body['content'] === 'string' ? body['content'].trim() : ''
+      return content || 'Ева отвечает'
+    }
     case 'tool.started':
       return `Ева ${describeToolStart(body)}`
     case 'tool.output': {
@@ -2901,6 +2910,17 @@ export function HiveDashboard({
         : null
   const realLogs = hiveLogEntries(hiveEvents, observedAt, observedAtMs, allLogs ? 40 : 6, allLogs, hiveChatTaskIds, observedAtForHiveEvent)
   const logs = realLogs
+  const activityEvents = [
+    ...hiveEvents,
+    ...events.filter((event) => event.taskId.startsWith('eva-pulse-')
+      && !hiveEvents.some((projected) => projected.taskId === event.taskId
+        && projected.sequenceId === event.sequenceId && projected.eventType === event.eventType))
+  ]
+  const activity = hiveLogEntries(
+    activityEvents.filter((event) => Boolean(event.taskId) && QUEEN_ACTIVITY_EVENTS.has(event.eventType)
+      && (event.eventType !== 'tool.output' || /^(resource not found|tool execution failed|permission denied)/i.test(String(eventBody(event)['output'] ?? '')))),
+    observedAt, observedAtMs, 40, true, hiveChatTaskIds, observedAtForHiveEvent
+  ).map((entry) => ({ ...entry, text: entry.text.replace(/ · (?:eva-pulse-[\w-]+|task-[\w-]+)$/, '') }))
   const latestLogId = logs[0]?.id ?? null
   useEffect(() => {
     if (logListRef.current) {
@@ -3365,9 +3385,24 @@ export function HiveDashboard({
 
           <section
             className={`hive-dock__card hive-dock__card--logs${allLogs ? ' hive-dock__card--logs-expanded' : ''}`}
-            aria-label={translate('Логи улья')}
+            aria-label={translate('Ход работы Королевы')}
           >
             <div className="hive-panel__head">
+              <h3>{translate('Ход работы Королевы')}</h3>
+            </div>
+            {activity.length ? (
+              <ol className="hive-activity-list">
+                {activity.map((entry) => (
+                  <li key={entry.id} className={`hive-activity-row hive-activity-row--${entry.level}`}>
+                    <time>{entry.at}</time><span>{translate(entry.text)}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : <p className="hive-empty hive-empty--compact">{translate('Действий пока нет.')}</p>}
+            <details className="hive-technical-logs" onToggle={(event) => setAllLogs(event.currentTarget.open)}>
+              <summary>{translate('Подробные логи')}</summary>
+              <section aria-label={translate('Логи улья')}>
+              <div className="hive-panel__head">
               <h3>{translate('Логи улья')}</h3>
               <div className="hive-panel__actions">
                 {logs.length === 0 ? <span className="hive-badge">{translate('нет событий')}</span> : null}
@@ -3385,14 +3420,6 @@ export function HiveDashboard({
                         : 'Копировать'
                   )}
                 </button>
-                <button
-                  type="button"
-                  className="hive-link-button"
-                  aria-pressed={allLogs}
-                  onClick={() => setAllLogs((value) => !value)}
-                >
-                  {translate(allLogs ? 'Свернуть' : 'Все логи')}
-                </button>
               </div>
             </div>
             <ol ref={logListRef} className={`hive-log-list${allLogs ? ' hive-log-list--expanded' : ''}`}>
@@ -3405,6 +3432,8 @@ export function HiveDashboard({
               ))}
             </ol>
             {logs.length === 0 ? <p className="hive-empty hive-empty--compact">{translate('Событий пока нет.')}</p> : null}
+              </section>
+            </details>
           </section>
 
           <div className="hive-dock__card hive-dock__card--launcher">
