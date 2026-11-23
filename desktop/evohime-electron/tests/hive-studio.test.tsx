@@ -239,8 +239,8 @@ describe('Hive Studio app', () => {
     ]
     const blocked0 = isVehicleAheadBlocked(0, -0.25, 0, 1, 0, peersCross)
     const blocked1 = isVehicleAheadBlocked(-0.25, 0, 1, 0, 1, peersCross)
-    expect(blocked0).toBe(false)
-    expect(blocked1).toBe(true)
+    expect(blocked0).toBe(true)
+    expect(blocked1).toBe(false)
 
     // Машина на пути прямо перед носом под 90° блокирует едущую на неё машину.
     const peersAhead: VehiclePoseState[] = [

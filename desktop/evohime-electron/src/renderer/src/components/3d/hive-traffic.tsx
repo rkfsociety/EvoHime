@@ -591,7 +591,7 @@ export function isVehicleAheadBlocked(
   minGap = 0.56,
   selfPriority: RoadPriority = 'main'
 ): boolean {
-  const effectiveGap = selfPriority === 'driveway' ? Math.max(minGap, 0.95) : minGap
+  const effectiveGap = Math.max(minGap, 1.05)
   for (let i = 0; i < peers.length; i += 1) {
     if (i === selfIndex) continue
     const other = peers[i]
@@ -612,10 +612,10 @@ export function isVehicleAheadBlocked(
         : 1
     if (sameDir > 0.25) {
       const strictlyAhead = dot > 0.04 || (dist <= 0.04 && i < selfIndex)
-      if (strictlyAhead && cross < 0.22) {
+      if (dist < minGap && strictlyAhead && cross < 0.22) {
         return true
       }
-    } else if (sameDir > -0.45) {
+    } else if (sameDir > -0.85) {
       if (selfPriority === 'driveway' && otherPriority === 'main') {
         // ПДД РФ п. 8.3: выезд с прилегающей территории уступает потоку на главной дороге.
         if (dist < 0.95 && dot > -0.15) {
@@ -626,13 +626,34 @@ export function isVehicleAheadBlocked(
         if (cross < 0.14 && dot > 0.04 && dist < 0.44) {
           return true
         }
-      } else if (dist < 0.54 && dot > 0.02 && cross < 0.28) {
-        const otherDot = -dx * otherDirX + -dz * otherDirZ
-        if (otherDot <= 0.02) {
-          return true
+      } else {
+        // Равные приоритеты: прогноз пересечения OBB на 0.25с / 0.50с + помеха справа (ПДД РФ п. 8.9).
+        const nearConflict = dist < 0.54 && dot > 0.02 && cross < 0.28
+        let predictedConflict = false
+        if (!nearConflict && dot > -0.1) {
+          for (const t of [0.25, 0.5] as const) {
+            const sx = x + dirX * HIVE_CAR_SPEED * t
+            const sz = z + dirZ * HIVE_CAR_SPEED * t
+            const ox = other.lastX + otherDirX * HIVE_CAR_SPEED * t
+            const oz = other.lastZ + otherDirZ * HIVE_CAR_SPEED * t
+            if (doCarBoxesOverlap(sx, sz, dirX, dirZ, ox, oz, otherDirX, otherDirZ)) {
+              predictedConflict = true
+              break
+            }
+          }
         }
-        if (dot > otherDot + 0.015 || (Math.abs(dot - otherDot) <= 0.015 && selfIndex > i)) {
-          return true
+        if (nearConflict || predictedConflict) {
+          const otherDot = -dx * otherDirX + -dz * otherDirZ
+          if (otherDot <= 0.02) {
+            return true
+          }
+          const rightness = dx * -dirZ + dz * dirX
+          if (rightness > 0.05) {
+            return true
+          }
+          if (Math.abs(rightness) <= 0.05 && selfIndex > i) {
+            return true
+          }
         }
       }
     }
