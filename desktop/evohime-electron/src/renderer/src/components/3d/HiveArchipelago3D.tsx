@@ -1034,6 +1034,63 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
     return [view.radius * 0.42, outer].filter((r) => r >= 2.2)
   }, [isCapital, view.radius])
 
+  // Гарантированный съезд с ближайшей кольцевой дороги к КАЖДОМУ зданию-модулю (не заходит внутрь дома).
+  const moduleDriveways = useMemo(() => {
+    const list: Array<{ readonly from: readonly [number, number]; readonly to: readonly [number, number] }> = []
+    if (ringRadii.length === 0) return list
+    for (const item of view.buildings) {
+      if (item.building.kind === 'citadel') continue
+      const r = Math.hypot(item.x, item.z)
+      if (r < 0.8) continue
+      const angle = Math.atan2(item.z, item.x)
+      // Выбираем ближайшее кольцо, но не ближе 0.95 к центру подиума.
+      let bestRing = ringRadii[0] ?? 6.0
+      let bestDiff = Math.abs(r - bestRing)
+      for (const cand of ringRadii) {
+        const diff = Math.abs(r - cand)
+        if (diff < bestDiff) {
+          bestDiff = diff
+          bestRing = cand
+        }
+      }
+      const podiumHalf = 0.8
+      const entryR = r >= bestRing ? Math.max(bestRing + 0.25, r - podiumHalf) : Math.min(bestRing - 0.25, r + podiumHalf)
+      if (Math.abs(entryR - bestRing) < 0.2) continue
+      list.push({
+        from: [view.x + Math.cos(angle) * bestRing, view.z + Math.sin(angle) * bestRing],
+        to: [view.x + Math.cos(angle) * entryR, view.z + Math.sin(angle) * entryR]
+      })
+    }
+    return list
+  }, [ringRadii, view.buildings, view.x, view.z])
+
+  // Межкольцевые соединители в свободных от зданий секторах.
+  const ringConnectors = useMemo(() => {
+    const list: Array<{ readonly from: readonly [number, number]; readonly to: readonly [number, number] }> = []
+    if (ringRadii.length < 2) return list
+    for (let rIdx = 0; rIdx < ringRadii.length - 1; rIdx += 1) {
+      const r0 = ringRadii[rIdx]
+      const r1 = ringRadii[rIdx + 1]
+      if (r0 === undefined || r1 === undefined) continue
+      let placed = 0
+      for (let slot = 0; slot < 16 && placed < 4; slot += 1) {
+        const angle = (slot / 16) * Math.PI * 2 + rIdx * 0.2
+        const midR = (r0 + r1) / 2
+        const mx = Math.cos(angle) * midR
+        const mz = Math.sin(angle) * midR
+        const blocked = view.buildings.some((b) => Math.hypot(b.x - mx, b.z - mz) < 1.85)
+        if (!blocked) {
+          list.push({
+            from: [view.x + Math.cos(angle) * r0, view.z + Math.sin(angle) * r0],
+            to: [view.x + Math.cos(angle) * r1, view.z + Math.sin(angle) * r1]
+          })
+          placed += 1
+        }
+      }
+    }
+    return list
+  }, [ringRadii, view.buildings, view.x, view.z])
+
   // Позиции уличных фонарей вдоль кольцевых проспектов и набережной.
   const lampPositions = useMemo(() => {
     const list: Array<readonly [number, number]> = []
@@ -1122,6 +1179,30 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
             <torusGeometry args={[r, 0.025, 6, 64]} />
           </mesh>
         </group>
+      ))}
+      {/* Межкольцевые проспекты в свободных секторах. */}
+      {ringConnectors.map((conn, idx) => (
+        <RoadSegment3D
+          key={`ring-conn-${idx}`}
+          from={conn.from}
+          to={conn.to}
+          bedMaterial={skin.roadBed}
+          lineMaterial={laneMaterial}
+          width={0.44}
+          y={0.016}
+        />
+      ))}
+      {/* Съезды с кольцевых дорог к каждому зданию (до границы подиума). */}
+      {moduleDriveways.map((drive, idx) => (
+        <RoadSegment3D
+          key={`module-drive-${idx}`}
+          from={drive.from}
+          to={drive.to}
+          bedMaterial={skin.roadBed}
+          lineMaterial={laneMaterial}
+          width={0.38}
+          y={0.018}
+        />
       ))}
       {/* Уличные фонари. */}
       {lampPositions.length > 0 ? (
@@ -1303,7 +1384,8 @@ function QueenRoads3D({
           (packet.lot + 1 < lots.length ? houseAngles[packet.lot + 1] : (houseAngles[0] ?? angle) + Math.PI * 2) ?? angle
         const target = nextAngle > angle ? nextAngle : nextAngle + Math.PI * 2
         const current = angle + (target - angle) * progress
-        const laneR = ringRadius + 0.12
+        // Внутренний кольцевой бульвар перед домами (не проходит сквозь дома).
+        const laneR = Math.max(2.9, ringRadius - 1.25) + 0.1
         x = view.x + Math.cos(current) * laneR
         z = view.z + Math.sin(current) * laneR
         dirX = -Math.sin(current)
@@ -1354,12 +1436,12 @@ function QueenRoads3D({
           />
         )
       })}
-      {/* Двухполосный кольцевой бульвар между домами агентов. */}
+      {/* Двухполосный кольцевой бульвар перед домами агентов (не входит в дома). */}
       <mesh position={[view.x, 0.022, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={ringBedMaterial}>
-        <ringGeometry args={[ringRadius - 0.24, ringRadius + 0.24, 64]} />
+        <ringGeometry args={[Math.max(2.9, ringRadius - 1.25) - 0.22, Math.max(2.9, ringRadius - 1.25) + 0.22, 64]} />
       </mesh>
       <mesh position={[view.x, 0.036, view.z]} rotation={[Math.PI / 2, 0, 0]} material={ringLineMaterial}>
-        <torusGeometry args={[ringRadius, 0.028, 6, 64]} />
+        <torusGeometry args={[Math.max(2.9, ringRadius - 1.25), 0.026, 6, 64]} />
       </mesh>
       {/* Вытянутые пакеты информации вдоль лучей и кольца. */}
       <instancedMesh
