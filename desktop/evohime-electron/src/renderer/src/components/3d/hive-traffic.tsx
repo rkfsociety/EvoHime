@@ -16,9 +16,9 @@ export type TrafficLightState = 'ring_green' | 'amber_to_radial' | 'radial_green
 
 export function getTrafficLightState(timeSec: number): TrafficLightState {
   const phase = ((timeSec % TRAFFIC_LIGHT_CYCLE_SEC) + TRAFFIC_LIGHT_CYCLE_SEC) % TRAFFIC_LIGHT_CYCLE_SEC
-  if (phase < 3.7) return 'ring_green'
+  if (phase < 3.5) return 'ring_green'
   if (phase < 4.5) return 'amber_to_radial'
-  if (phase < 8.2) return 'radial_green'
+  if (phase < 8.0) return 'radial_green'
   return 'amber_to_ring'
 }
 
@@ -469,14 +469,61 @@ export function isVehicleAheadBlocked(
     if (dist >= minGap) continue
     const dot = dx * dirX + dz * dirZ
     const cross = Math.abs(dx * -dirZ + dz * dirX)
+    const otherDirX = other.lastDirX ?? dirX
+    const otherDirZ = other.lastDirZ ?? dirZ
     const sameDir =
       other.lastDirX !== undefined && other.lastDirZ !== undefined
         ? other.lastDirX * dirX + other.lastDirZ * dirZ
         : 1
-    const strictlyAhead = dot > 0.04 || (dist <= 0.04 && i < selfIndex)
-    if (strictlyAhead && cross < 0.22 && sameDir > 0.25) {
-      return true
+    if (sameDir > 0.25) {
+      const strictlyAhead = dot > 0.04 || (dist <= 0.04 && i < selfIndex)
+      if (strictlyAhead && cross < 0.22) {
+        return true
+      }
+    } else if (sameDir > -0.45) {
+      if (dist < 0.54 && dot > 0.02 && cross < 0.28) {
+        const otherDot = -dx * otherDirX + -dz * otherDirZ
+        if (otherDot <= 0.02) {
+          return true
+        }
+        if (dot > otherDot + 0.015 || (Math.abs(dot - otherDot) <= 0.015 && selfIndex > i)) {
+          return true
+        }
+      }
     }
   }
   return false
+}
+
+/**
+ * Проверяет, свободен ли перекрёсток (ix, iz) от машин конфликтующих направлений
+ * или машин, перекрывающих точку въезда (ПДД 13.8), перед пересечением стоп-линии.
+ */
+export function isIntersectionClearForEntry(
+  ix: number,
+  iz: number,
+  entryX: number,
+  entryZ: number,
+  dirX: number,
+  dirZ: number,
+  selfIndex: number,
+  peers: readonly VehiclePoseState[],
+  halfBox = 0.68
+): boolean {
+  for (let i = 0; i < peers.length; i += 1) {
+    if (i === selfIndex) continue
+    const other = peers[i]
+    if (!other || !other.lastVisible) continue
+    if (other.lastX === undefined || other.lastZ === undefined) continue
+    if (Math.abs(other.lastX - ix) < halfBox && Math.abs(other.lastZ - iz) < halfBox) {
+      const sameDir = (other.lastDirX ?? dirX) * dirX + (other.lastDirZ ?? dirZ) * dirZ
+      if (sameDir < 0.65) {
+        return false
+      }
+      if (Math.hypot(other.lastX - entryX, other.lastZ - entryZ) < 0.62) {
+        return false
+      }
+    }
+  }
+  return true
 }

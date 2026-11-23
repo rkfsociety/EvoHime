@@ -37,6 +37,11 @@ import {
   buildHiveStudioSimulation,
   HIVE_STUDIO_DEPARTMENTS
 } from '../src/renderer/src/hive-studio-simulation'
+import {
+  isIntersectionClearForEntry,
+  isVehicleAheadBlocked,
+  type VehiclePoseState
+} from '../src/renderer/src/components/3d/hive-traffic'
 
 function activeHouseCount(): number {
   return Array.from(
@@ -218,5 +223,46 @@ describe('Hive Studio app', () => {
 
     render(<StudioApp />)
     expect((screen.getByLabelText('Королева оптимизирует город') as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('prevents crossing/merging car collisions without deadlocks and guards occupied intersections', () => {
+    // 1. Взаимное пересечение под 90°: ровно одна машина уступает, без взаимного deadlock.
+    const peersCross: VehiclePoseState[] = [
+      { lastVisible: true, lastX: 0, lastZ: -0.25, lastDirX: 0, lastDirZ: 1 },
+      { lastVisible: true, lastX: -0.25, lastZ: 0, lastDirX: 1, lastDirZ: 0 }
+    ]
+    const blocked0 = isVehicleAheadBlocked(0, -0.25, 0, 1, 0, peersCross)
+    const blocked1 = isVehicleAheadBlocked(-0.25, 0, 1, 0, 1, peersCross)
+    expect(blocked0).toBe(false)
+    expect(blocked1).toBe(true)
+
+    // Машина на пути прямо перед носом под 90° блокирует едущую на неё машину.
+    const peersAhead: VehiclePoseState[] = [
+      { lastVisible: true, lastX: 0, lastZ: 0, lastDirX: 0, lastDirZ: 1 },
+      { lastVisible: true, lastX: -0.35, lastZ: 0, lastDirX: 1, lastDirZ: 0 }
+    ]
+    expect(isVehicleAheadBlocked(-0.35, 0, 1, 0, 1, peersAhead)).toBe(true)
+    expect(isVehicleAheadBlocked(0, 0, 0, 1, 0, peersAhead)).toBe(false)
+
+    // 2. Встречные машины на параллельных полосах не блокируют друг друга.
+    const peersOncoming: VehiclePoseState[] = [
+      { lastVisible: true, lastX: 0.13, lastZ: 0, lastDirX: 0, lastDirZ: 1 },
+      { lastVisible: true, lastX: -0.13, lastZ: 0.2, lastDirX: 0, lastDirZ: -1 }
+    ]
+    expect(isVehicleAheadBlocked(0.13, 0, 0, 1, 0, peersOncoming)).toBe(false)
+    expect(isVehicleAheadBlocked(-0.13, 0.2, 0, -1, 1, peersOncoming)).toBe(false)
+
+    // 3. Контроль занятости перекрёстка: блокирует конфликтующую внутри квадрата, но пропускает стоящую до стоп-линии (0.70).
+    const insideIntersection: VehiclePoseState[] = [
+      { lastVisible: true, lastX: 0.13, lastZ: 4.3, lastDirX: 0, lastDirZ: 1 },
+      { lastVisible: true, lastX: 0.13, lastZ: 5.1, lastDirX: 1, lastDirZ: 0 }
+    ]
+    expect(isIntersectionClearForEntry(0, 5, 0.13, 4.3, 0, 1, 0, insideIntersection)).toBe(false)
+
+    const behindStopLine: VehiclePoseState[] = [
+      { lastVisible: true, lastX: 0.13, lastZ: 4.3, lastDirX: 0, lastDirZ: 1 },
+      { lastVisible: true, lastX: -0.7, lastZ: 5.13, lastDirX: 1, lastDirZ: 0 }
+    ]
+    expect(isIntersectionClearForEntry(0, 5, 0.13, 4.3, 0, 1, 0, behindStopLine)).toBe(true)
   })
 })

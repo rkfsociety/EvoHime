@@ -26,6 +26,7 @@ import {
   evalTurnBezier,
   isRadialTrafficGreen,
   isRingTrafficGreen,
+  isIntersectionClearForEntry,
   isVehicleAheadBlocked,
   posArc,
   type PathSegment,
@@ -609,6 +610,10 @@ export function QueenRoads3D({
     const MIN_CAR_ARC_GAP = Math.max(0.15, (0.36 + 0.14) / innerBoulevardR)
     const GATE_STOP_ANGLE = computeQueenGateStopAngle(innerBoulevardR)
     const RING_ENTRY_STOP_PROGRESS = computeRingEntryStopProgress(innerBoulevardR, homeGarageR)
+    const innerIx = view.x + Math.cos(QUEEN_GATE_ANGLE) * innerBoulevardR
+    const innerIz = view.z + Math.sin(QUEEN_GATE_ANGLE) * innerBoulevardR
+    const avenueIx = view.x + Math.cos(QUEEN_GATE_ANGLE) * mainAvenueR
+    const avenueIz = view.z + Math.sin(QUEEN_GATE_ANGLE) * mainAvenueR
 
     // Если ворота Королевы свободны — запускаем ТОЛЬКО самую ближнюю к воротам машину у стоп-линии!
     if (!paused && processingLotRef.current === null) {
@@ -682,7 +687,19 @@ export function QueenRoads3D({
             isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
           if (!aheadBlocked) {
             const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
-            if (!radialGreen && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
+            const canEnterInner =
+              radialGreen &&
+              isIntersectionClearForEntry(
+                innerIx,
+                innerIz,
+                curPose.x,
+                curPose.z,
+                curPose.dx,
+                curPose.dz,
+                index,
+                cars
+              )
+            if (!canEnterInner && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
               car.progress = queenOutPath.stopProgress
             } else {
               car.progress = nextP
@@ -727,14 +744,38 @@ export function QueenRoads3D({
             isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
           if (!aheadBlocked) {
             const nextP = car.progress + dt * (HIVE_CAR_SPEED / modOutPath.totalLength)
+            const canEnterInner =
+              ringGreen &&
+              isIntersectionClearForEntry(
+                innerIx,
+                innerIz,
+                curPose.x,
+                curPose.z,
+                curPose.dx,
+                curPose.dz,
+                index,
+                cars
+              )
+            const canEnterAvenue =
+              radialGreen &&
+              isIntersectionClearForEntry(
+                avenueIx,
+                avenueIz,
+                curPose.x,
+                curPose.z,
+                curPose.dx,
+                curPose.dz,
+                index,
+                cars
+              )
             if (
-              !ringGreen &&
+              !canEnterInner &&
               car.progress <= modOutPath.ringStopProgress &&
               nextP >= modOutPath.ringStopProgress
             ) {
               car.progress = modOutPath.ringStopProgress
             } else if (
-              !radialGreen &&
+              !canEnterAvenue &&
               car.progress <= modOutPath.avenueStopProgress &&
               nextP >= modOutPath.avenueStopProgress
             ) {
@@ -782,14 +823,38 @@ export function QueenRoads3D({
             isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
           if (!aheadBlocked) {
             const nextP = car.progress + dt * (HIVE_CAR_SPEED / modInPath.totalLength)
+            const canEnterAvenue =
+              ringGreen &&
+              isIntersectionClearForEntry(
+                avenueIx,
+                avenueIz,
+                curPose.x,
+                curPose.z,
+                curPose.dx,
+                curPose.dz,
+                index,
+                cars
+              )
+            const canEnterInner =
+              radialGreen &&
+              isIntersectionClearForEntry(
+                innerIx,
+                innerIz,
+                curPose.x,
+                curPose.z,
+                curPose.dx,
+                curPose.dz,
+                index,
+                cars
+              )
             if (
-              !ringGreen &&
+              !canEnterAvenue &&
               car.progress <= modInPath.avenueStopProgress &&
               nextP >= modInPath.avenueStopProgress
             ) {
               car.progress = modInPath.avenueStopProgress
             } else if (
-              !radialGreen &&
+              !canEnterInner &&
               car.progress <= modInPath.ringStopProgress &&
               nextP >= modInPath.ringStopProgress
             ) {
@@ -906,8 +971,24 @@ export function QueenRoads3D({
         const intersectionEntryArc = INTERSECTION_STOP_HALF_EXTENT / innerBoulevardR
         const intersectionStopArc =
           (INTERSECTION_STOP_HALF_EXTENT + CAR_FRONT_BUMPER_OFFSET) / innerBoulevardR
+        const curRingX = view.x + Math.cos(car.curAngle) * (innerBoulevardR + car.curLaneOffset)
+        const curRingZ = view.z + Math.sin(car.curAngle) * (innerBoulevardR + car.curLaneOffset)
+        const curRingDx = Math.sin(car.curAngle)
+        const curRingDz = -Math.cos(car.curAngle)
+        const canEnterInner =
+          ringGreen &&
+          isIntersectionClearForEntry(
+            innerIx,
+            innerIz,
+            curRingX,
+            curRingZ,
+            curRingDx,
+            curRingDz,
+            index,
+            cars
+          )
         let maxTravel = arcToIntersection
-        if (!ringGreen && arcToIntersection >= intersectionStopArc - 0.015) {
+        if (!canEnterInner && arcToIntersection >= intersectionStopArc - 0.015) {
           maxTravel = Math.min(maxTravel, Math.max(0, arcToIntersection - intersectionStopArc))
         }
         for (let oIdx = 0; oIdx < cars.length; oIdx += 1) {
@@ -922,10 +1003,6 @@ export function QueenRoads3D({
         const uTurnBlocked =
           arcToIntersection <= intersectionStopArc + 0.02 &&
           cars.some((other, oIdx) => oIdx !== index && other.phase === 'queued')
-        const curRingX = view.x + Math.cos(car.curAngle) * (innerBoulevardR + car.curLaneOffset)
-        const curRingZ = view.z + Math.sin(car.curAngle) * (innerBoulevardR + car.curLaneOffset)
-        const curRingDx = Math.sin(car.curAngle)
-        const curRingDz = -Math.cos(car.curAngle)
         if (
           car.lastVisible &&
           isVehicleAheadBlocked(curRingX, curRingZ, curRingDx, curRingDz, index, cars)
@@ -1020,7 +1097,19 @@ export function QueenRoads3D({
           isVehicleAheadBlocked(curPose.x, curPose.z, curPose.dx, curPose.dz, index, cars)
         if (!aheadBlocked) {
           const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
-          if (!radialGreen && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
+          const canEnterInner =
+            radialGreen &&
+            isIntersectionClearForEntry(
+              innerIx,
+              innerIz,
+              curPose.x,
+              curPose.z,
+              curPose.dx,
+              curPose.dz,
+              index,
+              cars
+            )
+          if (!canEnterInner && car.progress <= queenOutPath.stopProgress && nextP >= queenOutPath.stopProgress) {
             car.progress = queenOutPath.stopProgress
           } else {
             car.progress = nextP
