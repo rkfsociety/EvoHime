@@ -359,4 +359,51 @@ describe('HiveCityScene — живой архипелаг (план 199.3)', () 
       expect(carCenterR - 0.18).toBeGreaterThan(innerR + 0.42)
     }
   })
+
+  it('disables city house activity whenever the queen is inactive', () => {
+    const departments: readonly HiveCityDepartmentPin[] = [
+      {
+        key: 'development',
+        label: 'Разработка',
+        subtitle: 'Разработка кода',
+        icon: 'terminal',
+        activeCount: 2,
+        maxCapacity: 3
+      }
+    ]
+    const { rerender } = render(
+      <HiveCityScene
+        status="active"
+        queenWorking={false}
+        departments={departments}
+        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
+      />
+    )
+    const inactiveHouses = screen.getAllByTestId(/^hive-archipelago-house-/)
+    expect(inactiveHouses.some((house) => house.getAttribute('data-active') === 'true')).toBe(false)
+
+    rerender(
+      <HiveCityScene
+        status="sleeping"
+        queenWorking={true}
+        departments={departments}
+        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
+      />
+    )
+    expect(
+      screen.getAllByTestId(/^hive-archipelago-house-/).some((house) => house.getAttribute('data-active') === 'true')
+    ).toBe(false)
+
+    rerender(
+      <HiveCityScene
+        status="active"
+        queenWorking={true}
+        departments={departments}
+        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
+      />
+    )
+    expect(
+      screen.getAllByTestId(/^hive-archipelago-house-/).filter((house) => house.getAttribute('data-active') === 'true')
+    ).toHaveLength(2)
+  })
 })

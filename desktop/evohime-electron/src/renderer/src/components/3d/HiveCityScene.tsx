@@ -540,7 +540,7 @@ export function HiveCityScene({
   departments = [],
   selectedDepartment = null,
   onSelectDepartment,
-  queenWorking = false,
+  queenWorking,
   queenOverlay,
   idleDepartmentsLabel = 'Ожидание',
   activeDepartmentsLabel = 'Работает',
@@ -558,8 +558,10 @@ export function HiveCityScene({
   const animationsPaused = reducedMotion || documentHidden
 
   const normalizedStatus = status.trim().toLowerCase() || 'idle'
+  const queenActive =
+    (normalizedStatus === 'active' || normalizedStatus === 'observing') && queenWorking !== false
   const corePalette = useMemo(
-    () => resolveCorePalette(normalizedStatus, queenWorking),
+    () => resolveCorePalette(normalizedStatus, queenWorking ?? false),
     [normalizedStatus, queenWorking]
   )
 
@@ -729,10 +731,16 @@ export function HiveCityScene({
       : null
   }, [inspector, inspectorIsland])
 
+  const effectiveDepartmentHouses = useMemo<readonly HiveCityHouseLot[]>(
+    () => (queenActive ? departmentHouses : departmentHouses.map((lot) => ({ ...lot, active: false }))),
+    [queenActive, departmentHouses]
+  )
+
   const droneCount = useMemo(() => {
+    if (!queenActive) return 0
     const count = activeAgents?.length ?? 0
     return Math.min(64, count * 3)
-  }, [activeAgents])
+  }, [activeAgents, queenActive])
 
   // Клавиатура: Escape закрывает инспектор, затем возвращает обзор архипелага.
   const handleKeyDown = useCallback((event: React.KeyboardEvent): void => {
@@ -783,7 +791,8 @@ export function HiveCityScene({
                     selectedBuildingId={inspectorBuildingId}
                     hoveredBuildingId={hoveredBuildingId}
                     droneCount={droneCount}
-                    departmentHouses={departmentHouses}
+                    queenActive={queenActive}
+                    departmentHouses={effectiveDepartmentHouses}
                     selectedDepartment={selectedDepartment}
                     onSelectDepartment={onSelectDepartment}
                     onSelectIsland={handleSelectIsland}
@@ -802,7 +811,7 @@ export function HiveCityScene({
                 selectedIslandId={focusIslandId}
                 selectedBuildingId={inspectorBuildingId}
                 hoveredBuildingId={hoveredBuildingId}
-                departmentHouses={departmentHouses}
+                departmentHouses={effectiveDepartmentHouses}
                 selectedDepartment={selectedDepartment}
                 onSelectDepartment={onSelectDepartment}
                 onSelectIsland={handleSelectIsland}

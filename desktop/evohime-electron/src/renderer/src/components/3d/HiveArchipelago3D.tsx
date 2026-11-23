@@ -122,6 +122,8 @@ export interface HiveArchipelago3DProps {
   readonly selectedBuildingId: string | null
   readonly hoveredBuildingId: string | null
   readonly droneCount: number
+  /** Активна ли Королева (при false в городе нет трафика и активных агентов). */
+  readonly queenActive?: boolean | undefined
   /** Слоты-дома работников департаментов на кольце вокруг башни Королевы. */
   readonly departmentHouses?: readonly HiveCityHouseLot[]
   /** Ключ выбранного департамента (подсвечивает его дома). */
@@ -1594,12 +1596,14 @@ function QueenRoads3D({
   lots,
   skin,
   deliveredMapRef,
+  active,
   paused
 }: {
   view: CityIslandView
   lots: readonly HiveCityHouseLot[]
   skin: CitySkin
   deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
+  active: boolean
   paused: boolean
 }) {
   const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
@@ -1698,6 +1702,22 @@ function QueenRoads3D({
     const homeEdgeR = Math.max(innerBoulevardR + 0.35, ringRadius - 0.55)
     const cars = carsRef.current
     const queue = queueRef.current
+
+    if (!active) {
+      deliveredMapRef.current.clear()
+      queue.length = 0
+      processingLotRef.current = null
+      if (gateLampRef.current) {
+        gateLampRef.current.material = gateSignalAmber
+      }
+      for (let i = 0; i < lots.length && i < mesh.count; i += 1) {
+        dummy.scale.setScalar(0)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(i, dummy.matrix)
+      }
+      mesh.instanceMatrix.needsUpdate = true
+      return
+    }
 
     if (paused) {
       lots.forEach((lot) => {
@@ -2191,12 +2211,14 @@ function AgentModuleCouriers3D({
   lots,
   droneCount,
   deliveredMapRef,
+  active,
   paused
 }: {
   view: CityIslandView
   lots: readonly HiveCityHouseLot[]
   droneCount: number
   deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
+  active: boolean
   paused: boolean
 }) {
   const packetMaterial = useMemo(
@@ -2279,7 +2301,7 @@ function AgentModuleCouriers3D({
 
   useFrame((state) => {
     const mesh = meshRef.current
-    if (!mesh || routes.length === 0) return
+    if (!mesh || !active || routes.length === 0) return
     const time = paused ? 0 : state.clock.elapsedTime
     const dummy = FRAME_DUMMY
     const flowSpeed = 0.16
@@ -2348,7 +2370,7 @@ function AgentModuleCouriers3D({
       <instancedMesh
         ref={meshRef}
         args={[undefined, packetMaterial, Math.max(1, routes.length * 2)]}
-        visible={routes.length > 0}
+        visible={active && routes.length > 0}
         frustumCulled={false}
       >
         <boxGeometry args={[1, 1, 1]} />
@@ -2361,10 +2383,12 @@ function AgentModuleCouriers3D({
 function ModuleRoads3D({
   view,
   highlightedBuildingId,
+  active,
   paused
 }: {
   view: CityIslandView
   highlightedBuildingId: string | null
+  active: boolean
   paused: boolean
 }) {
   const roads = useMemo(() => {
@@ -2461,7 +2485,7 @@ function ModuleRoads3D({
 
   useFrame((state) => {
     const mesh = meshRef.current
-    if (!mesh) return
+    if (!mesh || !active) return
     const time = paused ? 0 : state.clock.elapsedTime
     const dummy = FRAME_DUMMY
     const laneOffset = 0.1
@@ -2503,7 +2527,7 @@ function ModuleRoads3D({
       <instancedMesh
         ref={meshRef}
         args={[undefined, pulseMaterial, Math.max(1, roads.length)]}
-        visible={roads.length > 0}
+        visible={active && roads.length > 0}
         frustumCulled={false}
       >
         <boxGeometry args={[1, 1, 1]} />
@@ -3025,6 +3049,7 @@ function IslandGroup3D({
   selectedBuildingId,
   hoveredBuildingId,
   droneCount,
+  queenActive = true,
   departmentHouses,
   selectedDepartment,
   onSelectDepartment,
@@ -3038,6 +3063,7 @@ function IslandGroup3D({
   selectedBuildingId: string | null
   hoveredBuildingId: string | null
   droneCount?: number
+  queenActive?: boolean
   departmentHouses?: readonly HiveCityHouseLot[]
   selectedDepartment?: string | null
   onSelectDepartment?: ((departmentKey: string) => void) | undefined
@@ -3080,6 +3106,7 @@ function IslandGroup3D({
       <ModuleRoads3D
         view={view}
         highlightedBuildingId={highlightedBuilding}
+        active={queenActive}
         paused={paused}
       />
       {departmentHouses !== undefined && departmentHouses.length > 0 ? (
@@ -3089,6 +3116,7 @@ function IslandGroup3D({
             lots={departmentHouses}
             skin={skin}
             deliveredMapRef={deliveredMapRef}
+            active={queenActive}
             paused={paused}
           />
           <AgentModuleCouriers3D
@@ -3096,6 +3124,7 @@ function IslandGroup3D({
             lots={departmentHouses}
             droneCount={droneCount ?? 0}
             deliveredMapRef={deliveredMapRef}
+            active={queenActive}
             paused={paused}
           />
         </>
@@ -3110,9 +3139,9 @@ function IslandGroup3D({
         onHoverBuilding={onHoverBuilding}
       />
       {view.buildings.some((item) => item.building.kind === 'citadel') ? (
-        <QueenTower3D view={view} skin={skin} paused={paused} />
+        <QueenTower3D view={view} skin={skin} paused={paused || !queenActive} />
       ) : (
-        <BeaconGlow3D view={view} paused={paused} />
+        <BeaconGlow3D view={view} paused={paused || !queenActive} />
       )}
       {departmentHouses !== undefined && departmentHouses.length > 0 ? (
         <DepartmentHouses3D
@@ -3141,6 +3170,7 @@ export function HiveArchipelago3D({
   selectedBuildingId,
   hoveredBuildingId,
   droneCount,
+  queenActive = true,
   departmentHouses,
   selectedDepartment,
   onSelectDepartment,
@@ -3209,6 +3239,7 @@ export function HiveArchipelago3D({
             selectedBuildingId={selectedBuildingId}
             hoveredBuildingId={hoveredBuildingId}
             droneCount={droneCount}
+            queenActive={queenActive}
             departmentHouses={departmentHouses ?? []}
             selectedDepartment={selectedDepartment ?? null}
             onSelectDepartment={onSelectDepartment}
@@ -3231,6 +3262,7 @@ function FloatingCityGroup({
   selectedBuildingId,
   hoveredBuildingId,
   droneCount,
+  queenActive = true,
   departmentHouses,
   selectedDepartment,
   onSelectDepartment,
@@ -3245,6 +3277,7 @@ function FloatingCityGroup({
   readonly selectedBuildingId: string | null
   readonly hoveredBuildingId: string | null
   readonly droneCount: number
+  readonly queenActive?: boolean
   readonly departmentHouses: readonly HiveCityHouseLot[]
   readonly selectedDepartment: string | null
   readonly onSelectDepartment: ((departmentKey: string) => void) | undefined
@@ -3261,6 +3294,7 @@ function FloatingCityGroup({
         selectedBuildingId={selectedBuildingId}
         hoveredBuildingId={hoveredBuildingId}
         droneCount={droneCount}
+        queenActive={queenActive}
         departmentHouses={departmentHouses}
         selectedDepartment={selectedDepartment}
         onSelectDepartment={onSelectDepartment}
