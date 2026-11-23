@@ -154,6 +154,22 @@ const SATELLITE_PLANS: readonly SatellitePlan[] = [
     ]
   },
   {
+    id: 'sat-7a18e42d90cf3b22',
+    name: 'MemPulse',
+    ecosystem: 'dotnet',
+    districts: [
+      rustDistrict('sat-mempulse-core', 'App', 'core', [
+        building('MemPulse', 'src/MemPulse', 'worker', 21, 4_200, 680, 'csharp'),
+        building('MemPulse.Linux', 'src/MemPulse.Linux', 'service', 6, 1_100, 380, 'csharp')
+      ]),
+      rustDistrict('sat-mempulse-infra', 'Infra', 'tools', [
+        building('Installer', 'installer', 'service', 1, 240, 260, 'iss'),
+        building('Scripts', 'scripts', 'worker', 2, 310, 280, 'powershell'),
+        building('Tests', 'tests', 'library', 12, 2_100, 440, 'csharp')
+      ])
+    ]
+  },
+  {
     id: 'sat-ea3f9c12d4b67a05',
     name: 'assistant-tune',
     ecosystem: 'python',
@@ -268,7 +284,7 @@ function planIsland(
 export interface HiveStudioSimulationOptions {
   /** Отпечаток времени снапшота (симулирует `generated_at_ms`). */
   readonly generatedAtMs?: number | undefined
-  /** Сколько спутников показать (0..=4): удобно проверять появление/исчезновение. */
+  /** Сколько спутников показать (0..=5): удобно проверять появление/исчезновение. */
   readonly satelliteCount?: number | undefined
   /** Соль ведёт к другой раскладке при неизменном контракте. */
   readonly seed?: number | undefined

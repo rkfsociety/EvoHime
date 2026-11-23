@@ -93,7 +93,7 @@ function loadStudioSettings(): PersistedStudioSettings {
     status: 'active',
     queenWorking: true,
     queenOptimized: true,
-    satelliteCount: 1,
+    satelliteCount: 2,
     selectedDepartment: null,
     panelOpen: false,
     departments: HIVE_STUDIO_DEPARTMENTS
@@ -281,7 +281,7 @@ export function StudioApp(): React.JSX.Element {
             <span className="hive-studio__count">спутников: {satelliteCount}</span>
             <button
               type="button"
-              onClick={() => setSatelliteCount((value) => Math.min(4, value + 1))}
+              onClick={() => setSatelliteCount((value) => Math.min(5, value + 1))}
               aria-label="Добавить спутник"
             >
               + спутник
