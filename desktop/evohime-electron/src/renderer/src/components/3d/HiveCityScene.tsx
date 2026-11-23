@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type ErrorInfo,
-  type MouseEvent,
   type ReactNode
 } from 'react'
 
@@ -549,7 +548,6 @@ export function HiveCityScene({
   activeAgents
 }: HiveCitySceneProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const rafRef = useRef<number | null>(null)
   const [hoveredDepartment, setHoveredDepartment] = useState<string | null>(null)
   const [webglBroken, setWebglBroken] = useState(false)
   const [webglKey, setWebglKey] = useState(0)
@@ -619,46 +617,6 @@ export function HiveCityScene({
       return { department, coord: fallback }
     })
   }, [departments])
-
-  useEffect(() => {
-    return () => {
-      if (rafRef.current !== null && typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(rafRef.current)
-      }
-    }
-  }, [])
-
-  const updateParallax = useCallback((px: number, py: number): void => {
-    const node = containerRef.current
-    if (!node) return
-    node.style.setProperty('--px', px.toFixed(3))
-    node.style.setProperty('--py', py.toFixed(3))
-  }, [])
-
-  const handleMouseMove = useCallback((event: MouseEvent<HTMLDivElement>): void => {
-    if (animationsPaused || !containerRef.current) return
-    const rect = containerRef.current.getBoundingClientRect()
-    if (rect.width <= 0 || rect.height <= 0) return
-    const normalizedX = Math.max(-1, Math.min(1, ((event.clientX - rect.left) / rect.width - 0.5) * 2))
-    const normalizedY = Math.max(-1, Math.min(1, ((event.clientY - rect.top) / rect.height - 0.5) * 2))
-    if (typeof requestAnimationFrame === 'function') {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = null
-        updateParallax(normalizedX, normalizedY)
-      })
-    } else {
-      updateParallax(normalizedX, normalizedY)
-    }
-  }, [animationsPaused, updateParallax])
-
-  const handleMouseLeave = useCallback((): void => {
-    if (rafRef.current !== null && typeof cancelAnimationFrame === 'function') {
-      cancelAnimationFrame(rafRef.current)
-      rafRef.current = null
-    }
-    updateParallax(0, 0)
-  }, [updateParallax])
 
   // --- Живой архипелаг (plan 199.3) ---------------------------------------
   const snapshot = cityMap?.available === true ? cityMap.snapshot : null
@@ -776,8 +734,6 @@ export function HiveCityScene({
       data-paused={animationsPaused ? 'true' : 'false'}
       data-mode={showArchipelago ? (use3D ? '3d' : '2d') : 'panorama'}
       aria-hidden={hasInteractiveOverlay ? undefined : true}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
       onKeyDown={handleKeyDown}
     >
       {showArchipelago && islandViews !== null && snapshot !== null ? (

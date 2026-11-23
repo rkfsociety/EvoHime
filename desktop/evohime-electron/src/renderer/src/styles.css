@@ -7507,8 +7507,7 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  transform: translate3d(calc(var(--px, 0) * -10px), calc(var(--py, 0) * -8px), 0) scale(1.035);
-  transition: transform 180ms ease-out;
+  transform: scale(1.035);
 }
 
 .hive-city-scene__art {
@@ -7534,8 +7533,6 @@ body {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  transform: translate3d(calc(var(--px, 0) * 5px), calc(var(--py, 0) * 4px), 0);
-  transition: transform 180ms ease-out;
 }
 
 .hive-city-scene__queen-halo {
@@ -7671,8 +7668,6 @@ body {
   inset: 0;
   z-index: 3;
   pointer-events: none;
-  transform: translate3d(calc(var(--px, 0) * 8px), calc(var(--py, 0) * 6px), 0);
-  transition: transform 180ms ease-out;
 }
 
 .hive-pin {
@@ -7803,9 +7798,8 @@ body {
 
 .hive-city-scene__queen-anchor {
   position: absolute;
-  left: 22px;
-  top: 50%;
-  transform: translateY(-50%);
+  left: 18px;
+  top: 18px;
   z-index: 4;
   pointer-events: none;
 }
