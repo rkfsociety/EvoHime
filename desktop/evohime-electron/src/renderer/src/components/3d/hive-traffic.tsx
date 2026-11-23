@@ -7,7 +7,7 @@ export const MAIN_AVENUES_RADIUS = 7.2
 export const HIVE_CAR_SPEED = 1.65
 export const AVENUE_RING_STEP = 3.2
 export const QUEEN_PROCESS_SEC = 1.15
-export const INTERSECTION_BOX_HALF_EXTENT = 0.49
+export const INTERSECTION_BOX_HALF_EXTENT = 0.42
 export const INTERSECTION_STOP_HALF_EXTENT = 0.64
 export const CAR_FRONT_BUMPER_OFFSET = 0.21
 export const CAR_HALF_WIDTH = 0.082
@@ -666,8 +666,8 @@ export function isVehicleAheadBlocked(
 export function isIntersectionClearForEntry(
   ix: number,
   iz: number,
-  entryX: number,
-  entryZ: number,
+  _entryX: number,
+  _entryZ: number,
   dirX: number,
   dirZ: number,
   selfIndex: number,
@@ -682,9 +682,6 @@ export function isIntersectionClearForEntry(
     if (Math.abs(other.lastX - ix) < halfBox && Math.abs(other.lastZ - iz) < halfBox) {
       const sameDir = (other.lastDirX ?? dirX) * dirX + (other.lastDirZ ?? dirZ) * dirZ
       if (sameDir < 0.65) {
-        return false
-      }
-      if (Math.hypot(other.lastX - entryX, other.lastZ - entryZ) < 0.62) {
         return false
       }
     }
