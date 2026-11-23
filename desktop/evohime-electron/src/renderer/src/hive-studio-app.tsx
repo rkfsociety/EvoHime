@@ -85,6 +85,7 @@ export function StudioApp(): React.JSX.Element {
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
   const [satelliteCount, setSatelliteCount] = useState(0)
   const [rescanTick, setRescanTick] = useState(0)
+  const [panelOpen, setPanelOpen] = useState(false)
 
   const simulation = useMemo(
     () =>
@@ -122,6 +123,17 @@ export function StudioApp(): React.JSX.Element {
 
   return (
     <div className="hive-studio">
+      <button
+        type="button"
+        className="hive-studio__toggle"
+        aria-expanded={panelOpen}
+        aria-label={panelOpen ? 'Скрыть пульт' : 'Открыть пульт'}
+        onClick={() => setPanelOpen((open) => !open)}
+      >
+        {panelOpen ? '×' : 'Пульт'}
+      </button>
+
+      {panelOpen ? (
       <aside className="hive-studio__panel" aria-label="Пульт Hive Studio">
         <div className="hive-studio__brand">
           <BrandLotus size={18} />
@@ -221,6 +233,7 @@ export function StudioApp(): React.JSX.Element {
           ) : null}
         </fieldset>
       </aside>
+      ) : null}
 
       <main className="hive-stage hive-stage--studio">
         <HiveCityScene

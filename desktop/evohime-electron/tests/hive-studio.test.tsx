@@ -86,6 +86,7 @@ describe('Hive Studio app', () => {
     ).filter((house) => house.getAttribute('data-active') === 'true').length
     const totalBefore = activeHouseCount()
 
+    await user.click(screen.getByRole('button', { name: 'Открыть пульт' }))
     await user.click(screen.getByRole('button', { name: 'Меньше: Планирование' }))
 
     const planningAfterDown = Array.from(
