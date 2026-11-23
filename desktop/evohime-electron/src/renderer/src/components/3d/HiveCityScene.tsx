@@ -83,6 +83,8 @@ export interface HiveCitySceneProps {
    * статус-индикатором поверх силуэта панорамы; снапшот — живой архипелаг.
    */
   readonly cityMap?: HiveCityMapPayload | null | undefined
+  /** Отключает показ старой 2.5D-панорамы и пинов на вкладке Улья (пока грузится 3D-карта). */
+  readonly suppressLegacyPanorama?: boolean | undefined
   /** Активные агенты Улья: эвристика для дронов и HUD-инспектора. */
   readonly activeAgents?: readonly HiveCityAgentHint[] | undefined
 }
@@ -545,6 +547,7 @@ export function HiveCityScene({
   activeDepartmentsLabel = 'Работает',
   departmentIconRenderer,
   cityMap = null,
+  suppressLegacyPanorama = false,
   activeAgents
 }: HiveCitySceneProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -723,7 +726,7 @@ export function HiveCityScene({
   const showArchipelago = islandViews !== null
   // WebGL доступен? Детект один раз на монтирование (jsdom → false → SVG-режим).
   const [webglAvailable] = useState(detectWebGl)
-  const use3D = showArchipelago && !reducedMotion && !webglBroken && webglAvailable
+  const use3D = showArchipelago && !webglBroken && webglAvailable
 
   return (
     <div
@@ -822,6 +825,19 @@ export function HiveCityScene({
           ))}
         </div>
         </>
+      ) : suppressLegacyPanorama ? (
+        <div className="hive-city-scene__world hive-city-scene__world--archipelago">
+          {daemonUnavailable ? (
+            <p
+              className="hive-archipelago__unavailable-status"
+              data-testid="hive-city-unavailable"
+              role="status"
+              aria-live="polite"
+            >
+              Карта архипелага временно недоступна: демон Улья не отвечает.
+            </p>
+          ) : null}
+        </div>
       ) : (
         <div className="hive-city-scene__world">
           <div className="hive-city-scene__backdrop" aria-hidden="true">
@@ -969,7 +985,7 @@ export function HiveCityScene({
             вокруг башни Королевы (клик по дому выбирает департамент);
             фиксированные пины
             остались только у панорамного силуэта, где город отрисован арт-фоном. */}
-        {!showArchipelago
+        {!showArchipelago && !suppressLegacyPanorama
           ? positionedDepartments.map(({ department, coord }) => {
           const isActive = department.activeCount > 0
           const isSelected = selectedDepartment === department.key

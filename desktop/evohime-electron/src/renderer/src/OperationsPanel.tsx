@@ -2045,8 +2045,8 @@ export function HiveDashboard({
 
   // Карта-архипелаг читается напрямую у evohime-hive-daemon (план 199.3):
   // демонирующий клиент сам деградирует любой сбой до available:false.
-  const [cityMap, setCityMap] = useState<HiveCityMapPayload | null>(null)
-  const cityMapRef = useRef<HiveCityMapPayload | null>(null)
+  const [cityMap, setCityMap] = useState<HiveCityMapPayload | null>(() => lastKnownCityMap)
+  const cityMapRef = useRef<HiveCityMapPayload | null>(lastKnownCityMap)
   const cityMapRevisionRef = useRef<string | null>(null)
   const requestCityMap = useCallback((): void => {
     if (!api) return
@@ -2065,6 +2065,7 @@ export function HiveDashboard({
         return
       }
       cityMapRef.current = value
+      lastKnownCityMap = value
       setCityMap(value)
     }).catch(() => undefined)
   }, [api])
@@ -3074,6 +3075,7 @@ export function HiveDashboard({
             idleDepartmentsLabel={translate('Ожидание')}
             activeDepartmentsLabel={translate('Работает')}
             cityMap={cityMap}
+            suppressLegacyPanorama
             activeAgents={hive?.activeAgents ?? []}
           />
         </section>
@@ -4044,6 +4046,8 @@ export function HiveDashboard({
 }
 
 /** Read-only projection of Core-owned memory/child/schedule state. */
+let lastKnownCityMap: HiveCityMapPayload | null = null
+
 export function OperationsPanel({ connection, events, repair }: Props): React.JSX.Element {
   const api = useShellApi()
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
