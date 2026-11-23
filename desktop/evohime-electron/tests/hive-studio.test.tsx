@@ -150,8 +150,15 @@ describe('Hive Studio app', () => {
 
     render(<StudioApp />)
     expect(screen.getByLabelText('Пульт Hive Studio')).toBeTruthy()
-    expect(screen.getByText('спутников: 1')).toBeTruthy()
+    expect(screen.getByText('спутников: 2')).toBeTruthy()
     expect((screen.getByLabelText('Статус') as HTMLSelectElement).value).toBe('sleeping')
+  })
+
+  it('includes CodexGUI as the first satellite city in simulation', () => {
+    const snapshot = buildHiveStudioSimulation({ satelliteCount: 1 })
+    expect(snapshot.satellites.length).toBe(1)
+    expect(snapshot.satellites[0]?.name).toBe('CodexGUI')
+    expect(snapshot.satellites[0]?.ecosystem).toBe('dotnet')
   })
 
   it('optimizes building and department placement when Queen optimization is enabled', async () => {

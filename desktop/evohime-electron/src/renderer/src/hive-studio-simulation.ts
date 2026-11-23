@@ -131,6 +131,29 @@ interface SatellitePlan {
 
 const SATELLITE_PLANS: readonly SatellitePlan[] = [
   {
+    id: 'sat-c0de910a2b4f8e11',
+    name: 'CodexGUI',
+    ecosystem: 'dotnet',
+    districts: [
+      rustDistrict('sat-codexgui-app', 'App', 'core', [
+        building('AppServer', 'AppServer', 'gateway', 6, 1_400, 620, 'csharp'),
+        building('Application', 'Application', 'service', 2, 520, 420, 'csharp'),
+        building('Automations', 'Automations', 'worker', 2, 480, 380, 'csharp')
+      ]),
+      rustDistrict('sat-codexgui-ui', 'UI', 'app', [
+        building('UI', 'UI', 'ui', 33, 6_800, 820, 'csharp'),
+        building('Views', 'Views', 'ui', 1, 340, 320, 'csharp')
+      ]),
+      rustDistrict('sat-codexgui-infra', 'Infra', 'tools', [
+        building('Infrastructure', 'Infrastructure', 'service', 8, 1_900, 560, 'csharp'),
+        building('Integrations', 'Integrations', 'gateway', 4, 960, 440, 'csharp'),
+        building('Git', 'Git', 'service', 3, 720, 400, 'csharp'),
+        building('Scripts', 'Scripts', 'worker', 6, 840, 340, 'powershell'),
+        building('Tests', 'Tests', 'library', 24, 3_600, 500, 'csharp')
+      ])
+    ]
+  },
+  {
     id: 'sat-ea3f9c12d4b67a05',
     name: 'assistant-tune',
     ecosystem: 'python',
@@ -245,7 +268,7 @@ function planIsland(
 export interface HiveStudioSimulationOptions {
   /** Отпечаток времени снапшота (симулирует `generated_at_ms`). */
   readonly generatedAtMs?: number | undefined
-  /** Сколько спутников показать (0..=3): удобно проверять появление/исчезновение. */
+  /** Сколько спутников показать (0..=4): удобно проверять появление/исчезновение. */
   readonly satelliteCount?: number | undefined
   /** Соль ведёт к другой раскладке при неизменном контракте. */
   readonly seed?: number | undefined
@@ -259,7 +282,7 @@ export function buildHiveStudioSimulation(
   options: HiveStudioSimulationOptions = {}
 ): HiveCityMapSnapshot {
   const generatedAtMs = options.generatedAtMs ?? Date.now()
-  const satelliteCount = Math.min(3, Math.max(0, options.satelliteCount ?? 2))
+  const satelliteCount = Math.min(SATELLITE_PLANS.length, Math.max(0, options.satelliteCount ?? 2))
   const rng = mulberry32(options.seed ?? 199_327)
 
   const capital = planIsland(
