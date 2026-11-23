@@ -478,6 +478,18 @@ export function capitalHouseRingRadius(total: number): number {
 }
 
 /**
+ * Угол дома департамента на кольце столицы. Распределяет дома по дуге,
+ * оставляя свободным узкий сектор прямо за башней Королевы (`-3π/4` от камеры),
+ * чтобы ни один дом и табличка не прятались за шпилем в фиксированной изометрии.
+ */
+export function capitalHouseAngle(slot: number, total: number): number {
+  const shadowCenter = -Math.PI * 0.75
+  const shadowHalf = 0.34
+  const arc = Math.PI * 2 - shadowHalf * 2
+  return shadowCenter + shadowHalf + ((slot + 0.5) / Math.max(1, total)) * arc
+}
+
+/**
  * Внутренний радиус столицы, свободный от кварталов проекта: все модульные
  * башни капитального острова выталкиваются за него, уступая центр башне
  * Королевы и кольцу домов работников.
@@ -583,12 +595,21 @@ function buildIslandView(
         (2 * Math.PI * indexOnRing) / capacity + ringIndex * (Math.PI / capacity)
       const jitterAngle = (mixSeed(seed, 3) - 0.5) * (2 * Math.PI / capacity) * 0.16
       const jitterRadius = (mixSeed(seed, 4) - 0.5) * 0.24
-      const angle = baseAngle + jitterAngle
+      let angle = baseAngle + jitterAngle
       const radiusOnRing = ringRadius + jitterRadius
+      let bx = Math.cos(angle) * radiusOnRing
+      let bz = Math.sin(angle) * radiusOnRing
+      // Выводим здания из узкой «слепой зоны» строго за башней Королевы (-X, -Z).
+      if (bx < 0 && bz < 0 && Math.abs(bx - bz) < 2.2) {
+        const pushDir = bx - bz >= 0 ? 1 : -1
+        angle += pushDir * 0.26
+        bx = Math.cos(angle) * radiusOnRing
+        bz = Math.sin(angle) * radiusOnRing
+      }
       buildings.push({
         building,
-        x: Math.cos(angle) * radiusOnRing,
-        z: Math.sin(angle) * radiusOnRing,
+        x: bx,
+        z: bz,
         height: Math.max(0.15, building.height_weight_bp / 1000),
         isEdgeTarget: false
       })

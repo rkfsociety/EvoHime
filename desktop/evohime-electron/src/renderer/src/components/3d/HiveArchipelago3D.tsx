@@ -13,6 +13,7 @@ import * as THREE from 'three'
 import {
   CAPITAL_TOWER_INNER_RADIUS,
   CITY_MAP_MAX_SATELLITES,
+  capitalHouseAngle,
   capitalHouseRingRadius,
   displayIslandHue,
   fnv1a32,
@@ -721,7 +722,14 @@ function BuildingComplex3D({
     }
   }, [view.island.id, item.building.id, item.building.kind])
 
-  const height = towerDisplayHeight(item.height)
+  // Изометрический амфитеатр высот: ближние к камере здания ниже, дальние — выше,
+  // чтобы при фиксированном ракурсе без вращения здания не перекрывали друг друга.
+  const depthFactor = THREE.MathUtils.clamp(
+    0.92 - ((item.x + item.z) / Math.max(8, view.radius * 1.4)) * 0.36,
+    0.58,
+    1.32
+  )
+  const height = towerDisplayHeight(item.height) * depthFactor
   const width = 1.0
   const x = view.x + item.x
   const z = view.z + item.z
@@ -1253,7 +1261,7 @@ function QueenRoads3D({
   }, [lots, view.island.id])
 
   const houseAngles = useMemo(
-    () => lots.map((lot) => (lot.slot / Math.max(1, lot.total)) * Math.PI * 2),
+    () => lots.map((lot) => capitalHouseAngle(lot.slot, lot.total)),
     [lots]
   )
 
@@ -1429,7 +1437,7 @@ function AgentModuleCouriers3D({
     }> = []
 
     sourceLots.forEach((lot, idx) => {
-      const houseAngle = (lot.slot / Math.max(1, lot.total)) * Math.PI * 2
+      const houseAngle = capitalHouseAngle(lot.slot, lot.total)
       const hx = Math.cos(houseAngle) * ringRadius
       const hz = Math.sin(houseAngle) * ringRadius
       const sorted = [...modules].sort((a, b) => {
@@ -1812,7 +1820,7 @@ function DepartmentHouse3D({
   paused: boolean
   onSelectDepartment: ((departmentKey: string) => void) | undefined
 }) {
-  const angle = (lot.slot / lot.total) * Math.PI * 2
+  const angle = capitalHouseAngle(lot.slot, lot.total)
   const ringRadius = Math.min(capitalHouseRingRadius(lot.total), CAPITAL_TOWER_INNER_RADIUS - 1.2)
   const position = useMemo<[number, number, number]>(() => {
     const x = view.x + Math.cos(angle) * ringRadius
@@ -2023,7 +2031,7 @@ function DepartmentHouses3D({
     const total = Math.max(1, lots[0]?.total ?? lots.length)
     return Array.from(groups.entries()).map(([key, info], index) => {
       const midSlot = info.slots[Math.floor(info.slots.length / 2)] ?? 0
-      const angle = (midSlot / total) * Math.PI * 2
+      const angle = capitalHouseAngle(midSlot, total)
       return {
         key,
         label: info.label,
@@ -2098,7 +2106,7 @@ function QueenTower3D({ view, skin, paused }: { view: CityIslandView; skin: City
   })
 
   return (
-    <group position={[plan.x, 0, plan.z]}>
+    <group position={[plan.x, 0, plan.z]} scale={[1, 0.78, 1]}>
       <mesh position={[0, 0.25, 0]} material={skin.plinth}>
         <cylinderGeometry args={[2.3, 2.45, 0.5, 6]} />
       </mesh>
