@@ -7,16 +7,18 @@ export const MAIN_AVENUES_RADIUS = 7.2
 export const HIVE_CAR_SPEED = 1.65
 export const AVENUE_RING_STEP = 3.2
 export const QUEEN_PROCESS_SEC = 1.15
+export const INTERSECTION_STOP_HALF_EXTENT = 0.49
+export const CAR_FRONT_BUMPER_OFFSET = 0.21
 
-const TRAFFIC_LIGHT_CYCLE_SEC = 8.0
+const TRAFFIC_LIGHT_CYCLE_SEC = 9.0
 
 export type TrafficLightState = 'ring_green' | 'amber_to_radial' | 'radial_green' | 'amber_to_ring'
 
 export function getTrafficLightState(timeSec: number): TrafficLightState {
   const phase = ((timeSec % TRAFFIC_LIGHT_CYCLE_SEC) + TRAFFIC_LIGHT_CYCLE_SEC) % TRAFFIC_LIGHT_CYCLE_SEC
-  if (phase < 3.4) return 'ring_green'
-  if (phase < 4.0) return 'amber_to_radial'
-  if (phase < 7.4) return 'radial_green'
+  if (phase < 3.7) return 'ring_green'
+  if (phase < 4.5) return 'amber_to_radial'
+  if (phase < 8.2) return 'radial_green'
   return 'amber_to_ring'
 }
 
@@ -370,8 +372,8 @@ export function buildMainRingPddSegments(
 
   const border1R = startIsInner ? ringR - 0.41 : ringR + 0.41
   const border2R = startIsInner ? ringR + 0.41 : ringR - 0.41
-  const lead1 = Math.min(0.1, arc * 0.4)
-  const lead2 = Math.min(0.1, arc * 0.4)
+  const lead1 = Math.min(0.49 / Math.max(2, ringR), arc * 0.42)
+  const lead2 = Math.min(0.49 / Math.max(2, ringR), arc * 0.42)
 
   const t1ax = viewX + Math.cos(startAngle) * border1R - r1dz * laneOffset
   const t1az = viewZ + Math.sin(startAngle) * border1R + r1dx * laneOffset
