@@ -7,7 +7,8 @@ export const MAIN_AVENUES_RADIUS = 7.2
 export const HIVE_CAR_SPEED = 1.65
 export const AVENUE_RING_STEP = 3.2
 export const QUEEN_PROCESS_SEC = 1.15
-export const INTERSECTION_STOP_HALF_EXTENT = 0.49
+export const INTERSECTION_BOX_HALF_EXTENT = 0.49
+export const INTERSECTION_STOP_HALF_EXTENT = 0.64
 export const CAR_FRONT_BUMPER_OFFSET = 0.21
 export const CAR_HALF_WIDTH = 0.082
 export const CAR_HALF_LENGTH = 0.20
@@ -228,8 +229,8 @@ export function RegulatedIntersection3D({
     headZ: number
     rotY: number
   }[] = [
-    { poleX: -0.51, poleZ: 0.46, headX: -0.51, headZ: 0.21, rotY: 0 },
-    { poleX: 0.51, poleZ: -0.46, headX: 0.51, headZ: -0.21, rotY: Math.PI }
+    { poleX: -0.48, poleZ: 0.46, headX: -0.48, headZ: 0.21, rotY: 0 },
+    { poleX: 0.48, poleZ: -0.46, headX: 0.48, headZ: -0.21, rotY: Math.PI }
   ]
   const radialHeads: readonly {
     poleX: number
@@ -238,8 +239,8 @@ export function RegulatedIntersection3D({
     headZ: number
     rotY: number
   }[] = [
-    { poleX: -0.46, poleZ: -0.51, headX: -0.21, headZ: -0.51, rotY: -Math.PI / 2 },
-    { poleX: 0.46, poleZ: 0.51, headX: 0.21, headZ: 0.51, rotY: Math.PI / 2 }
+    { poleX: -0.46, poleZ: -0.48, headX: -0.21, headZ: -0.48, rotY: -Math.PI / 2 },
+    { poleX: 0.46, poleZ: 0.48, headX: 0.21, headZ: 0.48, rotY: Math.PI / 2 }
   ]
 
   const renderTrafficHead = (
@@ -306,16 +307,32 @@ export function RegulatedIntersection3D({
       <mesh position={[0, 0.039, 0]} rotation={[-Math.PI / 2, 0, 0]} material={bedMaterial}>
         <planeGeometry args={[0.88, 0.88]} />
       </mesh>
-      <mesh position={[-0.21, 0.041, -0.49]} rotation={[-Math.PI / 2, 0, 0]} material={stopLineMat}>
+      <mesh
+        position={[-0.21, 0.041, -INTERSECTION_STOP_HALF_EXTENT]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        material={stopLineMat}
+      >
         <planeGeometry args={[0.38, 0.055]} />
       </mesh>
-      <mesh position={[0.21, 0.041, 0.49]} rotation={[-Math.PI / 2, 0, 0]} material={stopLineMat}>
+      <mesh
+        position={[0.21, 0.041, INTERSECTION_STOP_HALF_EXTENT]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        material={stopLineMat}
+      >
         <planeGeometry args={[0.38, 0.055]} />
       </mesh>
-      <mesh position={[-0.49, 0.041, 0.21]} rotation={[-Math.PI / 2, 0, Math.PI / 2]} material={stopLineMat}>
+      <mesh
+        position={[-INTERSECTION_STOP_HALF_EXTENT, 0.041, 0.21]}
+        rotation={[-Math.PI / 2, 0, Math.PI / 2]}
+        material={stopLineMat}
+      >
         <planeGeometry args={[0.38, 0.055]} />
       </mesh>
-      <mesh position={[0.49, 0.041, -0.21]} rotation={[-Math.PI / 2, 0, Math.PI / 2]} material={stopLineMat}>
+      <mesh
+        position={[INTERSECTION_STOP_HALF_EXTENT, 0.041, -0.21]}
+        rotation={[-Math.PI / 2, 0, Math.PI / 2]}
+        material={stopLineMat}
+      >
         <planeGeometry args={[0.38, 0.055]} />
       </mesh>
       {ringHeads.map((head, idx) =>
@@ -620,7 +637,7 @@ export function isIntersectionClearForEntry(
   dirZ: number,
   selfIndex: number,
   peers: readonly VehiclePoseState[],
-  halfBox = INTERSECTION_STOP_HALF_EXTENT
+  halfBox = INTERSECTION_BOX_HALF_EXTENT
 ): boolean {
   for (let i = 0; i < peers.length; i += 1) {
     if (i === selfIndex) continue
