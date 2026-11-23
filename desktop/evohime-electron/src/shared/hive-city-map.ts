@@ -676,9 +676,13 @@ function buildIslandView(
 
   const buildings: CityBuildingView[] = []
   citadels.forEach((building, index) => {
-    // Несколько цитаделей — компактный дворец: башни вплотную к центру.
+    // Первая цитадель рисуется башней Королевы (QueenTower3D) и обязана стоять
+    // в точном центре города, соосно кольцам, воротам и спиц-сетке: все круги
+    // города рисуются от центра острова, поэтому и башня должна быть в нём.
+    // Данные часто дают две цитадели (evohime-core и evohime-hive): остальные
+    // образуют компактный дворец вплотную к центру (сами башни не рисуются).
     const angle = (2 * Math.PI * index) / Math.max(1, citadels.length)
-    const offset = citadels.length === 1 ? 0 : 0.8
+    const offset = index === 0 ? 0 : 0.8
     buildings.push({
       building,
       x: Math.cos(angle) * offset,

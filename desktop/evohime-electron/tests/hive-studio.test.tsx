@@ -202,6 +202,31 @@ describe('Hive Studio app', () => {
     })
   })
 
+  it('keeps the drawn queen citadel at the exact city center when the data has multiple citadels', () => {
+    // Реальный манифест столицы содержит две цитадели (evohime-core и
+    // evohime-hive). Башня Королевы рисуется по первой и обязана стоять
+    // в точном центре города — там же, где центрируются все кольца.
+    const base = buildHiveStudioSimulation({ satelliteCount: 0 })
+    const capital = base.capital
+    const citadel = capital.buildings.find((b) => b.kind === 'citadel')
+    expect(citadel).toBeTruthy()
+    const snapshot = {
+      ...base,
+      capital: {
+        ...capital,
+        buildings: [
+          ...capital.buildings,
+          { ...citadel!, id: 'crates/evohime-hive', name: 'evohime-hive', relative_path: 'crates/evohime-hive' }
+        ]
+      }
+    }
+    const view = buildCityMapView(snapshot, null, { optimizeByQueen: true })
+    const citadelViews = view.capital.buildings.filter((b) => b.building.kind === 'citadel')
+    expect(citadelViews).toHaveLength(2)
+    expect(citadelViews[0]!.x).toBe(0)
+    expect(citadelViews[0]!.z).toBe(0)
+  })
+
   it('optimizes building and department placement when Queen optimization is enabled', async () => {
     const snapshot = buildHiveStudioSimulation({ satelliteCount: 0 })
     const standardView = buildCityMapView(snapshot, null, { optimizeByQueen: false }).capital
