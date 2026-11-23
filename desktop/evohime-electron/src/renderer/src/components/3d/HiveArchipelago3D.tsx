@@ -1349,6 +1349,19 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
           <mesh position={[view.x, 0.026, view.z]} rotation={[Math.PI / 2, 0, 0]} material={laneMaterial}>
             <torusGeometry args={[r, 0.03, 6, 72]} />
           </mesh>
+          {r === 6.0 && isCapital ? (
+            <mesh
+              position={[
+                view.x + Math.cos(QUEEN_U_TURN_ANGLE) * r,
+                0.027,
+                view.z + Math.sin(QUEEN_U_TURN_ANGLE) * r
+              ]}
+              rotation={[-Math.PI / 2, 0, -QUEEN_U_TURN_ANGLE + Math.PI / 2]}
+              material={skin.roadBed}
+            >
+              <planeGeometry args={[0.52, 0.14]} />
+            </mesh>
+          ) : null}
         </group>
       ))}
       {/* Межкольцевые проспекты в свободных секторах. */}
@@ -1493,11 +1506,19 @@ function evalTurnBezier(
   return { x, z, dx, dz }
 }
 
+function posArc(delta: number): number {
+  let d = delta
+  while (d < 0) d += Math.PI * 2
+  while (d >= Math.PI * 2) d -= Math.PI * 2
+  return d
+}
+
 /**
- * Единая гладкая траектория по маршруту «съезд -> кольцо -> съезд» со скруглёнными
- * поворотами Безье на стыках и правосторонним смещением полос.
+ * Траектория курьера на Главном кольце по ПДД РФ (правостороннее движение):
+ * все выезды и заезды — только направо, пересечение сплошной осевой кольца
+ * происходит исключительно в официальном разрыве сплошной `uTurnAngle`.
  */
-function evalRingRoutePose(
+function evalMainRingPddPose(
   viewX: number,
   viewZ: number,
   startAngle: number,
@@ -1505,21 +1526,33 @@ function evalRingRoutePose(
   endAngle: number,
   endR: number,
   ringR: number,
-  arcDelta: number,
+  uTurnAngle: number,
+  startIsInner: boolean,
   t: number,
   laneOffset: number
 ): { x: number; z: number; dx: number; dz: number } {
-  const ringSign = arcDelta >= 0 ? 1 : -1
-  const ringLaneR = ringR - ringSign * 0.13
-  const radial1Sign = ringR >= startR ? 1 : -1
+  const ring1Sign = startIsInner ? 1 : -1
+  const ring2Sign = -ring1Sign
+  const ring1LaneR = ringR - ring1Sign * 0.13
+  const ring2LaneR = ringR - ring2Sign * 0.13
+  const arc1 = startIsInner ? posArc(uTurnAngle - startAngle) : posArc(startAngle - uTurnAngle)
+  const arc2 = startIsInner ? posArc(uTurnAngle - endAngle) : posArc(endAngle - uTurnAngle)
+
+  const radial1Sign = startIsInner ? 1 : -1
   const r1dx = Math.cos(startAngle) * radial1Sign
   const r1dz = Math.sin(startAngle) * radial1Sign
-  const radial2Sign = endR >= ringR ? 1 : -1
+  const radial2Sign = startIsInner ? 1 : -1
   const r2dx = Math.cos(endAngle) * radial2Sign
   const r2dz = Math.sin(endAngle) * radial2Sign
 
-  if (t < 0.12) {
-    const r = startR + (t / 0.2) * (ringR - startR)
+  const border1R = startIsInner ? ringR - 0.34 : ringR + 0.34
+  const border2R = startIsInner ? ringR + 0.34 : ringR - 0.34
+  const lead1 = Math.min(0.08, arc1 * 0.35)
+  const lead2 = Math.min(0.08, arc2 * 0.35)
+
+  if (t < 0.1) {
+    const u = t / 0.1
+    const r = startR + u * (border1R - startR)
     return {
       x: viewX + Math.cos(startAngle) * r - r1dz * laneOffset,
       z: viewZ + Math.sin(startAngle) * r + r1dx * laneOffset,
@@ -1527,39 +1560,60 @@ function evalRingRoutePose(
       dz: r1dz
     }
   }
-  if (t <= 0.28) {
-    const rIn = startR + (0.12 / 0.2) * (ringR - startR)
-    const ax = viewX + Math.cos(startAngle) * rIn - r1dz * laneOffset
-    const az = viewZ + Math.sin(startAngle) * rIn + r1dx * laneOffset
-    const cx = viewX + Math.cos(startAngle) * ringLaneR - r1dz * laneOffset
-    const cz = viewZ + Math.sin(startAngle) * ringLaneR + r1dx * laneOffset
-    const outA = startAngle + arcDelta * ((0.28 - 0.2) / 0.6)
-    const bx = viewX + Math.cos(outA) * ringLaneR
-    const bz = viewZ + Math.sin(outA) * ringLaneR
-    return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.12) / 0.16)
+  if (t <= 0.2) {
+    const ax = viewX + Math.cos(startAngle) * border1R - r1dz * laneOffset
+    const az = viewZ + Math.sin(startAngle) * border1R + r1dx * laneOffset
+    const cx = viewX + Math.cos(startAngle) * ring1LaneR - r1dz * laneOffset
+    const cz = viewZ + Math.sin(startAngle) * ring1LaneR + r1dx * laneOffset
+    const outA = startAngle + ring1Sign * lead1
+    const bx = viewX + Math.cos(outA) * ring1LaneR
+    const bz = viewZ + Math.sin(outA) * ring1LaneR
+    return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.1) / 0.1)
   }
-  if (t < 0.72) {
-    const u = (t - 0.2) / 0.6
-    const curA = startAngle + arcDelta * u
+  if (t < 0.45) {
+    const u = (t - 0.2) / 0.25
+    const curA = startAngle + ring1Sign * (lead1 + u * Math.max(0, arc1 - lead1 * 2))
     return {
-      x: viewX + Math.cos(curA) * ringLaneR,
-      z: viewZ + Math.sin(curA) * ringLaneR,
-      dx: -Math.sin(curA) * ringSign,
-      dz: Math.cos(curA) * ringSign
+      x: viewX + Math.cos(curA) * ring1LaneR,
+      z: viewZ + Math.sin(curA) * ring1LaneR,
+      dx: -Math.sin(curA) * ring1Sign,
+      dz: Math.cos(curA) * ring1Sign
     }
   }
-  if (t <= 0.88) {
-    const inA = startAngle + arcDelta * ((0.72 - 0.2) / 0.6)
-    const ax = viewX + Math.cos(inA) * ringLaneR
-    const az = viewZ + Math.sin(inA) * ringLaneR
-    const cx = viewX + Math.cos(endAngle) * ringLaneR - r2dz * laneOffset
-    const cz = viewZ + Math.sin(endAngle) * ringLaneR + r2dx * laneOffset
-    const rOut = ringR + ((0.88 - 0.8) / 0.2) * (endR - ringR)
-    const bx = viewX + Math.cos(endAngle) * rOut - r2dz * laneOffset
-    const bz = viewZ + Math.sin(endAngle) * rOut + r2dx * laneOffset
-    return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.72) / 0.16)
+  if (t <= 0.55) {
+    const inA = uTurnAngle - ring1Sign * Math.min(0.1, arc1 * 0.4)
+    const outA = uTurnAngle + ring2Sign * Math.min(0.1, arc2 * 0.4)
+    const ax = viewX + Math.cos(inA) * ring1LaneR
+    const az = viewZ + Math.sin(inA) * ring1LaneR
+    const cx = viewX + Math.cos(uTurnAngle) * ringR
+    const cz = viewZ + Math.sin(uTurnAngle) * ringR
+    const bx = viewX + Math.cos(outA) * ring2LaneR
+    const bz = viewZ + Math.sin(outA) * ring2LaneR
+    return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.45) / 0.1)
   }
-  const r = ringR + ((t - 0.8) / 0.2) * (endR - ringR)
+  if (t < 0.8) {
+    const u = (t - 0.55) / 0.25
+    const start2A = uTurnAngle + ring2Sign * Math.min(0.1, arc2 * 0.4)
+    const curA = start2A + ring2Sign * u * Math.max(0, arc2 - lead2 - Math.min(0.1, arc2 * 0.4))
+    return {
+      x: viewX + Math.cos(curA) * ring2LaneR,
+      z: viewZ + Math.sin(curA) * ring2LaneR,
+      dx: -Math.sin(curA) * ring2Sign,
+      dz: Math.cos(curA) * ring2Sign
+    }
+  }
+  if (t <= 0.9) {
+    const inA = endAngle - ring2Sign * lead2
+    const ax = viewX + Math.cos(inA) * ring2LaneR
+    const az = viewZ + Math.sin(inA) * ring2LaneR
+    const cx = viewX + Math.cos(endAngle) * ring2LaneR - r2dz * laneOffset
+    const cz = viewZ + Math.sin(endAngle) * ring2LaneR + r2dx * laneOffset
+    const bx = viewX + Math.cos(endAngle) * border2R - r2dz * laneOffset
+    const bz = viewZ + Math.sin(endAngle) * border2R + r2dx * laneOffset
+    return evalTurnBezier(ax, az, cx, cz, bx, bz, (t - 0.8) / 0.1)
+  }
+  const u = (t - 0.9) / 0.1
+  const r = border2R + u * (endR - border2R)
   return {
     x: viewX + Math.cos(endAngle) * r - r2dz * laneOffset,
     z: viewZ + Math.sin(endAngle) * r + r2dx * laneOffset,
@@ -2445,11 +2499,6 @@ function AgentModuleCouriers3D({
     const laneOffset = 0.11
 
     routes.forEach((route, index) => {
-      // Кратчайший угол по кольцу от дома к модулю.
-      let deltaAngle = route.targetAngle - route.houseAngle
-      while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2
-      while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2
-
       for (let dir = 0; dir < 2; dir += 1) {
         const instIdx = index * 2 + dir
         if (instIdx >= mesh.count) continue
@@ -2463,7 +2512,7 @@ function AgentModuleCouriers3D({
         const p = paused ? (route.phase + dir * 0.5) % 1 : (route.phase + dir * 0.5 + time * flowSpeed) % 1
         const pose =
           dir === 0
-            ? evalRingRoutePose(
+            ? evalMainRingPddPose(
                 view.x,
                 view.z,
                 route.houseAngle,
@@ -2471,11 +2520,12 @@ function AgentModuleCouriers3D({
                 route.targetAngle,
                 route.targetEntryR,
                 MAIN_AVENUES_RADIUS,
-                deltaAngle,
+                QUEEN_U_TURN_ANGLE,
+                true,
                 p,
                 laneOffset
               )
-            : evalRingRoutePose(
+            : evalMainRingPddPose(
                 view.x,
                 view.z,
                 route.targetAngle,
@@ -2483,7 +2533,8 @@ function AgentModuleCouriers3D({
                 route.houseAngle,
                 route.houseExitR,
                 MAIN_AVENUES_RADIUS,
-                -deltaAngle,
+                QUEEN_U_TURN_ANGLE,
+                false,
                 p,
                 laneOffset
               )
