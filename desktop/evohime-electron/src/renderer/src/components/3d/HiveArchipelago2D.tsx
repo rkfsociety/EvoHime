@@ -231,7 +231,11 @@ function Tower({
       data-testid={`hive-tower-${item.building.id}`}
       data-building-id={item.building.id}
       className={`hive-archipelago__tower${highlighted ? ' hive-archipelago__tower--lit' : ''}`}
-      onPointerDown={onSelect}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return
+        event.stopPropagation()
+        onSelect()
+      }}
       onPointerEnter={() => onHover(true)}
       onPointerLeave={() => onHover(false)}
       style={{ cursor: 'pointer' }}
@@ -289,7 +293,7 @@ function DepartmentHouse2D({
       data-dept={lot.departmentKey}
       data-active={lot.active ? 'true' : 'false'}
       onPointerDown={(event) => {
-        if (onSelectDepartment === undefined) return
+        if (event.button !== 0 || onSelectDepartment === undefined) return
         event.stopPropagation()
         onSelectDepartment(lot.departmentKey)
       }}
@@ -384,7 +388,10 @@ function IslandCity({
     <g
       data-island={view.island.id}
       className={`hive-archipelago__island hive-archipelago__island--${view.phase}${selectedIsland ? ' hive-archipelago__island--selected' : ''}`}
-      onPointerDown={() => onSelectIsland(view.island.id)}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return
+        onSelectIsland(view.island.id)
+      }}
     >
       <GroundPlate view={view} />
       {view.island.edges.map((edge, index) => {
@@ -464,6 +471,7 @@ export const HiveArchipelago2D = memo(function HiveArchipelago2D({
       data-testid="hive-archipelago-2d"
       role="presentation"
       onPointerDown={(event) => {
+        if (event.button !== 0) return
         // Клик по фону снимает фокус с острова (бабблит только по «пустоте»).
         const target = event.target as Element | null
         if (

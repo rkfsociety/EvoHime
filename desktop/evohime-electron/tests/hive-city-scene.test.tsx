@@ -208,20 +208,33 @@ describe('HiveCityScene — живой архипелаг (план 199.3)', () 
 
   it('клик по чипу-спутнику выделяет остров, повторный клик и фон снимают фокус', async () => {
     const user = userEvent.setup()
+    const onSelectDepartment = vi.fn()
     render(
       <HiveCityScene
         status="observing"
         cityMap={{ available: true, snapshot: archipelagoSnapshot }}
+        selectedDepartment="research"
+        onSelectDepartment={onSelectDepartment}
       />
     )
 
-    await user.click(screen.getByTestId('hive-archipelago-chip-sat-alpha'))
+    await user.click(screen.getByTestId('hive-tower-sat-alpha/src/main.rs'))
     expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('hive-archipelago-inspector')).toBeTruthy()
 
-    // Клик по фону SVG (по воде) возвращает общий обзор.
+    // СКМ по башне и по фону не должна ни выбирать, ни сбрасывать выделение.
+    fireEvent.pointerDown(screen.getByTestId('hive-tower-crates/evohime-core'), { button: 1 })
+    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('true')
     const svg = screen.getByTestId('hive-archipelago-2d')
-    fireEvent.pointerDown(svg, { target: svg })
+    fireEvent.pointerDown(svg, { target: svg, button: 1 })
+    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('hive-archipelago-inspector')).toBeTruthy()
+
+    // Клик ЛКМ по фону SVG (по воде) сбрасывает остров, инспектор и департамент.
+    fireEvent.pointerDown(svg, { target: svg, button: 0 })
     expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('false')
+    expect(screen.queryByTestId('hive-archipelago-inspector')).toBeNull()
+    expect(onSelectDepartment).toHaveBeenCalledWith('research')
   })
 
   it('недоступный демон сохраняет панораму и показывает статус', () => {

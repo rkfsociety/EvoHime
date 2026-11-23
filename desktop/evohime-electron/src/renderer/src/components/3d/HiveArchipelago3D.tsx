@@ -452,6 +452,7 @@ function IslandGround({
         rotation={[0, Math.PI / 6, 0]}
         material={[side, top, side]}
         onPointerDown={(event: ThreeEvent<PointerEvent>) => {
+          if (event.button !== 0) return
           event.stopPropagation()
           onSelect()
         }}
@@ -867,6 +868,7 @@ function BuildingComplex3D({
   }, [height, variant])
 
   const handlePointerDown = (event: ThreeEvent<PointerEvent>): void => {
+    if (event.button !== 0) return
     event.stopPropagation()
     onSelectBuilding(view.island.id, item.building.id)
   }
@@ -886,6 +888,7 @@ function BuildingComplex3D({
       userData={{ testid: `hive-archipelago-tower-${item.building.id}`, buildingId: item.building.id }}
       onPointerDown={handlePointerDown}
       onPointerMove={(event: ThreeEvent<PointerEvent>) => {
+        if ((event.buttons & 4) !== 0) return
         event.stopPropagation()
         onHoverBuilding(item.building.id)
       }}
@@ -2690,7 +2693,7 @@ function DepartmentHouse3D({
         active: lot.active
       }}
       onPointerDown={(event: ThreeEvent<PointerEvent>) => {
-        if (onSelectDepartment === undefined) return
+        if (event.button !== 0 || onSelectDepartment === undefined) return
         event.stopPropagation()
         onSelectDepartment(lot.departmentKey)
       }}
@@ -3097,6 +3100,7 @@ function CameraRig({
 
   useEffect(() => {
     const dom = gl.domElement
+    const host = dom.parentElement ?? dom
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault()
       const scale = event.deltaY < 0 ? 1.12 : 1 / 1.12
@@ -3106,11 +3110,15 @@ function CameraRig({
       if (event.button === 1) event.preventDefault()
     }
     const onAuxClick = (event: MouseEvent): void => {
-      if (event.button === 1) event.preventDefault()
+      if (event.button === 1) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
     }
     const onPointerDown = (event: PointerEvent): void => {
       if (event.button !== 1) return
       event.preventDefault()
+      event.stopPropagation()
       panRef.current = { active: true, lastX: event.clientX, lastY: event.clientY }
       dom.style.cursor = 'grabbing'
       try {
@@ -3121,6 +3129,7 @@ function CameraRig({
     }
     const onPointerMove = (event: PointerEvent): void => {
       if (!panRef.current.active) return
+      event.stopPropagation()
       const dx = event.clientX - panRef.current.lastX
       const dy = event.clientY - panRef.current.lastY
       panRef.current.lastX = event.clientX
@@ -3132,6 +3141,11 @@ function CameraRig({
       desired.current.z = Math.max(-120, Math.min(120, desired.current.z - dy * worldPerPx))
     }
     const stopPan = (event: PointerEvent): void => {
+      if (!panRef.current.active && event.button !== 1) return
+      if (event.button === 1) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
       if (!panRef.current.active) return
       panRef.current.active = false
       dom.style.cursor = ''
@@ -3143,21 +3157,21 @@ function CameraRig({
     }
 
     dom.addEventListener('wheel', onWheel, { passive: false })
-    dom.addEventListener('mousedown', onMouseDown)
-    dom.addEventListener('auxclick', onAuxClick)
-    dom.addEventListener('pointerdown', onPointerDown)
-    dom.addEventListener('pointermove', onPointerMove)
-    dom.addEventListener('pointerup', stopPan)
-    dom.addEventListener('pointercancel', stopPan)
+    host.addEventListener('mousedown', onMouseDown, { capture: true })
+    host.addEventListener('auxclick', onAuxClick, { capture: true })
+    host.addEventListener('pointerdown', onPointerDown, { capture: true })
+    host.addEventListener('pointermove', onPointerMove, { capture: true })
+    host.addEventListener('pointerup', stopPan, { capture: true })
+    host.addEventListener('pointercancel', stopPan, { capture: true })
     window.addEventListener('pointerup', stopPan)
     return () => {
       dom.removeEventListener('wheel', onWheel)
-      dom.removeEventListener('mousedown', onMouseDown)
-      dom.removeEventListener('auxclick', onAuxClick)
-      dom.removeEventListener('pointerdown', onPointerDown)
-      dom.removeEventListener('pointermove', onPointerMove)
-      dom.removeEventListener('pointerup', stopPan)
-      dom.removeEventListener('pointercancel', stopPan)
+      host.removeEventListener('mousedown', onMouseDown, { capture: true })
+      host.removeEventListener('auxclick', onAuxClick, { capture: true })
+      host.removeEventListener('pointerdown', onPointerDown, { capture: true })
+      host.removeEventListener('pointermove', onPointerMove, { capture: true })
+      host.removeEventListener('pointerup', stopPan, { capture: true })
+      host.removeEventListener('pointercancel', stopPan, { capture: true })
       window.removeEventListener('pointerup', stopPan)
       dom.style.cursor = ''
     }
@@ -3355,7 +3369,7 @@ export function HiveArchipelago3D({
           gl.domElement.addEventListener('webglcontextlost', handleContextLost, false)
         }}
         onPointerMissed={(event: unknown) => {
-          void event
+          if (event instanceof MouseEvent && event.button !== 0) return
           onBackgroundClick()
         }}
       >

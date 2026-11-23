@@ -669,13 +669,22 @@ export function HiveCityScene({
     return buildCityMapView(effectiveSnapshot, phases)
   }, [snapshot, lifecycle])
 
+  const handleClearSelection = useCallback((): void => {
+    setFocusIslandId(null)
+    setInspector(null)
+    setHoveredBuildingId(null)
+    if (selectedDepartment != null) {
+      onSelectDepartment?.(selectedDepartment)
+    }
+  }, [selectedDepartment, onSelectDepartment])
+
   const handleSelectIsland = useCallback((islandId: string): void => {
     if (islandId === '') {
-      setFocusIslandId(null)
+      handleClearSelection()
       return
     }
     setFocusIslandId(islandId)
-  }, [])
+  }, [handleClearSelection])
 
   const handleSelectBuilding = useCallback((islandId: string, buildingId: string): void => {
     setFocusIslandId(islandId)
@@ -737,6 +746,9 @@ export function HiveCityScene({
       data-paused={animationsPaused ? 'true' : 'false'}
       data-mode={showArchipelago ? (use3D ? '3d' : '2d') : 'panorama'}
       aria-hidden={hasInteractiveOverlay ? undefined : true}
+      onMouseDown={(event) => {
+        if (event.button === 1) event.preventDefault()
+      }}
       onKeyDown={handleKeyDown}
     >
       {showArchipelago && islandViews !== null && snapshot !== null ? (
@@ -766,7 +778,7 @@ export function HiveCityScene({
                     onSelectIsland={handleSelectIsland}
                     onSelectBuilding={handleSelectBuilding}
                     onHoverBuilding={setHoveredBuildingId}
-                    onBackgroundClick={() => setFocusIslandId(null)}
+                    onBackgroundClick={handleClearSelection}
                     onContextLost={handleContextLost}
                   />
                 }
