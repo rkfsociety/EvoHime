@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
@@ -107,7 +107,8 @@ export function RegulatedIntersection3D({
   radius,
   angle,
   bedMaterial,
-  paused
+  paused,
+  simClockRef
 }: {
   x: number
   z: number
@@ -115,6 +116,7 @@ export function RegulatedIntersection3D({
   angle: number
   bedMaterial: THREE.Material
   paused: boolean
+  simClockRef?: MutableRefObject<number> | undefined
 }) {
   const stopLineMat = useMemo(
     () =>
@@ -160,7 +162,8 @@ export function RegulatedIntersection3D({
   ])
 
   useFrame((state) => {
-    const light = getTrafficLightState(paused ? 0 : state.clock.elapsedTime)
+    const elapsed = paused ? 0 : simClockRef ? simClockRef.current : state.clock.elapsedTime
+    const light = getTrafficLightState(elapsed)
     const rMat =
       light === 'ring_green'
         ? ringLampGreenMat
@@ -510,7 +513,7 @@ export function isIntersectionClearForEntry(
   dirZ: number,
   selfIndex: number,
   peers: readonly VehiclePoseState[],
-  halfBox = 0.68
+  halfBox = INTERSECTION_STOP_HALF_EXTENT
 ): boolean {
   for (let i = 0; i < peers.length; i += 1) {
     if (i === selfIndex) continue
@@ -634,7 +637,7 @@ export function isPathStepBlocked(
   peers: readonly VehiclePoseState[],
   curX: number,
   curZ: number,
-  lookaheadDist = 0.18
+  lookaheadDist = 0.08
 ): boolean {
   const clampedP = Math.min(1, Math.max(0, candidateProgress))
   const nextPose = evalSegmentedPose(segments, clampedP)

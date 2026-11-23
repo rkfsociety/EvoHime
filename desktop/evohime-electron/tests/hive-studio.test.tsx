@@ -258,18 +258,18 @@ describe('Hive Studio app', () => {
     expect(isVehicleAheadBlocked(0.13, 0, 0, 1, 0, peersOncoming)).toBe(false)
     expect(isVehicleAheadBlocked(-0.13, 0.2, 0, -1, 1, peersOncoming)).toBe(false)
 
-    // 3. Контроль занятости перекрёстка: блокирует конфликтующую внутри квадрата, но пропускает стоящую до стоп-линии (0.70).
+    // 3. Контроль занятости перекрёстка: блокирует конфликтующую внутри квадрата (±0.49), но пропускает за пределами перекрёстка (5.55).
     const insideIntersection: VehiclePoseState[] = [
       { lastVisible: true, lastX: 0.13, lastZ: 4.3, lastDirX: 0, lastDirZ: 1 },
       { lastVisible: true, lastX: 0.13, lastZ: 5.1, lastDirX: 1, lastDirZ: 0 }
     ]
     expect(isIntersectionClearForEntry(0, 5, 0.13, 4.3, 0, 1, 0, insideIntersection)).toBe(false)
 
-    const behindStopLine: VehiclePoseState[] = [
+    const outsideIntersection: VehiclePoseState[] = [
       { lastVisible: true, lastX: 0.13, lastZ: 4.3, lastDirX: 0, lastDirZ: 1 },
-      { lastVisible: true, lastX: -0.7, lastZ: 5.13, lastDirX: 1, lastDirZ: 0 }
+      { lastVisible: true, lastX: 0.26, lastZ: 5.55, lastDirX: 1, lastDirZ: 0 }
     ]
-    expect(isIntersectionClearForEntry(0, 5, 0.13, 4.3, 0, 1, 0, behindStopLine)).toBe(true)
+    expect(isIntersectionClearForEntry(0, 5, 0.13, 4.3, 0, 1, 0, outsideIntersection)).toBe(true)
   })
 
   it('enforces 2D OBB car collision geometry and blocks turning into occupied building corridors', () => {
@@ -348,5 +348,26 @@ describe('Hive Studio app', () => {
         expect(optEff.avgGateDistance).toBeLessThanOrEqual(stdEff.avgGateDistance)
       }
     })
+  })
+
+  it('switches simulation speed multiplier buttons x1, x10, x100 in Hive Studio', async () => {
+    const user = userEvent.setup()
+    render(<StudioApp />)
+    const speedGroup = screen.getByRole('group', { name: 'Скорость симуляции' })
+    expect(speedGroup).toBeTruthy()
+    const x1 = screen.getByRole('button', { name: 'x1' })
+    const x10 = screen.getByRole('button', { name: 'x10' })
+    const x100 = screen.getByRole('button', { name: 'x100' })
+    expect(x1.getAttribute('aria-pressed')).toBe('true')
+    expect(x10.getAttribute('aria-pressed')).toBe('false')
+    expect(x100.getAttribute('aria-pressed')).toBe('false')
+
+    await user.click(x10)
+    expect(x1.getAttribute('aria-pressed')).toBe('false')
+    expect(x10.getAttribute('aria-pressed')).toBe('true')
+
+    await user.click(x100)
+    expect(x10.getAttribute('aria-pressed')).toBe('false')
+    expect(x100.getAttribute('aria-pressed')).toBe('true')
   })
 })

@@ -89,6 +89,8 @@ export interface HiveCitySceneProps {
   readonly activeAgents?: readonly HiveCityAgentHint[] | undefined
   /** Режим оптимизации расстановки зданий и секторов Королевой. */
   readonly queenOptimized?: boolean | undefined
+  /** Ускорение времени симуляции (только dev-стенд Hive Studio). */
+  readonly timeScale?: number | undefined
 }
 
 interface DistrictAnchor {
@@ -551,7 +553,8 @@ export function HiveCityScene({
   cityMap = null,
   suppressLegacyPanorama = false,
   activeAgents,
-  queenOptimized = true
+  queenOptimized = true,
+  timeScale = 1
 }: HiveCitySceneProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [hoveredDepartment, setHoveredDepartment] = useState<string | null>(null)
@@ -786,6 +789,7 @@ export function HiveCityScene({
                     onHoverBuilding={setHoveredBuildingId}
                     onBackgroundClick={handleClearSelection}
                     onContextLost={handleContextLost}
+                    timeScale={timeScale}
                   />
                 }
               />

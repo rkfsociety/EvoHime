@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import {
@@ -102,7 +102,9 @@ export function QueenRoads3D({
   skin,
   deliveredMapRef,
   active,
-  paused
+  paused,
+  timeScale = 1,
+  simClockRef
 }: {
   view: CityIslandView
   lots: readonly HiveCityHouseLot[]
@@ -110,6 +112,8 @@ export function QueenRoads3D({
   deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
   active: boolean
   paused: boolean
+  timeScale?: number | undefined
+  simClockRef?: MutableRefObject<number> | undefined
 }) {
   const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
   const mainAvenueR = capitalMainAvenueRadius(lots[0]?.total ?? lots.length)
@@ -307,12 +311,13 @@ export function QueenRoads3D({
       const turnLeadArc = Math.min(innerIntersectionLeadArc, fullOutArc * 0.42)
       const ringArcSpan = Math.max(0, fullOutArc - turnLeadArc)
       const turnStartA = QUEEN_GATE_ANGLE + turnLeadArc
+      const bridgeLaneOffset = 0.26
       const tAx = view.x + Math.cos(turnStartA) * outerLaneR
       const tAz = view.z + Math.sin(turnStartA) * outerLaneR
-      const tCx = view.x + outBdx * outerLaneR - outBdz * laneOffset
-      const tCz = view.z + outBdz * outerLaneR + outBdx * laneOffset
-      const tBx = view.x + outBdx * bridgeStartR - outBdz * laneOffset
-      const tBz = view.z + outBdz * bridgeStartR + outBdx * laneOffset
+      const tCx = view.x + outBdx * outerLaneR - outBdz * bridgeLaneOffset
+      const tCz = view.z + outBdz * outerLaneR + outBdx * bridgeLaneOffset
+      const tBx = view.x + outBdx * bridgeStartR - outBdz * bridgeLaneOffset
+      const tBz = view.z + outBdz * bridgeStartR + outBdx * bridgeLaneOffset
       const seg0Len = Math.max(0.1, homeGarageR - innerBorderR)
       const seg1Len = ringArcSpan * outerLaneR
       const segTurnLen = approxBezierLength(tAx, tAz, tCx, tCz, tBx, tBz)
@@ -350,8 +355,8 @@ export function QueenRoads3D({
           eval: (u) => {
             const r = bridgeStartR + u * (bridgeEndR - bridgeStartR)
             return {
-              x: view.x + Math.cos(QUEEN_GATE_ANGLE) * r - outBdz * laneOffset,
-              z: view.z + Math.sin(QUEEN_GATE_ANGLE) * r + outBdx * laneOffset,
+              x: view.x + Math.cos(QUEEN_GATE_ANGLE) * r - outBdz * bridgeLaneOffset,
+              z: view.z + Math.sin(QUEEN_GATE_ANGLE) * r + outBdx * bridgeLaneOffset,
               dx: outBdx,
               dz: outBdz
             }
@@ -367,7 +372,7 @@ export function QueenRoads3D({
           mainAvenueR,
           QUEEN_GATE_ANGLE,
           true,
-          laneOffset
+          bridgeLaneOffset
         )
       ]
       const totalLength = Math.max(
@@ -407,10 +412,11 @@ export function QueenRoads3D({
       const turnLeadArc = Math.min(innerIntersectionLeadArc, fullInArc * 0.42)
       const ringArcSpan = Math.max(0, fullInArc - turnLeadArc)
       const turnEndA = QUEEN_GATE_ANGLE - turnLeadArc
-      const tAx = view.x + Math.cos(QUEEN_GATE_ANGLE) * bridgeEndR - inBdz * laneOffset
-      const tAz = view.z + Math.sin(QUEEN_GATE_ANGLE) * bridgeEndR + inBdx * laneOffset
-      const tCx = view.x + Math.cos(QUEEN_GATE_ANGLE) * outerLaneR - inBdz * laneOffset
-      const tCz = view.z + Math.sin(QUEEN_GATE_ANGLE) * outerLaneR + inBdx * laneOffset
+      const bridgeLaneOffset = 0.26
+      const tAx = view.x + Math.cos(QUEEN_GATE_ANGLE) * bridgeEndR - inBdz * bridgeLaneOffset
+      const tAz = view.z + Math.sin(QUEEN_GATE_ANGLE) * bridgeEndR + inBdx * bridgeLaneOffset
+      const tCx = view.x + Math.cos(QUEEN_GATE_ANGLE) * outerLaneR - inBdz * bridgeLaneOffset
+      const tCz = view.z + Math.sin(QUEEN_GATE_ANGLE) * outerLaneR + inBdx * bridgeLaneOffset
       const tBx = view.x + Math.cos(turnEndA) * outerLaneR
       const tBz = view.z + Math.sin(turnEndA) * outerLaneR
       const segTurnLen = approxBezierLength(tAx, tAz, tCx, tCz, tBx, tBz)
@@ -424,7 +430,7 @@ export function QueenRoads3D({
         mainAvenueR,
         QUEEN_GATE_ANGLE,
         false,
-        laneOffset
+        bridgeLaneOffset
       )
       // Первый отрезок + кривая + дуга кольца до начала поворота на мост.
       const mainRingBeforeTurnLen =
@@ -437,8 +443,8 @@ export function QueenRoads3D({
           eval: (u) => {
             const r = bridgeStartR - u * (bridgeStartR - bridgeEndR)
             return {
-              x: view.x + Math.cos(QUEEN_GATE_ANGLE) * r - inBdz * laneOffset,
-              z: view.z + Math.sin(QUEEN_GATE_ANGLE) * r + inBdx * laneOffset,
+              x: view.x + Math.cos(QUEEN_GATE_ANGLE) * r - inBdz * bridgeLaneOffset,
+              z: view.z + Math.sin(QUEEN_GATE_ANGLE) * r + inBdx * bridgeLaneOffset,
               dx: inBdx,
               dz: inBdz
             }
@@ -511,6 +517,7 @@ export function QueenRoads3D({
   const queueRef = useRef<number[]>([])
   const processingLotRef = useRef<{ lotIndex: number; remaining: number } | null>(null)
   const layoutSignatureRef = useRef<string>('')
+  const simTimeRef = useRef<number>(0)
 
   useLayoutEffect(() => {
     const layoutSignature = lots
@@ -561,13 +568,9 @@ export function QueenRoads3D({
     if (mesh.instanceColor !== null) mesh.instanceColor.needsUpdate = true
   }, [lots, instanceColor, deliveredMapRef, moduleBuildings.length])
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     const mesh = meshRef.current
     if (!mesh) return
-    const dt = paused ? 0 : Math.min(delta, 0.05)
-    const elapsedSec = paused ? 0 : state.clock.elapsedTime
-    const ringGreen = isRingTrafficGreen(elapsedSec)
-    const radialGreen = isRadialTrafficGreen(elapsedSec)
     const dummy = FRAME_DUMMY
     const cars = carsRef.current
     const queue = queueRef.current
@@ -589,25 +592,32 @@ export function QueenRoads3D({
     }
 
     if (paused) {
-      lots.forEach((lot) => {
+      lots.forEach((lot, index) => {
         if (lot.active) deliveredMapRef.current.set(lot.slot, true)
+        if (index >= mesh.count) return
+        const homeAngle = houseAngles[index]
+        if (!lot.active || homeAngle === undefined) {
+          dummy.scale.setScalar(0)
+          dummy.updateMatrix()
+          mesh.setMatrixAt(index, dummy.matrix)
+          return
+        }
+        const x = view.x + Math.cos(homeAngle) * (innerBoulevardR + 0.13)
+        const z = view.z + Math.sin(homeAngle) * (innerBoulevardR + 0.13)
+        dummy.position.set(x, 0.12, z)
+        dummy.lookAt(x - Math.sin(homeAngle), 0.12, z + Math.cos(homeAngle))
+        dummy.scale.set(0.15, 0.11, 0.36)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(index, dummy.matrix)
       })
+      mesh.instanceMatrix.needsUpdate = true
+      return
     }
 
-    // Шаг 1: обновляем обработку текущей машины у Королевы (строго 1 машина за раз!).
-    if (!paused && processingLotRef.current !== null) {
-      processingLotRef.current.remaining -= dt
-      if (processingLotRef.current.remaining <= 0) {
-        const finishedIdx = processingLotRef.current.lotIndex
-        const finishedCar = cars[finishedIdx]
-        if (finishedCar) {
-          finishedCar.phase = 'returning_ring'
-          finishedCar.progress = 0
-          finishedCar.curAngle = QUEEN_GATE_ANGLE
-        }
-        processingLotRef.current = null
-      }
-    }
+    const clampedScale = Math.max(1, Math.min(100, timeScale))
+    const totalDt = Math.min(delta, 0.05) * clampedScale
+    const subSteps = Math.min(48, Math.max(1, Math.ceil(totalDt / 0.04)))
+    const dt = totalDt / subSteps
 
     const MIN_CAR_ARC_GAP = Math.max(0.15, (0.36 + 0.14) / innerBoulevardR)
     const GATE_STOP_ANGLE = computeQueenGateStopAngle(innerBoulevardR)
@@ -617,65 +627,68 @@ export function QueenRoads3D({
     const avenueIx = view.x + Math.cos(QUEEN_GATE_ANGLE) * mainAvenueR
     const avenueIz = view.z + Math.sin(QUEEN_GATE_ANGLE) * mainAvenueR
 
-    // Если ворота Королевы свободны — запускаем ТОЛЬКО самую ближнюю к воротам машину у стоп-линии!
-    if (!paused && processingLotRef.current === null) {
-      let bestIdx = -1
-      let bestAngle = -Infinity
-      for (let i = 0; i < cars.length; i += 1) {
-        const candidate = cars[i]
-        if (!candidate || (candidate.phase !== 'queued' && candidate.phase !== 'along_ring')) continue
-        if (candidate.curAngle > bestAngle) {
-          bestAngle = candidate.curAngle
-          bestIdx = i
+    for (let step = 0; step < subSteps; step += 1) {
+      simTimeRef.current += dt
+      const ringGreen = isRingTrafficGreen(simTimeRef.current)
+      const radialGreen = isRadialTrafficGreen(simTimeRef.current)
+
+      // Шаг 1: обновляем обработку текущей машины у Королевы (строго 1 машина за раз!).
+      if (processingLotRef.current !== null) {
+        processingLotRef.current.remaining -= dt
+        if (processingLotRef.current.remaining <= 0) {
+          const finishedIdx = processingLotRef.current.lotIndex
+          const finishedCar = cars[finishedIdx]
+          if (finishedCar) {
+            finishedCar.phase = 'returning_ring'
+            finishedCar.progress = 0
+            finishedCar.curAngle = QUEEN_GATE_ANGLE
+          }
+          processingLotRef.current = null
         }
       }
-      const bestCar = bestIdx >= 0 ? cars[bestIdx] : undefined
-      if (bestCar && bestAngle >= GATE_STOP_ANGLE - 0.06) {
-        const qPos = queue.indexOf(bestIdx)
-        if (qPos >= 0) queue.splice(qPos, 1)
-        bestCar.turnStartAngle = bestCar.curAngle
-        bestCar.phase = 'processing'
-        bestCar.progress = 0
-        processingLotRef.current = { lotIndex: bestIdx, remaining: QUEEN_PROCESS_SEC }
-      }
-    }
 
-    if (gateLampRef.current) {
-      gateLampRef.current.material = processingLotRef.current !== null ? gateSignalAmber : gateSignalGreen
-    }
-
-    // Шаг 2: двигаем каждую машину и обновляем её матрицу (с запретом проезда сквозь впереди идущую машину).
-    lots.forEach((lot, index) => {
-      if (index >= mesh.count) return
-      const car = cars[index]
-      const homeAngle = houseAngles[index]
-      const routes = precomputedRoutes[index]
-      if (!car || homeAngle === undefined || !routes) return
-
-      if (!lot.active) {
-        deliveredMapRef.current.delete(lot.slot)
-        dummy.scale.setScalar(0)
-        dummy.updateMatrix()
-        mesh.setMatrixAt(index, dummy.matrix)
-        return
+      // Если ворота Королевы свободны — запускаем ТОЛЬКО самую ближнюю к воротам машину у стоп-линии!
+      if (processingLotRef.current === null) {
+        let bestIdx = -1
+        let bestAngle = -Infinity
+        for (let i = 0; i < cars.length; i += 1) {
+          const candidate = cars[i]
+          if (!candidate || (candidate.phase !== 'queued' && candidate.phase !== 'along_ring')) continue
+          if (candidate.curAngle > bestAngle) {
+            bestAngle = candidate.curAngle
+            bestIdx = i
+          }
+        }
+        const bestCar = bestIdx >= 0 ? cars[bestIdx] : undefined
+        if (bestCar && bestAngle >= GATE_STOP_ANGLE - 0.06) {
+          const qPos = queue.indexOf(bestIdx)
+          if (qPos >= 0) queue.splice(qPos, 1)
+          bestCar.turnStartAngle = bestCar.curAngle
+          bestCar.phase = 'processing'
+          bestCar.progress = 0
+          processingLotRef.current = { lotIndex: bestIdx, remaining: QUEEN_PROCESS_SEC }
+        }
       }
 
-      if (paused) {
-        const x = view.x + Math.cos(homeAngle) * (innerBoulevardR + 0.13)
-        const z = view.z + Math.sin(homeAngle) * (innerBoulevardR + 0.13)
-        dummy.position.set(x, 0.12, z)
-        dummy.lookAt(x - Math.sin(homeAngle), 0.12, z + Math.cos(homeAngle))
-        dummy.scale.set(0.15, 0.11, 0.36)
-        dummy.updateMatrix()
-        mesh.setMatrixAt(index, dummy.matrix)
-        return
-      }
+      // Шаг 2: двигаем каждую машину (с запретом проезда сквозь впереди идущую машину и OBB-коллизий).
+      lots.forEach((lot, index) => {
+        if (index >= mesh.count) return
+        const car = cars[index]
+        const homeAngle = houseAngles[index]
+        const routes = precomputedRoutes[index]
+        if (!car || homeAngle === undefined || !routes) return
 
-      let x = view.x
-      let z = view.z
-      let dirX = 0
-      let dirZ = 1
-      let visible = true
+        if (!lot.active) {
+          deliveredMapRef.current.delete(lot.slot)
+          car.lastVisible = false
+          return
+        }
+
+        let x = view.x
+        let z = view.z
+        let dirX = 0
+        let dirZ = 1
+        let visible = true
 
       if (car.phase === 'delivering') {
         const queenOutPath = routes.queenOutPath
@@ -1351,8 +1364,28 @@ export function QueenRoads3D({
       car.lastZ = z
       car.lastDirX = dirX
       car.lastDirZ = dirZ
+      })
+    }
 
-      if (!visible) {
+    if (gateLampRef.current) {
+      gateLampRef.current.material = processingLotRef.current !== null ? gateSignalAmber : gateSignalGreen
+    }
+    if (simClockRef) {
+      simClockRef.current = simTimeRef.current
+    }
+
+    lots.forEach((lot, index) => {
+      if (index >= mesh.count) return
+      const car = cars[index]
+      if (
+        !lot.active ||
+        !car ||
+        !car.lastVisible ||
+        car.lastX === undefined ||
+        car.lastZ === undefined ||
+        car.lastDirX === undefined ||
+        car.lastDirZ === undefined
+      ) {
         dummy.scale.setScalar(0)
         dummy.updateMatrix()
         mesh.setMatrixAt(index, dummy.matrix)
@@ -1360,8 +1393,8 @@ export function QueenRoads3D({
       }
 
       const carY = 0.13 + (index % 7) * 0.0008
-      dummy.position.set(x, carY, z)
-      dummy.lookAt(x + dirX, carY, z + dirZ)
+      dummy.position.set(car.lastX, carY, car.lastZ)
+      dummy.lookAt(car.lastX + car.lastDirX, carY, car.lastZ + car.lastDirZ)
       dummy.scale.set(0.16, 0.11, 0.36)
       dummy.updateMatrix()
       mesh.setMatrixAt(index, dummy.matrix)

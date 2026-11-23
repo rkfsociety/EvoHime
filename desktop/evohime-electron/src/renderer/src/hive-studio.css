@@ -47,6 +47,42 @@ body {
   color: #ffffff;
 }
 
+.hive-studio__speed {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 35;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(141, 130, 232, 0.35);
+  border-radius: 999px;
+  background: rgba(10, 10, 20, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.hive-studio__speed-btn {
+  cursor: pointer;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(230, 228, 242, 0.78);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hive-studio__speed-btn:hover {
+  color: #ffffff;
+  border-color: rgba(141, 130, 232, 0.45);
+}
+
+.hive-studio__speed-btn--active {
+  background: rgba(141, 130, 232, 0.28);
+  border-color: rgba(141, 130, 232, 0.85);
+  color: #ffffff;
+}
+
 .hive-studio__panel {
   position: absolute;
   top: 48px;

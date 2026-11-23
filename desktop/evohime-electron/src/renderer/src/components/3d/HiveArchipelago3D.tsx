@@ -3,7 +3,8 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState
+  useState,
+  type MutableRefObject
 } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
@@ -80,6 +81,7 @@ export interface HiveArchipelago3DProps {
   readonly onHoverBuilding: (buildingId: string | null) => void
   readonly onBackgroundClick: () => void
   readonly onContextLost: () => void
+  readonly timeScale?: number | undefined
 }
 
 function IslandGround({
@@ -665,12 +667,14 @@ function CityStreets3D({
   view,
   skin,
   mainAvenueRadius = MAIN_AVENUES_RADIUS,
-  paused = false
+  paused = false,
+  simClockRef
 }: {
   view: CityIslandView
   skin: CitySkin
   mainAvenueRadius?: number
   paused?: boolean
+  simClockRef?: MutableRefObject<number> | undefined
 }) {
   const isCapital = view.island.role === 'capital'
   const gateAngle = isCapital
@@ -943,6 +947,7 @@ function CityStreets3D({
             angle={gateAngle}
             bedMaterial={skin.roadBed}
             paused={paused}
+            simClockRef={simClockRef}
           />
         </group>
       ))}
@@ -1687,7 +1692,9 @@ function IslandGroup3D({
   onSelectIsland,
   onSelectBuilding,
   onHoverBuilding,
-  onBackgroundClick
+  onBackgroundClick,
+  timeScale = 1,
+  simClockRef
 }: {
   view: CityIslandView
   paused: boolean
@@ -1704,6 +1711,8 @@ function IslandGroup3D({
   onSelectBuilding: (islandId: string, buildingId: string) => void
   onHoverBuilding: (buildingId: string | null) => void
   onBackgroundClick: () => void
+  timeScale?: number | undefined
+  simClockRef?: MutableRefObject<number> | undefined
 }) {
   const groupRef = useRef<THREE.Group>(null)
   const scaleRef = useRef<number>(view.island.role === 'capital' || paused ? 1 : 0.04)
@@ -1759,6 +1768,7 @@ function IslandGroup3D({
             : MAIN_AVENUES_RADIUS
         }
         paused={paused}
+        simClockRef={simClockRef}
       />
       {departmentHouses !== undefined && departmentHouses.length > 0 ? (
         <QueenRoads3D
@@ -1768,6 +1778,8 @@ function IslandGroup3D({
           deliveredMapRef={deliveredMapRef}
           active={queenActive}
           paused={paused}
+          timeScale={timeScale}
+          simClockRef={simClockRef}
         />
       ) : null}
       <IslandTowers
@@ -1819,8 +1831,10 @@ export function HiveArchipelago3D({
   onSelectBuilding,
   onHoverBuilding,
   onBackgroundClick,
-  onContextLost
+  onContextLost,
+  timeScale = 1
 }: HiveArchipelago3DProps): React.JSX.Element {
+  const simClockRef = useRef<number>(0)
   const visibleSatellites = satellites.slice(0, CITY_MAP_MAX_SATELLITES)
   const soloZoom = Math.max(8, Math.min(24, (16.5 / Math.max(10, capital.radius)) * OVERVIEW_ZOOM_SOLO))
   const overviewZoom = visibleSatellites.length > 0 ? OVERVIEW_ZOOM_ARCHIPELAGO : soloZoom
@@ -1895,6 +1909,8 @@ export function HiveArchipelago3D({
             onSelectBuilding={onSelectBuilding}
             onHoverBuilding={onHoverBuilding}
             onBackgroundClick={onBackgroundClick}
+            timeScale={timeScale}
+            simClockRef={simClockRef}
           />
           <ConnectingBridges capital={capital} satellites={visibleSatellites} paused={paused} />
         </CitySkinProvider>
@@ -1918,7 +1934,9 @@ function FloatingCityGroup({
   onSelectIsland,
   onSelectBuilding,
   onHoverBuilding,
-  onBackgroundClick
+  onBackgroundClick,
+  timeScale = 1,
+  simClockRef
 }: {
   readonly capital: CityIslandView
   readonly satellites: readonly CityIslandView[]
@@ -1935,6 +1953,8 @@ function FloatingCityGroup({
   readonly onSelectBuilding: (islandId: string, buildingId: string) => void
   readonly onHoverBuilding: (buildingId: string | null) => void
   readonly onBackgroundClick: () => void
+  readonly timeScale?: number | undefined
+  readonly simClockRef?: MutableRefObject<number> | undefined
 }): React.JSX.Element {
   const hasSouthBridge = satellites.some(
     (sat) => sat.z > capital.radius * 0.5 && Math.abs(sat.x) < 2.2
@@ -1957,6 +1977,8 @@ function FloatingCityGroup({
         onSelectBuilding={onSelectBuilding}
         onHoverBuilding={onHoverBuilding}
         onBackgroundClick={onBackgroundClick}
+        timeScale={timeScale}
+        simClockRef={simClockRef}
       />
       {satellites.map((view) => (
         <IslandGroup3D
@@ -1971,6 +1993,8 @@ function FloatingCityGroup({
           onSelectBuilding={onSelectBuilding}
           onHoverBuilding={onHoverBuilding}
           onBackgroundClick={onBackgroundClick}
+          timeScale={timeScale}
+          simClockRef={simClockRef}
         />
       ))}
     </group>

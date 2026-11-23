@@ -167,6 +167,7 @@ export function StudioApp(): React.JSX.Element {
   const [satelliteCount, setSatelliteCount] = useState(initial.satelliteCount)
   const [rescanTick, setRescanTick] = useState(0)
   const [panelOpen, setPanelOpen] = useState(initial.panelOpen)
+  const [timeScale, setTimeScale] = useState<1 | 10 | 100>(1)
 
   useEffect(() => {
     try {
@@ -257,6 +258,20 @@ export function StudioApp(): React.JSX.Element {
       >
         {panelOpen ? '×' : 'Пульт'}
       </button>
+
+      <div className="hive-studio__speed" role="group" aria-label="Скорость симуляции">
+        {([1, 10, 100] as const).map((speed) => (
+          <button
+            key={speed}
+            type="button"
+            className={`hive-studio__speed-btn${timeScale === speed ? ' hive-studio__speed-btn--active' : ''}`}
+            aria-pressed={timeScale === speed}
+            onClick={() => setTimeScale(speed)}
+          >
+            x{speed}
+          </button>
+        ))}
+      </div>
 
       {panelOpen ? (
       <aside className="hive-studio__panel" aria-label="Пульт Hive Studio">
@@ -383,6 +398,7 @@ export function StudioApp(): React.JSX.Element {
           queenOptimized={queenOptimized}
           cityMap={cityMap}
           activeAgents={activeAgentHints}
+          timeScale={timeScale}
         />
       </main>
     </div>
