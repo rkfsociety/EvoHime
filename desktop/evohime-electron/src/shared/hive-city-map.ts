@@ -590,8 +590,7 @@ function buildIslandView(
 
   if (reserveCenter && quarter.length > 0) {
     // Радиальная застройка столицы: кольца кварталов вокруг внутреннего
-    // двора Королевы. Каждое следующее кольцо повёрнуто, поэтому застройка
-    // читается как упорядоченные «звёздные» ряды, а не смятая сетка.
+    // двора Королевы (вид сверху, без слепых зон и сдвигов).
     const ringStart = CAPITAL_TOWER_INNER_RADIUS + 1.2
     const ringStep = 3.2
     let ringIndex = 0
@@ -599,22 +598,15 @@ function buildIslandView(
     let ringRadius = ringStart
     for (const building of quarter) {
       const seed = `${island.id}/${building.id}`
-      const capacity = Math.max(8, Math.floor((2 * Math.PI * ringRadius) / ringStep))
+      const capacity = Math.max(8, Math.floor((2 * Math.PI * ringRadius) / 3.5))
       const baseAngle =
         (2 * Math.PI * indexOnRing) / capacity + ringIndex * (Math.PI / capacity)
-      const jitterAngle = (mixSeed(seed, 3) - 0.5) * (2 * Math.PI / capacity) * 0.16
-      const jitterRadius = (mixSeed(seed, 4) - 0.5) * 0.24
-      let angle = baseAngle + jitterAngle
+      const jitterAngle = (mixSeed(seed, 3) - 0.5) * (2 * Math.PI / capacity) * 0.04
+      const jitterRadius = (mixSeed(seed, 4) - 0.5) * 0.1
+      const angle = baseAngle + jitterAngle
       const radiusOnRing = ringRadius + jitterRadius
-      let bx = Math.cos(angle) * radiusOnRing
-      let bz = Math.sin(angle) * radiusOnRing
-      // Выводим здания из узкой «слепой зоны» строго за башней Королевы (-Z).
-      if (bz < 0 && Math.abs(bx) < 2.2) {
-        const pushDir = bx >= 0 ? 1 : -1
-        angle += pushDir * 0.26
-        bx = Math.cos(angle) * radiusOnRing
-        bz = Math.sin(angle) * radiusOnRing
-      }
+      const bx = Math.cos(angle) * radiusOnRing
+      const bz = Math.sin(angle) * radiusOnRing
       buildings.push({
         building,
         x: bx,

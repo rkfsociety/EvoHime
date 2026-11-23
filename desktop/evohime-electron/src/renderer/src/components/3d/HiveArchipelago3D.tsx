@@ -5,7 +5,6 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
   type ReactNode
 } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
@@ -28,16 +27,14 @@ import type { HiveCityHouseLot } from './HiveCityScene'
 /**
  * WebGL-архипелаг на `three` + `@react-three/fiber` (план 199.3).
  *
- * Камера фиксированная изометрическая (угол не вращается): фокус — это
+ * Камера фиксированная — строго вид сверху (ортокамера): фокус — это
  * плавный перенос цели взгляда и зум ортокамеры. Все раскладки приходят из
  * общего детерминированного билдера, как и в SVG-режиме. Геометрии,
  * материалы и CanvasTexture явно освобождаются (`dispose`) при размонтировании.
  */
 
-/** Fixed front-isometric camera offset aligned with +Z so top/bottom hex edges stay horizontal. */
-const CAMERA_OFFSET = new THREE.Vector3(0, 34, 42)
-/** Top-down camera offset (small Z offset keeps X/Z axes strictly aligned). */
-const TOP_CAMERA_OFFSET = new THREE.Vector3(0, 56, 0.35)
+/** Top-down camera offset (tiny Z offset keeps X/Z axes strictly aligned so top/bottom hex edges stay horizontal). */
+const TOP_CAMERA_OFFSET = new THREE.Vector3(0, 56, 0.01)
 
 const OVERVIEW_ZOOM_SOLO = 22
 const OVERVIEW_ZOOM_ARCHIPELAGO = 14
@@ -586,6 +583,80 @@ function LabelSprite3D({
 }
 
 /**
+ * Плоская надпись на поверхности земли/сектора (лежит в плоскости XZ,
+ * ориентирована вдоль сектора и никогда не перекрывает дома и дороги сверху).
+ */
+function GroundLabel3D({
+  text,
+  subtitle,
+  accentColor,
+  position,
+  size,
+  rotationZ = 0,
+  fontSize = 26
+}: {
+  text: string
+  subtitle?: string | undefined
+  accentColor: string
+  position: readonly [number, number, number]
+  size: readonly [number, number]
+  rotationZ?: number
+  fontSize?: number
+}) {
+  const texture = useMemo(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 512
+    canvas.height = subtitle ? 128 : 96
+    const context = canvas.getContext('2d')
+    if (context) {
+      const radius = 18
+      context.fillStyle = 'rgba(10, 14, 28, 0.78)'
+      if (typeof context.roundRect === 'function') {
+        context.beginPath()
+        context.roundRect(4, 4, canvas.width - 8, canvas.height - 8, radius)
+        context.fill()
+        context.strokeStyle = accentColor
+        context.lineWidth = 3
+        context.stroke()
+      } else {
+        context.fillRect(4, 4, canvas.width - 8, canvas.height - 8)
+      }
+
+      context.fillStyle = '#f2f6ff'
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      let px = fontSize
+      context.font = `700 ${px}px system-ui, -apple-system, sans-serif`
+      const maxWidth = canvas.width - 40
+      while (px > 16 && context.measureText(text).width > maxWidth) {
+        px -= 2
+        context.font = `700 ${px}px system-ui, -apple-system, sans-serif`
+      }
+      const titleY = subtitle ? canvas.height * 0.36 : canvas.height * 0.52
+      context.fillText(text, canvas.width / 2, titleY, maxWidth)
+
+      if (subtitle) {
+        context.fillStyle = '#a7bce8'
+        context.font = '500 22px system-ui, -apple-system, sans-serif'
+        context.fillText(subtitle, canvas.width / 2, canvas.height * 0.73, maxWidth)
+      }
+    }
+    const created = new THREE.CanvasTexture(canvas)
+    created.colorSpace = THREE.SRGBColorSpace
+    return created
+  }, [text, subtitle, accentColor, fontSize])
+
+  useEffect(() => () => texture.dispose(), [texture])
+
+  return (
+    <mesh position={[position[0], position[1], position[2]]} rotation={[-Math.PI / 2, 0, rotationZ]}>
+      <planeGeometry args={[size[0], size[1]]} />
+      <meshBasicMaterial map={texture} transparent depthWrite={false} />
+    </mesh>
+  )
+}
+
+/**
  * Световые мосты между Столицей и Спутниками с двусторонними вытянутыми
  * импульсами информации, ориентированными по касательной к дуге.
  */
@@ -935,7 +1006,7 @@ function IslandTowers({
   )
 }
 
-/** Табличка названия острова над передним краем плиты. */
+/** Плоская табличка названия острова у передней грани плиты. */
 function IslandNameplate({ view }: { view: CityIslandView }) {
   const hue = displayIslandHue(view.island.id, view.island.role)
   const accent = `hsl(${hue}, 78%, 64%)`
@@ -944,13 +1015,13 @@ function IslandNameplate({ view }: { view: CityIslandView }) {
       ? 'Недоступен'
       : `${view.buildings.length} мод. · ${view.island.total_files} ф.`
   return (
-    <LabelSprite3D
+    <GroundLabel3D
       text={view.island.name}
       subtitle={subtitle}
       accentColor={accent}
-      position={[view.x, 2.8, view.z + view.radius + 2.8]}
-      scale={[6.2, 1.62, 1]}
-      fontSize={26}
+      position={[view.x, 0.025, view.z + view.radius + 0.95]}
+      size={[4.8, 1.2]}
+      fontSize={34}
     />
   )
 }
@@ -1834,6 +1905,49 @@ function QueenRoads3D({
       <mesh position={[view.x, 0.036, view.z]} rotation={[Math.PI / 2, 0, 0]} material={ringLineMaterial}>
         <torusGeometry args={[innerBoulevardR, 0.03, 6, 72]} />
       </mesh>
+      {/* Чистый перекрёсток на въезде в Цитадель Королевы (убирает внутренний бордюр поперёк въезда). */}
+      <mesh
+        position={[
+          view.x + Math.cos(QUEEN_GATE_ANGLE) * (innerBoulevardR - 0.22),
+          0.037,
+          view.z + Math.sin(QUEEN_GATE_ANGLE) * (innerBoulevardR - 0.22)
+        ]}
+        rotation={[-Math.PI / 2, 0, -QUEEN_GATE_ANGLE + Math.PI / 2]}
+        material={skin.roadBed}
+      >
+        <planeGeometry args={[0.58, 0.44]} />
+      </mesh>
+      {/* Чистые Т-образные стыки съездов домов с бордюрами колец. */}
+      {houseAngles.map((angle, idx) => {
+        const backExitR = ringRadius + 0.54
+        const mainRingR = Math.max(backExitR + 0.25, 6.0)
+        return (
+          <group key={`junction-patch-${idx}`}>
+            <mesh
+              position={[
+                view.x + Math.cos(angle) * (innerBoulevardR + 0.41),
+                0.037,
+                view.z + Math.sin(angle) * (innerBoulevardR + 0.41)
+              ]}
+              rotation={[-Math.PI / 2, 0, -angle + Math.PI / 2]}
+              material={skin.roadBed}
+            >
+              <planeGeometry args={[0.42, 0.16]} />
+            </mesh>
+            <mesh
+              position={[
+                view.x + Math.cos(angle) * (mainRingR - 0.24),
+                0.037,
+                view.z + Math.sin(angle) * (mainRingR - 0.24)
+              ]}
+              rotation={[-Math.PI / 2, 0, -angle + Math.PI / 2]}
+              material={skin.roadBed}
+            >
+              <planeGeometry args={[0.38, 0.16]} />
+            </mesh>
+          </group>
+        )
+      })}
 
       {/* Машины в очереди и на выезде. */}
       <instancedMesh
@@ -2037,12 +2151,10 @@ function AgentModuleCouriers3D({
 /** Магистрали между зданиями модулей: цветные трассы зависимостей/IPC с направленными пакетами. */
 function ModuleRoads3D({
   view,
-  skin,
   highlightedBuildingId,
   paused
 }: {
   view: CityIslandView
-  skin: CitySkin
   highlightedBuildingId: string | null
   paused: boolean
 }) {
@@ -2198,38 +2310,7 @@ function ModuleRoads3D({
 
   return (
     <group>
-      {roads.map((road, index) => {
-        const isLit =
-          highlightedBuildingId !== null &&
-          (road.fromId === highlightedBuildingId || road.toId === highlightedBuildingId)
-        const mat = isLit
-          ? lineMaterials.highlighted
-          : road.color === '#f0c45a'
-            ? lineMaterials.ipc
-            : road.color === '#a78bfa'
-              ? lineMaterials.runtime
-              : lineMaterials.dependency
-        return (
-          <group key={`module-road-${index}`}>
-            <RoadSegment3D
-              from={[view.x + Math.cos(road.fromAngle) * road.fromEntryR, view.z + Math.sin(road.fromAngle) * road.fromEntryR]}
-              to={[view.x + Math.cos(road.fromAngle) * road.ringR, view.z + Math.sin(road.fromAngle) * road.ringR]}
-              bedMaterial={skin.roadBed}
-              lineMaterial={mat}
-              width={0.36}
-              y={0.018}
-            />
-            <RoadSegment3D
-              from={[view.x + Math.cos(road.toAngle) * road.ringR, view.z + Math.sin(road.toAngle) * road.ringR]}
-              to={[view.x + Math.cos(road.toAngle) * road.toEntryR, view.z + Math.sin(road.toAngle) * road.toEntryR]}
-              bedMaterial={skin.roadBed}
-              lineMaterial={mat}
-              width={0.36}
-              y={0.018}
-            />
-          </group>
-        )
-      })}
+      {/* Импульсы межмодульного трафика двигаются строго по готовой дорожной сети CityStreets3D без дублирования полотен. */}
       <instancedMesh
         ref={meshRef}
         args={[undefined, pulseMaterial, Math.max(1, roads.length)]}
@@ -2461,7 +2542,7 @@ function DepartmentHouses3D({
     [houseMaterials]
   )
 
-  // Одна аккуратная подпись на каждый департамент (над центральным домом его сектора).
+  // Одна плоская надпись на каждый департамент строго на плите внутри его сектора.
   const sectorLabels = useMemo(() => {
     const groups = new Map<string, { label: string; accent: string; slots: number[]; activeCount: number }>()
     for (const lot of lots) {
@@ -2480,17 +2561,26 @@ function DepartmentHouses3D({
       }
     }
     const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
+    const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
+    const labelR = Math.max(2.38, innerBoulevardR - 0.72)
     const total = Math.max(1, lots[0]?.total ?? lots.length)
-    return Array.from(groups.entries()).map(([key, info], index) => {
-      const midSlot = info.slots[Math.floor(info.slots.length / 2)] ?? 0
-      const angle = capitalHouseAngle(midSlot, total)
+    return Array.from(groups.entries()).map(([key, info]) => {
+      const minSlot = Math.min(...info.slots)
+      const maxSlot = Math.max(...info.slots)
+      let angle = capitalHouseAngle((minSlot + maxSlot) / 2, total)
+      // Если дорога ворот Королевы пересекает середину этого сектора, смещаем табличку в свободную часть сектора.
+      if (angularDistance(angle, QUEEN_GATE_ANGLE) < 0.28) {
+        angle = QUEEN_GATE_ANGLE - 0.34
+      }
+      const rotZ = Math.sin(angle) < 0 ? -angle - Math.PI / 2 : Math.PI / 2 - angle
       return {
         key,
         label: info.label,
         accent: info.accent,
-        x: view.x + Math.cos(angle) * (ringRadius + 0.65),
-        y: index % 2 === 0 ? 1.85 : 2.45,
-        z: view.z + Math.sin(angle) * (ringRadius + 0.65)
+        x: view.x + Math.cos(angle) * labelR,
+        y: 0.02,
+        z: view.z + Math.sin(angle) * labelR,
+        rotZ
       }
     })
   }, [lots, view.x, view.z])
@@ -2593,13 +2683,14 @@ function DepartmentHouses3D({
         />
       ))}
       {sectorLabels.map((sector) => (
-        <LabelSprite3D
+        <GroundLabel3D
           key={`dept-label-${sector.key}`}
           text={sector.label}
           accentColor={sector.accent}
           position={[sector.x, sector.y, sector.z]}
-          scale={[2.25, 0.54, 1]}
-          fontSize={22}
+          size={[1.38, 0.30]}
+          rotationZ={sector.rotZ}
+          fontSize={36}
         />
       ))}
     </group>
@@ -2681,22 +2772,19 @@ function QueenTower3D({ view, skin, paused }: { view: CityIslandView; skin: City
   )
 }
 
-/** Fixed-angle rig: pans the look target, lerps ortho zoom and switches iso/top-down. */
+/** Fixed top-down rig: pans the look target and lerps ortho zoom. */
 function CameraRig({
   focus,
   overviewZoom,
-  topView,
   paused
 }: {
   focus: { readonly x: number; readonly z: number } | null
   overviewZoom: number
-  topView: boolean
   paused: boolean
 }) {
   const { camera, gl } = useThree()
   const look = useRef(new THREE.Vector3(0, 0, 0))
   const desired = useRef(new THREE.Vector3(0, 0, 0))
-  const currentOffset = useRef(CAMERA_OFFSET.clone())
   const desiredZoom = useRef(overviewZoom)
 
   useEffect(() => {
@@ -2723,11 +2811,7 @@ function CameraRig({
   useFrame((_, delta) => {
     const factor = paused ? 1 : 1 - Math.exp(-7 * Math.min(delta, 0.1))
     look.current.lerp(desired.current, factor)
-    currentOffset.current.lerp(topView ? TOP_CAMERA_OFFSET : CAMERA_OFFSET, factor)
-    if (topView && Math.abs(currentOffset.current.x) < 0.25) {
-      currentOffset.current.x = 0
-    }
-    camera.position.copy(look.current).add(currentOffset.current)
+    camera.position.copy(look.current).add(TOP_CAMERA_OFFSET)
     camera.lookAt(look.current)
     const ortho = camera as THREE.OrthographicCamera
     if (typeof ortho.zoom === 'number') {
@@ -2806,7 +2890,6 @@ function IslandGroup3D({
       {/* Дороги под застройкой: связи модулей, двор Королевы и курьеры от агентов к модулям. */}
       <ModuleRoads3D
         view={view}
-        skin={skin}
         highlightedBuildingId={highlightedBuilding}
         paused={paused}
       />
@@ -2878,7 +2961,6 @@ export function HiveArchipelago3D({
   onBackgroundClick,
   onContextLost
 }: HiveArchipelago3DProps): React.JSX.Element {
-  const [topView, setTopView] = useState(false)
   const visibleSatellites = satellites.slice(0, CITY_MAP_MAX_SATELLITES)
   const focus = useMemo(() => {
     if (selectedIslandId === capital.island.id) return { x: 0, z: 0 }
@@ -2904,7 +2986,7 @@ export function HiveArchipelago3D({
       <Canvas
         orthographic
         camera={{
-          position: CAMERA_OFFSET.toArray(),
+          position: TOP_CAMERA_OFFSET.toArray(),
           zoom: overviewZoom,
           near: 0.1,
           far: 600
@@ -2926,7 +3008,7 @@ export function HiveArchipelago3D({
         <directionalLight position={[26, 40, 18]} intensity={1.25} color="#eef3ff" />
         <directionalLight position={[-22, 18, -20]} intensity={0.45} color="#78a2ff" />
         <pointLight position={[0, 12, 0]} intensity={55} distance={60} decay={1.5} color="#ffd98a" />
-        <CameraRig focus={focus} overviewZoom={overviewZoom} topView={topView} paused={paused} />
+        <CameraRig focus={focus} overviewZoom={overviewZoom} paused={paused} />
         <Starfield />
 
         <CitySkinProvider>
@@ -2948,28 +3030,6 @@ export function HiveArchipelago3D({
           <ConnectingBridges satellites={visibleSatellites} paused={paused} />
         </CitySkinProvider>
       </Canvas>
-      <button
-        type="button"
-        data-testid="hive-archipelago-view-toggle"
-        aria-pressed={topView}
-        onClick={() => setTopView((value) => !value)}
-        style={{
-          position: 'absolute',
-          right: '16px',
-          bottom: '16px',
-          zIndex: 25,
-          cursor: 'pointer',
-          padding: '6px 12px',
-          borderRadius: '999px',
-          border: '1px solid rgba(141, 130, 232, 0.42)',
-          background: topView ? 'rgba(141, 130, 232, 0.28)' : 'rgba(10, 10, 20, 0.72)',
-          color: '#e6e4f2',
-          fontSize: '12px',
-          backdropFilter: 'blur(8px)'
-        }}
-      >
-        {topView ? 'Изометрия' : 'Вид сверху'}
-      </button>
     </div>
   )
 }
