@@ -615,7 +615,7 @@ export function isVehicleAheadBlocked(
       if (dist < minGap && strictlyAhead && cross < 0.22) {
         return true
       }
-    } else if (sameDir > -0.85) {
+    } else if (sameDir > -0.55) {
       if (selfPriority === 'driveway' && otherPriority === 'main') {
         // ПДД РФ п. 8.3: выезд с прилегающей территории уступает потоку на главной дороге.
         if (dist < 0.95 && dot > -0.15) {

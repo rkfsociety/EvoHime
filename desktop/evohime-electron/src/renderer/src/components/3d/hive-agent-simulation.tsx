@@ -713,7 +713,7 @@ export function QueenRoads3D({
                 index,
                 cars,
                 0.56,
-                car.progress < 0.08 || car.progress > 0.92 ? 'driveway' : 'main'
+                car.progress > 0.9 ? 'driveway' : 'main'
               )
             if (!aheadBlocked) {
               const nextP = car.progress + dt * (HIVE_CAR_SPEED / queenOutPath.totalLength)
@@ -802,7 +802,7 @@ export function QueenRoads3D({
                 index,
                 cars,
                 0.56,
-                car.progress < 0.08 || car.progress > 0.92 ? 'driveway' : 'main'
+                car.progress > 0.9 ? 'driveway' : 'main'
               )
             if (!aheadBlocked) {
               const nextP = car.progress + dt * (HIVE_CAR_SPEED / modOutPath.totalLength)
@@ -913,7 +913,7 @@ export function QueenRoads3D({
                 index,
                 cars,
                 0.56,
-                car.progress < 0.08 || car.progress > 0.92 ? 'driveway' : 'main'
+                car.progress > 0.9 ? 'driveway' : 'main'
               )
             if (!aheadBlocked) {
               const nextP = car.progress + dt * (HIVE_CAR_SPEED / modInPath.totalLength)
@@ -1392,8 +1392,10 @@ export function QueenRoads3D({
       car.lastDirX = dirX
       car.lastDirZ = dirZ
       car.roadPriority =
-        (car.phase === 'to_module' || car.phase === 'from_module') &&
-        (car.progress < 0.08 || car.progress > 0.92)
+        (car.phase === 'to_ring' && car.progress <= RING_ENTRY_STOP_PROGRESS) ||
+        (car.phase === 'delivering' && car.progress > 0.9) ||
+        ((car.phase === 'to_module' || car.phase === 'from_module') &&
+          (car.progress < 0.08 || car.progress > 0.92))
           ? 'driveway'
           : 'main'
       })
