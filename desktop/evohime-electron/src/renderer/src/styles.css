@@ -7453,6 +7453,8 @@ body {
   --border: rgb(255 255 255 / 12%);
   --border-strong: rgb(141 130 232 / 50%);
   position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   flex: 1 1 auto;
   min-height: 0;
   border-radius: 16px;
@@ -7466,7 +7468,12 @@ body {
 .hive-stage__departments {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.hive-stage__departments > * {
+  pointer-events: auto;
 }
 
 /* Полноэкранная 2.5D-сцена города Улья (HiveCityScene). */
@@ -7799,7 +7806,7 @@ body {
 .hive-city-scene__queen-anchor {
   position: absolute;
   left: 18px;
-  top: 18px;
+  top: clamp(132px, 20%, 190px);
   z-index: 4;
   pointer-events: none;
 }
@@ -7914,11 +7921,12 @@ body {
 /* Верхний парящий HUD. */
 
 .hive-hud-top {
-  position: absolute;
-  top: 12px;
-  left: 14px;
-  right: 14px;
+  position: relative;
+  grid-row: 1;
+  grid-column: 1;
   z-index: 5;
+  align-self: start;
+  margin: 12px 14px 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -7976,6 +7984,8 @@ body {
 .hive-hud-top__right {
   display: grid;
   justify-items: end;
+  width: min(334px, 42%);
+  min-width: 0;
   gap: 8px;
   pointer-events: none;
 }
@@ -8051,7 +8061,8 @@ body {
   pointer-events: auto;
   display: grid;
   gap: 8px;
-  width: min(334px, 100%);
+  width: 100%;
+  min-width: 0;
   padding: 10px 12px;
   border: 1px solid var(--hive-hud-border);
   border-radius: 14px;
@@ -8072,11 +8083,13 @@ body {
 }
 
 .hive-hud-alerts {
-  position: absolute;
-  top: 114px;
-  left: 14px;
-  right: 364px;
+  position: relative;
+  grid-row: 1;
+  grid-column: 1;
   z-index: 7;
+  align-self: start;
+  width: min(560px, calc(100% - 28px));
+  margin: 132px 0 0 14px;
   display: grid;
   gap: 8px;
   pointer-events: none;
@@ -8089,15 +8102,16 @@ body {
 /* Нижний стеклянный dock-бар (4 карточки). */
 
 .hive-dock {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
+  position: relative;
+  grid-row: 2;
+  grid-column: 1;
   z-index: 5;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1.25fr) minmax(195px, 0.78fr);
   gap: 10px;
   align-items: stretch;
+  margin: 0 12px 12px;
+  min-height: 0;
   pointer-events: none;
 }
 
@@ -8107,7 +8121,8 @@ body {
   flex-direction: column;
   gap: 7px;
   min-width: 0;
-  max-height: 186px;
+  min-height: 150px;
+  max-height: min(230px, 28vh);
   padding: 10px 12px;
   border: 1px solid var(--hive-hud-border);
   border-radius: 14px;
@@ -8150,11 +8165,9 @@ body {
 }
 
 .hive-dock__card--logs-expanded {
-  position: relative;
   z-index: 12;
-  max-height: 360px;
-  align-self: end;
-  margin-top: -174px;
+  max-height: min(360px, 42vh);
+  min-height: 0;
   background: var(--hive-hud-bg-strong);
 }
 
@@ -9756,6 +9769,70 @@ body {
   }
 }
 
+@container (max-width: 1100px) {
+  .hive-stage {
+    overflow-y: auto;
+    grid-template-rows: auto auto;
+    align-content: start;
+    scrollbar-width: thin;
+  }
+
+  .hive-stage__departments {
+    position: relative;
+    grid-row: 2;
+    grid-column: 1;
+    min-height: 420px;
+  }
+
+  .hive-hud-top {
+    grid-row: 1;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .hive-hud-top__right {
+    width: min(334px, 100%);
+    justify-items: stretch;
+    margin-left: auto;
+  }
+
+  .hive-hud-alerts {
+    grid-row: 2;
+    margin: 8px 14px 0;
+  }
+
+  .hive-dock {
+    grid-row: 3;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 8px;
+  }
+
+  .hive-dock__card {
+    max-height: 280px;
+  }
+}
+
+@container (max-height: 720px) and (min-width: 1101px) {
+  .hive-stage {
+    overflow-y: auto;
+    grid-template-rows: minmax(180px, 1fr) auto;
+    scrollbar-width: thin;
+  }
+
+  .hive-dock {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 8px;
+  }
+
+  .hive-dock__card {
+    max-height: 260px;
+  }
+
+  .hive-hud-alerts {
+    margin-top: 132px;
+  }
+}
+
 @media (max-width: 900px) {
   .hive-approval {
     grid-template-columns: auto minmax(0, 1fr);
@@ -9767,6 +9844,16 @@ body {
 
   .hive-approval__actions {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-height: 720px) and (min-width: 901px) {
+  .hive-console {
+    min-height: 0;
+  }
+
+  .hive-stage {
+    min-height: 0;
   }
 }
 
