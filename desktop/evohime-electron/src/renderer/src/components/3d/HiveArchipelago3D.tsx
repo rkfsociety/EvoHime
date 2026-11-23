@@ -216,6 +216,94 @@ function IslandGround({
   )
 }
 
+interface BridgeRoadSpec {
+  readonly islandId: string
+  readonly phase: CityIslandView['phase']
+  readonly angle: number
+  readonly from: readonly [number, number]
+  readonly to: readonly [number, number]
+  readonly junctionCap: readonly [number, number]
+  readonly junctionSat: readonly [number, number]
+  readonly deckCenter: readonly [number, number]
+  readonly deckLen: number
+  readonly color: string
+}
+
+function BridgeSpan3D({
+  road,
+  skin,
+  deckMaterial,
+  centerLineMaterial,
+  paused
+}: {
+  road: BridgeRoadSpec
+  skin: CitySkin
+  deckMaterial: THREE.Material
+  centerLineMaterial: THREE.Material
+  paused: boolean
+}) {
+  const groupRef = useRef<THREE.Group>(null)
+  const scaleRef = useRef<number>(paused ? 1 : 0.04)
+
+  useLayoutEffect(() => {
+    const group = groupRef.current
+    if (!group) return
+    const init = paused ? 1 : 0.04
+    scaleRef.current = init
+    group.position.set(road.from[0], 0, road.from[1])
+    group.rotation.set(0, -road.angle, 0)
+    group.scale.set(init, 1, 1)
+    group.visible = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [road.islandId])
+
+  useFrame((_, delta) => {
+    const group = groupRef.current
+    if (!group) return
+    const target = road.phase === 'exiting' ? 0.02 : 1
+    const factor = paused ? 1 : 1 - Math.exp(-7.5 * Math.min(delta, 0.1))
+    const next = Math.max(0.02, scaleRef.current + (target - scaleRef.current) * factor)
+    scaleRef.current = next
+    group.position.set(road.from[0], 0, road.from[1])
+    group.rotation.set(0, -road.angle, 0)
+    group.scale.set(next, 1, 1)
+    group.visible = next > 0.03
+  })
+
+  const totalLen = Math.hypot(road.to[0] - road.from[0], road.to[1] - road.from[1])
+  const startR = Math.hypot(road.from[0], road.from[1])
+  const deckMidR = Math.hypot(road.deckCenter[0], road.deckCenter[1])
+  const localDeckX = Math.max(0, deckMidR - startR)
+
+  return (
+    <group ref={groupRef}>
+      <mesh position={[localDeckX, -0.09, 0]} material={deckMaterial}>
+        <boxGeometry args={[road.deckLen, 0.18, 1.16]} />
+      </mesh>
+      <mesh position={[localDeckX, 0.015, 0]}>
+        <boxGeometry args={[road.deckLen, 0.025, 0.98]} />
+        <meshBasicMaterial color={road.color} transparent opacity={0.45} />
+      </mesh>
+      <RoadSegment3D
+        from={[0, 0]}
+        to={[totalLen, 0]}
+        bedMaterial={skin.roadBed}
+        curbMaterial={skin.roadCurb}
+        lineMaterial={centerLineMaterial}
+        width={0.84}
+        lanes={4}
+        y={0.02}
+      />
+      <mesh position={[0, 0.032, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 2]} material={skin.roadBed}>
+        <planeGeometry args={[0.78, 0.08]} />
+      </mesh>
+      <mesh position={[totalLen, 0.032, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 2]} material={skin.roadBed}>
+        <planeGeometry args={[0.78, 0.08]} />
+      </mesh>
+    </group>
+  )
+}
+
 /**
  * Наземные 4-полосные магистрали между Столицей и Городами-спутниками.
  */
@@ -253,7 +341,7 @@ function ConnectingBridges({
     deckMaterial.dispose()
   }, [centerLineMaterial, deckMaterial])
 
-  const roadData = useMemo(() => {
+  const roadData = useMemo<readonly BridgeRoadSpec[]>(() => {
     const hexApothem = Math.cos(Math.PI / 6)
     const capOuterRingR = capital.radius * 0.78
     const capEdgeR = capital.radius * hexApothem
@@ -290,87 +378,19 @@ function ConnectingBridges({
       .filter((item): item is NonNullable<typeof item> => item !== null)
   }, [capital.radius, satellites])
 
-  const bridgeRefs = useRef<Map<string, THREE.Group>>(new Map())
-  const bridgeScalesRef = useRef<Map<string, number>>(new Map())
-
-  useFrame((_, delta) => {
-    const factor = paused ? 1 : 1 - Math.exp(-7.5 * Math.min(delta, 0.1))
-    for (const road of roadData) {
-      const grp = bridgeRefs.current.get(road.islandId)
-      if (!grp) continue
-      const target = road.phase === 'exiting' ? 0.02 : 1
-      const current = bridgeScalesRef.current.get(road.islandId) ?? (paused ? 1 : 0.04)
-      const next = Math.max(0.02, current + (target - current) * factor)
-      bridgeScalesRef.current.set(road.islandId, next)
-      const px = road.from[0]
-      const pz = road.from[1]
-      grp.position.set(px * (1 - next), 0, pz * (1 - next))
-      grp.scale.setScalar(next)
-      grp.visible = next > 0.03
-    }
-  })
-
   if (roadData.length === 0) return <></>
 
   return (
     <group>
       {roadData.map((road) => (
-        <group
+        <BridgeSpan3D
           key={`bridge-group-${road.islandId}`}
-          ref={(el) => {
-            if (el) {
-              bridgeRefs.current.set(road.islandId, el)
-              if (!bridgeScalesRef.current.has(road.islandId)) {
-                const init = paused ? 1 : 0.04
-                bridgeScalesRef.current.set(road.islandId, init)
-                el.position.set(road.from[0] * (1 - init), 0, road.from[1] * (1 - init))
-                el.scale.setScalar(init)
-              }
-            } else {
-              bridgeRefs.current.delete(road.islandId)
-              bridgeScalesRef.current.delete(road.islandId)
-            }
-          }}
-        >
-          <mesh
-            position={[road.deckCenter[0], -0.09, road.deckCenter[1]]}
-            rotation={[0, -road.angle, 0]}
-            material={deckMaterial}
-          >
-            <boxGeometry args={[road.deckLen, 0.18, 1.16]} />
-          </mesh>
-          <mesh
-            position={[road.deckCenter[0], 0.015, road.deckCenter[1]]}
-            rotation={[0, -road.angle, 0]}
-          >
-            <boxGeometry args={[road.deckLen, 0.025, 0.98]} />
-            <meshBasicMaterial color={road.color} transparent opacity={0.45} />
-          </mesh>
-          <RoadSegment3D
-            from={road.from}
-            to={road.to}
-            bedMaterial={skin.roadBed}
-            curbMaterial={skin.roadCurb}
-            lineMaterial={centerLineMaterial}
-            width={0.84}
-            lanes={4}
-            y={0.02}
-          />
-          <mesh
-            position={[road.junctionCap[0], 0.032, road.junctionCap[1]]}
-            rotation={[-Math.PI / 2, 0, -road.angle + Math.PI / 2]}
-            material={skin.roadBed}
-          >
-            <planeGeometry args={[0.78, 0.08]} />
-          </mesh>
-          <mesh
-            position={[road.junctionSat[0], 0.032, road.junctionSat[1]]}
-            rotation={[-Math.PI / 2, 0, -road.angle + Math.PI / 2]}
-            material={skin.roadBed}
-          >
-            <planeGeometry args={[0.78, 0.08]} />
-          </mesh>
-        </group>
+          road={road}
+          skin={skin}
+          deckMaterial={deckMaterial}
+          centerLineMaterial={centerLineMaterial}
+          paused={paused}
+        />
       ))}
     </group>
   )
@@ -1713,7 +1733,8 @@ function IslandGroup3D({
     group.position.set(view.x * (1 - initialScale), 0, view.z * (1 - initialScale))
     group.scale.setScalar(initialScale)
     group.visible = true
-  }, [view.island.id, view.island.role, view.x, view.z, paused])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.island.id])
 
   return (
     <group ref={groupRef}>
