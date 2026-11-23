@@ -479,8 +479,8 @@ export function QueenRoads3D({
           eval: (u) => {
             const r = bridgeStartR - u * (bridgeStartR - bridgeEndR)
             return {
-              x: view.x + Math.cos(QUEEN_GATE_ANGLE) * r - inBdz * bridgeLaneOffset,
-              z: view.z + Math.sin(QUEEN_GATE_ANGLE) * r + inBdx * bridgeLaneOffset,
+              x: view.x + Math.cos(connectorAngle) * r - inBdz * bridgeLaneOffset,
+              z: view.z + Math.sin(connectorAngle) * r + inBdx * bridgeLaneOffset,
               dx: inBdx,
               dz: inBdz
             }
