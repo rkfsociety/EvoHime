@@ -5,6 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { HiveCityMapSnapshot } from '../src/shared/hive-city-map'
 import { HiveCityScene, type HiveCityDepartmentPin } from '../src/renderer/src/components/3d'
+import {
+  QUEEN_GATE_ANGLE,
+  computeQueenGateStopAngle,
+  computeRingEntryStopProgress
+} from '../src/renderer/src/components/3d/HiveArchipelago3D'
 
 describe('HiveCityScene', () => {
   afterEach(() => {
@@ -337,6 +342,21 @@ describe('HiveCityScene — живой архипелаг (план 199.3)', () 
       expect(screen.getByTestId('hive-tower-sat-alpha/src/main.rs')).toBeTruthy()
     } finally {
       vi.useRealTimers()
+    }
+  })
+
+  it('keeps waiting cars strictly before intersection borders at queen gate and ring entries', () => {
+    for (const innerR of [2.9, 3.5, 4.4]) {
+      const stopAngle = computeQueenGateStopAngle(innerR)
+      // Полуширина дороги ворот (0.32) + полудлина машины (0.18) = 0.50 по дуге.
+      const frontBumperArc = (QUEEN_GATE_ANGLE - stopAngle) * innerR - 0.18
+      expect(frontBumperArc).toBeGreaterThan(0.32)
+
+      const homeEdgeR = innerR + 0.8
+      const stopProgress = computeRingEntryStopProgress(innerR, homeEdgeR)
+      const carCenterR = homeEdgeR - stopProgress * (homeEdgeR - innerR)
+      // Внешний бордюр кольца на innerR + 0.42; передний бампер (center - 0.18) должен оставаться снаружи.
+      expect(carCenterR - 0.18).toBeGreaterThan(innerR + 0.42)
     }
   })
 })

@@ -1332,7 +1332,29 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
   )
 }
 
-const QUEEN_GATE_ANGLE = Math.PI * 0.38
+export const QUEEN_GATE_ANGLE = Math.PI * 0.38
+
+export function computeQueenGateStopAngle(innerBoulevardR: number): number {
+  // Дорога ворот имеет ширину 0.64 (полуширина 0.32), длина машины — 0.36 (полудлина 0.18).
+  // Стоп-линия вынесена до бордюра дороги ворот, чтобы передний бампер не торчал на перекрёстке.
+  const gateClearanceArc = (0.32 + 0.18 + 0.06) / Math.max(1.5, innerBoulevardR)
+  return QUEEN_GATE_ANGLE - gateClearanceArc
+}
+
+export function computeRingEntryStopProgress(innerBoulevardR: number, homeEdgeR: number): number {
+  const span = homeEdgeR - innerBoulevardR
+  if (span <= 0.02) return 0.2
+  // Внешний бордюр кольца проходит на innerBoulevardR + 0.42; стоп-линия — строго до него.
+  const stopR = Math.min(homeEdgeR - 0.02, innerBoulevardR + 0.42 + 0.18 + 0.04)
+  return Math.max(0.05, Math.min(0.88, (homeEdgeR - stopR) / span))
+}
+
+function angularDistance(a: number, b: number): number {
+  let d = a - b
+  while (d > Math.PI) d -= Math.PI * 2
+  while (d < -Math.PI) d += Math.PI * 2
+  return Math.abs(d)
+}
 const QUEEN_PROCESS_SEC = 1.15
 
 interface AgentCarSim {
@@ -1494,8 +1516,9 @@ function QueenRoads3D({
       gateLampRef.current.material = processingLotRef.current !== null ? gateSignalAmber : gateSignalGreen
     }
 
-    const MIN_CAR_ARC_GAP = 0.15
-    const GATE_STOP_ANGLE = QUEEN_GATE_ANGLE - 0.12
+    const MIN_CAR_ARC_GAP = Math.max(0.15, (0.36 + 0.14) / innerBoulevardR)
+    const GATE_STOP_ANGLE = computeQueenGateStopAngle(innerBoulevardR)
+    const RING_ENTRY_STOP_PROGRESS = computeRingEntryStopProgress(innerBoulevardR, homeEdgeR)
     const normalizeBehindGate = (a: number): number => {
       let res = a
       while (res > QUEEN_GATE_ANGLE) res -= Math.PI * 2
@@ -1584,19 +1607,44 @@ function QueenRoads3D({
           visible = false
         } else {
           const entryAngle = normalizeBehindGate(homeAngle)
-          // Проверяем, свободна ли внешняя полоса кольца перед вливанием со съезда.
-          const ringBlocked = cars.some((other, oIdx) => {
-            if (oIdx === index) return false
-            if (other.phase !== 'along_ring' && other.phase !== 'queued') return false
-            return Math.abs(other.curAngle - entryAngle) < MIN_CAR_ARC_GAP
-          })
-          if (car.progress < 0.92 || !ringBlocked) {
-            car.progress = Math.min(1, car.progress + dt * 1.4)
+          // Правила проезда перекрёстка: нельзя выезжать на кольцо, если перекрёсток занят,
+          // за ним сразу пробка или по внешним полосам кольца проезжает встречный/поперечный транспорт.
+          const nearGateBlocked =
+            entryAngle > GATE_STOP_ANGLE - MIN_CAR_ARC_GAP * 0.5 && processingLotRef.current !== null
+          const ringBlocked =
+            nearGateBlocked ||
+            cars.some((other, oIdx) => {
+              if (oIdx === index) return false
+              if (other.phase === 'along_ring' || other.phase === 'queued') {
+                return (
+                  other.curAngle >= entryAngle - MIN_CAR_ARC_GAP &&
+                  other.curAngle <= entryAngle + MIN_CAR_ARC_GAP * 1.65
+                )
+              }
+              if ((other.phase === 'delivering' || other.phase === 'returning_ring') && other.progress >= 0.25 && other.progress < 0.75) {
+                const otherHomeAngle = houseAngles[oIdx]
+                if (otherHomeAngle === undefined) return false
+                let otherBackArc = QUEEN_GATE_ANGLE - otherHomeAngle
+                while (otherBackArc < 0) otherBackArc += Math.PI * 2
+                while (otherBackArc >= Math.PI * 2) otherBackArc -= Math.PI * 2
+                const otherU = (other.progress - 0.25) / 0.5
+                const otherAngle = QUEEN_GATE_ANGLE - otherBackArc * otherU
+                return angularDistance(otherAngle, homeAngle) < MIN_CAR_ARC_GAP
+              }
+              return false
+            })
+          const nextProgress = car.progress + dt * 1.4
+          if (car.progress < RING_ENTRY_STOP_PROGRESS && ringBlocked) {
+            car.progress = Math.min(RING_ENTRY_STOP_PROGRESS, nextProgress)
+          } else if (!ringBlocked) {
+            car.progress = Math.min(1, nextProgress)
+          } else {
+            car.progress = Math.min(car.progress, RING_ENTRY_STOP_PROGRESS)
           }
           if (car.progress >= 1 && !ringBlocked) {
             car.phase = 'along_ring'
             car.progress = 0
-            car.curAngle = entryAngle
+            car.curAngle = Math.min(entryAngle, GATE_STOP_ANGLE)
           }
           const r = homeEdgeR - Math.min(1, car.progress) * (homeEdgeR - innerBoulevardR)
           dirX = -Math.cos(homeAngle)
@@ -1605,28 +1653,34 @@ function QueenRoads3D({
           z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
         }
       } else if (car.phase === 'along_ring' || car.phase === 'queued') {
-        // 4-полосное движение: транзитные/дальние машины едут по скоростной (+0.11) мимо пробки,
-        // а на подъезде к воротам перестраиваются в полосу очереди (+0.30) с соблюдением дистанции.
+        // 4-полосное движение: транзитные/дальние машины едут по скоростной (-0.11) мимо пробки,
+        // а на подъезде к воротам перестраиваются в полосу очереди (-0.30) с соблюдением дистанции.
         const isInQueueZone = car.phase === 'queued' || GATE_STOP_ANGLE - car.curAngle <= 0.65
         let maxAllowedAngle = GATE_STOP_ANGLE
-        if (isInQueueZone) {
-          for (let oIdx = 0; oIdx < cars.length; oIdx += 1) {
-            if (oIdx === index) continue
-            const other = cars[oIdx]
-            if (!other || (other.phase !== 'along_ring' && other.phase !== 'queued')) continue
-            if (other.curAngle > car.curAngle && GATE_STOP_ANGLE - other.curAngle <= 0.65) {
-              maxAllowedAngle = Math.min(maxAllowedAngle, other.curAngle - MIN_CAR_ARC_GAP)
-            }
+        let queuedAhead = false
+        for (let oIdx = 0; oIdx < cars.length; oIdx += 1) {
+          if (oIdx === index) continue
+          const other = cars[oIdx]
+          if (!other || (other.phase !== 'along_ring' && other.phase !== 'queued')) continue
+          if (other.curAngle <= car.curAngle) continue
+          const otherInQueueZone = other.phase === 'queued' || GATE_STOP_ANGLE - other.curAngle <= 0.65
+          if (isInQueueZone || otherInQueueZone || other.curAngle - car.curAngle < MIN_CAR_ARC_GAP * 2) {
+            maxAllowedAngle = Math.min(maxAllowedAngle, other.curAngle - MIN_CAR_ARC_GAP)
+            if (other.phase === 'queued') queuedAhead = true
           }
         }
         const nextAngle = Math.min(maxAllowedAngle, car.curAngle + dt * (isInQueueZone ? 0.85 : 1.15))
         car.curAngle = Math.max(car.curAngle, nextAngle)
-        if (car.phase === 'along_ring' && (car.curAngle >= GATE_STOP_ANGLE - 0.02 || (isInQueueZone && maxAllowedAngle - car.curAngle < 0.02))) {
+        if (
+          car.phase === 'along_ring' &&
+          (car.curAngle >= GATE_STOP_ANGLE - 0.02 ||
+            ((isInQueueZone || queuedAhead) && maxAllowedAngle - car.curAngle < 0.02))
+        ) {
           car.phase = 'queued'
           if (!queue.includes(index)) queue.push(index)
         }
         // Правостороннее движение (+angle): справа от водителя — внутренняя сторона (-0.30 полоса очереди, -0.11 скоростная).
-        const laneR = innerBoulevardR - (isInQueueZone ? 0.3 : 0.11)
+        const laneR = innerBoulevardR - (isInQueueZone || car.phase === 'queued' ? 0.3 : 0.11)
         x = view.x + Math.cos(car.curAngle) * laneR
         z = view.z + Math.sin(car.curAngle) * laneR
         dirX = -Math.sin(car.curAngle)
