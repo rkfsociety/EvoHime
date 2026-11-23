@@ -674,8 +674,10 @@ export function QueenRoads3D({
           const finishedIdx = processingLotRef.current.lotIndex
           const finishedCar = cars[finishedIdx]
           if (finishedCar) {
-            finishedCar.phase = 'returning_ring'
+            finishedCar.phase = 'cooldown'
             finishedCar.progress = 0
+            finishedCar.cooldown = 1.2 + (finishedIdx % 4) * 0.35
+            finishedCar.lastVisible = false
             finishedCar.curAngle = QUEEN_GATE_ANGLE
           }
           processingLotRef.current = null
@@ -807,8 +809,9 @@ export function QueenRoads3D({
         z = view.z + Math.sin(homeAngle) * homeGarageR + dirX * laneOffset
         car.cooldown -= dt
         if (car.cooldown <= 0) {
-          car.phase = routes.moduleSteps.length > 0 ? 'to_module' : 'to_ring'
+          car.phase = 'delivering'
           car.progress = 0
+          car.cooldown = 0
         }
       } else if (car.phase === 'to_module') {
         const modStep = routes.moduleSteps[car.moduleStep % Math.max(1, routes.moduleSteps.length)]
@@ -1425,8 +1428,9 @@ export function QueenRoads3D({
         z = view.z + Math.sin(homeAngle) * homeGarageR + dirX * laneOffset
         car.cooldown -= dt
         if (car.cooldown <= 0) {
-          car.phase = routes.moduleSteps.length > 0 ? 'to_module' : 'to_ring'
+          car.phase = 'delivering'
           car.progress = 0
+          car.cooldown = 0
         }
       }
 
