@@ -627,19 +627,17 @@ export function isVehicleAheadBlocked(
           return true
         }
       } else {
-        // Равные приоритеты: прогноз пересечения OBB на 0.25с / 0.50с + помеха справа (ПДД РФ п. 8.9).
+        // Равные приоритеты: ближний конфликт или короткий прогноз (0.18с, ~0.30м) + помеха справа (ПДД РФ п. 8.9).
         const nearConflict = dist < 0.54 && dot > 0.02 && cross < 0.28
         let predictedConflict = false
-        if (!nearConflict && dot > -0.1) {
-          for (const t of [0.25, 0.5] as const) {
-            const sx = x + dirX * HIVE_CAR_SPEED * t
-            const sz = z + dirZ * HIVE_CAR_SPEED * t
-            const ox = other.lastX + otherDirX * HIVE_CAR_SPEED * t
-            const oz = other.lastZ + otherDirZ * HIVE_CAR_SPEED * t
-            if (doCarBoxesOverlap(sx, sz, dirX, dirZ, ox, oz, otherDirX, otherDirZ)) {
-              predictedConflict = true
-              break
-            }
+        if (!nearConflict && dot > 0.02 && dist < 0.72) {
+          const t = 0.18
+          const sx = x + dirX * HIVE_CAR_SPEED * t
+          const sz = z + dirZ * HIVE_CAR_SPEED * t
+          const ox = other.lastX + otherDirX * HIVE_CAR_SPEED * t
+          const oz = other.lastZ + otherDirZ * HIVE_CAR_SPEED * t
+          if (doCarBoxesOverlap(sx, sz, dirX, dirZ, ox, oz, otherDirX, otherDirZ)) {
+            predictedConflict = true
           }
         }
         if (nearConflict || predictedConflict) {
