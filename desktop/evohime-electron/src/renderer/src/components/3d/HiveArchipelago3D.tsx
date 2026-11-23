@@ -194,12 +194,6 @@ function createFacadeSet(variant: number): FacadeSet {
   return { material, albedo, emissive }
 }
 
-const TRAFFIC_CYCLE_SEC = 6.0
-
-function isRadialTrafficGreen(time: number): boolean {
-  return (time % TRAFFIC_CYCLE_SEC) < TRAFFIC_CYCLE_SEC * 0.5
-}
-
 /** Shared per-canvas materials of the whole archipelago. */
 interface CitySkin {
   readonly facades: readonly FacadeSet[]
@@ -1073,7 +1067,7 @@ function RoadSegment3D({
  * Городская уличная сеть острова: кольцевые проспекты, радиальные авеню,
  * уличные фонари с тёплыми огнями и зелёные скверы/деревья на бульварах.
  */
-function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: CitySkin; paused: boolean }) {
+function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin }) {
   const isCapital = view.island.role === 'capital'
   const laneMaterial = useMemo(
     () =>
@@ -1085,8 +1079,6 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
       }),
     []
   )
-  const greenLightMaterial = useMemo(() => new THREE.MeshBasicMaterial({ color: '#4ade80' }), [])
-  const redLightMaterial = useMemo(() => new THREE.MeshBasicMaterial({ color: '#f87171' }), [])
   const lampPoleMaterial = useMemo(
     () => new THREE.MeshStandardMaterial({ color: '#1b2238', roughness: 0.7, metalness: 0.4 }),
     []
@@ -1111,13 +1103,11 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
   )
   useEffect(() => () => {
     laneMaterial.dispose()
-    greenLightMaterial.dispose()
-    redLightMaterial.dispose()
     lampPoleMaterial.dispose()
     lampBulbMaterial.dispose()
     treeTrunkMaterial.dispose()
     treeCrownMaterial.dispose()
-  }, [laneMaterial, greenLightMaterial, redLightMaterial, lampPoleMaterial, lampBulbMaterial, treeTrunkMaterial, treeCrownMaterial])
+  }, [laneMaterial, lampPoleMaterial, lampBulbMaterial, treeTrunkMaterial, treeCrownMaterial])
 
   const ringRadii = useMemo(() => {
     const outer = view.radius * 0.72
@@ -1306,47 +1296,6 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
     }
   }, [lampPositions, treePositions])
 
-  const radialSignalRef = useRef<THREE.InstancedMesh>(null)
-  const ringSignalRef = useRef<THREE.InstancedMesh>(null)
-  const signalPositions = useMemo(() => {
-    if (!isCapital) return []
-    const r = 6.0
-    return Array.from({ length: 4 }, (_, i) => {
-      const a = (i / 4) * Math.PI * 2 + Math.PI / 4
-      return [view.x + Math.cos(a) * r, view.z + Math.sin(a) * r] as const
-    })
-  }, [isCapital, view.x, view.z])
-
-  useFrame((state) => {
-    const t = paused ? 0 : state.clock.elapsedTime
-    const radialGreen = isRadialTrafficGreen(t)
-    if (radialSignalRef.current) {
-      radialSignalRef.current.material = radialGreen ? greenLightMaterial : redLightMaterial
-    }
-    if (ringSignalRef.current) {
-      ringSignalRef.current.material = radialGreen ? redLightMaterial : greenLightMaterial
-    }
-  })
-
-  useLayoutEffect(() => {
-    const dummy = FRAME_DUMMY
-    if (radialSignalRef.current && ringSignalRef.current && signalPositions.length > 0) {
-      signalPositions.forEach(([sx, sz], i) => {
-        dummy.position.set(sx - 0.38, 0.56, sz)
-        dummy.rotation.set(0, 0, 0)
-        dummy.scale.set(1, 1, 1)
-        dummy.updateMatrix()
-        radialSignalRef.current?.setMatrixAt(i, dummy.matrix)
-
-        dummy.position.set(sx + 0.38, 0.56, sz)
-        dummy.updateMatrix()
-        ringSignalRef.current?.setMatrixAt(i, dummy.matrix)
-      })
-      radialSignalRef.current.instanceMatrix.needsUpdate = true
-      ringSignalRef.current.instanceMatrix.needsUpdate = true
-    }
-  }, [signalPositions])
-
   return (
     <group>
       {/* Двухполосные кольцевые проспекты с бордюрами и осевой разметкой. */}
@@ -1428,17 +1377,6 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
           </mesh>
         </group>
       ))}
-      {/* Светофоры регулировки трафика на главных перекрёстках. */}
-      {signalPositions.length > 0 ? (
-        <>
-          <instancedMesh ref={radialSignalRef} args={[undefined, greenLightMaterial, signalPositions.length]}>
-            <sphereGeometry args={[0.1, 8, 8]} />
-          </instancedMesh>
-          <instancedMesh ref={ringSignalRef} args={[undefined, redLightMaterial, signalPositions.length]}>
-            <sphereGeometry args={[0.1, 8, 8]} />
-          </instancedMesh>
-        </>
-      ) : null}
       {/* Уличные фонари. */}
       {lampPositions.length > 0 ? (
         <>
@@ -3252,7 +3190,7 @@ function IslandGroup3D({
     <group ref={groupRef}>
       <IslandGround view={view} selected={selectedIsland} onSelect={() => onSelectIsland(view.island.id)} />
       {/* Уличная сеть города: проспекты, фонари, скверы, светофоры. */}
-      <CityStreets3D view={view} skin={skin} paused={paused} />
+      <CityStreets3D view={view} skin={skin} />
       {departmentHouses !== undefined && departmentHouses.length > 0 ? (
         <>
           <QueenRoads3D
