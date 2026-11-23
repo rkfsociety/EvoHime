@@ -1587,6 +1587,7 @@ interface AgentCarSim {
   progress: number
   curAngle: number
   cooldown: number
+  curLaneOffset: number
   turnStartAngle?: number
 }
 
@@ -1684,7 +1685,8 @@ function QueenRoads3D({
       phase: lot.active ? 'delivering' : 'cooldown',
       progress: 0,
       curAngle: QUEEN_GATE_ANGLE,
-      cooldown: (idx % 6) * 0.28
+      cooldown: (idx % 6) * 0.28,
+      curLaneOffset: 0.11
     }))
     queueRef.current = []
     processingLotRef.current = null
@@ -1775,8 +1777,12 @@ function QueenRoads3D({
       const gdz = Math.sin(QUEEN_GATE_ANGLE)
       const hdx = Math.cos(homeAngle)
       const hdz = Math.sin(homeAngle)
-      const laneRForU = (u: number): number =>
-        innerBoulevardR + (backArc > Math.PI * 0.45 && u < 0.8 ? 0.11 : 0.3)
+      const laneRForU = (u: number): number => {
+        if (backArc <= Math.PI * 0.45) return innerBoulevardR + 0.3
+        const s = Math.min(1, Math.max(0, (u - 0.65) / 0.17))
+        const smooth = s * s * (3 - 2 * s)
+        return innerBoulevardR + 0.11 + smooth * 0.19
+      }
 
       if (t < 0.17) {
         const r = gateEntryR + (t / 0.25) * (innerBoulevardR - gateEntryR)
@@ -1931,11 +1937,13 @@ function QueenRoads3D({
           }
           const turnLeadArc = Math.min(0.08, Math.max(0.02, (GATE_STOP_ANGLE - entryAngle) * 0.35))
           const targetEntryAngle = Math.min(GATE_STOP_ANGLE, entryAngle + turnLeadArc)
-          const targetLaneR = innerBoulevardR - (GATE_STOP_ANGLE - targetEntryAngle <= 0.65 ? 0.3 : 0.11)
+          const targetLaneOffset = GATE_STOP_ANGLE - targetEntryAngle <= 0.72 ? 0.3 : 0.11
+          const targetLaneR = innerBoulevardR - targetLaneOffset
           if (car.progress >= 1 && !ringBlocked) {
             car.phase = 'along_ring'
             car.progress = 0
             car.curAngle = targetEntryAngle
+            car.curLaneOffset = targetLaneOffset
           }
           const hdx = -Math.cos(homeAngle)
           const hdz = -Math.sin(homeAngle)
@@ -1980,6 +1988,7 @@ function QueenRoads3D({
           }
         }
         const nextAngle = Math.min(maxAllowedAngle, car.curAngle + dt * (isInQueueZone ? 0.85 : 1.15))
+        const angleStep = Math.max(0, nextAngle - car.curAngle)
         car.curAngle = Math.max(car.curAngle, nextAngle)
         if (
           car.phase === 'along_ring' &&
@@ -1989,14 +1998,29 @@ function QueenRoads3D({
           car.phase = 'queued'
           if (!queue.includes(index)) queue.push(index)
         }
-        // Плавное перестроение в полосу очереди (-0.11 -> -0.30).
-        const mergeT = car.phase === 'queued' ? 1 : Math.min(1, Math.max(0, (0.75 - (GATE_STOP_ANGLE - car.curAngle)) / 0.2))
-        const smoothMerge = mergeT * mergeT * (3 - 2 * mergeT)
-        const laneR = innerBoulevardR - (0.11 + smoothMerge * 0.19)
+        // Плавное перестроение в полосу очереди (0.11 -> 0.30) без телепортации.
+        const desiredLaneOffset = car.phase === 'queued' || GATE_STOP_ANGLE - car.curAngle <= 0.72 ? 0.3 : 0.11
+        const laneDiff = desiredLaneOffset - car.curLaneOffset
+        const maxLaneStep = dt * 0.45
+        const laneStep = Math.abs(laneDiff) <= maxLaneStep ? laneDiff : Math.sign(laneDiff) * maxLaneStep
+        car.curLaneOffset += laneStep
+        const laneR = innerBoulevardR - car.curLaneOffset
         x = view.x + Math.cos(car.curAngle) * laneR
         z = view.z + Math.sin(car.curAngle) * laneR
-        dirX = -Math.sin(car.curAngle)
-        dirZ = Math.cos(car.curAngle)
+        const tx = -Math.sin(car.curAngle)
+        const tz = Math.cos(car.curAngle)
+        if (angleStep > 1e-5 && Math.abs(laneStep) > 1e-5) {
+          const arcMove = Math.max(1e-4, angleStep * laneR)
+          const radialVel = -laneStep / arcMove
+          dirX = tx + Math.cos(car.curAngle) * radialVel
+          dirZ = tz + Math.sin(car.curAngle) * radialVel
+          const dLen = Math.hypot(dirX, dirZ) || 1
+          dirX /= dLen
+          dirZ /= dLen
+        } else {
+          dirX = tx
+          dirZ = tz
+        }
       } else if (car.phase === 'processing') {
         car.progress = Math.min(1, car.progress + dt * 2.0)
         const gdx = -Math.cos(QUEEN_GATE_ANGLE)
@@ -2004,7 +2028,7 @@ function QueenRoads3D({
         if (car.progress <= 0.42) {
           const u = car.progress / 0.42
           const startA = car.turnStartAngle ?? GATE_STOP_ANGLE
-          const startLaneR = innerBoulevardR - 0.3
+          const startLaneR = innerBoulevardR - car.curLaneOffset
           const ax = view.x + Math.cos(startA) * startLaneR
           const az = view.z + Math.sin(startA) * startLaneR
           const cx = view.x + Math.cos(QUEEN_GATE_ANGLE) * startLaneR - gdz * laneOffset
