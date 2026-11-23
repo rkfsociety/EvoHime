@@ -38,8 +38,8 @@ import {
   MAIN_AVENUES_RADIUS,
   QUEEN_GATE_ANGLE,
   RegulatedIntersection3D,
+  RING_CONNECTOR_ANGLES,
   RoadSegment3D,
-  angularDistance,
   computeQueenGateStopAngle,
   computeRingEntryStopProgress
 } from './hive-traffic'
@@ -676,11 +676,6 @@ function CityStreets3D({
   simClockRef?: MutableRefObject<number> | undefined
 }) {
   const isCapital = view.island.role === 'capital'
-  const gateAngle = isCapital
-    ? QUEEN_GATE_ANGLE
-    : view.x !== 0 || view.z !== 0
-      ? Math.atan2(-view.z, -view.x)
-      : QUEEN_GATE_ANGLE
   const laneMaterial = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
@@ -768,53 +763,18 @@ function CityStreets3D({
       const startR = r0 + 0.41
       const endR = r1 - 0.41
       if (endR - startR < 0.25) continue
-      const clearanceAt = (angle: number): number => {
-        const cosA = Math.cos(angle)
-        const sinA = Math.sin(angle)
-        let minDist = Infinity
-        for (let step = 0; step <= 4; step += 1) {
-          const sampleR = startR + (step / 4) * (endR - startR)
-          const sx = cosA * sampleR
-          const sz = sinA * sampleR
-          for (const b of view.buildings) {
-            const d = Math.hypot(b.x - sx, b.z - sz)
-            if (d < minDist) minDist = d
-          }
-        }
-        return minDist
-      }
-
-      let bestAngle = gateAngle
-      let bestMinClearance = clearanceAt(gateAngle)
-      if (bestMinClearance < 1.15) {
-        bestMinClearance = -1
-        let bestGateDist = Infinity
-        for (let slot = 0; slot < 72; slot += 1) {
-          const angle = (slot / 72) * Math.PI * 2
-          const minDist = clearanceAt(angle)
-          const gateDist = angularDistance(angle, gateAngle)
-          if (
-            (minDist >= 1.35 && (bestMinClearance < 1.35 || gateDist < bestGateDist)) ||
-            (bestMinClearance < 1.35 && minDist > bestMinClearance)
-          ) {
-            bestMinClearance = minDist
-            bestAngle = angle
-            bestGateDist = gateDist
-          }
-        }
-      }
-      if (bestMinClearance >= 1.15) {
+      for (const connAngle of RING_CONNECTOR_ANGLES) {
         list.push({
-          from: [view.x + Math.cos(bestAngle) * startR, view.z + Math.sin(bestAngle) * startR],
-          to: [view.x + Math.cos(bestAngle) * endR, view.z + Math.sin(bestAngle) * endR],
-          angle: bestAngle,
+          from: [view.x + Math.cos(connAngle) * startR, view.z + Math.sin(connAngle) * startR],
+          to: [view.x + Math.cos(connAngle) * endR, view.z + Math.sin(connAngle) * endR],
+          angle: connAngle,
           r0: startR,
           r1: endR
         })
       }
     }
     return list
-  }, [gateAngle, ringRadii, view.buildings, view.x, view.z])
+  }, [ringRadii, view.x, view.z])
 
   return (
     <group>
@@ -838,16 +798,19 @@ function CityStreets3D({
           <mesh position={[view.x, 0.026, view.z]} rotation={[Math.PI / 2, 0, 0]} material={laneMaterial}>
             <torusGeometry args={[r, 0.03, 6, 72]} />
           </mesh>
-          <RegulatedIntersection3D
-            x={view.x}
-            z={view.z}
-            radius={r}
-            angle={gateAngle}
-            bedMaterial={skin.roadBed}
-            paused={paused}
-            simClockRef={simClockRef}
-            hasOuterRadial={idx < ringRadii.length - 1}
-          />
+          {RING_CONNECTOR_ANGLES.map((connAngle, cIdx) => (
+            <RegulatedIntersection3D
+              key={`tl-${idx}-${cIdx}`}
+              x={view.x}
+              z={view.z}
+              radius={r}
+              angle={connAngle}
+              bedMaterial={skin.roadBed}
+              paused={paused}
+              simClockRef={simClockRef}
+              hasOuterRadial={idx < ringRadii.length - 1}
+            />
+          ))}
         </group>
       ))}
       {ringConnectors.map((conn, idx) => (

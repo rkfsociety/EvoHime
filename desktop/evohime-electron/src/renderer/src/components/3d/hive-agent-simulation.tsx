@@ -16,6 +16,7 @@ import {
   LEFT_LANE_OFFSET,
   RIGHT_LANE_OFFSET,
   QUEEN_GATE_ANGLE,
+  RING_CONNECTOR_ANGLES,
   QUEEN_PROCESS_SEC,
   RegulatedIntersection3D,
   RoadSegment3D,
@@ -73,6 +74,7 @@ interface PrecomputedModuleOutPath {
   readonly totalLength: number
   readonly ringStopProgress: number
   readonly avenueStopProgress: number
+  readonly connectorAngle: number
 }
 
 interface PrecomputedModuleInPath {
@@ -80,6 +82,7 @@ interface PrecomputedModuleInPath {
   readonly totalLength: number
   readonly avenueStopProgress: number
   readonly ringStopProgress: number
+  readonly connectorAngle: number
 }
 
 interface PrecomputedHouseRoutes {
@@ -293,11 +296,25 @@ export function QueenRoads3D({
       return { segments, totalLength, stopProgress: gateStopDist / totalLength }
     }
 
+    const pickConnectorAngle = (fromAngle: number, toAngle: number): number => {
+      let best = QUEEN_GATE_ANGLE
+      let bestScore = Infinity
+      for (const cand of RING_CONNECTOR_ANGLES) {
+        const score = angularDistance(fromAngle, cand) + angularDistance(cand, toAngle)
+        if (score < bestScore) {
+          bestScore = score
+          best = cand
+        }
+      }
+      return best
+    }
+
     const buildHomeToModulePath = (
       homeAngle: number,
       target: { x: number; z: number }
     ): PrecomputedModuleOutPath => {
       const targetAngle = Math.atan2(target.z, target.x)
+      const connectorAngle = pickConnectorAngle(homeAngle, targetAngle)
       const targetR = Math.hypot(target.x, target.z)
       const targetEntryR = Math.max(mainAvenueR + 0.41, targetR - 0.25)
       const outerLaneR = innerBoulevardR + 0.28
@@ -307,14 +324,14 @@ export function QueenRoads3D({
       const bridgeLen = Math.max(0.1, bridgeEndR - bridgeStartR)
       const outHdx = -Math.cos(homeAngle)
       const outHdz = -Math.sin(homeAngle)
-      const outBdx = Math.cos(QUEEN_GATE_ANGLE)
-      const outBdz = Math.sin(QUEEN_GATE_ANGLE)
-      const fullOutArc = posArc(homeAngle - QUEEN_GATE_ANGLE)
+      const outBdx = Math.cos(connectorAngle)
+      const outBdz = Math.sin(connectorAngle)
+      const fullOutArc = posArc(homeAngle - connectorAngle)
       const turnLeadArc = Math.min(innerIntersectionLeadArc, fullOutArc * 0.42)
       const ringArcSpan = Math.max(0, fullOutArc - turnLeadArc)
-      const turnStartA = QUEEN_GATE_ANGLE + turnLeadArc
+      const turnStartA = connectorAngle + turnLeadArc
       const bridgeLaneOffset =
-        posArc(targetAngle - QUEEN_GATE_ANGLE) <= posArc(QUEEN_GATE_ANGLE - targetAngle)
+        posArc(targetAngle - connectorAngle) <= posArc(connectorAngle - targetAngle)
           ? LEFT_LANE_OFFSET
           : RIGHT_LANE_OFFSET
       const tAx = view.x + Math.cos(turnStartA) * outerLaneR
@@ -360,8 +377,8 @@ export function QueenRoads3D({
           eval: (u) => {
             const r = bridgeStartR + u * (bridgeEndR - bridgeStartR)
             return {
-              x: view.x + Math.cos(QUEEN_GATE_ANGLE) * r - outBdz * bridgeLaneOffset,
-              z: view.z + Math.sin(QUEEN_GATE_ANGLE) * r + outBdx * bridgeLaneOffset,
+              x: view.x + Math.cos(connectorAngle) * r - outBdz * bridgeLaneOffset,
+              z: view.z + Math.sin(connectorAngle) * r + outBdx * bridgeLaneOffset,
               dx: outBdx,
               dz: outBdz
             }
@@ -370,12 +387,12 @@ export function QueenRoads3D({
         ...buildMainRingPddSegments(
           view.x,
           view.z,
-          QUEEN_GATE_ANGLE,
+          connectorAngle,
           bridgeEndR,
           targetAngle,
           targetEntryR,
           mainAvenueR,
-          QUEEN_GATE_ANGLE,
+          connectorAngle,
           true,
           bridgeLaneOffset
         )
@@ -393,7 +410,8 @@ export function QueenRoads3D({
         segments,
         totalLength,
         ringStopProgress: ringStopDist / totalLength,
-        avenueStopProgress: avenueStopDist / totalLength
+        avenueStopProgress: avenueStopDist / totalLength,
+        connectorAngle
       }
     }
 
@@ -402,6 +420,7 @@ export function QueenRoads3D({
       target: { x: number; z: number }
     ): PrecomputedModuleInPath => {
       const targetAngle = Math.atan2(target.z, target.x)
+      const connectorAngle = pickConnectorAngle(targetAngle, homeAngle)
       const targetR = Math.hypot(target.x, target.z)
       const targetEntryR = Math.max(mainAvenueR + 0.41, targetR - 0.25)
       const outerLaneR = innerBoulevardR + 0.28
@@ -409,22 +428,19 @@ export function QueenRoads3D({
       const bridgeStartR = mainAvenueR - 0.41
       const bridgeEndR = innerBoulevardR + INTERSECTION_STOP_HALF_EXTENT
       const bridgeLen = Math.max(0.1, bridgeStartR - bridgeEndR)
-      const inBdx = -Math.cos(QUEEN_GATE_ANGLE)
-      const inBdz = -Math.sin(QUEEN_GATE_ANGLE)
+      const inBdx = -Math.cos(connectorAngle)
+      const inBdz = -Math.sin(connectorAngle)
       const inHdx = Math.cos(homeAngle)
       const inHdz = Math.sin(homeAngle)
-      const fullInArc = posArc(QUEEN_GATE_ANGLE - homeAngle)
+      const fullInArc = posArc(connectorAngle - homeAngle)
       const turnLeadArc = Math.min(innerIntersectionLeadArc, fullInArc * 0.42)
       const ringArcSpan = Math.max(0, fullInArc - turnLeadArc)
-      const turnEndA = QUEEN_GATE_ANGLE - turnLeadArc
-      const bridgeLaneOffset =
-        posArc(targetAngle - QUEEN_GATE_ANGLE) <= posArc(QUEEN_GATE_ANGLE - targetAngle)
-          ? LEFT_LANE_OFFSET
-          : RIGHT_LANE_OFFSET
-      const tAx = view.x + Math.cos(QUEEN_GATE_ANGLE) * bridgeEndR - inBdz * bridgeLaneOffset
-      const tAz = view.z + Math.sin(QUEEN_GATE_ANGLE) * bridgeEndR + inBdx * bridgeLaneOffset
-      const tCx = view.x + Math.cos(QUEEN_GATE_ANGLE) * outerLaneR - inBdz * bridgeLaneOffset
-      const tCz = view.z + Math.sin(QUEEN_GATE_ANGLE) * outerLaneR + inBdx * bridgeLaneOffset
+      const turnEndA = connectorAngle - turnLeadArc
+      const bridgeLaneOffset = RIGHT_LANE_OFFSET
+      const tAx = view.x + Math.cos(connectorAngle) * bridgeEndR - inBdz * bridgeLaneOffset
+      const tAz = view.z + Math.sin(connectorAngle) * bridgeEndR + inBdx * bridgeLaneOffset
+      const tCx = view.x + Math.cos(connectorAngle) * outerLaneR - inBdz * bridgeLaneOffset
+      const tCz = view.z + Math.sin(connectorAngle) * outerLaneR + inBdx * bridgeLaneOffset
       const tBx = view.x + Math.cos(turnEndA) * outerLaneR
       const tBz = view.z + Math.sin(turnEndA) * outerLaneR
       const segTurnLen = approxBezierLength(tAx, tAz, tCx, tCz, tBx, tBz)
@@ -433,10 +449,10 @@ export function QueenRoads3D({
         view.z,
         targetAngle,
         targetEntryR,
-        QUEEN_GATE_ANGLE,
+        connectorAngle,
         bridgeStartR,
         mainAvenueR,
-        QUEEN_GATE_ANGLE,
+        connectorAngle,
         false,
         bridgeLaneOffset
       )
@@ -497,7 +513,8 @@ export function QueenRoads3D({
         segments,
         totalLength,
         avenueStopProgress: avenueStopDist / totalLength,
-        ringStopProgress: ringStopDist / totalLength
+        ringStopProgress: ringStopDist / totalLength,
+        connectorAngle
       }
     }
 
@@ -632,8 +649,6 @@ export function QueenRoads3D({
     const RING_ENTRY_STOP_PROGRESS = computeRingEntryStopProgress(innerBoulevardR, homeGarageR)
     const innerIx = view.x + Math.cos(QUEEN_GATE_ANGLE) * innerBoulevardR
     const innerIz = view.z + Math.sin(QUEEN_GATE_ANGLE) * innerBoulevardR
-    const avenueIx = view.x + Math.cos(QUEEN_GATE_ANGLE) * mainAvenueR
-    const avenueIz = view.z + Math.sin(QUEEN_GATE_ANGLE) * mainAvenueR
 
     for (let step = 0; step < subSteps; step += 1) {
       simTimeRef.current += dt
@@ -815,11 +830,15 @@ export function QueenRoads3D({
               )
             if (!aheadBlocked) {
               const nextP = car.progress + dt * (HIVE_CAR_SPEED / modOutPath.totalLength)
+              const cInnerIx = view.x + Math.cos(modOutPath.connectorAngle) * innerBoulevardR
+              const cInnerIz = view.z + Math.sin(modOutPath.connectorAngle) * innerBoulevardR
+              const cAvenueIx = view.x + Math.cos(modOutPath.connectorAngle) * mainAvenueR
+              const cAvenueIz = view.z + Math.sin(modOutPath.connectorAngle) * mainAvenueR
               const canEnterInner =
                 ringGreen &&
                 isIntersectionClearForEntry(
-                  innerIx,
-                  innerIz,
+                  cInnerIx,
+                  cInnerIz,
                   curPose.x,
                   curPose.z,
                   curPose.dx,
@@ -830,8 +849,8 @@ export function QueenRoads3D({
               const canEnterAvenue =
                 radialGreen &&
                 isIntersectionClearForEntry(
-                  avenueIx,
-                  avenueIz,
+                  cAvenueIx,
+                  cAvenueIz,
                   curPose.x,
                   curPose.z,
                   curPose.dx,
@@ -926,11 +945,15 @@ export function QueenRoads3D({
               )
             if (!aheadBlocked) {
               const nextP = car.progress + dt * (HIVE_CAR_SPEED / modInPath.totalLength)
+              const cInnerIx = view.x + Math.cos(modInPath.connectorAngle) * innerBoulevardR
+              const cInnerIz = view.z + Math.sin(modInPath.connectorAngle) * innerBoulevardR
+              const cAvenueIx = view.x + Math.cos(modInPath.connectorAngle) * mainAvenueR
+              const cAvenueIz = view.z + Math.sin(modInPath.connectorAngle) * mainAvenueR
               const canEnterAvenue =
                 ringGreen &&
                 isIntersectionClearForEntry(
-                  avenueIx,
-                  avenueIz,
+                  cAvenueIx,
+                  cAvenueIz,
                   curPose.x,
                   curPose.z,
                   curPose.dx,
@@ -941,8 +964,8 @@ export function QueenRoads3D({
               const canEnterInner =
                 radialGreen &&
                 isIntersectionClearForEntry(
-                  innerIx,
-                  innerIz,
+                  cInnerIx,
+                  cInnerIz,
                   curPose.x,
                   curPose.z,
                   curPose.dx,
@@ -1406,9 +1429,23 @@ export function QueenRoads3D({
         car.blockedSec = Math.min(10, (car.blockedSec ?? 0) + dt)
       }
 
-      const inInner = Math.abs(x - innerIx) < 0.56 && Math.abs(z - innerIz) < 0.56
-      const inAvenue = Math.abs(x - avenueIx) < 0.56 && Math.abs(z - avenueIz) < 0.56
-      car.inIntersection = visible && (inInner || inAvenue)
+      let inAnyIntersection = false
+      if (visible) {
+        for (const connAngle of RING_CONNECTOR_ANGLES) {
+          const cxIn = view.x + Math.cos(connAngle) * innerBoulevardR
+          const czIn = view.z + Math.sin(connAngle) * innerBoulevardR
+          const cxAv = view.x + Math.cos(connAngle) * mainAvenueR
+          const czAv = view.z + Math.sin(connAngle) * mainAvenueR
+          if (
+            (Math.abs(x - cxIn) < 0.56 && Math.abs(z - czIn) < 0.56) ||
+            (Math.abs(x - cxAv) < 0.56 && Math.abs(z - czAv) < 0.56)
+          ) {
+            inAnyIntersection = true
+            break
+          }
+        }
+      }
+      car.inIntersection = inAnyIntersection
 
       car.lastVisible = visible
       car.lastX = x
@@ -1545,6 +1582,36 @@ export function QueenRoads3D({
           </group>
         )
       })()}
+      {RING_CONNECTOR_ANGLES.slice(1).map((connAngle, cIdx) => {
+        const startR = innerBoulevardR + 0.41
+        const endR = mainAvenueR - 0.41
+        if (endR - startR <= 0.25) return null
+        return (
+          <group key={`extra-bridge-${cIdx}`}>
+            <RoadSegment3D
+              from={[view.x + Math.cos(connAngle) * startR, view.z + Math.sin(connAngle) * startR]}
+              to={[view.x + Math.cos(connAngle) * endR, view.z + Math.sin(connAngle) * endR]}
+              bedMaterial={skin.roadBed}
+              curbMaterial={skin.roadCurb}
+              lineMaterial={spokeLineMaterial}
+              width={0.84}
+              lanes={4}
+              y={0.023}
+            />
+            <RegulatedIntersection3D
+              x={view.x}
+              z={view.z}
+              radius={innerBoulevardR}
+              angle={connAngle}
+              bedMaterial={skin.roadBed}
+              paused={paused}
+              simClockRef={simClockRef}
+              hasInnerRadial={false}
+              hasOuterRadial
+            />
+          </group>
+        )
+      })}
 
       {/* 4-полосный кольцевой бульвар перед домами агентов (2 полосы к воротам + 2 скоростных/обратных). */}
       <mesh position={[view.x, 0.022, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={ringBedMaterial}>

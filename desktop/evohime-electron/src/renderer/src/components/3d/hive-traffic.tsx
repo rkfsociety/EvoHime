@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
 export const QUEEN_GATE_ANGLE = Math.PI / 2
+export const RING_CONNECTOR_ANGLES: readonly number[] = [Math.PI / 2, -Math.PI / 2, 0, Math.PI]
 export const MAIN_AVENUES_RADIUS = 7.2
 export const HIVE_CAR_SPEED = 1.65
 export const AVENUE_RING_STEP = 3.2
@@ -120,6 +121,7 @@ export function RegulatedIntersection3D({
   bedMaterial,
   paused,
   simClockRef,
+  hasInnerRadial = true,
   hasOuterRadial = true
 }: {
   x: number
@@ -129,6 +131,7 @@ export function RegulatedIntersection3D({
   bedMaterial: THREE.Material
   paused: boolean
   simClockRef?: MutableRefObject<number> | undefined
+  hasInnerRadial?: boolean | undefined
   hasOuterRadial?: boolean | undefined
 }) {
   const stopLineMat = useMemo(
@@ -309,13 +312,15 @@ export function RegulatedIntersection3D({
       <mesh position={[0, 0.039, 0]} rotation={[-Math.PI / 2, 0, 0]} material={bedMaterial}>
         <planeGeometry args={[0.88, 0.88]} />
       </mesh>
-      <mesh
-        position={[-0.21, 0.041, -INTERSECTION_STOP_HALF_EXTENT]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        material={stopLineMat}
-      >
-        <planeGeometry args={[0.38, 0.055]} />
-      </mesh>
+      {hasInnerRadial ? (
+        <mesh
+          position={[-0.21, 0.041, -INTERSECTION_STOP_HALF_EXTENT]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          material={stopLineMat}
+        >
+          <planeGeometry args={[0.38, 0.055]} />
+        </mesh>
+      ) : null}
       {hasOuterRadial ? (
         <mesh
           position={[0.21, 0.041, INTERSECTION_STOP_HALF_EXTENT]}
@@ -350,7 +355,9 @@ export function RegulatedIntersection3D({
           true
         )
       )}
-      {(hasOuterRadial ? radialHeads : radialHeads.slice(0, 1)).map((head, idx) =>
+      {radialHeads
+        .filter((_, idx) => (idx === 0 ? hasInnerRadial : hasOuterRadial))
+        .map((head, idx) =>
         renderTrafficHead(
           `tl-radial-${idx}`,
           head,
