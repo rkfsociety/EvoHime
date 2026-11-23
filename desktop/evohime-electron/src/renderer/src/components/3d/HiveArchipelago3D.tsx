@@ -1179,7 +1179,7 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
     return list
   }, [ringRadii, view.buildings, view.x, view.z])
 
-  // Межкольцевые соединители в свободных от зданий секторах (стыкуются по краям колец).
+  // Межкольцевой соединитель: строго ОДНА дорога между парой колец, максимально удалённая от всех зданий.
   const ringConnectors = useMemo(() => {
     const list: Array<{
       readonly from: readonly [number, number]
@@ -1193,23 +1193,38 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
       const r0 = ringRadii[rIdx]
       const r1 = ringRadii[rIdx + 1]
       if (r0 === undefined || r1 === undefined) continue
-      let placed = 0
-      for (let slot = 0; slot < 16 && placed < 4; slot += 1) {
-        const angle = (slot / 16) * Math.PI * 2 + rIdx * 0.2
-        const midR = (r0 + r1) / 2
-        const mx = Math.cos(angle) * midR
-        const mz = Math.sin(angle) * midR
-        const blocked = view.buildings.some((b) => Math.hypot(b.x - mx, b.z - mz) < 1.85)
-        if (!blocked) {
-          list.push({
-            from: [view.x + Math.cos(angle) * (r0 + 0.33), view.z + Math.sin(angle) * (r0 + 0.33)],
-            to: [view.x + Math.cos(angle) * (r1 - 0.33), view.z + Math.sin(angle) * (r1 - 0.33)],
-            angle,
-            r0: r0 + 0.33,
-            r1: r1 - 0.33
-          })
-          placed += 1
+      const startR = r0 + 0.33
+      const endR = r1 - 0.33
+      if (endR - startR < 0.25) continue
+      let bestAngle = 0
+      let bestMinClearance = -1
+      for (let slot = 0; slot < 72; slot += 1) {
+        const angle = (slot / 72) * Math.PI * 2
+        const cosA = Math.cos(angle)
+        const sinA = Math.sin(angle)
+        let minDist = Infinity
+        for (let step = 0; step <= 4; step += 1) {
+          const sampleR = startR + (step / 4) * (endR - startR)
+          const sx = cosA * sampleR
+          const sz = sinA * sampleR
+          for (const b of view.buildings) {
+            const d = Math.hypot(b.x - sx, b.z - sz)
+            if (d < minDist) minDist = d
+          }
         }
+        if (minDist > bestMinClearance) {
+          bestMinClearance = minDist
+          bestAngle = angle
+        }
+      }
+      if (bestMinClearance >= 1.35) {
+        list.push({
+          from: [view.x + Math.cos(bestAngle) * startR, view.z + Math.sin(bestAngle) * startR],
+          to: [view.x + Math.cos(bestAngle) * endR, view.z + Math.sin(bestAngle) * endR],
+          angle: bestAngle,
+          r0: startR,
+          r1: endR
+        })
       }
     }
     return list
