@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode
 } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
@@ -2798,7 +2799,7 @@ function DepartmentHouse3D({
   deliveredMapRef,
   highlighted,
   paused,
-  onSelectDepartment
+  onSelectHouse
 }: {
   view: CityIslandView
   lot: HiveCityHouseLot
@@ -2811,7 +2812,7 @@ function DepartmentHouse3D({
   deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
   highlighted: boolean
   paused: boolean
-  onSelectDepartment: ((departmentKey: string) => void) | undefined
+  onSelectHouse: (() => void) | undefined
 }) {
   const angle = capitalHouseAngle(lot.slot, lot.total)
   const ringRadius = capitalHouseRingRadius(lot.total)
@@ -2855,9 +2856,9 @@ function DepartmentHouse3D({
         active: lot.active
       }}
       onPointerDown={(event: ThreeEvent<PointerEvent>) => {
-        if (event.button !== 0 || onSelectDepartment === undefined) return
+        if (event.button !== 0 || onSelectHouse === undefined) return
         event.stopPropagation()
-        onSelectDepartment(lot.departmentKey)
+        onSelectHouse()
       }}
     >
       {/* Шестигранный фундамент-платформа со светящимся контуром департамента. */}
@@ -2908,9 +2909,9 @@ function DepartmentHouse3D({
         </mesh>
       ) : null}
       {highlighted ? (
-        <mesh position={[0, 0.55, 0]}>
-          <boxGeometry args={[1.1, 1.05, 1.1]} />
-          <meshBasicMaterial color="#ffe9b0" wireframe transparent opacity={0.75} />
+        <mesh position={[0, 0.08, 0]} rotation={[Math.PI / 2, 0, Math.PI / 6]}>
+          <torusGeometry args={[0.63, 0.032, 6, 6]} />
+          <meshBasicMaterial color="#ffe9b0" transparent opacity={0.95} />
         </mesh>
       ) : null}
     </group>
@@ -2984,6 +2985,19 @@ function DepartmentHouses3D({
   paused: boolean
   onSelectDepartment: ((departmentKey: string) => void) | undefined
 }) {
+  const [selectedHouseSlot, setSelectedHouseSlot] = useState<number | null>(null)
+  useEffect(() => {
+    if (selectedDepartment === null) {
+      setSelectedHouseSlot(null)
+      return
+    }
+    const stillMatches = lots.some(
+      (lot) => lot.slot === selectedHouseSlot && lot.departmentKey === selectedDepartment
+    )
+    if (!stillMatches) {
+      setSelectedHouseSlot(null)
+    }
+  }, [selectedDepartment, lots, selectedHouseSlot])
   const houseMaterials = useMemo(
     () => ({
       activeBody: new THREE.MeshStandardMaterial({
@@ -3074,7 +3088,7 @@ function DepartmentHouses3D({
         })
       }
     }
-    const startOrigin = -Math.PI * 0.5
+    const startOrigin = Math.PI * 0.5
     const fullArc = Math.PI * 2
     const gap = 0.025
     return Array.from(groups.entries()).map(([key, info]) => {
@@ -3151,9 +3165,25 @@ function DepartmentHouses3D({
           lot={lot}
           houseMaterials={houseMaterials}
           deliveredMapRef={deliveredMapRef}
-          highlighted={selectedDepartment === lot.departmentKey}
+          highlighted={selectedDepartment === lot.departmentKey && selectedHouseSlot === lot.slot}
           paused={paused}
-          onSelectDepartment={onSelectDepartment}
+          onSelectHouse={
+            onSelectDepartment === undefined
+              ? undefined
+              : () => {
+                  const isSameHouse =
+                    selectedDepartment === lot.departmentKey && selectedHouseSlot === lot.slot
+                  if (isSameHouse) {
+                    setSelectedHouseSlot(null)
+                    onSelectDepartment(lot.departmentKey)
+                    return
+                  }
+                  setSelectedHouseSlot(lot.slot)
+                  if (selectedDepartment !== lot.departmentKey) {
+                    onSelectDepartment(lot.departmentKey)
+                  }
+                }
+          }
         />
       ))}
       {sectorLabels.map((sector) => (
