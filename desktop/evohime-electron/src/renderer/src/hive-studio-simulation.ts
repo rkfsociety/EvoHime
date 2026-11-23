@@ -170,6 +170,27 @@ const SATELLITE_PLANS: readonly SatellitePlan[] = [
     ]
   },
   {
+    id: 'sat-9e4b1c70a3d52f33',
+    name: 'PCPulse',
+    ecosystem: 'dotnet',
+    districts: [
+      rustDistrict('sat-pcpulse-core', 'Core', 'core', [
+        building('PCPulse.Core', 'src/PCPulse.Core', 'service', 20, 4_100, 680, 'csharp'),
+        building('PCPulse.Contracts', 'src/PCPulse.Contracts', 'library', 11, 1_800, 440, 'csharp'),
+        building('PCPulse.SampleModule', 'src/PCPulse.SampleModule', 'library', 3, 520, 280, 'csharp')
+      ]),
+      rustDistrict('sat-pcpulse-app', 'App', 'app', [
+        building('PCPulse.App', 'src/PCPulse.App', 'ui', 12, 2_700, 560, 'csharp'),
+        building('Docs', 'docs', 'library', 2, 420, 240, 'markdown')
+      ]),
+      rustDistrict('sat-pcpulse-infra', 'Infra', 'tools', [
+        building('Installer', 'installer', 'service', 1, 220, 240, 'iss'),
+        building('Scripts', 'scripts', 'worker', 5, 680, 320, 'powershell'),
+        building('Tests', 'tests', 'library', 10, 1_900, 420, 'csharp')
+      ])
+    ]
+  },
+  {
     id: 'sat-ea3f9c12d4b67a05',
     name: 'assistant-tune',
     ecosystem: 'python',
@@ -284,7 +305,7 @@ function planIsland(
 export interface HiveStudioSimulationOptions {
   /** Отпечаток времени снапшота (симулирует `generated_at_ms`). */
   readonly generatedAtMs?: number | undefined
-  /** Сколько спутников показать (0..=5): удобно проверять появление/исчезновение. */
+  /** Сколько спутников показать (0..=6): удобно проверять появление/исчезновение. */
   readonly satelliteCount?: number | undefined
   /** Соль ведёт к другой раскладке при неизменном контракте. */
   readonly seed?: number | undefined
