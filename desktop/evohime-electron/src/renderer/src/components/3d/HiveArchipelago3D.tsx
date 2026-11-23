@@ -38,6 +38,8 @@ const CAMERA_OFFSET = new THREE.Vector3(34, 30, 34)
 const OVERVIEW_ZOOM_SOLO = 22
 const OVERVIEW_ZOOM_ARCHIPELAGO = 13.5
 const FOCUS_ZOOM = 27
+const MIN_ZOOM = 8
+const MAX_ZOOM = 70
 
 /** Reusable per-frame scratch objects: no 60 Hz allocations inside useFrame. */
 const FRAME_DUMMY = new THREE.Object3D()
@@ -1799,10 +1801,21 @@ function CameraRig({
   overviewZoom: number
   paused: boolean
 }) {
-  const { camera } = useThree()
+  const { camera, gl } = useThree()
   const look = useRef(new THREE.Vector3(0, 0, 0))
   const desired = useRef(new THREE.Vector3(0, 0, 0))
   const desiredZoom = useRef(overviewZoom)
+
+  useEffect(() => {
+    const dom = gl.domElement
+    const onWheel = (event: WheelEvent): void => {
+      event.preventDefault()
+      const scale = event.deltaY < 0 ? 1.12 : 1 / 1.12
+      desiredZoom.current = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, desiredZoom.current * scale))
+    }
+    dom.addEventListener('wheel', onWheel, { passive: false })
+    return () => dom.removeEventListener('wheel', onWheel)
+  }, [gl])
 
   useEffect(() => {
     if (focus) {
