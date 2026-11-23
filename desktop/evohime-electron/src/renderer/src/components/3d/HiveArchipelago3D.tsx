@@ -210,7 +210,6 @@ function createFacadeSet(variant: number): FacadeSet {
 }
 
 const TRAFFIC_CYCLE_SEC = 6.0
-const DELIVERY_DURATION_SEC = 2.0
 
 function isRadialTrafficGreen(time: number): boolean {
   return (time % TRAFFIC_CYCLE_SEC) < TRAFFIC_CYCLE_SEC * 0.5
@@ -1320,21 +1319,22 @@ function CityStreets3D({ view, skin, paused }: { view: CityIslandView; skin: Cit
   )
 }
 
-interface QueenPacket {
-  readonly color: string
-  readonly speed: number
-  readonly phase: number
-  readonly lot: number
-  readonly kind: 'to-queen' | 'from-queen' | 'ring'
-  readonly active: boolean
+const QUEEN_GATE_ANGLE = Math.PI / 2
+const QUEEN_PROCESS_SEC = 1.15
+
+interface AgentCarSim {
+  phase: 'delivering' | 'to_ring' | 'along_ring' | 'queued' | 'processing' | 'returning_ring' | 'returning_home' | 'cooldown'
+  progress: number
+  curAngle: number
+  cooldown: number
 }
 
 /**
- * Дороги столицы и движение информации от агентов:
- * - радиальные проспекты от двора Королевы к каждому дому агента;
- * - кольцевой проспект, соединяющий дома агентов;
- * - вытянутые светящиеся пакеты (направленные по движению!), бегущие между
- *   агентами и Королевой и по кольцу между департаментами.
+ * Дороги у двора Королевы:
+ * - ЕДИНСТВЕННЫЙ въезд в Цитадель Королевы (спереди, по +Z);
+ * - кольцевой бульвар (3.55), к которому подключены съезды от каждого дома;
+ * - живая пробка и очередь к воротам Королевы: Королева обрабатывает строго
+ *   одну машину-запрос за раз, остальные стоят в очереди и ждут.
  */
 function QueenRoads3D({
   view,
@@ -1353,6 +1353,8 @@ function QueenRoads3D({
     capitalHouseRingRadius(lots[0]?.total ?? 0),
     CAPITAL_TOWER_INNER_RADIUS - 1.2
   )
+  const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
+
   const spokeLineMaterial = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
@@ -1392,51 +1394,17 @@ function QueenRoads3D({
       }),
     []
   )
+  const gateSignalGreen = useMemo(() => new THREE.MeshBasicMaterial({ color: '#4ade80' }), [])
+  const gateSignalAmber = useMemo(() => new THREE.MeshBasicMaterial({ color: '#f59e0b' }), [])
+
   useEffect(() => () => {
     spokeLineMaterial.dispose()
     ringLineMaterial.dispose()
     ringBedMaterial.dispose()
     packetMaterial.dispose()
-  }, [spokeLineMaterial, ringLineMaterial, ringBedMaterial, packetMaterial])
-
-  const packets = useMemo<readonly QueenPacket[]>(() => {
-    const list: QueenPacket[] = []
-    lots.forEach((lot, lotIndex) => {
-      const seed = fnv1a32(`${view.island.id}/road-${lot.departmentKey}-${lot.slot}`)
-      const flowSpeed = lot.active ? 0.26 : 0.14
-      const toQueenCount = lot.active ? 2 : 1
-      for (let i = 0; i < toQueenCount; i += 1) {
-        list.push({
-          color: lot.accent,
-          speed: flowSpeed,
-          phase: ((seed % 997) / 997 + i / toQueenCount) % 1,
-          lot: lotIndex,
-          kind: 'to-queen',
-          active: lot.active
-        })
-      }
-      const fromQueenCount = lot.active ? 2 : 1
-      for (let i = 0; i < fromQueenCount; i += 1) {
-        list.push({
-          color: '#ffe494',
-          speed: flowSpeed,
-          phase: (((seed >>> 3) % 997) / 997 + i / fromQueenCount) % 1,
-          lot: lotIndex,
-          kind: 'from-queen',
-          active: lot.active
-        })
-      }
-      list.push({
-        color: lot.accent,
-        speed: 0.18,
-        phase: lot.slot / Math.max(1, lots.length),
-        lot: lotIndex,
-        kind: 'ring',
-        active: lot.active
-      })
-    })
-    return list
-  }, [lots, view.island.id])
+    gateSignalGreen.dispose()
+    gateSignalAmber.dispose()
+  }, [spokeLineMaterial, ringLineMaterial, ringBedMaterial, packetMaterial, gateSignalGreen, gateSignalAmber])
 
   const houseAngles = useMemo(
     () => lots.map((lot) => capitalHouseAngle(lot.slot, lot.total)),
@@ -1444,132 +1412,257 @@ function QueenRoads3D({
   )
 
   const meshRef = useRef<THREE.InstancedMesh>(null)
+  const gateLampRef = useRef<THREE.Mesh>(null)
   const instanceColor = useMemo(() => new THREE.Color(), [])
+
+  const carsRef = useRef<AgentCarSim[]>([])
+  const queueRef = useRef<number[]>([])
+  const processingLotRef = useRef<{ lotIndex: number; remaining: number } | null>(null)
+
   useLayoutEffect(() => {
+    carsRef.current = lots.map((lot, idx) => ({
+      phase: lot.active ? 'delivering' : 'cooldown',
+      progress: 0,
+      curAngle: QUEEN_GATE_ANGLE,
+      cooldown: (idx % 6) * 0.28
+    }))
+    queueRef.current = []
+    processingLotRef.current = null
+
     const mesh = meshRef.current
     if (!mesh) return
-    packets.forEach((packet, index) => {
-      instanceColor.set(packet.color)
+    lots.forEach((lot, index) => {
+      instanceColor.set(lot.active ? lot.accent : '#5ea8ff')
       mesh.setColorAt(index, instanceColor)
     })
     if (mesh.instanceColor !== null) mesh.instanceColor.needsUpdate = true
-  }, [packets, instanceColor])
+  }, [lots, instanceColor])
 
-  const progressRef = useRef<Float32Array>(new Float32Array(0))
-  const dispatchStartRef = useRef<Map<number, number>>(new Map())
-
-  useLayoutEffect(() => {
-    const arr = new Float32Array(packets.length)
-    packets.forEach((p, idx) => {
-      arr[idx] = p.kind === 'from-queen' ? 0 : p.phase
-    })
-    progressRef.current = arr
-  }, [packets])
-
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     const mesh = meshRef.current
     if (!mesh) return
-    const time = state.clock.elapsedTime
     const dt = paused ? 0 : Math.min(delta, 0.05)
-    const radialGreen = isRadialTrafficGreen(time)
     const dummy = FRAME_DUMMY
-    const laneOffset = 0.12
-    const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
+    const laneOffset = 0.13
+    const gateEntryR = 2.35
+    const homeEdgeR = Math.max(innerBoulevardR + 0.35, ringRadius - 0.55)
+    const cars = carsRef.current
+    const queue = queueRef.current
 
-    // Отслеживаем момент запуска машины-доставщика от Королевы к каждому активному дому.
-    lots.forEach((lot) => {
-      if (!lot.active) {
-        dispatchStartRef.current.delete(lot.slot)
-        deliveredMapRef.current.delete(lot.slot)
-      } else if (!dispatchStartRef.current.has(lot.slot)) {
-        dispatchStartRef.current.set(lot.slot, time + (lot.slot % 8) * 0.16)
-      }
-      if (lot.active && paused) {
-        deliveredMapRef.current.set(lot.slot, true)
-      }
-    })
+    if (paused) {
+      lots.forEach((lot) => {
+        if (lot.active) deliveredMapRef.current.set(lot.slot, true)
+      })
+    }
 
-    packets.forEach((packet, index) => {
-      if (index >= mesh.count) return
-      const angle = houseAngles[packet.lot]
-      const lotObj = lots[packet.lot]
-      if (angle === undefined || lotObj === undefined) return
-
-      const startAt = dispatchStartRef.current.get(lotObj.slot) ?? 0
-      const delivered = paused || deliveredMapRef.current.get(lotObj.slot) === true
-
-      // Первая машина от Королевы доставляет задачу; пока она в пути, дом ещё не работает.
-      if (lotObj.active && !delivered && packet.kind === 'from-queen') {
-        const elapsed = time - startAt
-        if (elapsed >= DELIVERY_DURATION_SEC) {
-          deliveredMapRef.current.set(lotObj.slot, true)
+    // Шаг 1: обновляем обработку текущей машины у Королевы (строго 1 машина за раз!).
+    if (!paused && processingLotRef.current !== null) {
+      processingLotRef.current.remaining -= dt
+      if (processingLotRef.current.remaining <= 0) {
+        const finishedIdx = processingLotRef.current.lotIndex
+        const finishedCar = cars[finishedIdx]
+        if (finishedCar) {
+          finishedCar.phase = 'returning_ring'
+          finishedCar.progress = 0
+          finishedCar.curAngle = QUEEN_GATE_ANGLE
         }
+        processingLotRef.current = null
       }
+    }
 
-      // Пока машина от Королевы не доехала до активного дома, обратный/кольцевой трафик от этого дома не стартует.
-      if (lotObj.active && !delivered && packet.kind !== 'from-queen') {
+    // Если ворота Королевы свободны — запускаем первую машину из пробки!
+    if (!paused && processingLotRef.current === null && queue.length > 0) {
+      const nextIdx = queue.shift()
+      if (nextIdx !== undefined && cars[nextIdx]) {
+        cars[nextIdx].phase = 'processing'
+        cars[nextIdx].progress = 0
+        processingLotRef.current = { lotIndex: nextIdx, remaining: QUEEN_PROCESS_SEC }
+      }
+    }
+
+    if (gateLampRef.current) {
+      gateLampRef.current.material = processingLotRef.current !== null ? gateSignalAmber : gateSignalGreen
+    }
+
+    // Шаг 2: двигаем каждую машину и обновляем её матрицу.
+    lots.forEach((lot, index) => {
+      if (index >= mesh.count) return
+      const car = cars[index]
+      const homeAngle = houseAngles[index]
+      if (!car || homeAngle === undefined) return
+
+      if (!lot.active) {
+        deliveredMapRef.current.delete(lot.slot)
         dummy.scale.setScalar(0)
         dummy.updateMatrix()
         mesh.setMatrixAt(index, dummy.matrix)
         return
       }
 
-      let curProgress = progressRef.current[index] ?? packet.phase
-      if (!paused) {
-        if (packet.kind === 'ring') {
-          // Кольцевые машины притормаживают на перекрёстках при красном свете.
-          const stopZone = Math.abs((curProgress * 4) % 1 - 0.5) < 0.08
-          if (radialGreen && stopZone) {
-            // Стоим на красный перед перекрёстком.
-          } else {
-            curProgress = (curProgress + dt * packet.speed) % 1
-          }
-        } else {
-          // Радиальные машины притормаживают перед внутренним кольцом при красном для радиала.
-          const atIntersection = Math.abs(curProgress - 0.62) < 0.06
-          if (!radialGreen && atIntersection && delivered) {
-            // Ждём зелёного сигнала светофора.
-          } else {
-            curProgress = (curProgress + dt * packet.speed) % 1
-          }
-        }
-        progressRef.current[index] = curProgress
+      if (paused) {
+        // В статичном режиме ставим машины аккуратно по кольцу.
+        const x = view.x + Math.cos(homeAngle) * (innerBoulevardR + 0.12)
+        const z = view.z + Math.sin(homeAngle) * (innerBoulevardR + 0.12)
+        dummy.position.set(x, 0.12, z)
+        dummy.lookAt(x - Math.sin(homeAngle), 0.12, z + Math.cos(homeAngle))
+        dummy.scale.set(0.15, 0.11, 0.36)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(index, dummy.matrix)
+        return
       }
 
-      const progress = paused ? packet.phase : curProgress
       let x = view.x
       let z = view.z
       let dirX = 0
       let dirZ = 1
+      let visible = true
 
-      if (packet.kind === 'ring') {
-        const nextAngle =
-          (packet.lot + 1 < lots.length ? houseAngles[packet.lot + 1] : (houseAngles[0] ?? angle) + Math.PI * 2) ?? angle
-        const target = nextAngle > angle ? nextAngle : nextAngle + Math.PI * 2
-        const current = angle + (target - angle) * progress
-        const laneR = innerBoulevardR + 0.1
-        x = view.x + Math.cos(current) * laneR
-        z = view.z + Math.sin(current) * laneR
-        dirX = -Math.sin(current)
-        dirZ = Math.cos(current)
-        dummy.scale.set(0.13, 0.1, packet.active ? 0.34 : 0.22)
+      // Кратчайший угловой путь по кольцу к воротам Королевы (и обратно).
+      let deltaToHome = homeAngle - QUEEN_GATE_ANGLE
+      while (deltaToHome > Math.PI) deltaToHome -= Math.PI * 2
+      while (deltaToHome < -Math.PI) deltaToHome += Math.PI * 2
+
+      if (car.phase === 'delivering') {
+        if (car.cooldown > 0) {
+          car.cooldown -= dt
+          visible = false
+        } else {
+          car.progress += dt * 0.55
+          if (car.progress >= 1) {
+            deliveredMapRef.current.set(lot.slot, true)
+            car.phase = 'to_ring'
+            car.progress = 0
+            car.cooldown = 0.3
+          }
+        }
+        // Доставка от Королевы к дому: ворота → кольцо → съезд дома.
+        const t = Math.min(1, Math.max(0, car.progress))
+        if (t < 0.25) {
+          const u = t / 0.25
+          const r = gateEntryR + u * (innerBoulevardR - gateEntryR)
+          dirX = Math.cos(QUEEN_GATE_ANGLE)
+          dirZ = Math.sin(QUEEN_GATE_ANGLE)
+          x = view.x + Math.cos(QUEEN_GATE_ANGLE) * r - dirZ * laneOffset
+          z = view.z + Math.sin(QUEEN_GATE_ANGLE) * r + dirX * laneOffset
+        } else if (t < 0.75) {
+          const u = (t - 0.25) / 0.5
+          const curA = QUEEN_GATE_ANGLE + deltaToHome * u
+          const sign = deltaToHome >= 0 ? 1 : -1
+          const laneR = innerBoulevardR + (sign > 0 ? 0.12 : -0.12)
+          x = view.x + Math.cos(curA) * laneR
+          z = view.z + Math.sin(curA) * laneR
+          dirX = -Math.sin(curA) * sign
+          dirZ = Math.cos(curA) * sign
+        } else {
+          const u = (t - 0.75) / 0.25
+          const r = innerBoulevardR + u * (homeEdgeR - innerBoulevardR)
+          dirX = Math.cos(homeAngle)
+          dirZ = Math.sin(homeAngle)
+          x = view.x + Math.cos(homeAngle) * r - dirZ * laneOffset
+          z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
+        }
+      } else if (car.phase === 'to_ring') {
+        if (car.cooldown > 0) {
+          car.cooldown -= dt
+          visible = false
+        } else {
+          car.progress += dt * 1.4
+          if (car.progress >= 1) {
+            car.phase = 'along_ring'
+            car.progress = 0
+            car.curAngle = homeAngle
+          }
+          const r = homeEdgeR - Math.min(1, car.progress) * (homeEdgeR - innerBoulevardR)
+          dirX = -Math.cos(homeAngle)
+          dirZ = -Math.sin(homeAngle)
+          x = view.x + Math.cos(homeAngle) * r - dirZ * laneOffset
+          z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
+        }
+      } else if (car.phase === 'along_ring') {
+        car.progress += dt * 0.52
+        if (car.progress >= 1) {
+          car.phase = 'queued'
+          if (!queue.includes(index)) queue.push(index)
+        }
+        const u = Math.min(1, car.progress)
+        const curA = homeAngle - deltaToHome * u
+        const sign = deltaToHome >= 0 ? -1 : 1
+        const laneR = innerBoulevardR + (sign > 0 ? 0.12 : -0.12)
+        x = view.x + Math.cos(curA) * laneR
+        z = view.z + Math.sin(curA) * laneR
+        dirX = -Math.sin(curA) * sign
+        dirZ = Math.cos(curA) * sign
+      } else if (car.phase === 'queued') {
+        // Позиция в пробке строго по индексу в очереди — машины стоят друг за другом на кольце перед воротами!
+        const qIdx = Math.max(0, queue.indexOf(index))
+        const queueArcStep = 0.13
+        const queueAngle = QUEEN_GATE_ANGLE - 0.12 - qIdx * queueArcStep
+        const laneR = innerBoulevardR + 0.12
+        x = view.x + Math.cos(queueAngle) * laneR
+        z = view.z + Math.sin(queueAngle) * laneR
+        dirX = -Math.sin(queueAngle)
+        dirZ = Math.cos(queueAngle)
+      } else if (car.phase === 'processing') {
+        // Машина внутри единственных ворот Королевы на обработке.
+        car.progress = Math.min(1, car.progress + dt * 2.5)
+        const r = innerBoulevardR - car.progress * (innerBoulevardR - gateEntryR)
+        dirX = -Math.cos(QUEEN_GATE_ANGLE)
+        dirZ = -Math.sin(QUEEN_GATE_ANGLE)
+        x = view.x + Math.cos(QUEEN_GATE_ANGLE) * r - dirZ * laneOffset
+        z = view.z + Math.sin(QUEEN_GATE_ANGLE) * r + dirX * laneOffset
+      } else if (car.phase === 'returning_ring') {
+        // Обратная дорога от ворот по выездной полосе к кольцу и к дому.
+        car.progress += dt * 0.55
+        if (car.progress >= 1) {
+          car.phase = 'cooldown'
+          car.progress = 0
+          car.cooldown = 0.25 + (index % 5) * 0.15
+        }
+        const t = Math.min(1, car.progress)
+        if (t < 0.25) {
+          const u = t / 0.25
+          const r = gateEntryR + u * (innerBoulevardR - gateEntryR)
+          dirX = Math.cos(QUEEN_GATE_ANGLE)
+          dirZ = Math.sin(QUEEN_GATE_ANGLE)
+          x = view.x + Math.cos(QUEEN_GATE_ANGLE) * r - dirZ * laneOffset
+          z = view.z + Math.sin(QUEEN_GATE_ANGLE) * r + dirX * laneOffset
+        } else if (t < 0.75) {
+          const u = (t - 0.25) / 0.5
+          const curA = QUEEN_GATE_ANGLE + deltaToHome * u
+          const sign = deltaToHome >= 0 ? 1 : -1
+          const laneR = innerBoulevardR + (sign > 0 ? 0.12 : -0.12)
+          x = view.x + Math.cos(curA) * laneR
+          z = view.z + Math.sin(curA) * laneR
+          dirX = -Math.sin(curA) * sign
+          dirZ = Math.cos(curA) * sign
+        } else {
+          const u = (t - 0.75) / 0.25
+          const r = innerBoulevardR + u * (homeEdgeR - innerBoulevardR)
+          dirX = Math.cos(homeAngle)
+          dirZ = Math.sin(homeAngle)
+          x = view.x + Math.cos(homeAngle) * r - dirZ * laneOffset
+          z = view.z + Math.sin(homeAngle) * r + dirX * laneOffset
+        }
       } else {
-        const roadStart = 2.4
-        const roadEnd = Math.max(roadStart + 0.4, ringRadius - 0.55)
-        const outward = packet.kind === 'from-queen' ? progress : 1 - progress
-        const radius = roadStart + outward * (roadEnd - roadStart)
-        const sign = packet.kind === 'from-queen' ? 1 : -1
-        dirX = Math.cos(angle) * sign
-        dirZ = Math.sin(angle) * sign
-        const rightX = -dirZ
-        const rightZ = dirX
-        x = view.x + Math.cos(angle) * radius + rightX * laneOffset
-        z = view.z + Math.sin(angle) * radius + rightZ * laneOffset
-        dummy.scale.set(packet.active ? 0.15 : 0.11, 0.1, packet.active ? 0.36 : 0.24)
+        // cooldown дома перед следующим запросом к Королеве.
+        visible = false
+        car.cooldown -= dt
+        if (car.cooldown <= 0) {
+          car.phase = 'to_ring'
+          car.progress = 0
+        }
       }
 
-      dummy.position.set(x, 0.12, z)
-      dummy.lookAt(x + dirX, 0.12, z + dirZ)
+      if (!visible) {
+        dummy.scale.setScalar(0)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(index, dummy.matrix)
+        return
+      }
+
+      dummy.position.set(x, 0.13, z)
+      dummy.lookAt(x + dirX, 0.13, z + dirZ)
+      dummy.scale.set(0.16, 0.11, 0.36)
       dummy.updateMatrix()
       mesh.setMatrixAt(index, dummy.matrix)
     })
@@ -1577,46 +1670,66 @@ function QueenRoads3D({
   })
 
   if (lots.length === 0) return <></>
-  const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
+  const homeEdgeR = Math.max(innerBoulevardR + 0.35, ringRadius - 0.55)
 
   return (
     <group>
-      {/* Двухполосные радиальные проспекты от двора Королевы до края двориков домов. */}
+      {/* ЕДИНСТВЕННЫЙ парадный въезд в Цитадель Королевы (спереди, по +Z). */}
+      <RoadSegment3D
+        from={[view.x + Math.cos(QUEEN_GATE_ANGLE) * 2.25, view.z + Math.sin(QUEEN_GATE_ANGLE) * 2.25]}
+        to={[view.x + Math.cos(QUEEN_GATE_ANGLE) * innerBoulevardR, view.z + Math.sin(QUEEN_GATE_ANGLE) * innerBoulevardR]}
+        bedMaterial={skin.roadBed}
+        curbMaterial={skin.roadCurb}
+        lineMaterial={spokeLineMaterial}
+        width={0.62}
+        y={0.025}
+      />
+      {/* Индикатор занятости ворот Королевы (зелёный = свободна, янтарный = обрабатывает запрос). */}
+      <mesh
+        ref={gateLampRef}
+        position={[view.x + 0.42, 0.55, view.z + 2.55]}
+        material={gateSignalGreen}
+      >
+        <sphereGeometry args={[0.11, 8, 8]} />
+      </mesh>
+
+      {/* Съезды от каждого дома агента до внутреннего кольцевого бульвара (не входят в Цитадель!). */}
       {lots.map((lot, index) => {
         const angle = houseAngles[index]
         if (angle === undefined) return null
-        const roadEnd = Math.max(2.8, ringRadius - 0.55)
         return (
           <RoadSegment3D
             key={`road-${lot.departmentKey}-${lot.slot}`}
-            from={[view.x + Math.cos(angle) * 2.4, view.z + Math.sin(angle) * 2.4]}
-            to={[view.x + Math.cos(angle) * roadEnd, view.z + Math.sin(angle) * roadEnd]}
+            from={[view.x + Math.cos(angle) * innerBoulevardR, view.z + Math.sin(angle) * innerBoulevardR]}
+            to={[view.x + Math.cos(angle) * homeEdgeR, view.z + Math.sin(angle) * homeEdgeR]}
             bedMaterial={skin.roadBed}
             curbMaterial={skin.roadCurb}
             lineMaterial={spokeLineMaterial}
-            width={0.54}
-            y={0.025}
+            width={0.46}
+            y={0.024}
           />
         )
       })}
-      {/* Двухполосный кольцевой бульвар перед домами агентов (не входит в дома). */}
+
+      {/* Двухполосный кольцевой бульвар перед домами агентов. */}
       <mesh position={[view.x, 0.022, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={ringBedMaterial}>
-        <ringGeometry args={[innerBoulevardR - 0.26, innerBoulevardR + 0.26, 72]} />
+        <ringGeometry args={[innerBoulevardR - 0.28, innerBoulevardR + 0.28, 72]} />
       </mesh>
       <mesh position={[view.x, 0.032, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
-        <torusGeometry args={[innerBoulevardR - 0.25, 0.018, 6, 72]} />
+        <torusGeometry args={[innerBoulevardR - 0.27, 0.018, 6, 72]} />
       </mesh>
       <mesh position={[view.x, 0.032, view.z]} rotation={[Math.PI / 2, 0, 0]} material={skin.roadCurb}>
-        <torusGeometry args={[innerBoulevardR + 0.25, 0.018, 6, 72]} />
+        <torusGeometry args={[innerBoulevardR + 0.27, 0.018, 6, 72]} />
       </mesh>
       <mesh position={[view.x, 0.036, view.z]} rotation={[Math.PI / 2, 0, 0]} material={ringLineMaterial}>
         <torusGeometry args={[innerBoulevardR, 0.028, 6, 72]} />
       </mesh>
-      {/* Вытянутые пакеты информации вдоль лучей и кольца. */}
+
+      {/* Машины в очереди и на выезде. */}
       <instancedMesh
         ref={meshRef}
-        args={[undefined, packetMaterial, Math.max(1, packets.length)]}
-        visible={packets.length > 0}
+        args={[undefined, packetMaterial, Math.max(1, lots.length)]}
+        visible={lots.length > 0}
         frustumCulled={false}
       >
         <boxGeometry args={[1, 1, 1]} />
