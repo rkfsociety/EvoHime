@@ -37,7 +37,6 @@ const TOP_CAMERA_OFFSET = new THREE.Vector3(0, 56, 0.01)
 
 const OVERVIEW_ZOOM_SOLO = 22
 const OVERVIEW_ZOOM_ARCHIPELAGO = 14
-const FOCUS_ZOOM = 28
 const MIN_ZOOM = 8
 const MAX_ZOOM = 70
 
@@ -3078,13 +3077,11 @@ function QueenTower3D({ view, skin, paused }: { view: CityIslandView; skin: City
   )
 }
 
-/** Fixed top-down rig: pans the look target and lerps ortho zoom. */
+/** Fixed top-down rig: pans the look target and lerps ortho zoom without resetting on selection. */
 function CameraRig({
-  focus,
   overviewZoom,
   paused
 }: {
-  focus: { readonly x: number; readonly z: number } | null
   overviewZoom: number
   paused: boolean
 }) {
@@ -3165,16 +3162,6 @@ function CameraRig({
       dom.style.cursor = ''
     }
   }, [camera, gl])
-
-  useEffect(() => {
-    if (focus) {
-      desired.current.set(focus.x, 0, focus.z)
-      desiredZoom.current = FOCUS_ZOOM
-    } else {
-      desired.current.set(0, 0, 0)
-      desiredZoom.current = overviewZoom
-    }
-  }, [focus, overviewZoom])
 
   useFrame((_, delta) => {
     const factor = paused ? 1 : 1 - Math.exp(-7 * Math.min(delta, 0.1))
@@ -3325,12 +3312,6 @@ export function HiveArchipelago3D({
   onContextLost
 }: HiveArchipelago3DProps): React.JSX.Element {
   const visibleSatellites = satellites.slice(0, CITY_MAP_MAX_SATELLITES)
-  const focus = useMemo(() => {
-    if (selectedIslandId === capital.island.id) return { x: 0, z: 0 }
-    const selected = visibleSatellites.find((view) => view.island.id === selectedIslandId)
-    return selected ? { x: selected.x, z: selected.z } : null
-  }, [capital.island.id, selectedIslandId, visibleSatellites])
-
   const soloZoom = Math.max(8, Math.min(24, (16.5 / Math.max(10, capital.radius)) * OVERVIEW_ZOOM_SOLO))
   const overviewZoom = visibleSatellites.length > 0 ? OVERVIEW_ZOOM_ARCHIPELAGO : soloZoom
 
@@ -3384,7 +3365,7 @@ export function HiveArchipelago3D({
         <directionalLight position={[26, 40, 18]} intensity={1.25} color="#eef3ff" />
         <directionalLight position={[-22, 18, -20]} intensity={0.45} color="#78a2ff" />
         <pointLight position={[0, 12, 0]} intensity={55} distance={60} decay={1.5} color="#ffd98a" />
-        <CameraRig focus={focus} overviewZoom={overviewZoom} paused={paused} />
+        <CameraRig overviewZoom={overviewZoom} paused={paused} />
         <Starfield />
 
         <CitySkinProvider>
