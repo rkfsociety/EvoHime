@@ -499,7 +499,7 @@ export function capitalHouseAngle(slot: number, total: number): number {
  * башни капитального острова выталкиваются за него, уступая центр башне
  * Королевы и кольцу домов работников.
  */
-export const CAPITAL_TOWER_INNER_RADIUS = 6.4
+export const CAPITAL_TOWER_INNER_RADIUS = 7.6
 
 /**
  * Shared deterministic island renderer model: sorted districts, a compact

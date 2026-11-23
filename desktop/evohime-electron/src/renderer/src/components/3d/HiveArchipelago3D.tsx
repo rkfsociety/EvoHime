@@ -1110,11 +1110,11 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
   }, [laneMaterial, lampPoleMaterial, lampBulbMaterial, treeTrunkMaterial, treeCrownMaterial])
 
   const ringRadii = useMemo(() => {
-    const outer = view.radius * 0.72
+    const outer = view.radius * 0.78
     if (isCapital) {
       // Динамические кольцевые проспекты под любой масштаб города (шаг 3.2 между кольцами зданий).
       const rings: number[] = []
-      for (let r = 6.0; r <= view.radius * 0.7; r += 3.2) {
+      for (let r = MAIN_AVENUES_RADIUS; r <= view.radius * 0.76; r += AVENUE_RING_STEP) {
         rings.push(Number(r.toFixed(2)))
       }
       if (rings.length === 0 || outer - (rings[rings.length - 1] ?? 0) > 1.4) {
@@ -1313,7 +1313,7 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
           <mesh position={[view.x, 0.026, view.z]} rotation={[Math.PI / 2, 0, 0]} material={laneMaterial}>
             <torusGeometry args={[r, 0.03, 6, 72]} />
           </mesh>
-          {r === 6.0 && isCapital ? (
+          {r === MAIN_AVENUES_RADIUS && isCapital ? (
             <mesh
               position={[
                 view.x + Math.cos(QUEEN_U_TURN_ANGLE) * r,
@@ -1405,6 +1405,8 @@ function CityStreets3D({ view, skin }: { view: CityIslandView; skin: CitySkin })
 
 export const QUEEN_GATE_ANGLE = Math.PI * 0.38
 const QUEEN_U_TURN_ANGLE = QUEEN_GATE_ANGLE - Math.PI
+const MAIN_AVENUES_RADIUS = 7.2
+const AVENUE_RING_STEP = 3.2
 
 export function computeQueenGateStopAngle(innerBoulevardR: number): number {
   // Дорога ворот имеет ширину 0.64 (полуширина 0.32), длина машины — 0.36 (полудлина 0.18).
@@ -2264,11 +2266,11 @@ function QueenRoads3D({
           />
         )
       })}
-      {/* Межкольцевой проспект в свободном зазоре между домами (связывает внутреннее кольцо и Главный проспект 6.0). */}
+      {/* Межкольцевой проспект в свободном зазоре между домами (связывает внутреннее кольцо и Главный проспект). */}
       {(() => {
         const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_U_TURN_ANGLE)
         const startR = innerBoulevardR + 0.41
-        const endR = Math.max(startR + 0.3, 6.0 - 0.33)
+        const endR = Math.max(startR + 0.3, MAIN_AVENUES_RADIUS - 0.33)
         return (
           <group>
             <RoadSegment3D
@@ -2402,8 +2404,6 @@ function AgentModuleCouriers3D({
   useEffect(() => () => {
     packetMaterial.dispose()
   }, [packetMaterial])
-
-  const MAIN_AVENUES_RADIUS = 6.0
 
   const routes = useMemo(() => {
     const modules = view.buildings.filter((item) => item.building.kind !== 'citadel')
@@ -2851,7 +2851,7 @@ function DepartmentHouses3D({
     [houseMaterials]
   )
 
-  // Одна крупная плоская надпись на каждый департамент на внешнем поясе его сектора (читаема без приближения).
+  // Одна крупная плоская надпись на каждый департамент строго внутри своего сектора (над домами агентов).
   const sectorLabels = useMemo(() => {
     const groups = new Map<string, { label: string; accent: string; slots: number[]; activeCount: number }>()
     for (const lot of lots) {
@@ -2869,7 +2869,8 @@ function DepartmentHouses3D({
         })
       }
     }
-    const labelR = view.radius * 0.795
+    const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
+    const labelR = Math.min(MAIN_AVENUES_RADIUS - 0.85, ringRadius + 1.32)
     const total = Math.max(1, lots[0]?.total ?? lots.length)
     return Array.from(groups.entries()).map(([key, info]) => {
       const minSlot = Math.min(...info.slots)
@@ -2886,7 +2887,7 @@ function DepartmentHouses3D({
         rotZ
       }
     })
-  }, [lots, view.x, view.z, view.radius])
+  }, [lots, view.x, view.z])
 
   // Выделенные сектора города для каждой группы агентов (расширяются при увеличении числа слотов).
   const sectors = useMemo(() => {
@@ -2924,11 +2925,11 @@ function DepartmentHouses3D({
   const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
   const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
   const sectorInnerR = innerBoulevardR + 0.44
-  const sectorOuterR = view.radius * 0.845
+  const sectorOuterR = Math.max(ringRadius + 2.0, MAIN_AVENUES_RADIUS - 0.36)
 
   return (
     <group>
-      {/* Выделенные цветовые сектора групп агентов (начинаются за кольцом Королевы). */}
+      {/* Выделенные цветовые сектора групп агентов (начинаются за кольцом Королевы и вмещают дома и подпись). */}
       {sectors.map((sector) => {
         const isSelected = selectedDepartment === sector.key
         const thetaStart = -sector.endAngle
@@ -2945,7 +2946,7 @@ function DepartmentHouses3D({
               />
             </mesh>
             <mesh position={[view.x, 0.014, view.z]} rotation={[-Math.PI / 2, 0, 0]}>
-              <ringGeometry args={[5.55, 5.65, 24, 1, thetaStart, thetaLength]} />
+              <ringGeometry args={[sectorOuterR - 0.1, sectorOuterR, 24, 1, thetaStart, thetaLength]} />
               <meshBasicMaterial
                 color={sector.accent}
                 transparent
@@ -2954,8 +2955,8 @@ function DepartmentHouses3D({
               />
             </mesh>
             {[sector.startAngle, sector.endAngle].map((boundAngle, bIdx) => {
-              const rMid = (sectorInnerR + 5.62) / 2
-              const len = Math.max(0.4, 5.62 - sectorInnerR)
+              const rMid = (sectorInnerR + sectorOuterR) / 2
+              const len = Math.max(0.4, sectorOuterR - sectorInnerR)
               return (
                 <mesh
                   key={`sector-bound-${sector.key}-${bIdx}`}
@@ -2993,9 +2994,9 @@ function DepartmentHouses3D({
           text={sector.label}
           accentColor={sector.accent}
           position={[sector.x, sector.y, sector.z]}
-          size={[3.2, 0.68]}
+          size={[2.6, 0.58]}
           rotationZ={sector.rotZ}
-          fontSize={48}
+          fontSize={46}
         />
       ))}
     </group>
