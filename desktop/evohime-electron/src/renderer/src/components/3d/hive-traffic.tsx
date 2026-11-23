@@ -605,7 +605,7 @@ export function isVehicleAheadBlocked(
   minGap = 0.56,
   selfPriority: RoadPriority = 'main'
 ): boolean {
-  const effectiveGap = Math.max(minGap, 1.05)
+  const effectiveGap = Math.max(minGap, 1.15)
   const selfState = peers[selfIndex]
   const selfBlocked = selfState?.blockedSec ?? 0
   const selfInIntersection = selfState?.inIntersection === true
@@ -646,8 +646,9 @@ export function isVehicleAheadBlocked(
         continue
       }
       if (selfPriority === 'driveway' && otherPriority === 'main') {
-        // ПДД РФ п. 8.3: выезд с прилегающей территории уступает потоку на главной дороге.
-        if (dist < 0.95 && dot > 0.02) {
+        // ПДД РФ п. 8.3: выезд с прилегающей территории уступает всем приближающимся по главной дороге (кольцу).
+        const otherApproaching = -dx * otherDirX + -dz * otherDirZ > -0.2
+        if (dist < 1.15 && dot > -0.25 && otherApproaching) {
           if (selfState) selfState.yieldingTo = i
           return true
         }
