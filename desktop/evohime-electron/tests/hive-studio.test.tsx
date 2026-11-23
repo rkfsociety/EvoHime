@@ -165,6 +165,19 @@ describe('Hive Studio app', () => {
     expect(snapshot.satellites[2]?.ecosystem).toBe('dotnet')
   })
 
+  it('expands capital city rings and island radius proportionally when agent count grows', () => {
+    const snapshot = buildHiveStudioSimulation({ satelliteCount: 1 })
+    const compact = buildCityMapView(snapshot, null, { optimizeByQueen: true, totalHouses: 18 })
+    const expanded = buildCityMapView(snapshot, null, { optimizeByQueen: true, totalHouses: 36 })
+
+    expect(expanded.capital.radius).toBeGreaterThan(compact.capital.radius)
+    const compactModules = compact.capital.buildings.filter((b) => b.building.kind !== 'citadel')
+    const expandedModules = expanded.capital.buildings.filter((b) => b.building.kind !== 'citadel')
+    const minCompactDist = Math.min(...compactModules.map((b) => Math.hypot(b.x, b.z)))
+    const minExpandedDist = Math.min(...expandedModules.map((b) => Math.hypot(b.x, b.z)))
+    expect(minExpandedDist).toBeGreaterThan(minCompactDist + 3)
+  })
+
   it('optimizes building and department placement when Queen optimization is enabled', async () => {
     const snapshot = buildHiveStudioSimulation({ satelliteCount: 0 })
     const standardView = buildCityMapView(snapshot, null, { optimizeByQueen: false }).capital

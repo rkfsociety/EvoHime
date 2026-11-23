@@ -478,12 +478,20 @@ export function capitalHouseRingRadius(total: number): number {
 }
 
 /**
+ * Динамический радиус Главного кольцевого проспекта столицы: при росте числа домов
+ * агентов кольцо проспекта отодвигается наружу, сохраняя зазор под надписи секторов.
+ */
+export function capitalMainAvenueRadius(totalHouses: number): number {
+  return Math.max(7.2, capitalHouseRingRadius(totalHouses) + 2.32)
+}
+
+/**
  * Динамический внутренний радиус кварталов столицы: при росте числа домов
  * агентов кольцо модулей автоматически отодвигается наружу, чтобы город
  * масштабировался без наложений.
  */
 export function capitalInnerRadius(totalHouses: number): number {
-  return Math.max(CAPITAL_TOWER_INNER_RADIUS, capitalHouseRingRadius(totalHouses) + 1.8)
+  return Math.max(CAPITAL_TOWER_INNER_RADIUS, capitalMainAvenueRadius(totalHouses) + 0.4)
 }
 
 /**
@@ -509,6 +517,7 @@ export const CAPITAL_TOWER_INNER_RADIUS = 7.6
  */
 export interface CityLayoutOptions {
   readonly optimizeByQueen?: boolean | undefined
+  readonly totalHouses?: number | undefined
 }
 
 export interface CityLayoutEfficiency {
@@ -593,6 +602,7 @@ export function buildCityMapView(
   const visible = snapshot.satellites.filter(
     (island) => phases === null || phases.get(island.id) !== undefined
   )
+  const satBaseDist = Math.max(28, capital.radius + 13)
   const satellites: CityIslandView[] = visible.map((island, index) => {
     const ring = index < 6 ? 0 : 1
     const slot = index < 6 ? index : index - 6
@@ -600,8 +610,8 @@ export function buildCityMapView(
     const angle =
       (2 * Math.PI * slot) / Math.max(1, countInRing) + ring * (Math.PI / 6)
     const distance = ring === 0
-      ? 28
-      : 28 + islandRadiusEstimate(snapshot, index) + 15
+      ? satBaseDist
+      : satBaseDist + islandRadiusEstimate(snapshot, index) + 15
     const x = Math.cos(angle) * distance
     const z = Math.sin(angle) * distance
     return buildIslandView(island, x, z, phaseOf(island.id), options)
@@ -670,13 +680,14 @@ function buildIslandView(
   const columns = Math.max(1, Math.min(BUILDING_MAX_COLUMNS, Math.ceil(Math.sqrt(quarter.length))))
   const rows = Math.ceil(quarter.length / columns)
   const reserveCenter = island.role === 'capital'
+  const innerRadius = reserveCenter ? capitalInnerRadius(options?.totalHouses ?? 0) : CAPITAL_TOWER_INNER_RADIUS
   /** Радиус самого внешнего кольца радиальной застройки столицы. */
-  let outerRingRadius = CAPITAL_TOWER_INNER_RADIUS + 0.8
+  let outerRingRadius = innerRadius + 0.8
 
   if (reserveCenter && quarter.length > 0) {
     // Радиальная застройка столицы: кольца кварталов вокруг внутреннего
     // двора Королевы (вид сверху, строго по окружности без разброса и перекосов).
-    const ringStart = CAPITAL_TOWER_INNER_RADIUS + 1.2
+    const ringStart = innerRadius + 1.2
     const ringStep = 3.2
     let ringIndex = 0
     let ringRadius = ringStart

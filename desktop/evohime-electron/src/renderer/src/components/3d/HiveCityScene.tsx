@@ -669,8 +669,11 @@ export function HiveCityScene({
       heldSatellites.length === 0
         ? snapshot
         : { ...snapshot, satellites: [...snapshot.satellites, ...heldSatellites] }
-    return buildCityMapView(effectiveSnapshot, phases, { optimizeByQueen: queenOptimized })
-  }, [snapshot, lifecycle, queenOptimized])
+    return buildCityMapView(effectiveSnapshot, phases, {
+      optimizeByQueen: queenOptimized,
+      totalHouses: departmentHouses.length
+    })
+  }, [snapshot, lifecycle, queenOptimized, departmentHouses.length])
 
   const handleClearSelection = useCallback((): void => {
     setFocusIslandId(null)

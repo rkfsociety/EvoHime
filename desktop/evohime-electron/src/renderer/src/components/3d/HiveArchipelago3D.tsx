@@ -16,6 +16,7 @@ import {
   CITY_MAP_MAX_SATELLITES,
   capitalHouseAngle,
   capitalHouseRingRadius,
+  capitalMainAvenueRadius,
   displayIslandHue,
   fnv1a32,
   type CityBuildingKind,
@@ -1087,10 +1088,12 @@ function RoadSegment3D({
 function CityStreets3D({
   view,
   skin,
+  mainAvenueRadius = MAIN_AVENUES_RADIUS,
   paused = false
 }: {
   view: CityIslandView
   skin: CitySkin
+  mainAvenueRadius?: number
   paused?: boolean
 }) {
   const isCapital = view.island.role === 'capital'
@@ -1139,7 +1142,8 @@ function CityStreets3D({
     if (isCapital) {
       // Динамические кольцевые проспекты под любой масштаб города (шаг 3.2 между кольцами зданий).
       const rings: number[] = []
-      for (let r = MAIN_AVENUES_RADIUS; r <= view.radius * 0.76; r += AVENUE_RING_STEP) {
+      const baseRingR = Math.max(MAIN_AVENUES_RADIUS, mainAvenueRadius)
+      for (let r = baseRingR; r <= view.radius * 0.76; r += AVENUE_RING_STEP) {
         rings.push(Number(r.toFixed(2)))
       }
       if (rings.length === 0 || outer - (rings[rings.length - 1] ?? 0) > 1.4) {
@@ -1148,7 +1152,7 @@ function CityStreets3D({
       return rings
     }
     return [view.radius * 0.42, outer].filter((r) => r >= 2.2)
-  }, [isCapital, view.radius])
+  }, [isCapital, mainAvenueRadius, view.radius])
 
   // Гарантированный съезд с края ближайшего свободного кольцевого проспекта к КАЖДОМУ зданию-модулю (не заезжает внутрь кольца и дома).
   const moduleDriveways = useMemo(() => {
@@ -1881,6 +1885,7 @@ function QueenRoads3D({
   paused: boolean
 }) {
   const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
+  const mainAvenueR = capitalMainAvenueRadius(lots[0]?.total ?? lots.length)
   const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
 
   const spokeLineMaterial = useMemo(
@@ -2599,7 +2604,7 @@ function QueenRoads3D({
       {(() => {
         const bridgeAngle = QUEEN_GATE_ANGLE
         const startR = innerBoulevardR + 0.41
-        const endR = Math.max(startR + 0.3, MAIN_AVENUES_RADIUS - 0.41)
+        const endR = Math.max(startR + 0.3, mainAvenueR - 0.41)
         return (
           <group>
             <RoadSegment3D
@@ -2736,6 +2741,7 @@ function AgentModuleCouriers3D({
     const modules = view.buildings.filter((item) => item.building.kind !== 'citadel')
     if (modules.length === 0 || lots.length === 0) return []
     const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
+    const mainAvenueR = capitalMainAvenueRadius(lots[0]?.total ?? lots.length)
     const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
     const homeEdgeR = Math.max(innerBoulevardR + 0.35, ringRadius - 0.55)
     const bridgeAngle = QUEEN_GATE_ANGLE
@@ -2768,11 +2774,11 @@ function AgentModuleCouriers3D({
       const targetAngle = Math.atan2(target.z, target.x)
       const targetR = Math.hypot(target.x, target.z)
       const houseGarageR = Math.max(homeEdgeR + 0.35, ringRadius)
-      const targetEntryR = Math.max(MAIN_AVENUES_RADIUS + 0.41, targetR - 0.25)
+      const targetEntryR = Math.max(mainAvenueR + 0.41, targetR - 0.25)
 
       const outerLaneR = innerBoulevardR + 0.28
       const innerBorderR = innerBoulevardR + 0.41
-      const bridgeLen = Math.max(0.1, MAIN_AVENUES_RADIUS - 0.41 - innerBorderR)
+      const bridgeLen = Math.max(0.1, mainAvenueR - 0.41 - innerBorderR)
 
       const outHdx = -Math.cos(houseAngle)
       const outHdz = -Math.sin(houseAngle)
@@ -2807,7 +2813,7 @@ function AgentModuleCouriers3D({
         {
           len: bridgeLen,
           eval: (u) => {
-            const r = innerBorderR + u * (MAIN_AVENUES_RADIUS - 0.41 - innerBorderR)
+            const r = innerBorderR + u * (mainAvenueR - 0.41 - innerBorderR)
             return {
               x: view.x + Math.cos(bridgeAngle) * r - outBdz * laneOffset,
               z: view.z + Math.sin(bridgeAngle) * r + outBdx * laneOffset,
@@ -2820,10 +2826,10 @@ function AgentModuleCouriers3D({
           view.x,
           view.z,
           bridgeAngle,
-          MAIN_AVENUES_RADIUS - 0.41,
+          mainAvenueR - 0.41,
           targetAngle,
           targetEntryR,
-          MAIN_AVENUES_RADIUS,
+          mainAvenueR,
           QUEEN_GATE_ANGLE,
           true,
           laneOffset
@@ -2842,8 +2848,8 @@ function AgentModuleCouriers3D({
           targetAngle,
           targetEntryR,
           bridgeAngle,
-          MAIN_AVENUES_RADIUS - 0.41,
-          MAIN_AVENUES_RADIUS,
+          mainAvenueR - 0.41,
+          mainAvenueR,
           QUEEN_GATE_ANGLE,
           false,
           laneOffset
@@ -2851,7 +2857,7 @@ function AgentModuleCouriers3D({
         {
           len: bridgeLen,
           eval: (u) => {
-            const r = MAIN_AVENUES_RADIUS - 0.41 - u * (MAIN_AVENUES_RADIUS - 0.41 - innerBorderR)
+            const r = mainAvenueR - 0.41 - u * (mainAvenueR - 0.41 - innerBorderR)
             return {
               x: view.x + Math.cos(bridgeAngle) * r - inBdz * laneOffset,
               z: view.z + Math.sin(bridgeAngle) * r + inBdx * laneOffset,
@@ -3306,7 +3312,8 @@ function DepartmentHouses3D({
       }
     }
     const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
-    const labelR = Math.min(MAIN_AVENUES_RADIUS - 0.85, ringRadius + 1.32)
+    const mainAvenueR = capitalMainAvenueRadius(lots[0]?.total ?? lots.length)
+    const labelR = Math.min(mainAvenueR - 0.85, ringRadius + 1.32)
     const total = Math.max(1, lots[0]?.total ?? lots.length)
     return Array.from(groups.entries()).map(([key, info]) => {
       const minSlot = Math.min(...info.slots)
@@ -3359,9 +3366,10 @@ function DepartmentHouses3D({
 
   if (lots.length === 0) return <></>
   const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
+  const mainAvenueR = capitalMainAvenueRadius(lots[0]?.total ?? lots.length)
   const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
   const sectorInnerR = innerBoulevardR + 0.44
-  const sectorOuterR = Math.max(ringRadius + 2.0, MAIN_AVENUES_RADIUS - 0.36)
+  const sectorOuterR = Math.max(ringRadius + 2.0, mainAvenueR - 0.44)
 
   return (
     <group>
@@ -3772,7 +3780,16 @@ function IslandGroup3D({
         }}
       />
       {/* Уличная сеть города: проспекты, фонари, скверы, светофоры. */}
-      <CityStreets3D view={view} skin={skin} paused={paused} />
+      <CityStreets3D
+        view={view}
+        skin={skin}
+        mainAvenueRadius={
+          departmentHouses !== undefined && departmentHouses.length > 0
+            ? capitalMainAvenueRadius(departmentHouses.length)
+            : MAIN_AVENUES_RADIUS
+        }
+        paused={paused}
+      />
       {departmentHouses !== undefined && departmentHouses.length > 0 ? (
         <>
           <QueenRoads3D
