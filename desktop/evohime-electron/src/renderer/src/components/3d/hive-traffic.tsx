@@ -132,68 +132,161 @@ export function RegulatedIntersection3D({
     () => new THREE.MeshStandardMaterial({ color: '#1b2238', roughness: 0.6, metalness: 0.4 }),
     []
   )
-  const ringLampGreenMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#22c55e' }), [])
-  const ringLampAmberMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#f59e0b' }), [])
-  const ringLampRedMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ef4444' }), [])
-  const radialLampGreenMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#22c55e' }), [])
-  const radialLampAmberMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#f59e0b' }), [])
-  const radialLampRedMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ef4444' }), [])
-  const ringLampRefs = useRef<Array<THREE.Mesh | null>>([])
-  const radialLampRefs = useRef<Array<THREE.Mesh | null>>([])
+  const housingMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: '#0f1422', roughness: 0.7, metalness: 0.3 }),
+    []
+  )
+  const lampRedOn = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ff3b30' }), [])
+  const lampAmberOn = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ffb020' }), [])
+  const lampGreenOn = useMemo(() => new THREE.MeshBasicMaterial({ color: '#22e564' }), [])
+  const lampRedOff = useMemo(() => new THREE.MeshBasicMaterial({ color: '#3b1215' }), [])
+  const lampAmberOff = useMemo(() => new THREE.MeshBasicMaterial({ color: '#3b2a0e' }), [])
+  const lampGreenOff = useMemo(() => new THREE.MeshBasicMaterial({ color: '#0e331c' }), [])
+
+  const ringRedRefs = useRef<Array<THREE.Mesh | null>>([])
+  const ringAmberRefs = useRef<Array<THREE.Mesh | null>>([])
+  const ringGreenRefs = useRef<Array<THREE.Mesh | null>>([])
+  const radialRedRefs = useRef<Array<THREE.Mesh | null>>([])
+  const radialAmberRefs = useRef<Array<THREE.Mesh | null>>([])
+  const radialGreenRefs = useRef<Array<THREE.Mesh | null>>([])
 
   useEffect(() => () => {
     stopLineMat.dispose()
     poleMat.dispose()
-    ringLampGreenMat.dispose()
-    ringLampAmberMat.dispose()
-    ringLampRedMat.dispose()
-    radialLampGreenMat.dispose()
-    radialLampAmberMat.dispose()
-    radialLampRedMat.dispose()
+    housingMat.dispose()
+    lampRedOn.dispose()
+    lampAmberOn.dispose()
+    lampGreenOn.dispose()
+    lampRedOff.dispose()
+    lampAmberOff.dispose()
+    lampGreenOff.dispose()
   }, [
     stopLineMat,
     poleMat,
-    ringLampGreenMat,
-    ringLampAmberMat,
-    ringLampRedMat,
-    radialLampGreenMat,
-    radialLampAmberMat,
-    radialLampRedMat
+    housingMat,
+    lampRedOn,
+    lampAmberOn,
+    lampGreenOn,
+    lampRedOff,
+    lampAmberOff,
+    lampGreenOff
   ])
 
   useFrame((state) => {
     const elapsed = paused ? 0 : simClockRef ? simClockRef.current : state.clock.elapsedTime
     const light = getTrafficLightState(elapsed)
-    const rMat =
-      light === 'ring_green'
-        ? ringLampGreenMat
-        : light === 'amber_to_radial' || light === 'amber_to_ring'
-          ? ringLampAmberMat
-          : ringLampRedMat
-    const dMat =
-      light === 'radial_green'
-        ? radialLampGreenMat
-        : light === 'amber_to_radial' || light === 'amber_to_ring'
-          ? radialLampAmberMat
-          : radialLampRedMat
-    for (const lamp of ringLampRefs.current) {
-      if (lamp) lamp.material = rMat
+
+    const ringRed = light === 'radial_green' || light === 'amber_to_ring' ? lampRedOn : lampRedOff
+    const ringAmber =
+      light === 'amber_to_radial' || light === 'amber_to_ring' ? lampAmberOn : lampAmberOff
+    const ringGreen = light === 'ring_green' ? lampGreenOn : lampGreenOff
+
+    const radialRed = light === 'ring_green' || light === 'amber_to_radial' ? lampRedOn : lampRedOff
+    const radialAmber =
+      light === 'amber_to_radial' || light === 'amber_to_ring' ? lampAmberOn : lampAmberOff
+    const radialGreen = light === 'radial_green' ? lampGreenOn : lampGreenOff
+
+    for (const lamp of ringRedRefs.current) {
+      if (lamp) lamp.material = ringRed
     }
-    for (const lamp of radialLampRefs.current) {
-      if (lamp) lamp.material = dMat
+    for (const lamp of ringAmberRefs.current) {
+      if (lamp) lamp.material = ringAmber
+    }
+    for (const lamp of ringGreenRefs.current) {
+      if (lamp) lamp.material = ringGreen
+    }
+    for (const lamp of radialRedRefs.current) {
+      if (lamp) lamp.material = radialRed
+    }
+    for (const lamp of radialAmberRefs.current) {
+      if (lamp) lamp.material = radialAmber
+    }
+    for (const lamp of radialGreenRefs.current) {
+      if (lamp) lamp.material = radialGreen
     }
   })
 
   const ix = x + Math.cos(angle) * radius
   const iz = z + Math.sin(angle) * radius
-  const ringPoles: readonly [number, number][] = [
-    [-0.51, 0.43],
-    [0.51, -0.43]
+  const ringHeads: readonly {
+    poleX: number
+    poleZ: number
+    headX: number
+    headZ: number
+    rotY: number
+  }[] = [
+    { poleX: -0.51, poleZ: 0.46, headX: -0.51, headZ: 0.21, rotY: 0 },
+    { poleX: 0.51, poleZ: -0.46, headX: 0.51, headZ: -0.21, rotY: Math.PI }
   ]
-  const radialPoles: readonly [number, number][] = [
-    [-0.43, -0.51],
-    [0.43, 0.51]
+  const radialHeads: readonly {
+    poleX: number
+    poleZ: number
+    headX: number
+    headZ: number
+    rotY: number
+  }[] = [
+    { poleX: -0.46, poleZ: -0.51, headX: -0.21, headZ: -0.51, rotY: Math.PI / 2 },
+    { poleX: 0.46, poleZ: 0.51, headX: 0.21, headZ: 0.51, rotY: -Math.PI / 2 }
   ]
+
+  const renderTrafficHead = (
+    key: string,
+    head: { poleX: number; poleZ: number; headX: number; headZ: number; rotY: number },
+    idx: number,
+    redRefs: MutableRefObject<Array<THREE.Mesh | null>>,
+    amberRefs: MutableRefObject<Array<THREE.Mesh | null>>,
+    greenRefs: MutableRefObject<Array<THREE.Mesh | null>>,
+    initGreen: boolean
+  ) => {
+    const dx = head.headX - head.poleX
+    const dz = head.headZ - head.poleZ
+    const armLen = Math.hypot(dx, dz)
+    const armX = (head.poleX + head.headX) * 0.5
+    const armZ = (head.poleZ + head.headZ) * 0.5
+    const armAlongX = Math.abs(dx) >= Math.abs(dz)
+    return (
+      <group key={key}>
+        <mesh position={[head.poleX, 0.22, head.poleZ]} material={poleMat}>
+          <cylinderGeometry args={[0.022, 0.028, 0.44, 6]} />
+        </mesh>
+        <mesh position={[armX, 0.43, armZ]} material={poleMat}>
+          <boxGeometry args={[armAlongX ? armLen : 0.026, 0.024, armAlongX ? 0.026 : armLen]} />
+        </mesh>
+        <group position={[head.headX, 0.44, head.headZ]} rotation={[0, head.rotY, 0]}>
+          <mesh material={housingMat}>
+            <boxGeometry args={[0.085, 0.055, 0.29]} />
+          </mesh>
+          <mesh
+            ref={(el) => {
+              redRefs.current[idx] = el
+            }}
+            position={[0, 0.032, -0.09]}
+            material={initGreen ? lampRedOff : lampRedOn}
+          >
+            <cylinderGeometry args={[0.034, 0.034, 0.022, 12]} />
+          </mesh>
+          <mesh
+            ref={(el) => {
+              amberRefs.current[idx] = el
+            }}
+            position={[0, 0.032, 0]}
+            material={lampAmberOff}
+          >
+            <cylinderGeometry args={[0.034, 0.034, 0.022, 12]} />
+          </mesh>
+          <mesh
+            ref={(el) => {
+              greenRefs.current[idx] = el
+            }}
+            position={[0, 0.032, 0.09]}
+            material={initGreen ? lampGreenOn : lampGreenOff}
+          >
+            <cylinderGeometry args={[0.034, 0.034, 0.022, 12]} />
+          </mesh>
+        </group>
+      </group>
+    )
+  }
 
   return (
     <group position={[ix, 0, iz]} rotation={[0, -angle + Math.PI / 2, 0]}>
@@ -212,38 +305,28 @@ export function RegulatedIntersection3D({
       <mesh position={[0.49, 0.041, -0.21]} rotation={[-Math.PI / 2, 0, Math.PI / 2]} material={stopLineMat}>
         <planeGeometry args={[0.38, 0.055]} />
       </mesh>
-      {ringPoles.map(([cx, cz], idx) => (
-        <group key={`tl-ring-${idx}`} position={[cx, 0, cz]}>
-          <mesh position={[0, 0.16, 0]} material={poleMat}>
-            <cylinderGeometry args={[0.024, 0.03, 0.32, 6]} />
-          </mesh>
-          <mesh
-            ref={(el) => {
-              ringLampRefs.current[idx] = el
-            }}
-            position={[0, 0.34, 0]}
-            material={ringLampGreenMat}
-          >
-            <sphereGeometry args={[0.062, 10, 10]} />
-          </mesh>
-        </group>
-      ))}
-      {radialPoles.map(([cx, cz], idx) => (
-        <group key={`tl-radial-${idx}`} position={[cx, 0, cz]}>
-          <mesh position={[0, 0.16, 0]} material={poleMat}>
-            <cylinderGeometry args={[0.024, 0.03, 0.32, 6]} />
-          </mesh>
-          <mesh
-            ref={(el) => {
-              radialLampRefs.current[idx] = el
-            }}
-            position={[0, 0.34, 0]}
-            material={radialLampRedMat}
-          >
-            <sphereGeometry args={[0.062, 10, 10]} />
-          </mesh>
-        </group>
-      ))}
+      {ringHeads.map((head, idx) =>
+        renderTrafficHead(
+          `tl-ring-${idx}`,
+          head,
+          idx,
+          ringRedRefs,
+          ringAmberRefs,
+          ringGreenRefs,
+          true
+        )
+      )}
+      {radialHeads.map((head, idx) =>
+        renderTrafficHead(
+          `tl-radial-${idx}`,
+          head,
+          idx,
+          radialRedRefs,
+          radialAmberRefs,
+          radialGreenRefs,
+          false
+        )
+      )}
     </group>
   )
 }
