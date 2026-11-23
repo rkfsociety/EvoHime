@@ -1962,7 +1962,8 @@ function isVehicleAheadBlocked(
       other.lastDirX !== undefined && other.lastDirZ !== undefined
         ? other.lastDirX * dirX + other.lastDirZ * dirZ
         : 1
-    if (dot >= -0.02 && cross < 0.22 && sameDir > 0.25) {
+    const strictlyAhead = dot > 0.04 || (dist <= 0.04 && i < selfIndex)
+    if (strictlyAhead && cross < 0.22 && sameDir > 0.25) {
       return true
     }
   }
@@ -2082,7 +2083,7 @@ function QueenRoads3D({
         phase: lot.active ? 'delivering' : 'cooldown',
         progress: 0,
         curAngle: QUEEN_GATE_ANGLE,
-        cooldown: (idx % 6) * 0.28,
+        cooldown: idx * 0.32,
         curLaneOffset: 0.11
       }))
       queueRef.current = []
@@ -3051,7 +3052,7 @@ function AgentModuleCouriers3D({
           const key = route.lotSlot * 2 + dir
           let rawProgress = courierProgressRef.current.get(key)
           if (rawProgress === undefined) {
-            rawProgress = dir === 1 ? -0.5 : 0
+            rawProgress = dir === 1 ? -0.5 : (index % 6) * 0.08
             courierProgressRef.current.set(key, rawProgress)
           }
           if (rawProgress < 0) {
