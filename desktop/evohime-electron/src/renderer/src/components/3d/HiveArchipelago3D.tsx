@@ -1513,6 +1513,22 @@ function posArc(delta: number): number {
   return d
 }
 
+/** Находит свободный угол ровно между двумя домами агентов, ближайший к `targetAngle`. */
+function nearestInterHouseAngle(total: number, targetAngle: number): number {
+  const count = Math.max(2, total)
+  let bestAngle = capitalHouseAngle(0.5, count)
+  let bestDist = Infinity
+  for (let i = 0; i < count; i += 1) {
+    const a = capitalHouseAngle(i + 0.5, count)
+    const d = angularDistance(a, targetAngle)
+    if (d < bestDist) {
+      bestDist = d
+      bestAngle = a
+    }
+  }
+  return bestAngle
+}
+
 /**
  * Траектория курьера на Главном кольце по ПДД РФ (правостороннее движение):
  * все выезды и заезды — только направо, пересечение сплошной осевой кольца
@@ -2277,36 +2293,57 @@ function QueenRoads3D({
         </mesh>
       </group>
 
-      {/* Отдельные подъезды к КАЖДОМУ дому агента: стыкуются ровно по краям колец без наезда разметки и бордюров. */}
+      {/* ЕДИНСТВЕННЫЙ подъезд к КАЖДОМУ дому агента (1 въезд и выезд с внутреннего кольца). */}
       {lots.map((lot, index) => {
         const angle = houseAngles[index]
         if (angle === undefined) return null
         const frontStartR = innerBoulevardR + 0.41
-        const backExitR = ringRadius + 0.54
-        const mainRingEdgeR = Math.max(backExitR + 0.14, 6.0 - 0.33)
         return (
-          <group key={`road-${lot.departmentKey}-${lot.slot}`}>
+          <RoadSegment3D
+            key={`road-${lot.departmentKey}-${lot.slot}`}
+            from={[view.x + Math.cos(angle) * frontStartR, view.z + Math.sin(angle) * frontStartR]}
+            to={[view.x + Math.cos(angle) * homeEdgeR, view.z + Math.sin(angle) * homeEdgeR]}
+            bedMaterial={skin.roadBed}
+            curbMaterial={skin.roadCurb}
+            lineMaterial={spokeLineMaterial}
+            width={0.46}
+            y={0.024}
+          />
+        )
+      })}
+      {/* Межкольцевой проспект в свободном зазоре между домами (связывает внутреннее кольцо и Главный проспект 6.0). */}
+      {(() => {
+        const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_U_TURN_ANGLE)
+        const startR = innerBoulevardR + 0.41
+        const endR = Math.max(startR + 0.3, 6.0 - 0.33)
+        return (
+          <group>
             <RoadSegment3D
-              from={[view.x + Math.cos(angle) * frontStartR, view.z + Math.sin(angle) * frontStartR]}
-              to={[view.x + Math.cos(angle) * homeEdgeR, view.z + Math.sin(angle) * homeEdgeR]}
+              from={[view.x + Math.cos(bridgeAngle) * startR, view.z + Math.sin(bridgeAngle) * startR]}
+              to={[view.x + Math.cos(bridgeAngle) * endR, view.z + Math.sin(bridgeAngle) * endR]}
               bedMaterial={skin.roadBed}
               curbMaterial={skin.roadCurb}
               lineMaterial={spokeLineMaterial}
               width={0.46}
-              y={0.024}
+              y={0.023}
             />
-            <RoadSegment3D
-              from={[view.x + Math.cos(angle) * backExitR, view.z + Math.sin(angle) * backExitR]}
-              to={[view.x + Math.cos(angle) * mainRingEdgeR, view.z + Math.sin(angle) * mainRingEdgeR]}
-              bedMaterial={skin.roadBed}
-              curbMaterial={skin.roadCurb}
-              lineMaterial={spokeLineMaterial}
-              width={0.42}
-              y={0.022}
-            />
+            <mesh
+              position={[view.x + Math.cos(bridgeAngle) * startR, 0.037, view.z + Math.sin(bridgeAngle) * startR]}
+              rotation={[-Math.PI / 2, 0, -bridgeAngle + Math.PI / 2]}
+              material={skin.roadBed}
+            >
+              <planeGeometry args={[0.38, 0.08]} />
+            </mesh>
+            <mesh
+              position={[view.x + Math.cos(bridgeAngle) * endR, 0.037, view.z + Math.sin(bridgeAngle) * endR]}
+              rotation={[-Math.PI / 2, 0, -bridgeAngle + Math.PI / 2]}
+              material={skin.roadBed}
+            >
+              <planeGeometry args={[0.38, 0.08]} />
+            </mesh>
           </group>
         )
-      })}
+      })()}
 
       {/* 4-полосный кольцевой бульвар перед домами агентов (2 полосы к воротам + 2 скоростных/обратных). */}
       <mesh position={[view.x, 0.022, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={ringBedMaterial}>
@@ -2353,37 +2390,21 @@ function QueenRoads3D({
       >
         <planeGeometry args={[0.56, 0.08]} />
       </mesh>
-      {/* Чистые Т-образные стыки съездов домов с бордюрами колец. */}
-      {houseAngles.map((angle, idx) => {
-        const backExitR = ringRadius + 0.54
-        const mainRingEdgeR = Math.max(backExitR + 0.14, 6.0 - 0.33)
-        return (
-          <group key={`junction-patch-${idx}`}>
-            <mesh
-              position={[
-                view.x + Math.cos(angle) * (innerBoulevardR + 0.41),
-                0.037,
-                view.z + Math.sin(angle) * (innerBoulevardR + 0.41)
-              ]}
-              rotation={[-Math.PI / 2, 0, -angle + Math.PI / 2]}
-              material={skin.roadBed}
-            >
-              <planeGeometry args={[0.38, 0.08]} />
-            </mesh>
-            <mesh
-              position={[
-                view.x + Math.cos(angle) * mainRingEdgeR,
-                0.037,
-                view.z + Math.sin(angle) * mainRingEdgeR
-              ]}
-              rotation={[-Math.PI / 2, 0, -angle + Math.PI / 2]}
-              material={skin.roadBed}
-            >
-              <planeGeometry args={[0.34, 0.08]} />
-            </mesh>
-          </group>
-        )
-      })}
+      {/* Чистые Т-образные стыки единственных съездов домов с внутренним кольцом. */}
+      {houseAngles.map((angle, idx) => (
+        <mesh
+          key={`junction-patch-${idx}`}
+          position={[
+            view.x + Math.cos(angle) * (innerBoulevardR + 0.41),
+            0.037,
+            view.z + Math.sin(angle) * (innerBoulevardR + 0.41)
+          ]}
+          rotation={[-Math.PI / 2, 0, -angle + Math.PI / 2]}
+          material={skin.roadBed}
+        >
+          <planeGeometry args={[0.38, 0.08]} />
+        </mesh>
+      ))}
 
       {/* Машины в очереди и на выезде. */}
       <instancedMesh
@@ -2435,12 +2456,17 @@ function AgentModuleCouriers3D({
     const modules = view.buildings.filter((item) => item.building.kind !== 'citadel')
     if (modules.length === 0 || lots.length === 0) return []
     const ringRadius = capitalHouseRingRadius(lots[0]?.total ?? 0)
+    const innerBoulevardR = Math.max(2.9, ringRadius - 1.25)
+    const homeEdgeR = Math.max(innerBoulevardR + 0.35, ringRadius - 0.55)
+    const bridgeAngle = nearestInterHouseAngle(lots[0]?.total ?? lots.length, QUEEN_U_TURN_ANGLE)
     const sourceLots = lots.filter((lot) => lot.active)
 
     const list: Array<{
       readonly lotSlot: number
       readonly houseAngle: number
       readonly houseExitR: number
+      readonly bridgeAngle: number
+      readonly innerRingR: number
       readonly targetAngle: number
       readonly targetEntryR: number
       readonly color: string
@@ -2464,9 +2490,11 @@ function AgentModuleCouriers3D({
       list.push({
         lotSlot: lot.slot,
         houseAngle,
-        houseExitR: ringRadius + 0.54,
+        houseExitR: homeEdgeR,
+        bridgeAngle,
+        innerRingR: innerBoulevardR,
         targetAngle,
-        targetEntryR: Math.max(MAIN_AVENUES_RADIUS + 0.25, Math.min(MAIN_AVENUES_RADIUS + 1.4, targetR - 0.85)),
+        targetEntryR: Math.max(MAIN_AVENUES_RADIUS + 0.34, Math.min(MAIN_AVENUES_RADIUS + 1.4, targetR - 0.85)),
         color: lot.active ? lot.accent : '#7ef2c4',
         phase: idx / Math.max(1, sourceLots.length),
         active: lot.active
@@ -2510,34 +2538,116 @@ function AgentModuleCouriers3D({
           continue
         }
         const p = paused ? (route.phase + dir * 0.5) % 1 : (route.phase + dir * 0.5 + time * flowSpeed) % 1
-        const pose =
-          dir === 0
-            ? evalMainRingPddPose(
-                view.x,
-                view.z,
-                route.houseAngle,
-                route.houseExitR,
-                route.targetAngle,
-                route.targetEntryR,
-                MAIN_AVENUES_RADIUS,
-                QUEEN_U_TURN_ANGLE,
-                true,
-                p,
-                laneOffset
-              )
-            : evalMainRingPddPose(
-                view.x,
-                view.z,
-                route.targetAngle,
-                route.targetEntryR,
-                route.houseAngle,
-                route.houseExitR,
-                MAIN_AVENUES_RADIUS,
-                QUEEN_U_TURN_ANGLE,
-                false,
-                p,
-                laneOffset
-              )
+        // Курьеры выезжают и возвращаются через ЕДИНСТВЕННЫЙ подъезд дома (на внутреннее кольцо),
+        // затем через межкольцевой проспект bridgeAngle выходят на Главный проспект 6.0.
+        let pose: { x: number; z: number; dx: number; dz: number }
+        if (dir === 0) {
+          if (p < 0.32) {
+            const subT = p / 0.32
+            const outerLaneR = route.innerRingR + 0.28
+            const innerBorderR = route.innerRingR + 0.41
+            const hdx = -Math.cos(route.houseAngle)
+            const hdz = -Math.sin(route.houseAngle)
+            const bdx = Math.cos(route.bridgeAngle)
+            const bdz = Math.sin(route.bridgeAngle)
+            const arc = posArc(route.houseAngle - route.bridgeAngle)
+            if (subT < 0.25) {
+              const u = subT / 0.25
+              const r = route.houseExitR - u * (route.houseExitR - innerBorderR)
+              pose = {
+                x: view.x + Math.cos(route.houseAngle) * r - hdz * laneOffset,
+                z: view.z + Math.sin(route.houseAngle) * r + hdx * laneOffset,
+                dx: hdx,
+                dz: hdz
+              }
+            } else if (subT < 0.75) {
+              const u = (subT - 0.25) / 0.5
+              const curA = route.houseAngle - arc * u
+              pose = {
+                x: view.x + Math.cos(curA) * outerLaneR,
+                z: view.z + Math.sin(curA) * outerLaneR,
+                dx: Math.sin(curA),
+                dz: -Math.cos(curA)
+              }
+            } else {
+              const u = (subT - 0.75) / 0.25
+              const r = innerBorderR + u * (MAIN_AVENUES_RADIUS - 0.34 - innerBorderR)
+              pose = {
+                x: view.x + Math.cos(route.bridgeAngle) * r - bdz * laneOffset,
+                z: view.z + Math.sin(route.bridgeAngle) * r + bdx * laneOffset,
+                dx: bdx,
+                dz: bdz
+              }
+            }
+          } else {
+            pose = evalMainRingPddPose(
+              view.x,
+              view.z,
+              route.bridgeAngle,
+              MAIN_AVENUES_RADIUS - 0.34,
+              route.targetAngle,
+              route.targetEntryR,
+              MAIN_AVENUES_RADIUS,
+              QUEEN_U_TURN_ANGLE,
+              true,
+              (p - 0.32) / 0.68,
+              laneOffset
+            )
+          }
+        } else {
+          if (p < 0.68) {
+            pose = evalMainRingPddPose(
+              view.x,
+              view.z,
+              route.targetAngle,
+              route.targetEntryR,
+              route.bridgeAngle,
+              MAIN_AVENUES_RADIUS - 0.34,
+              MAIN_AVENUES_RADIUS,
+              QUEEN_U_TURN_ANGLE,
+              false,
+              p / 0.68,
+              laneOffset
+            )
+          } else {
+            const subT = (p - 0.68) / 0.32
+            const outerLaneR = route.innerRingR + 0.28
+            const innerBorderR = route.innerRingR + 0.41
+            const bdx = -Math.cos(route.bridgeAngle)
+            const bdz = -Math.sin(route.bridgeAngle)
+            const hdx = Math.cos(route.houseAngle)
+            const hdz = Math.sin(route.houseAngle)
+            const arc = posArc(route.bridgeAngle - route.houseAngle)
+            if (subT < 0.25) {
+              const u = subT / 0.25
+              const r = MAIN_AVENUES_RADIUS - 0.34 - u * (MAIN_AVENUES_RADIUS - 0.34 - innerBorderR)
+              pose = {
+                x: view.x + Math.cos(route.bridgeAngle) * r - bdz * laneOffset,
+                z: view.z + Math.sin(route.bridgeAngle) * r + bdx * laneOffset,
+                dx: bdx,
+                dz: bdz
+              }
+            } else if (subT < 0.75) {
+              const u = (subT - 0.25) / 0.5
+              const curA = route.bridgeAngle - arc * u
+              pose = {
+                x: view.x + Math.cos(curA) * outerLaneR,
+                z: view.z + Math.sin(curA) * outerLaneR,
+                dx: Math.sin(curA),
+                dz: -Math.cos(curA)
+              }
+            } else {
+              const u = (subT - 0.75) / 0.25
+              const r = innerBorderR + u * (route.houseExitR - innerBorderR)
+              pose = {
+                x: view.x + Math.cos(route.houseAngle) * r - hdz * laneOffset,
+                z: view.z + Math.sin(route.houseAngle) * r + hdx * laneOffset,
+                dx: hdx,
+                dz: hdz
+              }
+            }
+          }
+        }
 
         const courierY = 0.12 + (instIdx % 7) * 0.0008
         dummy.position.set(pose.x, courierY, pose.z)
