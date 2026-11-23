@@ -119,7 +119,8 @@ export function RegulatedIntersection3D({
   angle,
   bedMaterial,
   paused,
-  simClockRef
+  simClockRef,
+  hasOuterRadial = true
 }: {
   x: number
   z: number
@@ -128,6 +129,7 @@ export function RegulatedIntersection3D({
   bedMaterial: THREE.Material
   paused: boolean
   simClockRef?: MutableRefObject<number> | undefined
+  hasOuterRadial?: boolean | undefined
 }) {
   const stopLineMat = useMemo(
     () =>
@@ -314,13 +316,15 @@ export function RegulatedIntersection3D({
       >
         <planeGeometry args={[0.38, 0.055]} />
       </mesh>
-      <mesh
-        position={[0.21, 0.041, INTERSECTION_STOP_HALF_EXTENT]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        material={stopLineMat}
-      >
-        <planeGeometry args={[0.38, 0.055]} />
-      </mesh>
+      {hasOuterRadial ? (
+        <mesh
+          position={[0.21, 0.041, INTERSECTION_STOP_HALF_EXTENT]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          material={stopLineMat}
+        >
+          <planeGeometry args={[0.38, 0.055]} />
+        </mesh>
+      ) : null}
       <mesh
         position={[-INTERSECTION_STOP_HALF_EXTENT, 0.041, 0.21]}
         rotation={[-Math.PI / 2, 0, Math.PI / 2]}
@@ -346,7 +350,7 @@ export function RegulatedIntersection3D({
           true
         )
       )}
-      {radialHeads.map((head, idx) =>
+      {(hasOuterRadial ? radialHeads : radialHeads.slice(0, 1)).map((head, idx) =>
         renderTrafficHead(
           `tl-radial-${idx}`,
           head,

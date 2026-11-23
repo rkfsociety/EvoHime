@@ -948,6 +948,7 @@ function CityStreets3D({
             bedMaterial={skin.roadBed}
             paused={paused}
             simClockRef={simClockRef}
+            hasOuterRadial={idx < ringRadii.length - 1}
           />
         </group>
       ))}
