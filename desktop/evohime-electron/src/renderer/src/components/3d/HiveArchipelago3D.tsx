@@ -879,9 +879,9 @@ function BuildingComplex3D({
       default: {
         const step = bodyH / 3
         return [
-          { w: width * 1.22, h: step, accent: false, rot: Math.PI / 4, y: baseH + step / 2, dx: 0 },
-          { w: width * 0.92, h: step, accent: false, rot: Math.PI / 4, y: baseH + step * 1.5, dx: 0 },
-          { w: width * 0.62, h: step, accent: true, rot: Math.PI / 4, y: baseH + step * 2.5, dx: 0 }
+          { w: width * 1.16, h: step, accent: false, rot: 0, y: baseH + step / 2, dx: 0 },
+          { w: width * 0.88, h: step, accent: false, rot: 0, y: baseH + step * 1.5, dx: 0 },
+          { w: width * 0.58, h: step, accent: true, rot: 0, y: baseH + step * 2.5, dx: 0 }
         ]
       }
     }
@@ -895,9 +895,15 @@ function BuildingComplex3D({
   const facade = skin.facades[variant % skin.facades.length]?.material ?? skin.roof
   const wallWithRoof = useMemo(() => [facade, facade, skin.roof, skin.roof, facade, facade], [facade, skin.roof])
 
+  const radialRotY =
+    view.island.role === 'capital' && (item.x !== 0 || item.z !== 0)
+      ? -Math.atan2(item.z, item.x)
+      : 0
+
   return (
     <group
       position={[x, 0, z]}
+      rotation={[0, radialRotY, 0]}
       userData={{ testid: `hive-archipelago-tower-${item.building.id}`, buildingId: item.building.id }}
       onPointerDown={handlePointerDown}
       onPointerMove={(event: ThreeEvent<PointerEvent>) => {
@@ -2589,6 +2595,7 @@ function DepartmentHouse3D({
   return (
     <group
       position={position}
+      rotation={[0, -angle, 0]}
       userData={{
         testid: `hive-archipelago-house-${lot.departmentKey}-${lot.slot}`,
         dept: lot.departmentKey,

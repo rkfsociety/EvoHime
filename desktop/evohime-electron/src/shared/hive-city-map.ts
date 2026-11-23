@@ -590,34 +590,31 @@ function buildIslandView(
 
   if (reserveCenter && quarter.length > 0) {
     // Радиальная застройка столицы: кольца кварталов вокруг внутреннего
-    // двора Королевы (вид сверху, без слепых зон и сдвигов).
+    // двора Королевы (вид сверху, строго по окружности без разброса и перекосов).
     const ringStart = CAPITAL_TOWER_INNER_RADIUS + 1.2
     const ringStep = 3.2
     let ringIndex = 0
-    let indexOnRing = 0
     let ringRadius = ringStart
-    for (const building of quarter) {
-      const seed = `${island.id}/${building.id}`
+    let offset = 0
+    while (offset < quarter.length) {
       const capacity = Math.max(8, Math.floor((2 * Math.PI * ringRadius) / 3.5))
-      const baseAngle =
-        (2 * Math.PI * indexOnRing) / capacity + ringIndex * (Math.PI / capacity)
-      const jitterAngle = (mixSeed(seed, 3) - 0.5) * (2 * Math.PI / capacity) * 0.04
-      const jitterRadius = (mixSeed(seed, 4) - 0.5) * 0.1
-      const angle = baseAngle + jitterAngle
-      const radiusOnRing = ringRadius + jitterRadius
-      const bx = Math.cos(angle) * radiusOnRing
-      const bz = Math.sin(angle) * radiusOnRing
-      buildings.push({
-        building,
-        x: bx,
-        z: bz,
-        height: Math.max(0.15, building.height_weight_bp / 1000),
-        isEdgeTarget: false
-      })
-      indexOnRing += 1
-      if (indexOnRing >= capacity) {
-        indexOnRing = 0
-        ringIndex += 1
+      const slice = quarter.slice(offset, offset + capacity)
+      const countOnRing = slice.length
+      for (let i = 0; i < countOnRing; i += 1) {
+        const building = slice[i]
+        if (!building) continue
+        const angle = (2 * Math.PI * i) / countOnRing + ringIndex * (Math.PI / countOnRing)
+        buildings.push({
+          building,
+          x: Math.cos(angle) * ringRadius,
+          z: Math.sin(angle) * ringRadius,
+          height: Math.max(0.15, building.height_weight_bp / 1000),
+          isEdgeTarget: false
+        })
+      }
+      offset += countOnRing
+      ringIndex += 1
+      if (offset < quarter.length) {
         ringRadius += ringStep
       }
     }
