@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, net, Notification, safeStorage } from 'electron'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
+import { execFile, execFileSync, spawn, type ChildProcess } from 'node:child_process'
 
 import type { AmbientHotkeyStatus, AppLocale, ListeningState, ShellDiagnostic, ShellState } from '@shared/api'
 
@@ -797,6 +797,25 @@ function processIsAlive(pid: number): boolean {
   }
 }
 
+function processIsSupervisorAsync(pid: number): Promise<boolean> {
+  if (process.platform !== 'win32') return Promise.resolve(processIsAlive(pid))
+  return new Promise((resolve) => {
+    execFile(
+      'tasklist.exe',
+      ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'],
+      { encoding: 'utf8', windowsHide: true },
+      (error, stdout) => {
+        if (error) {
+          resolve(false)
+          return
+        }
+        const imageName = stdout.trim().match(/^"([^"]+)"/)?.[1]
+        resolve(isSupervisorImageName(imageName))
+      }
+    )
+  })
+}
+
 /**
  * The transaction worker keeps the previous installation until this marker
  * appears. It is written only after the new shell has authenticated with Core.
@@ -860,14 +879,40 @@ function handleRendererFailure(reason: string): void {
 }
 
 function monitorSupervisorLiveness(): NodeJS.Timeout {
+  let verifiedPid: number | null = null
+  let ticksSinceVerify = 0
+  let verifying = false
+
+  const handleLost = (pid: number): void => {
+    log('error', 'shell.supervisor_owner_lost', { pid })
+    client?.stop()
+    clearInterval(timer)
+  }
+
   const timer = setInterval(() => {
     const launch = readLaunchContext()
     const pid = launch.supervisorPid
     if (launch.developerLaunch || !pid) return
-    if (processIsSupervisor(pid)) return
-    log('error', 'shell.supervisor_owner_lost', { pid })
-    client?.stop()
-    clearInterval(timer)
+    if (!processIsAlive(pid)) {
+      handleLost(pid)
+      return
+    }
+    ticksSinceVerify += 1
+    if (verifiedPid === pid && ticksSinceVerify < 30) return
+    if (verifying) return
+    verifying = true
+    void processIsSupervisorAsync(pid)
+      .then((ok) => {
+        if (ok) {
+          verifiedPid = pid
+          ticksSinceVerify = 0
+        } else {
+          handleLost(pid)
+        }
+      })
+      .finally(() => {
+        verifying = false
+      })
   }, 1_000)
   timer.unref()
   return timer

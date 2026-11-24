@@ -105,7 +105,9 @@ export function createOverlay(): OverlayController {
   })
 
   window.setAlwaysOnTop(true, 'screen-saver')
-  window.setIgnoreMouseEvents(true, { forward: true })
+  // Без { forward: true }: иначе Electron ставит глобальный WH_MOUSE_LL хук,
+  // и любая пауза главного потока замораживает курсор по всей системе.
+  window.setIgnoreMouseEvents(true)
   window.setMenuBarVisibility(false)
 
   void window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(overlayHtml())}`)
