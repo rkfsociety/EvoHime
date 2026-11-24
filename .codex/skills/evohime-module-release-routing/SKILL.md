@@ -29,7 +29,10 @@ workflow → artifact/tag/consumer.
 3. Если source публикуемого модуля изменён, прочитать текущую строку
    `release-versions/<module>.txt`, проверить строгий `MAJOR.MINOR.PATCH` и
    увеличить только PATCH на 1. Не менять major/minor, product version,
-   package version или незатронутые модули.
+   package version или незатронутые модули. В том же коммите добавить в
+   `release-notes/<module>.md` секцию `## <новая_версия>` с 1–3 короткими
+   пунктами на русском языке, понятными пользователю (без внутренних имён
+   функций, путей и хэшей).
 4. Если source модулей нет, явно записать «повышение версий не требуется».
 5. Проверить, что version file входит в task-only commit и согласуется с
    workflow path filter и tag `module-<module>-v<semver>`. Не утверждать, что

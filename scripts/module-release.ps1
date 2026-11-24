@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory)] [ValidatePattern('^[a-z0-9][a-z0-9-]*$')] [string]$Module,
     [Parameter(Mandatory)] [ValidatePattern('^\d+\.\d+\.\d+$')] [string]$Version,
     [Parameter(Mandatory)] [string]$Artifact,
@@ -73,13 +73,9 @@ $modulePaths = @{
         'desktop/evohime-electron/scripts/build-electron.mjs'
     )
 }
-$changes = [System.Collections.Generic.List[string]]::new()
-if ($modulePaths.ContainsKey($Module)) {
-    foreach ($change in @(git log -5 --pretty=format:'- %s' -- $modulePaths[$Module] 2>$null)) {
-        if ($null -ne $change) { [void]$changes.Add([string]$change) }
-    }
-}
-if ($changes.Count -eq 0) { [void]$changes.Add('- Обновлён состав поставки модуля и его проверенный бинарный артефакт.') }
+. (Join-Path $PSScriptRoot 'module-release-notes.ps1')
+$selectedPaths = if ($modulePaths.ContainsKey($Module)) { @($modulePaths[$Module]) } else { @() }
+[string[]]$changes = Resolve-ModuleReleaseChanges -Module $Module -Version $Version -ModulePaths $selectedPaths
 $summaryText = if ($Summary) { $Summary } else {
     switch ($Module) {
         'shell-host' { 'Оболочка Electron: окно приложения, IPC-адаптеры, preload и запуск пользовательского интерфейса.'; break }
@@ -107,7 +103,7 @@ $manifest = [ordered]@{
     dependencies = $dependencies.ToArray()
     restart = $restart
     summary = $summaryText
-    changes = $changes.ToArray()
+    changes = @($changes)
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
 
