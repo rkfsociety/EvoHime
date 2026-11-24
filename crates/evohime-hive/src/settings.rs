@@ -293,17 +293,6 @@ impl HiveSettings {
                 max: MAX_DAILY_BUDGET_USD,
             });
         }
-        for limits in [
-            self.hive_provider_limits,
-            self.hive_fallback_provider_limits,
-        ] {
-            if [limits.rpm, limits.rph, limits.rp4h, limits.rpd]
-                .iter()
-                .any(|limit| *limit > 10_000)
-            {
-                return Err(HiveSettingsError::InvalidProviderLimit);
-            }
-        }
         if self.hive_daily_token_quota > 1_000_000_000_000
             || self.hive_fallback_daily_token_quota > 1_000_000_000_000
         {
@@ -1062,5 +1051,36 @@ mod tests {
                 limit: 8
             })
         );
+    }
+
+    #[test]
+    fn provider_request_limits_accept_realistic_and_u32_max_values() {
+        let settings = HiveSettings {
+            hive_provider_limits: ProviderLimits {
+                rpm: 7,
+                rph: 200,
+                rp4h: 600,
+                rpd: 10_080,
+            },
+            hive_fallback_provider_limits: ProviderLimits {
+                rpm: 10,
+                rph: 600,
+                rp4h: 2_400,
+                rpd: 14_400,
+            },
+            ..HiveSettings::default()
+        };
+        assert!(settings.validate().is_ok());
+
+        let max_limits = HiveSettings {
+            hive_provider_limits: ProviderLimits {
+                rpm: u32::MAX,
+                rph: u32::MAX,
+                rp4h: u32::MAX,
+                rpd: u32::MAX,
+            },
+            ..HiveSettings::default()
+        };
+        assert!(max_limits.validate().is_ok());
     }
 }

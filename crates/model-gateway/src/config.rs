@@ -1328,9 +1328,6 @@ fn validate_model_rate_limits(
                 || model.chars().count() > 128
                 || model.contains('\0')
                 || model.chars().any(char::is_whitespace)
-                || [limit.rpm, limit.rph, limit.rp4h, limit.rpd]
-                    .iter()
-                    .any(|value| *value > 10_000)
                 || limit.reset_time_minutes >= 1_440
                 || !(-12..=14).contains(&limit.reset_utc_offset_hours)
                 || limit

@@ -81,7 +81,7 @@ function parseModelCap(value: string): number | null {
   const trimmed = value.trim()
   if (!/^\d+$/.test(trimmed)) return null
   const parsed = Number(trimmed)
-  return Number.isSafeInteger(parsed) && parsed <= 10_000 ? parsed : null
+  return Number.isSafeInteger(parsed) && parsed <= 4_294_967_295 ? parsed : null
 }
 
 function parseModelPrice(value: string): number | null {
@@ -474,7 +474,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
         const rp4h = parseModelCap(entry.rp4h)
         const rpd = parseModelCap(entry.rpd)
         if (rpm === null || rph === null || rp4h === null || rpd === null) {
-          setStatus({ kind: 'failed', message: 'Лимиты RPM/RPH/RP4H/RPD должны быть целыми числами от 0 до 10000.' })
+          setStatus({ kind: 'failed', message: 'Лимиты RPM/RPH/RP4H/RPD должны быть целыми числами от 0 до 4294967295.' })
           return
         }
         let dailyTokenQuota: number | null = null

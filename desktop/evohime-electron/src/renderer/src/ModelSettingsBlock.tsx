@@ -221,7 +221,7 @@ export function ModelSettingsBlock({
                     id={rpmId}
                     type="number"
                     min={0}
-                    max={10_000}
+                    max={4_294_967_295}
                     step={1}
                     value={entry.rpm}
                     onChange={(event) => onUpdateEntry(entry.key, { rpm: event.target.value })}
@@ -234,7 +234,7 @@ export function ModelSettingsBlock({
                     id={rphId}
                     type="number"
                     min={0}
-                    max={10_000}
+                    max={4_294_967_295}
                     step={1}
                     value={entry.rph}
                     onChange={(event) => onUpdateEntry(entry.key, { rph: event.target.value })}
@@ -247,7 +247,7 @@ export function ModelSettingsBlock({
                     id={rp4hId}
                     type="number"
                     min={0}
-                    max={10_000}
+                    max={4_294_967_295}
                     step={1}
                     value={entry.rp4h}
                     onChange={(event) => onUpdateEntry(entry.key, { rp4h: event.target.value })}
@@ -260,7 +260,7 @@ export function ModelSettingsBlock({
                     id={rpdId}
                     type="number"
                     min={0}
-                    max={10_000}
+                    max={4_294_967_295}
                     step={1}
                     value={entry.rpd}
                     onChange={(event) => onUpdateEntry(entry.key, { rpd: event.target.value })}

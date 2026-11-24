@@ -184,7 +184,7 @@ export function normalizeRequestPacing(value: unknown): RequestPacingSettings | 
   return { enabled: value['enabled'], intervalMs, freeIntervalMs }
 }
 
-const MAX_MODEL_RATE = 10_000
+const MAX_MODEL_RATE = 4_294_967_295
 const MAX_MODEL_PRICE_USD_PER_1M = 10_000
 const MAX_MODEL_RATE_LIMIT_MODELS = 64
 

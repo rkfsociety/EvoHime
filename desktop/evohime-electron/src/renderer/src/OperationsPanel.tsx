@@ -597,14 +597,16 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       ? root['hive_fallback_model'].slice(0, 128)
       : null,
     hiveProviderLimits: {
-      rpm: count(record(root['hive_provider_limits'])['rpm'], 10_000),
-      rph: count(record(root['hive_provider_limits'])['rph'], 10_000),
-      rpd: count(record(root['hive_provider_limits'])['rpd'], 10_000)
+      rpm: count(record(root['hive_provider_limits'])['rpm'], 4_294_967_295),
+      rph: count(record(root['hive_provider_limits'])['rph'], 4_294_967_295),
+      rp4h: count(record(root['hive_provider_limits'])['rp4h'], 4_294_967_295),
+      rpd: count(record(root['hive_provider_limits'])['rpd'], 4_294_967_295)
     },
     hiveFallbackProviderLimits: {
-      rpm: count(record(root['hive_fallback_provider_limits'])['rpm'], 10_000),
-      rph: count(record(root['hive_fallback_provider_limits'])['rph'], 10_000),
-      rpd: count(record(root['hive_fallback_provider_limits'])['rpd'], 10_000)
+      rpm: count(record(root['hive_fallback_provider_limits'])['rpm'], 4_294_967_295),
+      rph: count(record(root['hive_fallback_provider_limits'])['rph'], 4_294_967_295),
+      rp4h: count(record(root['hive_fallback_provider_limits'])['rp4h'], 4_294_967_295),
+      rpd: count(record(root['hive_fallback_provider_limits'])['rpd'], 4_294_967_295)
     },
     hiveDailyTokenQuota: count(root['hive_daily_token_quota'], 1_000_000_000_000),
     hiveFallbackDailyTokenQuota: count(root['hive_fallback_daily_token_quota'], 1_000_000_000_000),
