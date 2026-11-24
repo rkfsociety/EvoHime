@@ -176,11 +176,22 @@ pub async fn run_unix_pipe(
                 )
                 .await
             {
-                let _ = logger.write(
-                    "info",
-                    "ipc.connection_closed",
-                    serde_json::json!({"error": error.to_string()}),
-                );
+                if matches!(
+                    error,
+                    crate::IpcBridgeError::Frame(evohime_desktop_ipc::FrameError::Closed)
+                ) {
+                    let _ = logger.write(
+                        "info",
+                        "ipc.connection_closed",
+                        serde_json::json!({"reason": "client_closed"}),
+                    );
+                } else {
+                    let _ = logger.write(
+                        "warn",
+                        "ipc.connection_closed",
+                        serde_json::json!({"error": error.to_string()}),
+                    );
+                }
                 break;
             }
         }

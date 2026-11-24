@@ -5,8 +5,20 @@ use crate::{encode_frame, FrameError, MAX_FRAME_BYTES};
 /// Reads one complete length-prefixed frame from an asynchronous stream.
 pub async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Vec<u8>, FrameError> {
     let mut length_bytes = [0_u8; 4];
+    let first = reader
+        .read(&mut length_bytes[..1])
+        .await
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::UnexpectedEof
+            | std::io::ErrorKind::BrokenPipe
+            | std::io::ErrorKind::ConnectionReset => FrameError::Closed,
+            _ => FrameError::Io(error.to_string()),
+        })?;
+    if first == 0 {
+        return Err(FrameError::Closed);
+    }
     reader
-        .read_exact(&mut length_bytes)
+        .read_exact(&mut length_bytes[1..])
         .await
         .map_err(|_| FrameError::Truncated)?;
     let length = u32::from_le_bytes(length_bytes) as usize;

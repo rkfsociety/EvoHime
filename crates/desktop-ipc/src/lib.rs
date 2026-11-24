@@ -393,6 +393,9 @@ impl BoundedReplayLog {
 /// Errors decoding, encoding, or transmitting a framed IPC payload.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum FrameError {
+    /// The peer closed the stream cleanly on a frame boundary.
+    #[error("connection closed cleanly")]
+    Closed,
     /// The length prefix or payload ended before the frame was complete.
     #[error("frame is truncated")]
     Truncated,
@@ -583,6 +586,33 @@ mod tests {
             .expect("read frame");
         write.await.expect("writer task");
         assert_eq!(payload, b"hello");
+    }
+
+    #[tokio::test]
+    async fn async_transport_distinguishes_clean_eof_from_truncated_frame() {
+        let (writer, mut reader) = tokio::io::duplex(64);
+        drop(writer);
+        assert_eq!(transport::read_frame(&mut reader).await, Err(FrameError::Closed));
+
+        let (mut writer, mut reader) = tokio::io::duplex(64);
+        tokio::io::AsyncWriteExt::write_all(&mut writer, &[5, 0])
+            .await
+            .expect("write partial header");
+        drop(writer);
+        assert_eq!(
+            transport::read_frame(&mut reader).await,
+            Err(FrameError::Truncated)
+        );
+
+        let (mut writer, mut reader) = tokio::io::duplex(64);
+        tokio::io::AsyncWriteExt::write_all(&mut writer, &[5, 0, 0, 0, b'h', b'i'])
+            .await
+            .expect("write partial payload");
+        drop(writer);
+        assert_eq!(
+            transport::read_frame(&mut reader).await,
+            Err(FrameError::Truncated)
+        );
     }
 
     #[test]
