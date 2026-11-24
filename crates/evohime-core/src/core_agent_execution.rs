@@ -4124,7 +4124,9 @@ mod tests {
             PermissionDecision::Allowed
         );
         assert_eq!(
-            permissions.check_scoped(Permission::GitRead, &check()).await,
+            permissions
+                .check_scoped(Permission::GitRead, &check())
+                .await,
             PermissionDecision::Allowed
         );
         assert_eq!(
@@ -4148,7 +4150,9 @@ mod tests {
             PermissionDecision::Allowed
         );
         assert_eq!(
-            permissions.check_scoped(Permission::GitWrite, &check()).await,
+            permissions
+                .check_scoped(Permission::GitWrite, &check())
+                .await,
             PermissionDecision::Allowed
         );
     }
