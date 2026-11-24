@@ -517,6 +517,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                     session_binding: session_binding.clone(),
                                     read_only_subagent: false,
                                     agent_depth: 0,
+                                    ..Default::default()
                                 },
                                 cancellation.clone(),
                                 events.clone(),

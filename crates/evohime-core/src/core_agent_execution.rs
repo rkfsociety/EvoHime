@@ -237,7 +237,7 @@ const TOOL_OUTPUT_TRUNCATION_SUFFIX: &str =
 ///
 /// The truncation is never silent: the suffix names the reason and tells the
 /// model how to fetch the remainder.
-fn bounded_tool_output(output: &str, max_bytes: usize) -> String {
+pub(crate) fn bounded_tool_output(output: &str, max_bytes: usize) -> String {
     if output.len() <= max_bytes {
         return output.to_owned();
     }
@@ -358,6 +358,7 @@ impl ToolAgent {
             session_binding,
             read_only_subagent: true,
             agent_depth: depth,
+            ..Default::default()
         };
         let child_task_id = format!("{parent_task_id}:sub-{}", uuid::Uuid::new_v4());
         // Cancel cooperatively instead of dropping the future: the nested run
@@ -2776,12 +2777,14 @@ impl ToolAgent {
                                 preview,
                             } = *details;
                             let preview = match child_plan_summary.as_deref().map(str::trim) {
-                                Some(summary) if !summary.is_empty() => {
-                                    if preview.trim().is_empty() {
-                                        summary.to_owned()
+                                Some(plan_summary) if !plan_summary.is_empty() => {
+                                    let mut updated = preview;
+                                    updated.summary = if updated.summary.trim().is_empty() {
+                                        plan_summary.to_owned()
                                     } else {
-                                        format!("{summary}\n\n{preview}")
-                                    }
+                                        format!("{plan_summary}\n\n{}", updated.summary)
+                                    };
+                                    updated.bounded()
                                 }
                                 _ => preview,
                             };

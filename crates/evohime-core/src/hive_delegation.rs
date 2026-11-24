@@ -77,6 +77,12 @@ pub(crate) fn builtin_role_allowed_tools(role: &str) -> Option<Vec<String>> {
     Some(tools.iter().map(|name| (*name).to_owned()).collect())
 }
 
+fn push_unique_tool(sanitized: &mut Vec<String>, tool: &str) {
+    if !sanitized.iter().any(|existing| existing == tool) {
+        sanitized.push(tool.to_owned());
+    }
+}
+
 fn sanitize_custom_role_tools(tools: &[String]) -> Vec<String> {
     let mut sanitized = Vec::new();
     for tool in tools {
@@ -90,8 +96,26 @@ fn sanitize_custom_role_tools(tools: &[String]) -> Vec<String> {
         {
             continue;
         }
-        if !sanitized.iter().any(|existing| existing == trimmed) {
-            sanitized.push(trimmed.to_owned());
+        match trimmed {
+            "workspace.read" => {
+                push_unique_tool(&mut sanitized, "filesystem_list");
+                push_unique_tool(&mut sanitized, "filesystem_read");
+            }
+            "workspace.search" => {
+                push_unique_tool(&mut sanitized, "filesystem_search");
+            }
+            "workspace.write" => {
+                push_unique_tool(&mut sanitized, "filesystem_write");
+                push_unique_tool(&mut sanitized, "filesystem_patch");
+                push_unique_tool(&mut sanitized, "filesystem_edit");
+                push_unique_tool(&mut sanitized, "filesystem_delete");
+            }
+            "test.execute" => {
+                push_unique_tool(&mut sanitized, "shell_execute");
+            }
+            other => {
+                push_unique_tool(&mut sanitized, other);
+            }
         }
     }
     if sanitized.is_empty() {
@@ -126,9 +150,9 @@ fn validate_role_slug(raw: &str) -> Result<String, ToolError> {
     let normalized = raw.trim().to_ascii_lowercase();
     if normalized.len() < 2
         || normalized.len() > 48
-        || !normalized
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-')
+        || !normalized.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
+        })
     {
         return Err(ToolError::Execution(
             "role must be 2..48 ASCII characters matching [a-z0-9_-]".into(),
@@ -137,7 +161,7 @@ fn validate_role_slug(raw: &str) -> Result<String, ToolError> {
     Ok(normalized)
 }
 
-impl TaskAgent {
+impl ToolAgent {
     async fn resolve_custom_role_tools(&self, role: &str) -> Option<Vec<String>> {
         let journal = self.journal.as_ref()?;
         let database = journal.database().lock().await;
@@ -308,7 +332,7 @@ impl TaskAgent {
                 )
                 .await;
                 let had_answer = !summary.trim().is_empty();
-                let bounded = bounded_tool_output(
+                let bounded = super::execution::bounded_tool_output(
                     if had_answer {
                         &summary
                     } else {
@@ -354,7 +378,7 @@ impl TaskAgent {
                     AgentRunError::Cancelled => {
                         ToolError::Execution("hive_delegate_agent was cancelled".into())
                     }
-                    other => ToolError::Execution(bounded_tool_output(
+                    other => ToolError::Execution(super::execution::bounded_tool_output(
                         &format!("hive_delegate_agent ({role}) failed: {other}"),
                         2_048,
                     )),
@@ -382,7 +406,7 @@ impl TaskAgent {
                 "role '{role_id}' is a built-in Hive role and does not need registration"
             )));
         }
-        let allowed_tools = sanitize_custom_role_tools(&parsed.allowed_tools);
+        let allowed_tools = sanitize_custom_role_tools(&parsed.capabilities);
         let journal = self.journal.as_ref().ok_or_else(|| {
             ToolError::Execution("hive_register_role requires the Core journal".into())
         })?;
@@ -421,7 +445,7 @@ impl TaskAgent {
             reporting_to_agent_id: Some("queen".to_owned()),
             responsibility_scope: vec![ResponsibilityScope {
                 kind: ResponsibilityKind::Subsystem,
-                selector: parsed.description.clone(),
+                selector: parsed.department.clone(),
             }],
             default_goal_bindings: Vec::new(),
             execution_policy_refs: allowed_tools.clone(),
@@ -467,7 +491,9 @@ impl TaskAgent {
             structured: serde_json::json!({
                 "role": role_id,
                 "display_name": parsed.display_name,
-                "description": parsed.description,
+                "department": parsed.department,
+                "objective": parsed.objective,
+                "strategy": parsed.strategy,
                 "allowed_tools": allowed_tools,
                 "revision": revision,
                 "status": "active",

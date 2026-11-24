@@ -204,9 +204,9 @@ pub fn parse_hive_register_role_input(input: &Value) -> Result<HiveRegisterRoleI
     };
     let role = req_str("role")?.to_lowercase();
     if role.len() > 48
-        || !role
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-')
+        || !role.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
+        })
     {
         return Err(ToolError::InvalidInput {
             tool: HIVE_REGISTER_ROLE_NAME.to_string(),
@@ -221,7 +221,9 @@ pub fn parse_hive_register_role_input(input: &Value) -> Result<HiveRegisterRoleI
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("Выполнять профильные задачи строго в рамках выданных прав и проверять результат.")
+        .unwrap_or(
+            "Выполнять профильные задачи строго в рамках выданных прав и проверять результат.",
+        )
         .to_string();
     let capabilities = input
         .get("capabilities")

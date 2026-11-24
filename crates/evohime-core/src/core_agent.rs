@@ -1335,6 +1335,7 @@ impl TaskExecutor for ToolAgent {
                         session_binding: None,
                         read_only_subagent: false,
                         agent_depth: 0,
+                        ..Default::default()
                     },
                 )
                 .await
