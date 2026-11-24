@@ -211,6 +211,11 @@ pub trait HiveCoordinator: Send + Sync {
         &self,
         request: HiveTaskDispatchRequest,
     ) -> BoxFuture<'_, Result<(), HiveContractError>>;
+
+    /// Cancels a previously dispatched Hive-owned task and its child runs.
+    fn cancel_task(&self, _task_id: String) -> BoxFuture<'_, Result<(), HiveContractError>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// Provides validated workspace paths and model selection state for the Hive.

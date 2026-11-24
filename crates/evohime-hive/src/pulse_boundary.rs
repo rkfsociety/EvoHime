@@ -342,6 +342,14 @@ impl HiveSignalReceiver {
         Ok(task_id)
     }
 
+    /// Cancels a previously accepted Hive task through the Core coordinator.
+    pub async fn cancel_task(&self, task_id: &str) -> Result<(), String> {
+        self.coordinator
+            .cancel_task(task_id.to_owned())
+            .await
+            .map_err(|error| error.to_string())
+    }
+
     async fn persist_dead_letter(&self, signal: &EvaPulseSignal, reason: &str) {
         let Some(journal) = self.journal.as_ref() else {
             return;

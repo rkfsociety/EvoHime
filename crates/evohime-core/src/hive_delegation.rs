@@ -426,12 +426,18 @@ impl ToolAgent {
                 })
             }
             Err(error) => {
+                let child_state = match &error {
+                    AgentRunError::Timeout(_) => "timed_out",
+                    AgentRunError::Cancelled if timed_out => "timed_out",
+                    AgentRunError::Cancelled => "cancelled",
+                    _ => "failed",
+                };
                 self.record_child_workflow_projection(
                     parent_task_id,
                     &child_task_id,
                     &role,
                     &display_name,
-                    "failed",
+                    child_state,
                 )
                 .await;
                 Err(match error {

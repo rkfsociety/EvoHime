@@ -693,4 +693,18 @@ impl evohime_hive_contract::HiveCoordinator for crate::TaskCoordinator {
             .map_err(|error| evohime_hive_contract::HiveContractError::Dispatch(error.to_string()))
         })
     }
+
+    fn cancel_task(
+        &self,
+        task_id: String,
+    ) -> evohime_hive_contract::BoxFuture<'_, Result<(), evohime_hive_contract::HiveContractError>>
+    {
+        Box::pin(async move {
+            self.dispatch(crate::CoreCommand::StopTask { task_id })
+                .await
+                .map_err(|error| {
+                    evohime_hive_contract::HiveContractError::Dispatch(error.to_string())
+                })
+        })
+    }
 }

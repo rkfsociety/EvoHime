@@ -199,6 +199,14 @@ pub trait ObservationProbe: Send + Sync {
         _items: &[RoadmapItem],
     ) {
     }
+
+    /// Returns task IDs of currently tracked in-flight proactive evolution tasks.
+    fn pending_evolution_task_ids(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Removes a proactive evolution task ID from the in-flight list (e.g. after cancellation).
+    fn remove_pending_evolution(&self, _task_id: &str) {}
 }
 
 /// Sink that asks Core to investigate failed workers or evolve proactively (Level 2 LLM dispatch).
@@ -227,6 +235,11 @@ pub trait ObservationTaskSink: Send + Sync {
         items: &[RoadmapItem],
         eva_workspace_path: Option<&str>,
     ) -> ObservationFuture<'_, Result<String, String>>;
+
+    /// Cancels an active task (such as an in-flight proactive evolution task).
+    fn cancel_task(&self, _task_id: &str) -> ObservationFuture<'_, Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// Process-wide status projection of the observation daemon.
@@ -553,6 +566,34 @@ impl Inner {
                 }
             }
             state.last_proactive_enabled = Some(proactive_enabled);
+        }
+
+        if !report.proactive_evolution_enabled {
+            for task_id in self.probe.pending_evolution_task_ids() {
+                match self.tasks.cancel_task(&task_id).await {
+                    Ok(()) => {
+                        self.probe.remove_pending_evolution(&task_id);
+                        self.log(
+                            "info",
+                            "hive.evolution_cancelled",
+                            serde_json::json!({
+                                "task_id": task_id,
+                                "reason": "proactive_evolution_disabled",
+                            }),
+                        );
+                    }
+                    Err(error) => {
+                        self.log(
+                            "warning",
+                            "hive.evolution_cancel_failed",
+                            serde_json::json!({
+                                "task_id": task_id,
+                                "error": error,
+                            }),
+                        );
+                    }
+                }
+            }
         }
 
         let now = now_millis();
@@ -1381,6 +1422,23 @@ impl ObservationProbe for JournalObservationProbe {
         });
     }
 
+    fn pending_evolution_task_ids(&self) -> Vec<String> {
+        self.pending_evolutions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .map(|entry| entry.task_id.clone())
+            .collect()
+    }
+
+    fn remove_pending_evolution(&self, task_id: &str) {
+        let mut pending = self
+            .pending_evolutions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        pending.retain(|entry| entry.task_id != task_id);
+    }
+
     fn observe(&self) -> ObservationFuture<'_, Result<ObservationCycleReport, String>> {
         Box::pin(async move {
             let settings = load_hive_settings(&*self.journal).await;
@@ -1892,6 +1950,12 @@ impl ObservationTaskSink for CoordinatorObservationTaskSink {
     ) -> ObservationFuture<'_, Result<String, String>> {
         let prompt = proactive_evolution_prompt(items);
         self.dispatch_primary_task(prompt, EvaPulseSignalKind::EvolutionReview)
+    }
+
+    fn cancel_task(&self, task_id: &str) -> ObservationFuture<'_, Result<(), String>> {
+        let receiver = self.receiver.clone();
+        let task_id = task_id.to_owned();
+        Box::pin(async move { receiver.cancel_task(&task_id).await })
     }
 }
 
@@ -3755,5 +3819,104 @@ mod tests {
         assert_eq!(logged[0].2["status"], HIVE_OBSERVATION_OBSERVING);
         assert_eq!(logged[1].2["status"], HIVE_OBSERVATION_WAITING_FOR_LIMITS);
         assert_eq!(logged[2].2["status"], HIVE_OBSERVATION_WAITING_FOR_LIMITS);
+    }
+
+    #[tokio::test]
+    async fn disabling_proactive_evolution_cancels_in_flight_evolution_task() {
+        struct ToggleableEvolutionProbe {
+            proactive_enabled: std::sync::atomic::AtomicBool,
+            pending: std::sync::Mutex<Vec<String>>,
+        }
+
+        impl ObservationProbe for ToggleableEvolutionProbe {
+            fn observe(&self) -> ObservationFuture<'_, Result<ObservationCycleReport, String>> {
+                let enabled = self.proactive_enabled.load(Ordering::SeqCst);
+                let in_flight = !self.pending.lock().expect("lock").is_empty();
+                let mut report = healthy_report();
+                report.proactive_evolution_enabled = enabled;
+                report.eva_workspace_path = Some("/workspace".to_owned());
+                report.evolution_in_flight = in_flight;
+                Box::pin(async move { Ok(report) })
+            }
+
+            fn mark_evolution_dispatched(
+                &self,
+                task_id: &str,
+                _eva_workspace_path: Option<&str>,
+                _items: &[RoadmapItem],
+            ) {
+                self.pending.lock().expect("lock").push(task_id.to_owned());
+            }
+
+            fn pending_evolution_task_ids(&self) -> Vec<String> {
+                self.pending.lock().expect("lock").clone()
+            }
+
+            fn remove_pending_evolution(&self, task_id: &str) {
+                self.pending
+                    .lock()
+                    .expect("lock")
+                    .retain(|id| id != task_id);
+            }
+        }
+
+        #[derive(Default)]
+        struct RecordingSink {
+            cancelled: std::sync::Mutex<Vec<String>>,
+        }
+
+        impl ObservationTaskSink for RecordingSink {
+            fn dispatch_recovery(
+                &self,
+                _failed_workers: &[FailedWorkerContext],
+                _eva_workspace_path: Option<&str>,
+            ) -> ObservationFuture<'_, Result<String, String>> {
+                Box::pin(async { Ok("recovery-1".to_owned()) })
+            }
+
+            fn dispatch_evolution(
+                &self,
+                _items: &[RoadmapItem],
+                _eva_workspace_path: Option<&str>,
+            ) -> ObservationFuture<'_, Result<String, String>> {
+                Box::pin(async { Ok("eva-pulse-evo-1".to_owned()) })
+            }
+
+            fn cancel_task(&self, task_id: &str) -> ObservationFuture<'_, Result<(), String>> {
+                self.cancelled
+                    .lock()
+                    .expect("lock")
+                    .push(task_id.to_owned());
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let probe = Arc::new(ToggleableEvolutionProbe {
+            proactive_enabled: std::sync::atomic::AtomicBool::new(true),
+            pending: std::sync::Mutex::new(Vec::new()),
+        });
+        let sink = Arc::new(RecordingSink::default());
+        let daemon = HiveObservationDaemon::spawn(
+            probe.clone(),
+            sink.clone(),
+            HiveObservationOptions::default(),
+            None,
+        );
+
+        daemon.inner.run_observation_cycle().await;
+        assert_eq!(
+            probe.pending.lock().expect("lock").as_slice(),
+            &["eva-pulse-evo-1".to_owned()]
+        );
+        assert!(sink.cancelled.lock().expect("lock").is_empty());
+
+        probe.proactive_enabled.store(false, Ordering::SeqCst);
+        daemon.inner.run_observation_cycle().await;
+
+        assert_eq!(
+            sink.cancelled.lock().expect("lock").as_slice(),
+            &["eva-pulse-evo-1".to_owned()]
+        );
+        assert!(probe.pending.lock().expect("lock").is_empty());
     }
 }

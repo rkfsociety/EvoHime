@@ -324,6 +324,16 @@ impl CoreIpcClient {
         })
     }
 
+    async fn cancel_task(&self, task_id: String) -> Result<(), HiveContractError> {
+        let mut session = self.session.lock().await;
+        let command = session.command_envelope(generated::command_envelope::Command::StopTask(
+            generated::StopTask { task_id },
+        ));
+        session.write_command(command).await.map_err(|error| {
+            HiveContractError::Dispatch(format!("failed to cancel task over IPC: {error}"))
+        })
+    }
+
     async fn latest_sequence(&self) -> Result<i64, HiveContractError> {
         let mut session = self.session.lock().await;
         let command = session.command_envelope(
@@ -1038,6 +1048,10 @@ impl HiveCoordinator for IpcCoordinator {
         request: HiveTaskDispatchRequest,
     ) -> BoxFuture<'_, Result<(), HiveContractError>> {
         Box::pin(async move { self.client.dispatch_task(request).await })
+    }
+
+    fn cancel_task(&self, task_id: String) -> BoxFuture<'_, Result<(), HiveContractError>> {
+        Box::pin(async move { self.client.cancel_task(task_id).await })
     }
 }
 
