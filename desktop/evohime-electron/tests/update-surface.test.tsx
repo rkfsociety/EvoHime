@@ -285,8 +285,11 @@ describe('standalone updater window', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Устанавливаю обновление' })).toBeTruthy())
     expect(document.querySelector('[data-step-id="check"]')?.getAttribute('data-step-state')).toBe('done')
+    expect(document.querySelector('[data-step-id="check"] [data-step-icon="done"]')).toBeTruthy()
     expect(document.querySelector('[data-step-id="download"]')?.getAttribute('data-step-state')).toBe('done')
+    expect(document.querySelector('[data-step-id="download"] [data-step-icon="done"]')).toBeTruthy()
     expect(document.querySelector('[data-step-id="install"]')?.getAttribute('data-step-state')).toBe('active')
+    expect(document.querySelector('[data-step-id="install"] [data-step-icon="done"]')).toBeNull()
 
     expect(screen.getByText('EvoHime Core')).toBeTruthy()
     expect(screen.getByText('Оболочка Electron')).toBeTruthy()

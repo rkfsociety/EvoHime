@@ -81,7 +81,14 @@ function resolveSteps(status: UpdaterUiStatus): readonly UpdaterStep[] {
   ]
 }
 
-function StepIcon({ id }: { readonly id: UpdaterStepId }): React.JSX.Element {
+function StepIcon({ id, state }: { readonly id: UpdaterStepId; readonly state: UpdaterStepState }): React.JSX.Element {
+  if (state === 'done') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" data-step-icon="done">
+        <path d="m5 12.5 4.5 4.5L19 7.5" />
+      </svg>
+    )
+  }
   if (id === 'check') {
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
@@ -301,7 +308,7 @@ export function UpdaterApp(): React.JSX.Element {
                 data-step-state={step.state}
               >
                 <span className="updater-step__icon" aria-hidden="true">
-                  <StepIcon id={step.id} />
+                  <StepIcon id={step.id} state={step.state} />
                 </span>
                 <span className="updater-step__label">{translate(step.label)}</span>
               </li>

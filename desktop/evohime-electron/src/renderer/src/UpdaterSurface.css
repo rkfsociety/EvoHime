@@ -507,19 +507,21 @@ button { font: inherit; }
   display: grid;
   width: 100%;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 12px;
   margin: 14px 0 0;
-  padding: 12px 0 0;
+  padding: 12px 0 4px;
   border-top: 1px solid rgb(255 255 255 / 8%);
   list-style: none;
 }
 
 .updater-step {
+  position: relative;
   display: flex;
   min-width: 0;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  padding-bottom: 4px;
   color: #7b89ad;
   font-size: 11px;
   font-weight: 500;
@@ -527,8 +529,21 @@ button { font: inherit; }
   transition: color 200ms ease, opacity 200ms ease;
 }
 
-.updater-step + .updater-step {
-  border-left: 1px solid rgb(255 255 255 / 10%);
+.updater-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -13px;
+  width: 14px;
+  height: 1px;
+  transform: translateY(-2px);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 12%);
+  pointer-events: none;
+}
+
+.updater-step--done:not(:last-child)::after {
+  background: rgb(78 201 164 / 42%);
 }
 
 .updater-step__icon {
@@ -551,8 +566,26 @@ button { font: inherit; }
   white-space: nowrap;
 }
 
+.updater-step--pending {
+  opacity: 0.42;
+}
+
 .updater-step--active {
-  color: #f1f5ff;
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.updater-step--active::before {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  width: 28px;
+  height: 2px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: linear-gradient(90deg, #8d82e8, #93c5fd);
+  box-shadow: 0 0 8px rgb(141 130 232 / 65%);
 }
 
 .updater-step--active .updater-step__icon {
@@ -561,7 +594,7 @@ button { font: inherit; }
 }
 
 .updater-step--done {
-  color: #a6b4d4;
+  color: #cbd5e1;
 }
 
 .updater-step--done .updater-step__icon {
