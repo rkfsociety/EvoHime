@@ -319,9 +319,10 @@ describe('standalone updater window', () => {
     expect(document.querySelector('.updater-hero-glow')).toBeNull()
   })
 
-  it('supports hiding to tray, toggling changelog, and retrying a network error', async () => {
+  it('supports hiding to tray, showing changelog inline, dynamically resizing, and retrying a network error', async () => {
     const hideToTray = vi.fn(async () => {})
     const retry = vi.fn(async () => {})
+    const resize = vi.fn(async () => {})
     window.evohimeUpdater = {
       getStatus: vi.fn(async () => updaterUiStatus(status({
         phase: 'applying',
@@ -336,17 +337,20 @@ describe('standalone updater window', () => {
       close: vi.fn(async () => {}),
       minimize: vi.fn(async () => {}),
       hideToTray,
-      retry
+      retry,
+      resize
     }
 
     const { unmount } = render(<UpdaterApp />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Свернуть в трей' })).toBeTruthy())
 
+    expect(screen.getByText('Что нового')).toBeTruthy()
+    expect(screen.getByText('Новый экран обновления')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Что нового' })).toBeNull()
+    expect(resize).toHaveBeenCalled()
+
     fireEvent.click(screen.getByRole('button', { name: 'Свернуть в трей' }))
     expect(hideToTray).toHaveBeenCalledTimes(1)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Что нового' }))
-    expect(screen.getByText('Новый экран обновления')).toBeTruthy()
     unmount()
 
     window.evohimeUpdater = {

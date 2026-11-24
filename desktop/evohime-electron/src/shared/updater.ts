@@ -26,6 +26,11 @@ export interface UpdaterUiStatus {
   readonly recovery?: UpdateStatus['recovery']
 }
 
+export interface UpdaterWindowSize {
+  readonly width: number
+  readonly height: number
+}
+
 export interface EvoHimeUpdaterApi {
   getStatus(): Promise<UpdaterUiStatus>
   subscribe(listener: (status: UpdaterUiStatus) => void): () => void
@@ -33,6 +38,7 @@ export interface EvoHimeUpdaterApi {
   minimize(): Promise<void>
   hideToTray?(): Promise<void>
   retry?(): Promise<void>
+  resize?(size: UpdaterWindowSize): Promise<void>
 }
 
 /** True when a worker status message describes an artifact download, not a file swap. */

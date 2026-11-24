@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-import type { EvoHimeUpdaterApi, UpdaterUiStatus } from '@shared/updater'
+import type { EvoHimeUpdaterApi, UpdaterUiStatus, UpdaterWindowSize } from '@shared/updater'
 
 const api: EvoHimeUpdaterApi = {
   getStatus: () => ipcRenderer.invoke('updater.get-status') as Promise<UpdaterUiStatus>,
@@ -12,7 +12,8 @@ const api: EvoHimeUpdaterApi = {
   close: () => ipcRenderer.invoke('updater.close') as Promise<void>,
   minimize: () => ipcRenderer.invoke('updater.minimize') as Promise<void>,
   hideToTray: () => ipcRenderer.invoke('updater.hide-to-tray') as Promise<void>,
-  retry: () => ipcRenderer.invoke('updater.retry') as Promise<void>
+  retry: () => ipcRenderer.invoke('updater.retry') as Promise<void>,
+  resize: (size: UpdaterWindowSize) => ipcRenderer.invoke('updater.resize', size) as Promise<void>
 }
 
 contextBridge.exposeInMainWorld('evohimeUpdater', Object.freeze(api))

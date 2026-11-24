@@ -1,7 +1,7 @@
 import { translate } from './i18n'
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { UpdaterUiStatus } from '@shared/updater'
+import type { UpdaterUiModule, UpdaterUiStatus } from '@shared/updater'
 import { isDownloadPhaseMessage, isInstallPhaseMessage } from '@shared/updater'
 
 import updaterEvaHeroUrl from './assets/updater-eva-hero.jpg'
@@ -20,6 +20,8 @@ const fallback: UpdaterUiStatus = {
 
 const SPINNER_RADIUS = 16
 const SPINNER_CIRCUMFERENCE = 2 * Math.PI * SPINNER_RADIUS
+const MIN_WINDOW_HEIGHT = 440
+const MAX_WINDOW_HEIGHT = 740
 
 type UpdaterStepId = 'check' | 'download' | 'install'
 type UpdaterStepState = 'done' | 'active' | 'pending' | 'error'
@@ -79,6 +81,35 @@ function resolveSteps(status: UpdaterUiStatus): readonly UpdaterStep[] {
     { id: 'download', label: 'Загрузка', state: download },
     { id: 'install', label: 'Установка', state: install }
   ]
+}
+
+function formatModuleCount(count: number): string {
+  const mod100 = count % 100
+  const mod10 = count % 10
+  if (mod100 >= 11 && mod100 <= 14) return `${count} модулей`
+  if (mod10 === 1) return `${count} модуль`
+  if (mod10 >= 2 && mod10 <= 4) return `${count} модуля`
+  return `${count} модулей`
+}
+
+function formatVersionTransition(installed: string, available: string | null): string {
+  if (!available) return installed
+  const from = installed.startsWith('v') ? installed : `v${installed}`
+  return `${from} → ${available}`
+}
+
+function resolveModuleNotes(module: UpdaterUiModule, moduleCount: number): readonly string[] {
+  const raw = (module.changes ?? []).filter((item) => item.trim().length > 0)
+  if (raw.length > 0) {
+    return moduleCount <= 1 ? raw.slice(0, 3) : raw.slice(0, 1)
+  }
+  return module.summary.trim().length > 0 ? [module.summary] : []
+}
+
+function resolveWindowWidth(moduleCount: number): number {
+  if (moduleCount <= 1) return 860
+  if (moduleCount <= 5) return 920
+  return 960
 }
 
 function StepIcon({ id, state }: { readonly id: UpdaterStepId; readonly state: UpdaterStepState }): React.JSX.Element {
@@ -167,7 +198,8 @@ function UpdaterLotusLogo(): React.JSX.Element {
 
 export function UpdaterApp(): React.JSX.Element {
   const [status, setStatus] = useState<UpdaterUiStatus>(fallback)
-  const [changelogOpen, setChangelogOpen] = useState(false)
+  const rightColumnRef = useRef<HTMLDivElement | null>(null)
+  const lastSizeRef = useRef<{ width: number; height: number } | null>(null)
 
   useEffect(() => {
     let active = true
@@ -203,12 +235,36 @@ export function UpdaterApp(): React.JSX.Element {
     () => status.modules.filter((module) => module.available !== null),
     [status.modules]
   )
-  const changelogModules = useMemo(
-    () => updatableModules.filter((module) => (module.changes?.length ?? 0) > 0),
-    [updatableModules]
-  )
   const canHideToTray = (status.phase === 'applying' || status.phase === 'checking')
     && typeof window.evohimeUpdater?.hideToTray === 'function'
+
+  const densityClass = updatableModules.length >= 7
+    ? 'updater-changelog--dense'
+    : updatableModules.length <= 1
+      ? 'updater-changelog--single'
+      : 'updater-changelog--medium'
+
+  useLayoutEffect(() => {
+    const resize = window.evohimeUpdater?.resize
+    const rightCol = rightColumnRef.current
+    if (!resize || !rightCol) return
+
+    const syncWindowSize = (): void => {
+      const targetWidth = resolveWindowWidth(updatableModules.length)
+      const measuredHeight = Math.ceil(rightCol.scrollHeight + 70)
+      const targetHeight = Math.max(MIN_WINDOW_HEIGHT, Math.min(MAX_WINDOW_HEIGHT, measuredHeight))
+      const previous = lastSizeRef.current
+      if (previous && previous.width === targetWidth && previous.height === targetHeight) return
+      lastSizeRef.current = { width: targetWidth, height: targetHeight }
+      void resize({ width: targetWidth, height: targetHeight })
+    }
+
+    syncWindowSize()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => syncWindowSize())
+    observer.observe(rightCol)
+    return () => observer.disconnect()
+  }, [updatableModules.length, status])
 
   return (
     <main className="updater-shell">
@@ -229,122 +285,19 @@ export function UpdaterApp(): React.JSX.Element {
       </header>
 
       <section className={`updater-content updater-content--${status.phase}`} aria-labelledby="updater-heading">
-        <div className="updater-hero" aria-hidden="true">
-          <img
-            className="updater-hero-art"
-            src={updaterEvaHeroUrl}
-            alt=""
-            draggable={false}
-            data-testid="updater-hero-art"
-          />
-          <div className="updater-hero-particles" data-testid="updater-hero-particles">
-            <span /><span /><span /><span /><span /><span /><span /><span />
-          </div>
-        </div>
-
-        <div className="updater-panel">
-          <div className="updater-panel__head">
-            <div className="updater-status-icon" data-status-phase={status.phase} aria-hidden="true">
-              {ready ? '✓' : attention ? '!' : <StatusSpinner percent={progressPercent} />}
-            </div>
-            <div className="updater-panel__titles">
-              <h1 id="updater-heading">{translate(status.heading)}</h1>
-              <p className="updater-message" aria-live="polite">{translate(status.message)}</p>
+        <div className="updater-hero-column">
+          <div className="updater-hero" aria-hidden="true">
+            <img
+              className="updater-hero-art"
+              src={updaterEvaHeroUrl}
+              alt=""
+              draggable={false}
+              data-testid="updater-hero-art"
+            />
+            <div className="updater-hero-particles" data-testid="updater-hero-particles">
+              <span /><span /><span /><span /><span /><span /><span /><span />
             </div>
           </div>
-
-          <div className="updater-progress-block">
-            <div className="updater-progress-meta">
-              <span className="updater-progress__badge">{translate(status.badge)}</span>
-              <span className="updater-progress__label">{translate(progressLabel)}</span>
-            </div>
-            <div
-              className={`updater-progress${progressPercent === null ? ' updater-progress--indeterminate' : ''}`}
-              role="progressbar"
-              aria-label={translate("Прогресс обновления")}
-              {...(progressPercent === null ? {} : { 'aria-valuenow': progressPercent, 'aria-valuemin': 0, 'aria-valuemax': 100 })}
-            >
-              <div className="updater-progress__value" style={progressStyle} />
-            </div>
-          </div>
-
-          {failed && status.detail.length > 0 ? <p className="updater-detail" role="status">{translate(status.detail)}</p> : null}
-
-          {failed && window.evohimeUpdater?.retry ? (
-            <div className="updater-actions">
-              <button
-                type="button"
-                className="updater-retry-button"
-                onClick={() => void window.evohimeUpdater.retry?.()}
-              >
-                {translate('Повторить')}
-              </button>
-            </div>
-          ) : null}
-
-          {updatableModules.length > 0 ? (
-            <div className="updater-modules" aria-label={translate("Обновляемые модули")}>
-              {updatableModules.map((module) => {
-                const state = module.state ?? 'pending'
-                return (
-                  <span
-                    key={module.id}
-                    className={`updater-module-chip updater-module-chip--${state}`}
-                    data-module-id={module.id}
-                    data-module-state={state}
-                    title={`${module.label}: ${module.installed} → ${module.available}`}
-                  >
-                    <span className="updater-module-chip__indicator" aria-hidden="true">
-                      {state === 'done' ? '✓' : state === 'error' ? '!' : null}
-                    </span>
-                    <span className="updater-module-chip__label">{translate(module.label)}</span>
-                  </span>
-                )
-              })}
-            </div>
-          ) : null}
-
-          {changelogModules.length > 0 || canHideToTray ? (
-            <div className="updater-utility-row">
-              {changelogModules.length > 0 ? (
-                <button
-                  type="button"
-                  className="updater-link-button"
-                  aria-expanded={changelogOpen}
-                  onClick={() => setChangelogOpen((open) => !open)}
-                >
-                  {translate('Что нового')}
-                </button>
-              ) : <span />}
-              {canHideToTray ? (
-                <button
-                  type="button"
-                  className="updater-link-button"
-                  onClick={() => void window.evohimeUpdater.hideToTray?.()}
-                >
-                  {translate('Свернуть в трей')}
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-
-          {changelogOpen && changelogModules.length > 0 ? (
-            <section className="updater-changelog" aria-label={translate("Список изменений")}>
-              {changelogModules.map((module) => (
-                <div key={module.id} className="updater-changelog__group">
-                  <div className="updater-changelog__title">
-                    <strong>{translate(module.label)}</strong>
-                    {module.available ? <span>{module.installed} → {module.available}</span> : null}
-                  </div>
-                  <ul>
-                    {(module.changes ?? []).slice(0, 4).map((item, index) => (
-                      <li key={index}>{translate(item)}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </section>
-          ) : null}
 
           <ol className="updater-steps" aria-label={translate("Этапы обновления")}>
             {steps.map((step) => (
@@ -361,6 +314,115 @@ export function UpdaterApp(): React.JSX.Element {
               </li>
             ))}
           </ol>
+        </div>
+
+        <div className="updater-right-column" ref={rightColumnRef}>
+          <div className="updater-panel">
+            <div className="updater-panel__head">
+              <div className="updater-status-icon" data-status-phase={status.phase} aria-hidden="true">
+                {ready ? '✓' : attention ? '!' : <StatusSpinner percent={progressPercent} />}
+              </div>
+              <div className="updater-panel__titles">
+                <h1 id="updater-heading">{translate(status.heading)}</h1>
+                <p className="updater-message" aria-live="polite">{translate(status.message)}</p>
+              </div>
+              <div className="updater-progress-stats">
+                <span className="updater-progress__label">{translate(progressLabel)}</span>
+                {status.badge ? <span className="updater-progress__badge">{translate(status.badge)}</span> : null}
+              </div>
+            </div>
+
+            <div className="updater-progress-block">
+              <div
+                className={`updater-progress${progressPercent === null ? ' updater-progress--indeterminate' : ''}`}
+                role="progressbar"
+                aria-label={translate("Прогресс обновления")}
+                {...(progressPercent === null ? {} : { 'aria-valuenow': progressPercent, 'aria-valuemin': 0, 'aria-valuemax': 100 })}
+              >
+                <div className="updater-progress__value" style={progressStyle} />
+              </div>
+            </div>
+
+            {failed && status.detail.length > 0 ? <p className="updater-detail" role="status">{translate(status.detail)}</p> : null}
+
+            {failed && window.evohimeUpdater?.retry ? (
+              <div className="updater-actions">
+                <button
+                  type="button"
+                  className="updater-retry-button"
+                  onClick={() => void window.evohimeUpdater.retry?.()}
+                >
+                  {translate('Повторить')}
+                </button>
+              </div>
+            ) : null}
+
+            {canHideToTray ? (
+              <div className="updater-utility-row">
+                <span />
+                <button
+                  type="button"
+                  className="updater-link-button"
+                  onClick={() => void window.evohimeUpdater.hideToTray?.()}
+                >
+                  {translate('Свернуть в трей')}
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          <section className={`updater-changelog-card ${densityClass}`} aria-label={translate("Список изменений")}>
+            <header className="updater-changelog-card__head">
+              <h2>{translate('Что нового')}</h2>
+              {updatableModules.length > 0 ? (
+                <span className="updater-changelog-card__count">
+                  {translate(formatModuleCount(updatableModules.length))}
+                </span>
+              ) : null}
+            </header>
+
+            {updatableModules.length > 0 ? (
+              <ul className="updater-changelog-list" aria-label={translate("Обновляемые модули")}>
+                {updatableModules.map((module) => {
+                  const state = module.state ?? 'pending'
+                  const notes = resolveModuleNotes(module, updatableModules.length)
+                  return (
+                    <li
+                      key={module.id}
+                      className={`updater-module-chip updater-module-row updater-module-row--${state}`}
+                      data-module-id={module.id}
+                      data-module-state={state}
+                    >
+                      <div className="updater-module-row__head">
+                        <span className="updater-module-chip__indicator" aria-hidden="true">
+                          {state === 'done' ? '✓' : state === 'error' ? '!' : null}
+                        </span>
+                        <strong className="updater-module-row__label">{translate(module.label)}</strong>
+                        {module.available ? (
+                          <span className="updater-module-row__version">
+                            {formatVersionTransition(module.installed, module.available)}
+                          </span>
+                        ) : null}
+                      </div>
+                      {notes.length > 0 ? (
+                        <div className="updater-module-row__notes">
+                          {notes.map((item, index) => (
+                            <p key={index} className="updater-module-row__note">{translate(item)}</p>
+                          ))}
+                        </div>
+                      ) : null}
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : (
+              <p className="updater-changelog-empty">
+                {failed
+                  ? translate('Список изменений недоступен до повторной проверки.')
+                  : translate('Сверяю версии компонентов и загружаю список изменений…')}
+              </p>
+            )}
+          </section>
         </div>
       </section>
     </main>

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, Tray } from 'electron'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -169,6 +169,7 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   ipcMain.removeHandler('updater.minimize')
   ipcMain.removeHandler('updater.hide-to-tray')
   ipcMain.removeHandler('updater.retry')
+  ipcMain.removeHandler('updater.resize')
   ipcMain.handle('updater.get-status', () => updaterUiStatus(service.status))
   ipcMain.handle('updater.close', () => {
     shuttingDown = true
@@ -187,10 +188,35 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
       void runGate()
     }
   })
+  ipcMain.handle('updater.resize', (_event, rawSize: unknown) => {
+    if (!updaterWindow || updaterWindow.isDestroyed()) return
+    if (!rawSize || typeof rawSize !== 'object') return
+    const candidate = rawSize as { width?: unknown; height?: unknown }
+    if (typeof candidate.width !== 'number' || typeof candidate.height !== 'number') return
+    if (!Number.isFinite(candidate.width) || !Number.isFinite(candidate.height)) return
+
+    const bounds = updaterWindow.getBounds()
+    const workArea = screen.getDisplayMatching(bounds).workArea
+    const maxWidth = Math.max(820, Math.min(1040, workArea.width - 32))
+    const maxHeight = Math.max(420, Math.min(760, workArea.height - 32))
+    const width = Math.max(820, Math.min(maxWidth, Math.round(candidate.width)))
+    const height = Math.max(420, Math.min(maxHeight, Math.round(candidate.height)))
+    if (bounds.width === width && bounds.height === height) return
+
+    const nextX = Math.max(
+      workArea.x,
+      Math.min(workArea.x + workArea.width - width, Math.round(bounds.x + (bounds.width - width) / 2))
+    )
+    const nextY = Math.max(
+      workArea.y,
+      Math.min(workArea.y + workArea.height - height, Math.round(bounds.y + (bounds.height - height) / 2))
+    )
+    updaterWindow.setBounds({ x: nextX, y: nextY, width, height }, true)
+  })
 
   updaterWindow = new BrowserWindow({
-    width: 520,
-    height: 680,
+    width: 860,
+    height: 440,
     show: false,
     frame: false,
     resizable: false,
@@ -275,7 +301,9 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     ipcMain.removeHandler('updater.get-status')
     ipcMain.removeHandler('updater.close')
     ipcMain.removeHandler('updater.minimize')
+    ipcMain.removeHandler('updater.hide-to-tray')
     ipcMain.removeHandler('updater.retry')
+    ipcMain.removeHandler('updater.resize')
     void options.flushLogs().then((flushed) => {
       if (!flushed) process.stderr.write('EvoHime updater diagnostics flush timed out; exiting with a bounded log tail.\n')
       allowQuitAfterFlush = true
