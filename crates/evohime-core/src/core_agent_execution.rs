@@ -740,7 +740,16 @@ impl ToolAgent {
             let session_id = uuid::Uuid::new_v4();
             apply_read_only_subagent_modes(self.tools.permissions(), session_id).await;
             Some(session_id)
-        } else if !hive_world {
+        } else if hive_world {
+            let session_id = uuid::Uuid::new_v4();
+            for (permission, mode) in crate::hive_permission_session::modes() {
+                self.tools
+                    .permissions()
+                    .set_session_mode(session_id, permission, mode)
+                    .await;
+            }
+            Some(session_id)
+        } else {
             let session_id = uuid::Uuid::new_v4();
             if let Some(mode) = execution_context
                 .session_binding
@@ -750,8 +759,6 @@ impl ToolAgent {
                 apply_session_permission_mode(self.tools.permissions(), session_id, mode).await;
             }
             Some(session_id)
-        } else {
-            None
         };
         let result = self
             .run_once_inner(
@@ -836,25 +843,13 @@ impl ToolAgent {
         } else {
             None
         };
-        // World boundary: Hive tasks use their own permission session, so the
-        // workspace permission mode chosen in a chat (a process-global setting)
-        // can neither widen nor narrow what the Hive may do, and vice versa.
-        let hive_session_id = if hive_world && !read_only_subagent {
-            let session_id = uuid::Uuid::from_u128(crate::hive_permission_session::SESSION_ID);
-            for (permission, mode) in crate::hive_permission_session::modes() {
-                self.tools
-                    .permissions()
-                    .set_session_mode(session_id, permission, mode)
-                    .await;
-            }
-            Some(session_id)
-        } else {
-            None
-        };
+        // World boundary: Hive tasks use their own per-task permission session
+        // (initialized in `run_once`), so global chat permission modes and
+        // parallel runs cannot widen or narrow each other's rights.
         let context = ToolContext {
             workspace_root,
             task_id: task_uuid,
-            session_id: hive_session_id.or(run_permission_session_id),
+            session_id: run_permission_session_id,
             progress_tx: None,
             eva_workspace_root: eva_workspace_configured,
             self_development_profile: (hive_world && !read_only_subagent).then(|| "queen".into()),
@@ -2750,7 +2745,7 @@ impl ToolAgent {
                                         "approval denied: mutation not performed",
                                     )
                                 } else {
-                                    if !hive_world && !read_only_subagent {
+                                    if !read_only_subagent {
                                         if let Some(session_id) = context.session_id {
                                             grant_session_plan_execution_permissions(
                                                 self.tools.permissions(),
