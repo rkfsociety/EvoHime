@@ -238,43 +238,35 @@ button { font: inherit; }
 
 .updater-status-icon {
   display: grid;
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid rgb(255 255 255 / 34%);
-  border-radius: 13px;
-  background: linear-gradient(145deg, #8d82e8, #5ea8ff 88%);
-  color: #ffffff;
-  font-size: 22px;
-  font-weight: 500;
+  border: 1px solid rgb(141 130 232 / 24%);
+  border-radius: 999px;
+  background: rgb(15 20 44 / 52%);
+  color: #c4b5fd;
+  font-size: 18px;
+  font-weight: 600;
   line-height: 1;
-  box-shadow:
-    0 0 0 4px rgb(141 130 232 / 14%),
-    0 8px 20px rgb(141 130 232 / 38%),
-    inset 0 1px rgb(255 255 255 / 48%);
 }
 
 .updater-content--failed .updater-status-icon,
 .updater-content--manual-recovery .updater-status-icon {
-  background: linear-gradient(145deg, #f18fa5, #be4b6d 88%);
-  box-shadow:
-    0 0 0 4px rgb(241 143 165 / 14%),
-    0 8px 20px rgb(241 143 165 / 36%),
-    inset 0 1px rgb(255 255 255 / 42%);
+  border-color: rgb(241 143 165 / 42%);
+  background: rgb(241 143 165 / 12%);
+  color: #f18fa5;
 }
 
 .updater-content--ready .updater-status-icon {
-  background: linear-gradient(145deg, #4ec9a4, #5ea8ff 88%);
-  box-shadow:
-    0 0 0 4px rgb(78 201 164 / 16%),
-    0 8px 20px rgb(78 201 164 / 38%),
-    inset 0 1px rgb(255 255 255 / 48%);
+  border-color: rgb(78 201 164 / 38%);
+  background: rgb(78 201 164 / 12%);
+  color: #4ec9a4;
 }
 
 .updater-status-spinner {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   transform: rotate(-90deg);
 }
 
@@ -284,15 +276,15 @@ button { font: inherit; }
 
 .updater-status-spinner__track {
   fill: none;
-  stroke: rgb(255 255 255 / 26%);
-  stroke-width: 3.2;
+  stroke: rgb(141 130 232 / 22%);
+  stroke-width: 2.6;
 }
 
 .updater-status-spinner__arc {
   fill: none;
-  stroke: #ffffff;
+  stroke: #a78bfa;
   stroke-linecap: round;
-  stroke-width: 3.2;
+  stroke-width: 2.6;
   transition: stroke-dashoffset 260ms ease;
 }
 
