@@ -99,7 +99,7 @@ export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
 
   const message = downloading
     ? formatDownloadSubtitle({
-        moduleLabel: activeModuleId ?? strippedMessage,
+        moduleLabel: activeModuleInfo?.label ?? resolveModuleLabel(activeModuleId) ?? strippedMessage,
         downloadedBytes: status.downloadedBytes ?? null,
         totalBytes: status.totalBytes ?? null,
         speedBytesPerSec: status.downloadSpeedBytesPerSec ?? null
@@ -189,6 +189,13 @@ function extractDownloadModule(message: string): string | null {
   const match = message.match(/^(?:скачивание|загрузка)\s+(.+)$/i)
   const moduleName = match?.[1]?.replace(/\.{3}|…$/g, '').trim()
   return moduleName && moduleName.length > 0 ? moduleName : null
+}
+
+function resolveModuleLabel(moduleId: string | null): string | null {
+  if (!moduleId) return null
+  if (MODULE_LABELS[moduleId]) return MODULE_LABELS[moduleId]
+  const baseId = moduleId.split(':', 1)[0]
+  return baseId ? (MODULE_LABELS[baseId] ?? moduleId) : moduleId
 }
 
 function findActiveModuleInfo(

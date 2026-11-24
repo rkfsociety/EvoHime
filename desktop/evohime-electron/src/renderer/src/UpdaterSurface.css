@@ -561,10 +561,9 @@ button { font: inherit; }
 }
 
 .updater-module-chip--pending {
-  opacity: 0.56;
-  border-color: rgb(141 130 232 / 20%);
-  background: rgb(15 20 44 / 45%);
-  color: #8c99ba;
+  border-color: rgb(141 130 232 / 30%);
+  background: rgb(15 20 44 / 64%);
+  color: #b4c0dc;
 }
 
 .updater-module-chip--pending .updater-module-chip__indicator {
@@ -572,7 +571,7 @@ button { font: inherit; }
   height: 5px;
   border-radius: 999px;
   background: currentColor;
-  opacity: 0.55;
+  opacity: 0.72;
 }
 
 .updater-module-chip--error {

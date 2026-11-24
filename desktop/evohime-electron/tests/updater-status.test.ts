@@ -64,11 +64,11 @@ describe('updaterUiStatus', () => {
   it('extracts bounded progress from the worker status and formats download telemetry without tautology', () => {
     const first = updaterUiStatus(status({ phase: 'applying', message: 'Скачивание core — 74%' }))
     expect(first.percent).toBe(74)
-    expect(first.message).toBe('core')
+    expect(first.message).toBe('EvoHime Core')
 
     const clamped = updaterUiStatus(status({ phase: 'applying', message: 'Скачивание core — 144%' }))
     expect(clamped.percent).toBe(100)
-    expect(clamped.message).toBe('core')
+    expect(clamped.message).toBe('EvoHime Core')
 
     const preparing = updaterUiStatus(status({ phase: 'applying', message: 'Подготовка' }))
     expect(preparing.percent).toBeNull()
@@ -90,7 +90,7 @@ describe('updaterUiStatus', () => {
     }))
 
     expect(download.heading).toBe('Скачиваю обновление')
-    expect(download.message).toBe('shell-host · 4.8 МБ/с · осталось ~4 с')
+    expect(download.message).toBe('Оболочка Electron · 4.8 МБ/с · осталось ~4 с')
     expect(download.badge).toBe('v1.4.2 → v1.5.0 · 24.3 / 43.1 МБ')
 
     const withoutSpeed = updaterUiStatus(status({
@@ -104,13 +104,13 @@ describe('updaterUiStatus', () => {
       availableModuleVersions: { 'shell-host': '1.5.0' }
     }))
 
-    expect(withoutSpeed.message).toBe('shell-host · 24.3 / 43.1 МБ')
+    expect(withoutSpeed.message).toBe('Оболочка Electron · 24.3 / 43.1 МБ')
     expect(withoutSpeed.badge).toBe('v1.4.2 → v1.5.0')
 
     const minimal = updaterUiStatus(status({ phase: 'applying', message: 'Скачивание shell-host — 60%' }))
     expect(minimal.heading).toBe('Скачиваю обновление')
     expect(minimal.badge).toBe('Обновление')
-    expect(minimal.message).toBe('shell-host')
+    expect(minimal.message).toBe('Оболочка Electron')
 
     const install = updaterUiStatus(status({ phase: 'applying', message: 'Установка компонентов — 90%' }))
 

@@ -261,7 +261,7 @@ describe('standalone updater window', () => {
     render(<UpdaterApp />)
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Скачиваю обновление' })).toBeTruthy())
-    expect(document.querySelector('.updater-message')?.textContent).toBe('shell-host · 4.8 МБ/с · осталось ~4 с')
+    expect(document.querySelector('.updater-message')?.textContent).toBe('Оболочка Electron · 4.8 МБ/с · осталось ~4 с')
     expect(document.querySelector('.updater-progress__label')?.textContent).toBe('85%')
     expect(document.querySelector('.updater-progress__badge')?.textContent).toBe('v1.4.2 → v1.5.0 · 24.3 / 43.1 МБ')
     expect(document.querySelector('[data-step-id="download"]')?.getAttribute('data-step-state')).toBe('active')
