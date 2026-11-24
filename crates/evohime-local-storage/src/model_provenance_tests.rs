@@ -342,7 +342,12 @@ fn dispatch_windows_with_empty_model_aggregates_all_models_of_provider() {
     .unwrap();
     let repo = ModelProvenanceRepository::new(&db);
     for (index, provider, model, at) in [
-        (1, "literouter", "deepseek-v4.1-flash-1017:free", 210_000_i64),
+        (
+            1,
+            "literouter",
+            "deepseek-v4.1-flash-1017:free",
+            210_000_i64,
+        ),
         (2, "literouter", "glm-5.3-flash-cheap:free", 240_000),
         (3, "openai_compatible", "gpt-6-luna", 250_000),
     ] {
