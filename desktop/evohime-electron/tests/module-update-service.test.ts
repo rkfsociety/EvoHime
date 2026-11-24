@@ -652,4 +652,78 @@ describe('ModuleUpdateService', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('triggers --apply on idle only when canAutoApplyOnIdle returns true and backs off on failure', async () => {
+    vi.useFakeTimers()
+    const root = mkdtempSync(join(tmpdir(), 'evohime-idle-apply-'))
+    try {
+      const state = join(root, 'update-state')
+      mkdirSync(state)
+      let idleReady = false
+      let beforeAutoApplyCalls = 0
+      const closes: Array<(code: number | null, signal: NodeJS.Signals | null) => void> = []
+      spawnMock.mockImplementation(() => ({
+        once: vi.fn((event: string, listener: (code: number | null, signal: NodeJS.Signals | null) => void) => {
+          if (event === 'close') closes.push(listener)
+        }),
+        unref: vi.fn()
+      }))
+
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        autoStage: true,
+        autoApplyOnIdle: true,
+        idleCheckIntervalMs: 1_000,
+        canAutoApplyOnIdle: () => idleReady,
+        onBeforeAutoApply: () => { beforeAutoApplyCalls += 1 },
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: join(root, 'install'),
+        emit: () => {},
+        intervalMs: 60_000
+      })
+
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'staged',
+        message: 'Обновление скачано в фоне и готово к установке.',
+        available: [{ module: 'core', installed: '0.1.0', available: '0.2.0' }]
+      }))
+
+      const checkPromise = service.check()
+      closes.shift()?.(0, null)
+      await checkPromise
+      expect(service.status.phase).toBe('ready')
+
+      // While not idle, timer ticks must not start --apply
+      await vi.advanceTimersByTimeAsync(2_500)
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+      expect(beforeAutoApplyCalls).toBe(0)
+
+      // Once idle, next tick invokes onBeforeAutoApply and --apply
+      idleReady = true
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(beforeAutoApplyCalls).toBe(1)
+      expect(spawnMock).toHaveBeenCalledTimes(2)
+      expect(spawnMock.mock.calls[1]?.[1]?.[0]).toBe('--apply')
+
+      // Simulate failed --apply -> phase becomes failed or stays ready with backoff
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'staged',
+        message: 'Обновление скачано в фоне и готово к установке.',
+        available: [{ module: 'core', installed: '0.1.0', available: '0.2.0' }]
+      }))
+      closes.shift()?.(1, null)
+      await Promise.resolve()
+      await Promise.resolve()
+
+      // Subsequent idle ticks within backoff must not re-spawn --apply
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(spawnMock).toHaveBeenCalledTimes(2)
+      service.stop()
+    } finally {
+      vi.useRealTimers()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

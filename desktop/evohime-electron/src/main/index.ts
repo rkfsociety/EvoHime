@@ -1,5 +1,5 @@
-import { app, BrowserWindow, dialog, globalShortcut, Notification, safeStorage, session } from 'electron'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { app, BrowserWindow, dialog, globalShortcut, Notification, powerMonitor, safeStorage, session } from 'electron'
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { execFile, execFileSync, spawn, type ChildProcess } from 'node:child_process'
 
@@ -84,6 +84,13 @@ let lastShellState: ShellState | null = null
 let shellLocale: AppLocale = 'ru'
 let lastRepairStatus: import('@shared/api').RepairStatus | null = null
 let lastUpdateStatus: import('@shared/update').UpdateStatus | null = null
+const activeCoreTaskIds = new Set<string>()
+let lastCoreEventAtMs = 0
+let lastVoiceCommandAtMs = 0
+let relaunchHiddenOnStart = false
+
+const IDLE_APPLY_SYSTEM_SECONDS = 300
+const IDLE_APPLY_QUIET_MS = 60_000
 
 /** Passed only by the transaction worker while validating a fresh install. */
 const POST_UPDATE_ARGUMENT = '--evohime-post-update'
@@ -187,6 +194,14 @@ if (process.argv.includes('--evohime-browser-backend')) {
       if (state.connection === 'connected') writeUpdateHealth(updateHealthFile)
     })
     client.on('core-event', (event) => {
+      lastCoreEventAtMs = Date.now()
+      if (event.taskId) {
+        if (event.eventType === 'task.started' || event.eventType === 'task.queued' || event.eventType === 'task.running' || event.eventType === 'approval.required') {
+          activeCoreTaskIds.add(event.taskId)
+        } else if (event.eventType === 'task.completed' || event.eventType === 'task.failed' || event.eventType === 'task.cancelled') {
+          activeCoreTaskIds.delete(event.taskId)
+        }
+      }
       recentCoreEvents.unshift(event)
       if (recentCoreEvents.length > 2_000) recentCoreEvents.length = 2_000
       if (event.eventType === 'diagnostics.snapshot') {
@@ -202,7 +217,10 @@ if (process.argv.includes('--evohime-browser-backend')) {
       notifyWhenHidden(event.eventType)
       // Индикатор поверх всех окон коротко вспыхивает, когда ядро распознало
       // обращение «Ева, …» — тот же сигнал, что панель показывает карточкой.
-      if (event.eventType === 'ambient.voice_command') overlay?.flashHeard()
+      if (event.eventType === 'ambient.voice_command') {
+        lastVoiceCommandAtMs = Date.now()
+        overlay?.flashHeard()
+      }
       if (claimAutomaticSupportReport(event, lastShellState?.connection === 'connected', claimedAutomaticSupportReports) && automaticSupportReport) {
         const timer = setTimeout(() => {
           const report = automaticSupportReport
@@ -220,6 +238,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
     // Start the launch gate before Core and supervisor. The standalone updater
     // owns the visible blocking progress surface; the shell only receives
     // non-blocking status for its compact background-update control.
+    relaunchHiddenOnStart = consumeRelaunchHiddenFlag()
     updates = createUpdateService()
     const launchGate = updates.runLaunchGate()
     let launchGateCompleted = false
@@ -229,7 +248,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
       ...hardening,
       onRendererFailure: handleRendererFailure,
       getLocale: () => shellLocale,
-      shouldShowOnReady: () => launchGateCompleted && launchGateOutcome !== 'applying'
+      shouldShowOnReady: () => launchGateCompleted && launchGateOutcome !== 'applying' && !relaunchHiddenOnStart
     })
     tray = createTray({
       window: mainWindow,
@@ -362,7 +381,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
 
     // If the renderer finished loading while the gate was running, focus the
     // regular shell after the process-level safety gate has released startup.
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow && !mainWindow.isDestroyed() && !relaunchHiddenOnStart) {
       focusWindow(mainWindow)
     }
 
@@ -609,6 +628,48 @@ function createOllamaRuntimeService(): OllamaRuntimeService {
   })
 }
 
+function relaunchHiddenFlagPath(): string {
+  return join(dataDirectory(), 'update-state', 'relaunch-hidden.flag')
+}
+
+function consumeRelaunchHiddenFlag(): boolean {
+  const flagPath = relaunchHiddenFlagPath()
+  if (!existsSync(flagPath)) return false
+  try {
+    unlinkSync(flagPath)
+  } catch {
+    // ignore cleanup failure
+  }
+  return postUpdateLaunch
+}
+
+function markRelaunchHiddenIfNeeded(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return
+  try {
+    const flagPath = relaunchHiddenFlagPath()
+    mkdirSync(dirname(flagPath), { recursive: true })
+    writeFileSync(flagPath, '1', { encoding: 'utf8' })
+  } catch {
+    // non-fatal
+  }
+}
+
+function isIdleForAutoApply(): boolean {
+  if (activeCoreTaskIds.size > 0) return false
+  if (lastRepairStatus && ['diagnosing', 'repairing', 'committing', 'pushing'].includes(lastRepairStatus.phase)) {
+    return false
+  }
+  const now = Date.now()
+  if (lastCoreEventAtMs > 0 && now - lastCoreEventAtMs < IDLE_APPLY_QUIET_MS) return false
+  if (lastVoiceCommandAtMs > 0 && now - lastVoiceCommandAtMs < IDLE_APPLY_QUIET_MS) return false
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) return false
+  try {
+    return powerMonitor.getSystemIdleTime() >= IDLE_APPLY_SYSTEM_SECONDS
+  } catch {
+    return false
+  }
+}
+
 function createUpdateService(): UpdateController {
   const config = loadUpdateConfig({
     dataDirectory: dataDirectory(),
@@ -626,6 +687,9 @@ function createUpdateService(): UpdateController {
       intervalMs: config.checkIntervalMs,
       periodicCheck: true,
       autoStage: true,
+      autoApplyOnIdle: true,
+      canAutoApplyOnIdle: isIdleForAutoApply,
+      onBeforeAutoApply: markRelaunchHiddenIfNeeded,
       skipLaunchGate: postUpdateLaunch || updaterCheckedLaunch,
       emit: (status) => {
         lastUpdateStatus = status

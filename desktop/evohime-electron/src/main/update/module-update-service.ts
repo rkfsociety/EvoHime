@@ -39,6 +39,14 @@ export interface ModuleUpdateServiceOptions {
   readonly periodicCheck?: boolean
   /** Automatically download and verify available updates in the background (`--stage`). */
   readonly autoStage?: boolean
+  /** Automatically apply already-staged updates (`--apply`) when the app and user are idle. */
+  readonly autoApplyOnIdle?: boolean
+  /** Polling interval for idle-apply readiness checks (defaults to 60_000 ms). */
+  readonly idleCheckIntervalMs?: number
+  /** Predicate returning true only when Core, voice, and user are idle enough for restart. */
+  readonly canAutoApplyOnIdle?: () => boolean
+  /** Called right before an idle-triggered `--apply` starts. */
+  readonly onBeforeAutoApply?: () => void
   /** Skip only the first launch check when a transaction has just relaunched the shell. */
   readonly skipLaunchGate?: boolean
   /** Closes the visible updater only after downloads finish and file replacement must begin. */
@@ -73,6 +81,7 @@ export class ModuleUpdateService {
   private current: UpdateStatus
   private timer: NodeJS.Timeout | null = null
   private applyPollTimer: NodeJS.Timeout | null = null
+  private idleApplyTimer: NodeJS.Timeout | null = null
   private lastSerialized = ''
   private exitRequested = false
   private checkInFlight = false
@@ -81,6 +90,9 @@ export class ModuleUpdateService {
   private stageFailureCount = 0
   private stageBackoffUntilMs = 0
   private lastStageFingerprint = ''
+  private applyFailureCount = 0
+  private applyBackoffUntilMs = 0
+  private lastApplyFingerprint = ''
 
   constructor(private readonly options: ModuleUpdateServiceOptions) {
     this.current = options.enabled
@@ -164,10 +176,21 @@ export class ModuleUpdateService {
     void this.startUpdater('--apply').then((succeeded) => {
       this.applyInFlight = false
       this.stopApplyPolling()
+      if (succeeded) {
+        this.applyFailureCount = 0
+        this.applyBackoffUntilMs = 0
+      } else {
+        this.applyFailureCount += 1
+        const backoffMs = Math.min(30 * 60_000, 300_000 * 2 ** (this.applyFailureCount - 1))
+        this.applyBackoffUntilMs = Date.now() + backoffMs
+      }
       this.options.onApplyComplete?.(succeeded)
     }, () => {
       this.applyInFlight = false
       this.stopApplyPolling()
+      this.applyFailureCount += 1
+      const backoffMs = Math.min(30 * 60_000, 300_000 * 2 ** (this.applyFailureCount - 1))
+      this.applyBackoffUntilMs = Date.now() + backoffMs
       this.options.onApplyComplete?.(false)
     })
     return this.current
@@ -187,6 +210,44 @@ export class ModuleUpdateService {
       this.timer = null
     }
     this.stopApplyPolling()
+    this.stopIdleApplyCheck()
+  }
+
+  private scheduleIdleApplyCheck(): void {
+    if (!this.options.enabled || !this.options.autoApplyOnIdle || this.idleApplyTimer !== null) return
+    const checkMs = this.options.idleCheckIntervalMs ?? 60_000
+    this.idleApplyTimer = setInterval(() => {
+      this.tryAutoApplyOnIdle()
+    }, checkMs)
+    this.idleApplyTimer.unref?.()
+  }
+
+  private stopIdleApplyCheck(): void {
+    if (this.idleApplyTimer !== null) {
+      clearInterval(this.idleApplyTimer)
+      this.idleApplyTimer = null
+    }
+  }
+
+  private tryAutoApplyOnIdle(): void {
+    if (!this.options.enabled || !this.options.autoApplyOnIdle) return
+    if (this.checkInFlight || this.stageInFlight || this.applyInFlight) return
+    if (this.current.phase !== 'ready') return
+    const modules = this.current.availableModules ?? []
+    if (modules.length === 0) return
+
+    const versions = this.current.availableModuleVersions ?? {}
+    const fingerprint = modules.map((module) => `${module}:${versions[module] ?? ''}`).join(',')
+    if (fingerprint !== this.lastApplyFingerprint) {
+      this.applyFailureCount = 0
+      this.applyBackoffUntilMs = 0
+      this.lastApplyFingerprint = fingerprint
+    }
+    if (Date.now() < this.applyBackoffUntilMs) return
+    if (this.options.canAutoApplyOnIdle?.() !== true) return
+
+    this.options.onBeforeAutoApply?.()
+    void this.prepareComponents(modules)
   }
 
   private startApplyPolling(): void {
@@ -430,6 +491,11 @@ export class ModuleUpdateService {
     this.lastSerialized = serialized
     this.current = next
     this.options.emit(next)
+    if (next.phase === 'ready' && this.options.autoApplyOnIdle) {
+      this.scheduleIdleApplyCheck()
+    } else if (next.phase !== 'ready') {
+      this.stopIdleApplyCheck()
+    }
     if (parsed.requires_exit === true && !this.exitRequested) {
       this.exitRequested = true
       this.options.quitForApply?.()
