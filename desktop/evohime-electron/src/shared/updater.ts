@@ -27,6 +27,7 @@ export interface EvoHimeUpdaterApi {
   subscribe(listener: (status: UpdaterUiStatus) => void): () => void
   close(): Promise<void>
   minimize(): Promise<void>
+  retry?(): Promise<void>
 }
 
 /** True when a worker status message describes an artifact download, not a file swap. */

@@ -40,6 +40,20 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
       app.exit(0)
     })
   }
+  let updaterWindow: BrowserWindow | null = null
+  let gateRunning = false
+
+  const focusUpdaterWindow = (): void => {
+    if (!updaterWindow || updaterWindow.isDestroyed()) return
+    if (updaterWindow.isMinimized()) updaterWindow.restore()
+    if (!updaterWindow.isVisible()) updaterWindow.show()
+    updaterWindow.focus()
+  }
+
+  app.on('second-instance', () => {
+    focusUpdaterWindow()
+  })
+
   const service = new ModuleUpdateService({
     dataDirectory: dataDirectory(),
     branch: config.branch,
@@ -49,11 +63,18 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     intervalMs: CHECK_INTERVAL_MS,
     emit: () => publish(),
     quitForApply: () => {
+      options.log('info', 'updater.quit_for_apply', {})
       exitAfterLoggerFlush()
+    },
+    onApplyComplete: (succeeded) => {
+      if (shuttingDown || !succeeded) {
+        options.log('warn', 'updater.apply_finished_without_recheck', { succeeded, shuttingDown })
+        return
+      }
+      options.log('info', 'updater.apply_completed_recheck', {})
+      void runGate()
     }
   })
-
-  let updaterWindow: BrowserWindow | null = null
 
   const publish = (): void => {
     if (updaterWindow && !updaterWindow.isDestroyed()) {
@@ -89,27 +110,58 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
         void service.prepareComponents(availableModules)
         return
       }
+      options.log('error', 'updater.launch_shell_missing', { shell })
       publishFailure(`Файл EvoHime.exe не найден в ${installDirectory}.`)
       return
     }
     try {
-      const child = spawn(shell, [], { cwd: installDirectory, detached: true, stdio: 'ignore', windowsHide: true })
+      options.log('info', 'updater.launch_shell', { shell })
+      const child = spawn(shell, ['--evohime-updater-checked'], { cwd: installDirectory, detached: true, stdio: 'ignore', windowsHide: true })
       child.unref()
       exitAfterLoggerFlush()
-    } catch {
+    } catch (error) {
+      options.log('error', 'updater.launch_shell_failed', { error: error instanceof Error ? error.message : String(error) })
       publishFailure('Не удалось запустить EvoHime.')
+    }
+  }
+
+  const runGate = async (): Promise<void> => {
+    if (shuttingDown || gateRunning) return
+    gateRunning = true
+    try {
+      const gate = await service.runLaunchGate()
+      const availableCount = (service.status.availableModules ?? []).length
+      options.log('info', 'updater.gate_result', {
+        gate,
+        phase: service.status.phase,
+        availableCount,
+        error: service.status.error
+      })
+      if (gate === 'continue' && service.status.phase !== 'failed' && availableCount === 0) {
+        launchShell()
+      }
+    } finally {
+      gateRunning = false
+      publish()
     }
   }
 
   ipcMain.removeHandler('updater.get-status')
   ipcMain.removeHandler('updater.close')
   ipcMain.removeHandler('updater.minimize')
+  ipcMain.removeHandler('updater.retry')
   ipcMain.handle('updater.get-status', () => updaterUiStatus(service.status))
   ipcMain.handle('updater.close', () => {
     shuttingDown = true
     app.quit()
   })
   ipcMain.handle('updater.minimize', () => updaterWindow?.minimize())
+  ipcMain.handle('updater.retry', () => {
+    if (!shuttingDown && !gateRunning && !crashGuard.blocked) {
+      options.log('info', 'updater.retry_requested', {})
+      void runGate()
+    }
+  })
 
   updaterWindow = new BrowserWindow({
     width: 520,
@@ -184,8 +236,7 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   if (crashGuard.blocked) {
     publishFailure('Updater UI несколько раз подряд завершился при запуске. Требуется восстановление.')
   } else {
-    const gate = await service.runLaunchGate()
-    if (gate === 'continue') launchShell()
+    await runGate()
   }
   publish()
 
@@ -199,6 +250,7 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     ipcMain.removeHandler('updater.get-status')
     ipcMain.removeHandler('updater.close')
     ipcMain.removeHandler('updater.minimize')
+    ipcMain.removeHandler('updater.retry')
     void options.flushLogs().then((flushed) => {
       if (!flushed) process.stderr.write('EvoHime updater diagnostics flush timed out; exiting with a bounded log tail.\n')
       allowQuitAfterFlush = true

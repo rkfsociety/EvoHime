@@ -18,6 +18,7 @@ import { resolveUiEntry } from './ui-bundle'
 export interface WindowOptions extends HardeningOptions {
   readonly onRendererFailure: (reason: string) => void
   readonly getLocale?: () => AppLocale
+  readonly shouldShowOnReady?: () => boolean
 }
 
 const TITLEBAR_HEIGHT = 56
@@ -86,9 +87,9 @@ export function createMainWindow(options: WindowOptions): BrowserWindow {
   })
 
   window.once('ready-to-show', () => {
-    // The standalone updater owns blocking progress; the shell window remains
-    // visible immediately while its process-level launch gate is running.
-    focusWindow(window)
+    if (options.shouldShowOnReady === undefined || options.shouldShowOnReady()) {
+      focusWindow(window)
+    }
   })
 
   window.webContents.on('render-process-gone', (_event, details) => {

@@ -254,6 +254,18 @@ export function UpdaterApp(): React.JSX.Element {
 
           {failed && status.detail.length > 0 ? <p className="updater-detail" role="status">{translate(status.detail)}</p> : null}
 
+          {failed && window.evohimeUpdater?.retry ? (
+            <div className="updater-actions">
+              <button
+                type="button"
+                className="updater-retry-button"
+                onClick={() => void window.evohimeUpdater.retry?.()}
+              >
+                {translate('Повторить')}
+              </button>
+            </div>
+          ) : null}
+
           {visibleModules.length > 0 ? (
             <div className="updater-modules" aria-label={translate("Обновляемые модули")}>
               {visibleModules.map((module) => (

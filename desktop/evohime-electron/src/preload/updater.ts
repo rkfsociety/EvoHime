@@ -10,7 +10,8 @@ const api: EvoHimeUpdaterApi = {
     return () => ipcRenderer.removeListener('updater.status', handler)
   },
   close: () => ipcRenderer.invoke('updater.close') as Promise<void>,
-  minimize: () => ipcRenderer.invoke('updater.minimize') as Promise<void>
+  minimize: () => ipcRenderer.invoke('updater.minimize') as Promise<void>,
+  retry: () => ipcRenderer.invoke('updater.retry') as Promise<void>
 }
 
 contextBridge.exposeInMainWorld('evohimeUpdater', Object.freeze(api))

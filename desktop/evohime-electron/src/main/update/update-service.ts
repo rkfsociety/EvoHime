@@ -48,7 +48,7 @@ export const TRANSACTION_EXECUTABLE = 'evohime-transaction.exe'
 export const SHELL_EXECUTABLE = 'EvoHime.exe'
 const MODULE_IDS = ['shell-host', 'ui-bundle', 'core', 'supervisor', 'cli', 'analysis-worker', 'listener', 'listener-runtime', 'transaction', 'updater', 'verifier'] as const
 
-export type GateOutcome = 'continue' | 'applying'
+export type GateOutcome = 'continue' | 'applying' | 'failed'
 
 /** Common bridge surface shared by the dev source updater and native updater. */
 export interface UpdateController {

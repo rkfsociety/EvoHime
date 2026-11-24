@@ -36,6 +36,8 @@ export interface ModuleUpdateServiceOptions {
   readonly skipLaunchGate?: boolean
   /** Closes the visible updater only after downloads finish and file replacement must begin. */
   readonly quitForApply?: () => void
+  /** Notifies the host when an `--apply` worker exits without requesting app exit. */
+  readonly onApplyComplete?: (succeeded: boolean) => void
 }
 
 function joinNativePath(root: string, ...parts: string[]): string {
@@ -87,7 +89,7 @@ export class ModuleUpdateService {
     return this.current
   }
 
-  async runLaunchGate(): Promise<'continue' | 'applying'> {
+  async runLaunchGate(): Promise<'continue' | 'applying' | 'failed'> {
     if (!this.options.enabled) {
       this.scheduleRefresh()
       return 'continue'
@@ -104,7 +106,11 @@ export class ModuleUpdateService {
 
     this.patchLocal({ blocking: true })
     const checked = await this.check()
-    if (checked.phase === 'failed') return this.releaseGate()
+    if (checked.phase === 'failed') {
+      this.patchLocal({ blocking: false })
+      this.scheduleRefresh()
+      return 'failed'
+    }
 
     const availableModules = checked.availableModules ?? []
     if (availableModules.length === 0) return this.releaseGate()
@@ -141,9 +147,14 @@ export class ModuleUpdateService {
     this.patchLocal({ phase: 'applying', message: 'Передаю обновление updater worker…' })
     this.scheduleRefresh()
     this.startApplyPolling()
-    void this.startUpdater('--apply').finally(() => {
+    void this.startUpdater('--apply').then((succeeded) => {
       this.applyInFlight = false
       this.stopApplyPolling()
+      this.options.onApplyComplete?.(succeeded)
+    }, () => {
+      this.applyInFlight = false
+      this.stopApplyPolling()
+      this.options.onApplyComplete?.(false)
     })
     return this.current
   }

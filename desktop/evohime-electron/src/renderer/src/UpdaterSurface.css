@@ -511,3 +511,27 @@ button { font: inherit; }
   .updater-panel h1 { font-size: 18px; }
   .updater-step { gap: 4px; font-size: 10px; }
 }
+
+.updater-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.updater-retry-button {
+  appearance: none;
+  border: 1px solid rgb(241 143 165 / 42%);
+  background: rgb(241 143 165 / 14%);
+  color: #ffe4ec;
+  border-radius: 10px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.updater-retry-button:hover {
+  background: rgb(241 143 165 / 24%);
+  border-color: rgb(241 143 165 / 64%);
+}

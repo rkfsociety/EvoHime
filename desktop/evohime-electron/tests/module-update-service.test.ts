@@ -470,4 +470,74 @@ describe('ModuleUpdateService', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('returns failed from runLaunchGate when check fails instead of continuing into shell', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-failed-gate-'))
+    try {
+      const state = join(root, 'update-state')
+      mkdirSync(state)
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'failed',
+        message: 'Сервер обновлений недоступен.',
+        error: 'network error',
+        available: []
+      }))
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: join(root, 'install'),
+        emit: () => {},
+        intervalMs: 60_000
+      })
+
+      await expect(service.runLaunchGate()).resolves.toBe('failed')
+      expect(service.status.phase).toBe('failed')
+      service.stop()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('notifies onApplyComplete when apply finishes without requesting exit', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-apply-complete-'))
+    try {
+      const state = join(root, 'update-state')
+      mkdirSync(state)
+      let closeApply: ((code: number | null, signal: NodeJS.Signals | null) => void) | undefined
+      spawnMock.mockImplementationOnce(() => ({
+        once: vi.fn((event: string, listener: (code: number | null, signal: NodeJS.Signals | null) => void) => {
+          if (event === 'close') closeApply = listener
+        }),
+        unref: vi.fn()
+      }))
+      let completed: boolean | null = null
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: join(root, 'install'),
+        emit: () => {},
+        intervalMs: 60_000,
+        onApplyComplete: (succeeded) => { completed = succeeded }
+      })
+
+      await service.prepareComponents(['listener-runtime'])
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'ready',
+        message: 'Обновления модулей применены.',
+        available: []
+      }))
+      closeApply?.(0, null)
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(completed).toBe(true)
+      service.stop()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

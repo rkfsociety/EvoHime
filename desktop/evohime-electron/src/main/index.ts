@@ -87,7 +87,10 @@ let lastUpdateStatus: import('@shared/update').UpdateStatus | null = null
 
 /** Passed only by the transaction worker while validating a fresh install. */
 const POST_UPDATE_ARGUMENT = '--evohime-post-update'
+/** Passed by the standalone updater once it has verified that modules are current. */
+const UPDATER_CHECKED_ARGUMENT = '--evohime-updater-checked'
 const postUpdateLaunch = process.argv.includes(POST_UPDATE_ARGUMENT)
+const updaterCheckedLaunch = process.argv.includes(UPDATER_CHECKED_ARGUMENT)
 
 // safeStorage is only usable after the app is ready, so the store is created
 // lazily inside whenReady rather than at module scope.
@@ -219,11 +222,14 @@ if (process.argv.includes('--evohime-browser-backend')) {
     // non-blocking status for its compact background-update control.
     updates = createUpdateService()
     const launchGate = updates.runLaunchGate()
+    let launchGateCompleted = false
+    let launchGateOutcome: Awaited<ReturnType<UpdateController['runLaunchGate']>> = 'continue'
 
     mainWindow = createMainWindow({
       ...hardening,
       onRendererFailure: handleRendererFailure,
       getLocale: () => shellLocale,
+      shouldShowOnReady: () => launchGateCompleted && launchGateOutcome !== 'applying'
     })
     tray = createTray({
       window: mainWindow,
@@ -347,6 +353,8 @@ if (process.argv.includes('--evohime-browser-backend')) {
     } catch (error) {
       log('error', 'shell.update_gate_failed', { error })
     }
+    launchGateOutcome = gate
+    launchGateCompleted = true
     if (gate === 'applying') {
       log('info', 'shell.update_applying', {})
       return
@@ -605,7 +613,7 @@ function createUpdateService(): UpdateController {
       installDirectory: dirname(app.getPath('exe')),
       intervalMs: config.checkIntervalMs,
       periodicCheck: true,
-      skipLaunchGate: postUpdateLaunch,
+      skipLaunchGate: postUpdateLaunch || updaterCheckedLaunch,
       emit: (status) => {
         lastUpdateStatus = status
         broadcast({ kind: 'update', status })
