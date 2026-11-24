@@ -447,6 +447,17 @@ impl HandshakeVerifier {
         request: &HandshakeRequest,
         now_ms: u64,
     ) -> Result<VerifiedHandshake, HandshakeRejection> {
+        self.verify_with_allowed_roles(request, now_ms, &ALLOWED_CLIENT_ROLES)
+    }
+
+    /// Verifies one handshake against an explicit set of allowed client roles
+    /// and consumes the issued nonce.
+    pub fn verify_with_allowed_roles(
+        &mut self,
+        request: &HandshakeRequest,
+        now_ms: u64,
+        allowed_roles: &[&str],
+    ) -> Result<VerifiedHandshake, HandshakeRejection> {
         let issued = self
             .issued
             .take()
@@ -464,7 +475,7 @@ impl HandshakeVerifier {
         {
             return Err(HandshakeRejection::MalformedIdentity);
         }
-        if !ALLOWED_CLIENT_ROLES.contains(&request.client_role.as_str()) {
+        if !allowed_roles.contains(&request.client_role.as_str()) {
             return Err(HandshakeRejection::UnknownRole);
         }
         if request.capabilities.len() > crate::MAX_CAPABILITIES {
@@ -722,6 +733,60 @@ mod tests {
         assert_eq!(
             hex_encode(&digest),
             "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+        );
+    }
+
+    #[test]
+    fn verify_with_allowed_roles_accepts_core_role_only_when_explicitly_allowed() {
+        let ctx = context();
+        let mut verifier =
+            HandshakeVerifier::new(ctx.clone(), DEFAULT_NONCE_TTL_MS).expect("verifier");
+
+        let nonce = verifier.issue_nonce(1_000).expect("nonce");
+        let core_req = HandshakeRequest {
+            protocol_major: 1,
+            client_id: "core-kernel-1".into(),
+            client_role: "core".into(),
+            nonce: nonce.value.clone(),
+            proof: ctx.secret.proof("core", "core-kernel-1", &nonce.value),
+            capabilities: vec!["local-provider-lifecycle".into()],
+            peer: PeerIdentity {
+                user_sid: ctx.expected_user_sid.clone(),
+                logon_session: ctx.expected_logon_session.clone(),
+            },
+        };
+        assert_eq!(
+            verifier.verify(&core_req, 1_001),
+            Err(HandshakeRejection::UnknownRole)
+        );
+
+        let nonce = verifier.issue_nonce(1_010).expect("nonce");
+        let core_req = HandshakeRequest {
+            nonce: nonce.value.clone(),
+            proof: ctx.secret.proof("core", "core-kernel-1", &nonce.value),
+            ..core_req
+        };
+        let verified = verifier
+            .verify_with_allowed_roles(&core_req, 1_011, &["core"])
+            .expect("core role accepted for supervisor channel");
+        assert_eq!(verified.client_role, "core");
+
+        let nonce = verifier.issue_nonce(1_020).expect("nonce");
+        let shell_req = HandshakeRequest {
+            protocol_major: 1,
+            client_id: "shell-1".into(),
+            client_role: "shell".into(),
+            nonce: nonce.value.clone(),
+            proof: ctx.secret.proof("shell", "shell-1", &nonce.value),
+            capabilities: vec![],
+            peer: PeerIdentity {
+                user_sid: ctx.expected_user_sid.clone(),
+                logon_session: ctx.expected_logon_session.clone(),
+            },
+        };
+        assert_eq!(
+            verifier.verify_with_allowed_roles(&shell_req, 1_021, &["core"]),
+            Err(HandshakeRejection::UnknownRole)
         );
     }
 }

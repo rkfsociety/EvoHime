@@ -556,8 +556,14 @@ async fn run_supervisor_command_channel(
     let mut external_processes: BTreeMap<String, ExternalAgentProcess> = BTreeMap::new();
     let mut quantizer_processes: BTreeMap<String, LocalQuantizerProcess> = BTreeMap::new();
     let mut inference_processes: BTreeMap<String, LocalInferenceProcess> = BTreeMap::new();
+    let mut supervisor_context = context.launch_context.clone();
+    supervisor_context.secret = context
+        .launch_context
+        .supervisor_secret
+        .clone()
+        .ok_or_else(|| io::Error::other("supervisor_secret_unavailable"))?;
     let mut verifier = evohime_desktop_ipc::session::HandshakeVerifier::new(
-        context.launch_context.clone(),
+        supervisor_context,
         evohime_desktop_ipc::session::DEFAULT_NONCE_TTL_MS,
     )
     .map_err(|error| io::Error::other(error.to_string()))?;
@@ -602,8 +608,11 @@ async fn run_supervisor_command_channel(
                 logon_session: logon_session.clone(),
             },
         };
-        if verifier.verify(&request, now_ms()).is_err() {
-            let _ = logger.write("supervisor.command_auth_failed", json!({}));
+        if let Err(error) = verifier.verify_with_allowed_roles(&request, now_ms(), &["core"]) {
+            let _ = logger.write(
+                "supervisor.command_auth_failed",
+                json!({"reason": error.to_string()}),
+            );
             continue;
         }
         channel
