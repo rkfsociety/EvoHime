@@ -9214,7 +9214,7 @@ body {
 
 .hive-activity-row time { flex: none; color: var(--fg-faint); font: 10px var(--mono); }
 .hive-activity-row--warning { color: var(--hive-amber); }
-.hive-technical-logs { flex: 0 0 auto; margin-top: 8px; border-top: 1px solid var(--border); }
+.hive-technical-logs { flex: 0 0 auto; margin-top: auto; border-top: 1px solid var(--border); }
 .hive-technical-logs[open] { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .hive-technical-logs summary { padding: 8px 0; color: var(--fg-muted); font-size: 11px; cursor: pointer; }
 .hive-technical-logs section { display: grid; gap: 6px; }
