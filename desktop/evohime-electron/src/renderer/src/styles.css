@@ -7454,6 +7454,7 @@ body {
   --border-strong: rgb(141 130 232 / 50%);
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(290px, 334px);
   grid-template-rows: minmax(0, 1fr) auto;
   flex: 1 1 auto;
   min-height: 0;
@@ -8099,7 +8100,53 @@ body {
   pointer-events: auto;
 }
 
-/* Нижний стеклянный dock-бар (4 карточки). */
+/* Правая вертикальная колонка: контролы, метрики и ход работы Королевы до низа. */
+
+.hive-right-rail {
+  grid-row: 1 / -1;
+  grid-column: 2;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  margin: 12px 12px 12px 0;
+  pointer-events: none;
+}
+
+.hive-right-rail > * {
+  pointer-events: auto;
+}
+
+.hive-right-rail .hive-console__controls {
+  flex: none;
+  align-self: flex-end;
+}
+
+.hive-right-rail .hive-hud-status {
+  flex: none;
+}
+
+.hive-right-rail .hive-dock__card--logs {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.hive-right-rail .hive-activity-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.hive-right-rail .hive-technical-logs[open] {
+  max-height: 46%;
+}
+
+/* Нижний стеклянный dock-бар (3 карточки). */
 
 .hive-dock {
   position: relative;
@@ -8107,7 +8154,7 @@ body {
   grid-column: 1;
   z-index: 5;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1.25fr) minmax(195px, 0.78fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.25fr) minmax(190px, 0.82fr);
   gap: 10px;
   align-items: stretch;
   margin: 0 12px 12px;
@@ -9647,6 +9694,7 @@ body {
 @container (max-width: 1180px) {
   .hive-stage {
     display: grid;
+    grid-template-columns: minmax(0, 1fr) 296px;
     grid-template-rows: minmax(0, 1fr) auto;
     min-height: 0;
     overflow: hidden;
@@ -9665,8 +9713,8 @@ body {
     font-size: 18px;
   }
 
-  .hive-hud-top__right {
-    width: min(306px, 38%);
+  .hive-right-rail {
+    margin: 10px 10px 10px 0;
     gap: 6px;
   }
 
@@ -9691,7 +9739,7 @@ body {
   }
 
   .hive-dock {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(156px, 0.72fr);
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(160px, 0.78fr);
     gap: 8px;
     margin: 0 10px 10px;
   }
@@ -9701,6 +9749,10 @@ body {
     max-height: min(190px, 24vh);
     padding: 8px 10px;
     gap: 5px;
+  }
+
+  .hive-right-rail .hive-dock__card--logs {
+    max-height: none;
   }
 
   .hive-dock__card--logs-expanded {
@@ -9803,9 +9855,18 @@ body {
     margin: 0;
   }
 
-  .hive-dock {
+  .hive-right-rail {
     position: static;
     order: 4;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding-right: 0;
+  }
+
+  .hive-dock {
+    position: static;
+    order: 5;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     margin: 0;
   }
@@ -10253,16 +10314,11 @@ body {
 
 .hive-archipelago__inspector {
   position: absolute;
-  /* Опускается под верхний HUD-бар, чтобы метрики улья не перекрывали
-     навигацию по острову; --hive-hud-top-height публикует OperationsPanel.
-     Сброс по высоте (182px) оставляет зазор до нижнего дока (12 + 186). */
-  top: calc(16px + var(--hive-hud-top-height, 0px));
-  right: 16px;
+  top: 16px;
+  right: 358px;
   z-index: 4;
   width: min(320px, 40%);
-  max-height: calc(
-    100% - 64px - var(--hive-hud-top-height, 0px) - 182px
-  );
+  max-height: calc(100% - 210px);
   overflow: auto;
   display: flex;
   flex-direction: column;

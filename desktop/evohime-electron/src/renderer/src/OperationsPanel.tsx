@@ -3276,85 +3276,6 @@ export function HiveDashboard({
               </span>
             </div>
           </div>
-
-          <div className="hive-hud-top__right">
-            <div className="hive-console__controls">
-              {!connected ? (
-                <span className={`status-pill status-pill--${connection}`}>
-                  {translate(HIVE_CONNECTION_LABELS[connection])}
-                </span>
-              ) : null}
-              <label className="hive-interval">
-                <span>{translate('Обновление')}</span>
-                <select
-                  aria-label={translate('Интервал обновления')}
-                  value={preference.intervalMs}
-                  onChange={(changeEvent) => updatePreference({ ...preference, intervalMs: Number(changeEvent.target.value) })}
-                >
-                  {HIVE_INTERVALS.map((value) => (
-                    <option key={value} value={value}>{value / 1000}с</option>
-                  ))}
-                </select>
-              </label>
-              <button type="button" className="hive-console__refresh" onClick={requestSnapshot} disabled={!connected}>
-                {translate('Обновить сейчас')}
-              </button>
-              <button
-                type="button"
-                className="hive-settings-trigger"
-                aria-label={translate('Настройки улья')}
-                title={translate('Настройки улья')}
-                aria-expanded={hiveSettingsOpen}
-                onClick={() => setHiveSettingsOpen(true)}
-              >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-                </svg>
-              </button>
-            </div>
-
-            <aside className="hive-hud-status" aria-label={translate('Метрики улья')}>
-              <div className="hive-panel__head">
-                <h2>{translate('Метрики улья')}</h2>
-                <span className="hive-hud-status__badge">{translate(observationStatusLabel)}</span>
-              </div>
-              <div className="hive-metrics-summary">
-                <div className="hive-metrics">
-                  <EfficiencyRing percent={efficiency} />
-                </div>
-                <ul className="hive-stat-list">
-                  <li><span>{translate('Агентов онлайн')}</span><strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : agentsOnline}</strong></li>
-                  <li><span>{translate('Задач в работе')}</span><strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : activeTasks}</strong></li>
-                  <li>
-                    <span>{translate('Задач сегодня')}</span>
-                    <strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : hive?.metrics.tasksToday ?? 0}</strong>
-                  </li>
-                  <li>
-                    <span>{translate('Среднее время')}</span>
-                    <strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : averageTimeLabel}</strong>
-                  </li>
-                </ul>
-              </div>
-              <dl className="hive-queen__footer">
-                <div>
-                  <dt>{translate('Воркеры')}</dt>
-                  <dd>{workerSummaryLabel}</dd>
-                </div>
-                {nextObservationAtMs !== null ? (
-                  <div>
-                    <dt>{translate('Следующая проверка окружения')}</dt>
-                    <dd>{formatClock(nextObservationAtMs)}</dd>
-                  </div>
-                ) : observationStatus === 'observing' || observationStatus === 'active' ? (
-                  <div>
-                    <dt>{translate('Следующая проверка окружения')}</dt>
-                    <dd>{translate('Наблюдение активно')}</dd>
-                  </div>
-                ) : null}
-              </dl>
-            </aside>
-          </div>
         </header>
 
         {effectiveActiveApprovals.length > 0 || commandError ? (
@@ -3508,6 +3429,118 @@ export function HiveDashboard({
             </div>
           </section>
 
+          <div className="hive-dock__card hive-dock__card--launcher">
+            <button
+              type="button"
+              className={`hive-chat-launcher${hiveChatOpen ? ' hive-chat-launcher--open' : ''}`}
+              aria-label={translate('Диалог с Королевой Евой')}
+              aria-expanded={hiveChatOpen}
+              aria-controls="hive-chat-drawer"
+              onClick={() => setHiveChatOpen((open) => !open)}
+            >
+              <span className="hive-chat-launcher__glow" aria-hidden="true">
+                <HiveLotusMark size={38} />
+              </span>
+              <span className="hive-chat-launcher__body">
+                <strong>{translate('Диалог с Королевой Евой')}</strong>
+                <small>
+                  {translate(
+                    queenTyping
+                      ? 'Королева печатает'
+                      : waitingApproval
+                        ? 'Ждёт подтверждения'
+                        : 'Открыть диалог'
+                  )}
+                </small>
+              </span>
+              <span className="hive-chat-launcher__meta">
+                <span className="hive-badge">{translate(queenTyping ? 'в процессе' : 'на связи')}</span>
+                {effectiveActiveApprovals.length > 0 ? (
+                  <span className="hive-chat-launcher__alert">{effectiveActiveApprovals.length}</span>
+                ) : null}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div className="hive-right-rail">
+          <div className="hive-console__controls">
+            {!connected ? (
+              <span className={`status-pill status-pill--${connection}`}>
+                {translate(HIVE_CONNECTION_LABELS[connection])}
+              </span>
+            ) : null}
+            <label className="hive-interval">
+              <span>{translate('Обновление')}</span>
+              <select
+                aria-label={translate('Интервал обновления')}
+                value={preference.intervalMs}
+                onChange={(changeEvent) => updatePreference({ ...preference, intervalMs: Number(changeEvent.target.value) })}
+              >
+                {HIVE_INTERVALS.map((value) => (
+                  <option key={value} value={value}>{value / 1000}с</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="hive-console__refresh" onClick={requestSnapshot} disabled={!connected}>
+              {translate('Обновить сейчас')}
+            </button>
+            <button
+              type="button"
+              className="hive-settings-trigger"
+              aria-label={translate('Настройки улья')}
+              title={translate('Настройки улья')}
+              aria-expanded={hiveSettingsOpen}
+              onClick={() => setHiveSettingsOpen(true)}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+              </svg>
+            </button>
+          </div>
+
+          <aside className="hive-hud-status" aria-label={translate('Метрики улья')}>
+            <div className="hive-panel__head">
+              <h2>{translate('Метрики улья')}</h2>
+              <span className="hive-hud-status__badge">{translate(observationStatusLabel)}</span>
+            </div>
+            <div className="hive-metrics-summary">
+              <div className="hive-metrics">
+                <EfficiencyRing percent={efficiency} />
+              </div>
+              <ul className="hive-stat-list">
+                <li><span>{translate('Агентов онлайн')}</span><strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : agentsOnline}</strong></li>
+                <li><span>{translate('Задач в работе')}</span><strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : activeTasks}</strong></li>
+                <li>
+                  <span>{translate('Задач сегодня')}</span>
+                  <strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : hive?.metrics.tasksToday ?? 0}</strong>
+                </li>
+                <li>
+                  <span>{translate('Среднее время')}</span>
+                  <strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : averageTimeLabel}</strong>
+                </li>
+              </ul>
+            </div>
+            <dl className="hive-queen__footer">
+              <div>
+                <dt>{translate('Воркеры')}</dt>
+                <dd>{workerSummaryLabel}</dd>
+              </div>
+              {nextObservationAtMs !== null ? (
+                <div>
+                  <dt>{translate('Следующая проверка окружения')}</dt>
+                  <dd>{formatClock(nextObservationAtMs)}</dd>
+                </div>
+              ) : observationStatus === 'observing' || observationStatus === 'active' ? (
+                <div>
+                  <dt>{translate('Следующая проверка окружения')}</dt>
+                  <dd>{translate('Наблюдение активно')}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </aside>
+
           <section
             className={`hive-dock__card hive-dock__card--logs${allLogs ? ' hive-dock__card--logs-expanded' : ''}`}
             aria-label={translate('Ход работы Королевы')}
@@ -3578,39 +3611,6 @@ export function HiveDashboard({
               </section>
             </details>
           </section>
-
-          <div className="hive-dock__card hive-dock__card--launcher">
-            <button
-              type="button"
-              className={`hive-chat-launcher${hiveChatOpen ? ' hive-chat-launcher--open' : ''}`}
-              aria-label={translate('Диалог с Королевой Евой')}
-              aria-expanded={hiveChatOpen}
-              aria-controls="hive-chat-drawer"
-              onClick={() => setHiveChatOpen((open) => !open)}
-            >
-              <span className="hive-chat-launcher__glow" aria-hidden="true">
-                <HiveLotusMark size={38} />
-              </span>
-              <span className="hive-chat-launcher__body">
-                <strong>{translate('Диалог с Королевой Евой')}</strong>
-                <small>
-                  {translate(
-                    queenTyping
-                      ? 'Королева печатает'
-                      : waitingApproval
-                        ? 'Ждёт подтверждения'
-                        : 'Открыть диалог'
-                  )}
-                </small>
-              </span>
-              <span className="hive-chat-launcher__meta">
-                <span className="hive-badge">{translate(queenTyping ? 'в процессе' : 'на связи')}</span>
-                {effectiveActiveApprovals.length > 0 ? (
-                  <span className="hive-chat-launcher__alert">{effectiveActiveApprovals.length}</span>
-                ) : null}
-              </span>
-            </button>
-          </div>
         </div>
 
         {hiveChatOpen ? (

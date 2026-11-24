@@ -61,6 +61,7 @@ describe('responsive shell layout contract', () => {
     )
     expect(compactHiveBlock).toContain('display: grid;')
     expect(compactHiveBlock).toContain('overflow: hidden;')
+    expect(compactHiveBlock).toContain('.hive-right-rail {')
     expect(compactHiveBlock).not.toContain('overflow-y: auto;')
     expect(compactHiveBlock).not.toContain('flex-direction: column;')
     expect(compactHiveBlock).not.toContain('height: 580px;')
