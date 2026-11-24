@@ -296,7 +296,7 @@ pub async fn fetch_installed_models(
     config: &LiteRouterConfig,
 ) -> Result<Vec<crate::ModelCatalogEntry>, ProviderError> {
     let base_url = native_base_url(&config.base_url)?;
-    let client = reqwest::Client::builder()
+    let client = crate::client_builder_with_identity()
         .connect_timeout(Duration::from_secs(2))
         .timeout(Duration::from_secs(10))
         .build()
@@ -437,7 +437,7 @@ where
 {
     validate_model_id(model)?;
     let base_url = native_base_url(base_url)?;
-    let client = reqwest::Client::builder()
+    let client = crate::client_builder_with_identity()
         .connect_timeout(Duration::from_secs(2))
         .timeout(Duration::from_secs(30 * 60))
         .build()

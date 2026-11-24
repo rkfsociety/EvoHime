@@ -295,3 +295,41 @@ async fn literouter_rate_limit_error_keeps_rate_limit_classification() {
     assert!(!message.contains("quota exhausted"), "{message}");
     assert!(!message.contains("provider.test"), "{message}");
 }
+
+#[tokio::test]
+async fn literouter_sends_evohime_identity_headers() {
+    use wiremock::matchers::header;
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("user-agent", evohime_model_gateway::CLIENT_USER_AGENT))
+        .and(header("x-title", evohime_model_gateway::CLIENT_X_TITLE))
+        .and(header(
+            "http-referer",
+            evohime_model_gateway::CLIENT_HTTP_REFERER,
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("data: [DONE]\n\n")
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let provider = LiteRouterProvider::with_retry(
+        LiteRouterConfig {
+            api_key: "lr_test".to_string(),
+            base_url: format!("{}/v1", server.uri()),
+            model: "test-paid-model".to_string(),
+        },
+        RetryPolicy::none(),
+    )
+    .expect("provider");
+
+    let mut stream = provider.stream_chat(&[ChatMessage::text(ChatRole::User, "hi")]);
+    while let Some(item) = stream.next().await {
+        item.expect("stream item");
+    }
+}

@@ -119,7 +119,7 @@ impl LiteRouterProvider {
     ) -> Result<Self, ProviderError> {
         // Core owns the request/task deadlines. Keep only a bounded connection
         // setup so a refused or unreachable endpoint fails promptly.
-        let client = Client::builder()
+        let client = crate::client_builder_with_identity()
             .connect_timeout(Duration::from_secs(15))
             .build()
             .map_err(|error| ProviderError::Http(error.to_string()))?;

@@ -53,7 +53,7 @@ async fn fetch_model_catalog_from_url(
             "provider profile endpoint does not match".into(),
         ));
     }
-    let client = reqwest::Client::builder()
+    let client = crate::client_builder_with_identity()
         .connect_timeout(Duration::from_secs(3))
         .timeout(DISCOVERY_TIMEOUT)
         .build()

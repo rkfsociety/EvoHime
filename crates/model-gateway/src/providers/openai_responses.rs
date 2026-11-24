@@ -71,7 +71,7 @@ impl OpenAIResponsesProvider {
                 "OpenAI Responses API key must not be empty".into(),
             ));
         }
-        let client = Client::builder()
+        let client = crate::client_builder_with_identity()
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(120))
             .build()

@@ -95,6 +95,30 @@ use std::{
     time::Duration,
 };
 
+/// Default `User-Agent` header sent on all model-gateway HTTP requests.
+pub const CLIENT_USER_AGENT: &str = concat!("EvoHime/", env!("CARGO_PKG_VERSION"));
+/// Default `HTTP-Referer` attribution header sent on model-gateway requests.
+pub const CLIENT_HTTP_REFERER: &str = "https://github.com/rkfsociety/EvoHime";
+/// Default `X-Title` attribution header sent on model-gateway requests.
+pub const CLIENT_X_TITLE: &str = "EvoHime";
+
+/// Returns a `reqwest::ClientBuilder` preconfigured with EvoHime client
+/// identification headers (`User-Agent`, `HTTP-Referer`, and `X-Title`).
+pub fn client_builder_with_identity() -> reqwest::ClientBuilder {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::HeaderName::from_static("http-referer"),
+        reqwest::header::HeaderValue::from_static(CLIENT_HTTP_REFERER),
+    );
+    headers.insert(
+        reqwest::header::HeaderName::from_static("x-title"),
+        reqwest::header::HeaderValue::from_static(CLIENT_X_TITLE),
+    );
+    reqwest::Client::builder()
+        .user_agent(CLIENT_USER_AGENT)
+        .default_headers(headers)
+}
+
 /// Maximum response bytes accepted when fetching a provider model catalog.
 ///
 /// OpenAI-compatible aggregators publish large catalogues: OpenRouter's
@@ -517,7 +541,7 @@ pub async fn fetch_openrouter_model_pricing(
         .map_err(|_| OpenRouterPricingError::InvalidConfiguration)?
         .push(author)
         .push(slug);
-    let client = reqwest::Client::builder()
+    let client = client_builder_with_identity()
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(12))
         .build()
@@ -639,7 +663,7 @@ pub async fn fetch_model_catalog(
     }
 
     let url = format!("{}/models", route.literouter.base_url.trim_end_matches('/'));
-    let client = reqwest::Client::builder()
+    let client = client_builder_with_identity()
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(15))
         .build()
