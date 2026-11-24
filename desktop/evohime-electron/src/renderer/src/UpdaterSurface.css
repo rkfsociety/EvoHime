@@ -597,11 +597,6 @@ button { font: inherit; }
   }
 }
 
-.updater-module-chip--more {
-  color: #93c5fd;
-  font-weight: 600;
-}
-
 .updater-steps {
   display: grid;
   width: 100%;

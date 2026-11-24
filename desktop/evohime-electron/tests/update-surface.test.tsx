@@ -367,4 +367,21 @@ describe('standalone updater window', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
     expect(retry).toHaveBeenCalledTimes(1)
   })
+
+  it('renders all updatable modules without truncating into a +N badge', async () => {
+    installUpdaterApi(updaterUiStatus(status({
+      phase: 'applying',
+      message: 'Скачивание shell-host — 30%',
+      activeModule: 'shell-host',
+      completedModules: ['core', 'supervisor'],
+      availableModules: ['shell-host', 'ui-bundle', 'core', 'supervisor', 'transaction'],
+      installedModules: { 'shell-host': '1.0.0', 'ui-bundle': '1.0.0', core: '1.0.0', supervisor: '1.0.0', transaction: '1.0.0' },
+      availableModuleVersions: { 'shell-host': '1.0.1', 'ui-bundle': '1.0.1', core: '1.0.1', supervisor: '1.0.1', transaction: '1.0.1' }
+    })))
+
+    render(<UpdaterApp />)
+    await waitFor(() => expect(document.querySelector('[data-module-id="transaction"]')).toBeTruthy())
+    expect(document.querySelectorAll('.updater-module-chip')).toHaveLength(5)
+    expect(screen.queryByText(/^\+\d+$/)).toBeNull()
+  })
 })

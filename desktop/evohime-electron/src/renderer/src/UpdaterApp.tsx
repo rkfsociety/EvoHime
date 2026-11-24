@@ -203,8 +203,6 @@ export function UpdaterApp(): React.JSX.Element {
     () => status.modules.filter((module) => module.available !== null),
     [status.modules]
   )
-  const visibleModules = updatableModules.slice(0, 4)
-  const extraModulesCount = updatableModules.length - visibleModules.length
   const changelogModules = useMemo(
     () => updatableModules.filter((module) => (module.changes?.length ?? 0) > 0),
     [updatableModules]
@@ -284,9 +282,9 @@ export function UpdaterApp(): React.JSX.Element {
             </div>
           ) : null}
 
-          {visibleModules.length > 0 ? (
+          {updatableModules.length > 0 ? (
             <div className="updater-modules" aria-label={translate("Обновляемые модули")}>
-              {visibleModules.map((module) => {
+              {updatableModules.map((module) => {
                 const state = module.state ?? 'pending'
                 return (
                   <span
@@ -303,9 +301,6 @@ export function UpdaterApp(): React.JSX.Element {
                   </span>
                 )
               })}
-              {extraModulesCount > 0 ? (
-                <span className="updater-module-chip updater-module-chip--more">+{extraModulesCount}</span>
-              ) : null}
             </div>
           ) : null}
 
