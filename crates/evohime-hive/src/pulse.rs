@@ -602,7 +602,7 @@ impl Inner {
                         .routmy_tokens_remaining
                         .is_none_or(|rem| rem >= ROUTMY_MIN_TOKENS_THRESHOLD);
 
-                if report.literouter_all_models_exhausted {
+                if report.literouter_all_models_exhausted || report.provider_window_exhausted {
                     if let (Some(fallback_provider), true) =
                         (report.fallback_provider, can_use_routmy)
                     {
@@ -615,6 +615,14 @@ impl Inner {
                         .await;
                         self.mark_llm_dispatched();
                         self.publish(HIVE_OBSERVATION_OBSERVING, next_wake_at(local_interval), "");
+                        return local_interval;
+                    }
+                    if report.provider_window_exhausted {
+                        self.publish(
+                            HIVE_OBSERVATION_WAITING_FOR_LIMITS,
+                            next_wake_at(local_interval),
+                            "provider_window_exhausted",
+                        );
                         return local_interval;
                     }
                 }
@@ -945,8 +953,15 @@ pub(crate) fn decide(report: &ObservationCycleReport, now_ms: i64) -> Observatio
         && report
             .routmy_tokens_remaining
             .is_none_or(|rem| rem >= ROUTMY_MIN_TOKENS_THRESHOLD);
-    if report.literouter_all_models_exhausted && !routmy_fallback_available {
-        if report.fallback_provider.is_some() && routmy_exhausted && !report.allow_paid_fallback {
+    // Fallback provider is reserved exclusively for worker recovery, never for
+    // proactive evolution when the primary provider has reached its limits.
+    let fallback_for_recovery = !report.failed_workers.is_empty() && routmy_fallback_available;
+    if report.literouter_all_models_exhausted && !fallback_for_recovery {
+        if report.fallback_provider.is_some()
+            && !report.failed_workers.is_empty()
+            && routmy_exhausted
+            && !report.allow_paid_fallback
+        {
             return ObservationDecision::WaitingForLimits {
                 wake_at_ms: Some(quota_wake_at(now_ms, report.quota_reset_utc_midnight)),
                 reason: "routmy_quota_exhausted",
@@ -959,7 +974,7 @@ pub(crate) fn decide(report: &ObservationCycleReport, now_ms: i64) -> Observatio
             };
         }
     }
-    if report.provider_window_exhausted && !routmy_fallback_available {
+    if report.provider_window_exhausted && !fallback_for_recovery {
         return ObservationDecision::WaitingForLimits {
             wake_at_ms: report.provider_window_wake_at_ms,
             reason: "provider_window_exhausted",
@@ -1484,14 +1499,25 @@ impl ObservationProbe for JournalObservationProbe {
                 settings.hive_provider_profile.as_deref(),
             )
             .is_some();
+            let primary_token_quota_exhausted = settings.hive_daily_token_quota > 0
+                && snapshot
+                    .budget
+                    .daily_tokens_remaining
+                    .is_some_and(|rem| rem < ROUTMY_MIN_TOKENS_THRESHOLD);
+            let provider_window_exhausted =
+                snapshot.budget.exhausted() || primary_token_quota_exhausted;
+            let provider_window_wake_at_ms = snapshot.queen.wake_at_ms.or_else(|| {
+                primary_token_quota_exhausted
+                    .then(|| quota_wake_at(now_ms, settings.hive_quota_reset_utc_midnight))
+            });
             let eva_workspace_path = settings.primary_workspace_path().map(str::to_owned);
             Ok(ObservationCycleReport {
                 local_observation_interval_secs: settings.local_observation_interval_secs,
                 llm_dispatch_interval_secs: settings.llm_dispatch_interval_secs,
                 daily_cost_nano_usd: observation.daily_cost_nano_usd,
                 daily_budget_nano_usd: usd_to_nano_usd(settings.daily_budget_usd),
-                provider_window_exhausted: snapshot.budget.exhausted(),
-                provider_window_wake_at_ms: snapshot.queen.wake_at_ms,
+                provider_window_exhausted,
+                provider_window_wake_at_ms,
                 rate_limited_until_ms,
                 failed_workers,
                 failed_worker_contexts,
@@ -3498,6 +3524,51 @@ mod tests {
         assert_eq!(status.status, HIVE_OBSERVATION_WAITING_FOR_LIMITS);
         assert_eq!(sink.primary_calls.load(Ordering::SeqCst), 0);
         assert_eq!(sink.fallback_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn queen_waits_for_limits_instead_of_evolving_on_fallback_provider() {
+        let mut report = healthy_report();
+        report.selected_provider = Some("literouter".to_owned());
+        report.fallback_provider =
+            Some(evohime_model_gateway::providers::ProviderKind::OpenAICompatible);
+        report.routmy_tokens_remaining = Some(650_000);
+        report.proactive_evolution_enabled = true;
+        report.eva_workspace_path = Some("/tmp/eva".to_owned());
+        report.roadmap_items = vec![RoadmapItem {
+            file_path: "TODO.md".into(),
+            line: 1,
+            text: "Task".into(),
+        }];
+        report.provider_window_exhausted = true;
+        report.provider_window_wake_at_ms = Some(55_000);
+
+        assert_eq!(
+            decide(&report, 10_000),
+            ObservationDecision::WaitingForLimits {
+                wake_at_ms: Some(55_000),
+                reason: "provider_window_exhausted",
+            }
+        );
+
+        report.provider_window_exhausted = false;
+        report.literouter_all_models_exhausted = true;
+        assert_eq!(
+            decide(&report, 10_000),
+            ObservationDecision::WaitingForLimits {
+                wake_at_ms: Some(55_000),
+                reason: "literouter_all_models_exhausted",
+            }
+        );
+
+        // When a worker actually failed, recovery may still use the fallback provider.
+        report.failed_workers = vec!["child-failed".into()];
+        assert_eq!(
+            decide(&report, 10_000),
+            ObservationDecision::Recover {
+                failed_workers: vec!["child-failed".into()],
+            }
+        );
     }
 
     #[tokio::test]

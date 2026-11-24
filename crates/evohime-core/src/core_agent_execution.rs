@@ -733,7 +733,10 @@ impl ToolAgent {
         cancellation: CancellationToken,
         execution_context: ConversationExecutionContext,
     ) -> Result<String, AgentRunError> {
-        let hive_world = execution_context.preferred_route_hint.as_deref() == Some("hive");
+        let hive_world = matches!(
+            execution_context.preferred_route_hint.as_deref(),
+            Some("hive" | "hive_fallback")
+        );
         let owns_permission_session = execution_context.inherited_permission_session_id.is_none();
         let run_permission_session_id =
             if let Some(inherited) = execution_context.inherited_permission_session_id {
@@ -823,19 +826,18 @@ impl ToolAgent {
             .filter(|model| !model.is_empty())
             .map(str::to_owned)
             .or_else(|| self.selected_model.get().map(|model| model.to_string()));
-        let route_default_model = session_route_pin
-            .as_deref()
+        let ledger_route = session_route_pin.as_deref().or(preferred_route.as_deref());
+        let route_default_model = ledger_route
             .and_then(|route| self.gateway.route_model_name(route).ok())
             .unwrap_or_else(|| self.gateway.model_name())
             .to_owned();
-        let route_provider_name = session_route_pin
-            .as_deref()
+        let route_provider_name = ledger_route
             .and_then(|route| self.gateway.route_provider_kind(route).ok())
             .unwrap_or_else(|| self.gateway.provider_kind())
             .as_str()
             .to_owned();
         // World boundary: Hive and chat tasks never share memory scopes.
-        let hive_world = preferred_route.as_deref() == Some("hive");
+        let hive_world = matches!(preferred_route.as_deref(), Some("hive" | "hive_fallback"));
         let is_hive_queen = hive_world && agent_depth == 0 && child_role.is_none();
         let task_id = task_id.into();
         let prompt = prompt.into();
