@@ -92,12 +92,18 @@ pub struct HiveDispatchWindows {
     pub last_minute: u32,
     /// Requests dispatched in the last hour.
     pub last_hour: u32,
+    /// Requests dispatched in the last 4 hours.
+    #[serde(default)]
+    pub last_4_hours: u32,
     /// Requests dispatched in the last 24 hours.
     pub last_day: u32,
     /// Oldest dispatch timestamp inside the minute window, if any.
     pub oldest_minute_ms: Option<i64>,
     /// Oldest dispatch timestamp inside the hour window, if any.
     pub oldest_hour_ms: Option<i64>,
+    /// Oldest dispatch timestamp inside the 4-hour window, if any.
+    #[serde(default)]
+    pub oldest_4_hours_ms: Option<i64>,
     /// Oldest dispatch timestamp inside the day window, if any.
     pub oldest_day_ms: Option<i64>,
 }

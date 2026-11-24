@@ -328,6 +328,8 @@ fn dispatch_windows_count_attempts_and_return_oldest_timestamp() {
     assert_eq!(counts.oldest_minute_ms, Some(205_000));
     assert_eq!(counts.last_hour, 3);
     assert_eq!(counts.oldest_hour_ms, Some(100_000));
+    assert_eq!(counts.last_4_hours, 3);
+    assert_eq!(counts.oldest_4_hours_ms, Some(100_000));
     assert_eq!(counts.last_day, 3);
     assert_eq!(counts.oldest_day_ms, Some(100_000));
 }

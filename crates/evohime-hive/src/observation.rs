@@ -242,6 +242,7 @@ pub async fn build_hive_observation_for_hive(
     }
     observation.minute_cap = limits.rpm;
     observation.hour_cap = limits.rph;
+    observation.four_hour_cap = limits.rp4h;
     observation.day_cap = limits.rpd;
 
     let per_model_limits = route
@@ -264,9 +265,11 @@ pub async fn build_hive_observation_for_hive(
         observation.history_available = true;
         observation.requests_last_minute = u64::from(windows.last_minute);
         observation.requests_last_hour = u64::from(windows.last_hour);
+        observation.requests_last_4_hours = u64::from(windows.last_4_hours);
         observation.requests_last_day = u64::from(windows.last_day);
         observation.oldest_minute_dispatch_ms = windows.oldest_minute_ms;
         observation.oldest_hour_dispatch_ms = windows.oldest_hour_ms;
+        observation.oldest_4_hours_dispatch_ms = windows.oldest_4_hours_ms;
         observation.oldest_day_dispatch_ms = windows.oldest_day_ms;
     }
 
@@ -286,19 +289,20 @@ pub async fn build_hive_observation_for_hive(
             if !fb_model.is_empty() {
                 observation.fallback_model = Some(fb_model.to_owned());
             }
+            let used = journal
+                .route_tokens_since(
+                    fallback_route
+                        .effective_reset_schedule()
+                        .window_start_ms(observation.now_ms),
+                    "hive_fallback",
+                )
+                .await
+                .unwrap_or(0);
+            observation.fallback_tokens_used = used;
             if let Some(quota) = fallback_route.daily_token_quota {
                 observation.fallback_daily_token_quota = Some(quota);
                 observation.fallback_quota_reset_utc_midnight =
                     fallback_route.quota_reset_utc_midnight;
-                let used = journal
-                    .route_tokens_since(
-                        fallback_route
-                            .effective_reset_schedule()
-                            .window_start_ms(observation.now_ms),
-                        "hive_fallback",
-                    )
-                    .await
-                    .unwrap_or(0);
                 observation.fallback_tokens_remaining = Some(quota.saturating_sub(used));
             }
         }

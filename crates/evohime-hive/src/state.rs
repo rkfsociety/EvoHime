@@ -33,6 +33,8 @@ pub const MAX_HIVE_ACTIVE_AGENTS: usize = 64;
 pub const HIVE_MINUTE_WINDOW_MS: i64 = 60_000;
 /// Rolling window the per-model hourly cap is enforced over, in milliseconds.
 pub const HIVE_HOUR_WINDOW_MS: i64 = 3_600_000;
+/// Rolling window the per-model 4-hour cap is enforced over, in milliseconds.
+pub const HIVE_FOUR_HOUR_WINDOW_MS: i64 = 4 * HIVE_HOUR_WINDOW_MS;
 /// Rolling window the per-model daily cap is enforced over, in milliseconds.
 pub const HIVE_DAY_WINDOW_MS: i64 = 86_400_000;
 /// Start of the window a token quota is measured over.
@@ -170,12 +172,18 @@ pub struct HiveBudget {
     pub requests_last_minute: u32,
     /// Dispatches observed in the rolling hour window.
     pub requests_last_hour: u32,
+    /// Dispatches observed in the rolling 4-hour window.
+    #[serde(default)]
+    pub requests_last_4_hours: u32,
     /// Dispatches observed in the rolling day window.
     pub requests_last_day: u32,
     /// Configured minute cap; `0` means no minute cap.
     pub minute_cap: u32,
     /// Configured hourly cap; `0` means no hourly cap.
     pub hour_cap: u32,
+    /// Configured 4-hour cap; `0` means no 4-hour cap.
+    #[serde(default)]
+    pub four_hour_cap: u32,
     /// Configured daily cap; `0` means no daily cap.
     pub day_cap: u32,
 
@@ -186,6 +194,9 @@ pub struct HiveBudget {
     pub minute_exhausted: bool,
     /// Whether the hourly cap is reached.
     pub hour_exhausted: bool,
+    /// Whether the 4-hour cap is reached.
+    #[serde(default)]
+    pub four_hour_exhausted: bool,
     /// Whether the daily cap is reached.
     pub day_exhausted: bool,
     /// Whether the daily DeepSeek cost projection was read and priced completely.
@@ -216,12 +227,18 @@ pub struct HiveBudget {
     /// Remaining daily tokens for the configured fallback provider, if known.
     #[serde(default)]
     pub fallback_tokens_remaining: Option<u64>,
+    /// Total tokens recorded for the configured fallback provider during its reset window.
+    #[serde(default)]
+    pub fallback_tokens_used: u64,
 }
 
 impl HiveBudget {
     /// Whether any configured cap is reached.
     pub fn exhausted(&self) -> bool {
-        self.minute_exhausted || self.hour_exhausted || self.day_exhausted
+        self.minute_exhausted
+            || self.hour_exhausted
+            || self.four_hour_exhausted
+            || self.day_exhausted
     }
 }
 
@@ -242,6 +259,8 @@ pub struct HiveObservation {
     pub requests_last_minute: u64,
     /// Dispatches inside [`HIVE_HOUR_WINDOW_MS`].
     pub requests_last_hour: u64,
+    /// Dispatches inside [`HIVE_FOUR_HOUR_WINDOW_MS`].
+    pub requests_last_4_hours: u64,
     /// Dispatches inside [`HIVE_DAY_WINDOW_MS`].
     pub requests_last_day: u64,
     /// Oldest dispatch still inside the minute window.
@@ -251,10 +270,14 @@ pub struct HiveObservation {
     /// Used to compute the exact moment the hourly cap frees a slot; a missing
     /// timestamp means Core cannot promise a reset and reports none.
     pub oldest_hour_dispatch_ms: Option<i64>,
+    /// Oldest dispatch still inside the 4-hour window.
+    pub oldest_4_hours_dispatch_ms: Option<i64>,
     /// Oldest dispatch still inside the day window.
     pub oldest_day_dispatch_ms: Option<i64>,
     /// Configured hourly cap of the active model; `0` means unlimited.
     pub hour_cap: u32,
+    /// Configured 4-hour cap of the active model; `0` means unlimited.
+    pub four_hour_cap: u32,
     /// Configured minute cap of the active model; `0` means unlimited.
     pub minute_cap: u32,
     /// Configured daily cap of the active model; `0` means unlimited.
@@ -292,6 +315,8 @@ pub struct HiveObservation {
     pub fallback_model: Option<String>,
     /// Remaining daily tokens for the configured fallback provider, if known.
     pub fallback_tokens_remaining: Option<u64>,
+    /// Total tokens recorded for the configured fallback provider during its reset window.
+    pub fallback_tokens_used: u64,
 }
 
 impl Default for HiveObservation {
@@ -302,11 +327,14 @@ impl Default for HiveObservation {
             model: String::new(),
             requests_last_minute: 0,
             requests_last_hour: 0,
+            requests_last_4_hours: 0,
             requests_last_day: 0,
             oldest_minute_dispatch_ms: None,
             oldest_hour_dispatch_ms: None,
+            oldest_4_hours_dispatch_ms: None,
             oldest_day_dispatch_ms: None,
             hour_cap: 0,
+            four_hour_cap: 0,
             minute_cap: 0,
             day_cap: 0,
             now_ms: 0,
@@ -326,6 +354,7 @@ impl Default for HiveObservation {
             fallback_provider: None,
             fallback_model: None,
             fallback_tokens_remaining: None,
+            fallback_tokens_used: 0,
         }
     }
 }
@@ -597,6 +626,7 @@ impl HiveStateSnapshot {
 fn budget_from(observation: &HiveObservation) -> HiveBudget {
     let minute_cap = observation.minute_cap;
     let hour_cap = observation.hour_cap;
+    let four_hour_cap = observation.four_hour_cap;
     let day_cap = observation.day_cap;
     HiveBudget {
         provider: bounded_id(&observation.provider),
@@ -604,20 +634,24 @@ fn budget_from(observation: &HiveObservation) -> HiveBudget {
         model: bounded_id(&observation.model),
         requests_last_minute: bounded_u32(observation.requests_last_minute),
         requests_last_hour: bounded_u32(observation.requests_last_hour),
+        requests_last_4_hours: bounded_u32(observation.requests_last_4_hours),
         requests_last_day: bounded_u32(observation.requests_last_day),
         minute_cap,
         hour_cap,
+        four_hour_cap,
         day_cap,
         limits: ProviderLimits {
             rpm: minute_cap,
             rph: hour_cap,
-            rp4h: 0,
+            rp4h: four_hour_cap,
             rpd: day_cap,
         },
         // A cap of zero is the configured "unlimited" value, never "reached".
         minute_exhausted: minute_cap > 0
             && observation.requests_last_minute >= u64::from(minute_cap),
         hour_exhausted: hour_cap > 0 && observation.requests_last_hour >= u64::from(hour_cap),
+        four_hour_exhausted: four_hour_cap > 0
+            && observation.requests_last_4_hours >= u64::from(four_hour_cap),
         day_exhausted: day_cap > 0 && observation.requests_last_day >= u64::from(day_cap),
         daily_cost_available: observation.daily_cost_available,
         daily_cost_nano_usd: observation.daily_cost_nano_usd,
@@ -633,6 +667,7 @@ fn budget_from(observation: &HiveObservation) -> HiveBudget {
             .map(bounded_id)
             .filter(|m| !m.is_empty()),
         fallback_tokens_remaining: observation.fallback_tokens_remaining,
+        fallback_tokens_used: observation.fallback_tokens_used,
         fallback_daily_token_quota: observation.fallback_daily_token_quota,
         fallback_quota_reset_utc_midnight: observation.fallback_quota_reset_utc_midnight,
     }
@@ -827,6 +862,15 @@ fn queen_state(total: usize, budget: &HiveBudget, observation: &HiveObservation)
             } else {
                 None
             },
+            if budget.four_hour_exhausted {
+                dispatch_window_reset(
+                    observation.oldest_4_hours_dispatch_ms,
+                    HIVE_FOUR_HOUR_WINDOW_MS,
+                )
+                .map(|at| (at, "provider_4h_cap_reached"))
+            } else {
+                None
+            },
             if budget.day_exhausted {
                 dispatch_window_reset(observation.oldest_day_dispatch_ms, HIVE_DAY_WINDOW_MS)
                     .map(|at| (at, "provider_day_cap_reached"))
@@ -849,6 +893,8 @@ fn queen_state(total: usize, budget: &HiveBudget, observation: &HiveObservation)
                     "provider_minute_cap_reached"
                 } else if budget.hour_exhausted {
                     "provider_hour_cap_reached"
+                } else if budget.four_hour_exhausted {
+                    "provider_4h_cap_reached"
                 } else {
                     "provider_day_cap_reached"
                 }
@@ -1396,6 +1442,31 @@ mod tests {
         assert!(value.get("observation_status").is_none());
         assert!(value.get("next_wake_at_ms").is_none());
         assert!(value["budget"]["hour_cap"].is_number());
+        assert!(value["budget"]["four_hour_cap"].is_number());
         assert_eq!(value["queen"]["reason"], "");
+    }
+
+    #[test]
+    fn four_hour_cap_projects_rp4h_and_exhaustion() {
+        let observation = HiveObservation {
+            history_available: true,
+            requests_last_4_hours: 120,
+            oldest_4_hours_dispatch_ms: Some(1_000_000),
+            four_hour_cap: 120,
+            ..HiveObservation::default()
+        };
+        let snapshot =
+            HiveStateSnapshot::from_observation(&HiveSettings::default(), &[], &[], &observation);
+        assert_eq!(snapshot.budget.requests_last_4_hours, 120);
+        assert_eq!(snapshot.budget.four_hour_cap, 120);
+        assert_eq!(snapshot.budget.limits.rp4h, 120);
+        assert!(snapshot.budget.four_hour_exhausted);
+        assert!(snapshot.budget.exhausted());
+        assert_eq!(snapshot.queen.status, HIVE_QUEEN_BUDGET_EXHAUSTED);
+        assert_eq!(snapshot.queen.reason, "provider_4h_cap_reached");
+        assert_eq!(
+            snapshot.queen.wake_at_ms,
+            Some(1_000_000 + HIVE_FOUR_HOUR_WINDOW_MS)
+        );
     }
 }

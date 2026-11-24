@@ -125,17 +125,21 @@ pub struct ModelResponseRecord {
     pub completed_at: Option<i64>,
 }
 
-/// Dispatched request counts for one route inside three rolling windows.
+/// Dispatched request counts for one route inside four rolling windows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DispatchWindowCounts {
     /// Attempts dispatched inside the rolling minute window.
     pub last_minute: u64,
     /// Attempts dispatched inside the hourly window.
     pub last_hour: u64,
+    /// Attempts dispatched inside the 4-hour window.
+    pub last_4_hours: u64,
     /// Attempts dispatched inside the daily window.
     pub last_day: u64,
     /// Oldest dispatch still inside the hourly window.
     pub oldest_hour_ms: Option<i64>,
+    /// Oldest dispatch still inside the 4-hour window.
+    pub oldest_4_hours_ms: Option<i64>,
     /// Oldest dispatch still inside the daily window.
     pub oldest_day_ms: Option<i64>,
     /// Oldest dispatch still inside the minute window.
@@ -916,13 +920,16 @@ impl<'a> ModelProvenanceRepository<'a> {
         };
         let (last_minute, oldest_minute_ms) = window(minute_window_ms)?;
         let (last_hour, oldest_hour_ms) = window(hour_window_ms)?;
+        let (last_4_hours, oldest_4_hours_ms) = window(hour_window_ms.saturating_mul(4))?;
         let (last_day, oldest_day_ms) = window(day_window_ms)?;
         Ok(DispatchWindowCounts {
             last_minute,
             last_hour,
+            last_4_hours,
             last_day,
             oldest_minute_ms,
             oldest_hour_ms,
+            oldest_4_hours_ms,
             oldest_day_ms,
         })
     }

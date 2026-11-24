@@ -309,6 +309,7 @@ interface HiveStateView {
     readonly model: string
     readonly requestsLastMinute: number
     readonly requestsLastHour: number
+    readonly requestsLast4Hours: number
     readonly requestsLastDay: number
     readonly limits: ProviderLimits
     readonly minuteExhausted: boolean
@@ -321,6 +322,7 @@ interface HiveStateView {
     readonly fallbackProvider: string | null
     readonly fallbackModel: string | null
     readonly fallbackTokensRemaining: number | null
+    readonly fallbackTokensUsed: number
     readonly fallbackDailyTokenQuota: number | null
     readonly fallbackQuotaResetUtcMidnight: boolean
   }
@@ -529,16 +531,18 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       historyAvailable: budget['history_available'] === true,
       model: text(budget['model'], 128),
       requestsLastHour: count(budget['requests_last_hour'], 1_000_000),
+      requestsLast4Hours: count(budget['requests_last_4_hours'], 1_000_000),
       requestsLastMinute: count(budget['requests_last_minute'], 1_000_000),
       requestsLastDay: count(budget['requests_last_day'], 1_000_000),
       // A zero cap is Core's "no configured limit", and it must stay zero here.
       limits: {
         rpm: rawLimits['rpm'] !== undefined ? count(rawLimits['rpm'], 1_000_000) : count(budget['minute_cap'], 1_000_000),
         rph: rawLimits['rph'] !== undefined ? count(rawLimits['rph'], 1_000_000) : count(budget['hour_cap'], 1_000_000),
+        rp4h: rawLimits['rp4h'] !== undefined ? count(rawLimits['rp4h'], 1_000_000) : count(budget['four_hour_cap'], 1_000_000),
         rpd: rawLimits['rpd'] !== undefined ? count(rawLimits['rpd'], 1_000_000) : count(budget['day_cap'], 1_000_000)
       },
       minuteExhausted: budget['minute_exhausted'] === true,
-      exhausted: budget['history_available'] === true && (budget['minute_exhausted'] === true || budget['hour_exhausted'] === true || budget['day_exhausted'] === true),
+      exhausted: budget['history_available'] === true && (budget['minute_exhausted'] === true || budget['hour_exhausted'] === true || budget['four_hour_exhausted'] === true || budget['day_exhausted'] === true),
       dailyCostAvailable: budget['daily_cost_available'] === true,
       dailyCostNanoUsd: typeof budget['daily_cost_nano_usd'] === 'number' && Number.isSafeInteger(budget['daily_cost_nano_usd']) && budget['daily_cost_nano_usd'] >= 0
         ? budget['daily_cost_nano_usd']
@@ -559,6 +563,9 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       fallbackTokensRemaining: typeof budget['fallback_tokens_remaining'] === 'number' && Number.isSafeInteger(budget['fallback_tokens_remaining']) && budget['fallback_tokens_remaining'] >= 0
         ? budget['fallback_tokens_remaining']
         : null,
+      fallbackTokensUsed: typeof budget['fallback_tokens_used'] === 'number' && Number.isSafeInteger(budget['fallback_tokens_used']) && budget['fallback_tokens_used'] >= 0
+        ? budget['fallback_tokens_used']
+        : 0,
       fallbackDailyTokenQuota: typeof budget['fallback_daily_token_quota'] === 'number' && Number.isSafeInteger(budget['fallback_daily_token_quota']) && budget['fallback_daily_token_quota'] >= 0
         ? budget['fallback_daily_token_quota']
         : null,
@@ -963,6 +970,7 @@ function agentMonogram(id: string): string {
 const QUEEN_REASON_LABELS: Record<string, string> = {
   provider_minute_cap_reached: 'лимит запросов за минуту достигнут',
   provider_hour_cap_reached: 'лимит запросов за час достигнут',
+  provider_4h_cap_reached: 'лимит запросов за 4 часа достигнут',
   provider_day_cap_reached: 'лимит запросов за сутки достигнут',
   provider_request_cap_reached: 'лимит запросов провайдера достигнут'
 }
@@ -1409,8 +1417,9 @@ const EMPTY_BUDGET: HiveStateView['budget'] = {
   model: '',
   requestsLastMinute: 0,
   requestsLastHour: 0,
+  requestsLast4Hours: 0,
   requestsLastDay: 0,
-  limits: { rpm: 0, rph: 0, rpd: 0 },
+  limits: { rpm: 0, rph: 0, rp4h: 0, rpd: 0 },
   minuteExhausted: false,
   exhausted: false,
   dailyCostAvailable: false,
@@ -1421,6 +1430,7 @@ const EMPTY_BUDGET: HiveStateView['budget'] = {
   fallbackProvider: null,
   fallbackModel: null,
   fallbackTokensRemaining: null,
+  fallbackTokensUsed: 0,
   fallbackDailyTokenQuota: null,
   fallbackQuotaResetUtcMidnight: false
 }
@@ -3018,9 +3028,10 @@ export function HiveDashboard({
   const requestSummary = [
     `${budget.historyAvailable ? budget.requestsLastMinute : '—'}${budget.limits.rpm > 0 ? ` / ${budget.limits.rpm}` : ''} ${translate('за минуту')}`,
     `${budget.historyAvailable ? budget.requestsLastHour : '—'}${budget.limits.rph > 0 ? ` / ${budget.limits.rph}` : ''} ${translate('за час')}`,
+    `${budget.historyAvailable ? budget.requestsLast4Hours : '—'}${(budget.limits.rp4h ?? 0) > 0 ? ` / ${budget.limits.rp4h}` : ''} ${translate('за 4 часа')}`,
     `${budget.historyAvailable ? budget.requestsLastDay : '—'}${budget.limits.rpd > 0 ? ` / ${budget.limits.rpd}` : ''} ${translate('за сутки')}`
   ].join(' · ')
-  const configuredCaps = budget.limits.rpm > 0 || budget.limits.rph > 0 || budget.limits.rpd > 0
+  const configuredCaps = budget.limits.rpm > 0 || budget.limits.rph > 0 || (budget.limits.rp4h ?? 0) > 0 || budget.limits.rpd > 0
   const snapshotBudgetLabel = budget.provider === 'literouter' || budget.provider === 'openrouter'
     ? `LiteRouter${budget.model.toLowerCase().includes(':free') ? ' (Free)' : ''}`
     : budget.provider === 'rout'
@@ -3039,12 +3050,17 @@ export function HiveDashboard({
       ? 'LiteRouter'
       : budget.fallbackProvider
   const effectiveFallbackModel = budget.fallbackModel || hive?.hiveFallbackModel || null
+  const fallbackTokenSummary = budget.fallbackTokensRemaining !== null
+    ? ` (${budget.fallbackTokensRemaining} ${translate('токенов')})`
+    : budget.fallbackTokensUsed > 0
+      ? ` (${translate('потрачено')} ${budget.fallbackTokensUsed} ${translate('токенов')})`
+      : ''
   const routmyStatusText = budget.provider === 'rout'
     ? `${translate('Осталось токенов:')} ${budget.dailyTokensRemaining ?? budget.dailyTokenQuota ?? 0}${budget.quotaResetUtcMidnight ? ` ${translate('до 00:00 UTC')}` : ''}`
     : (budget.provider === 'literouter' || budget.provider === 'openrouter') && routmyConfigured
-      ? `${translate('Резерв: Rout')} (${budget.fallbackTokensRemaining ?? 0} ${translate('токенов')})${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
+      ? `${translate('Резерв: Rout')}${fallbackTokenSummary || ` (${budget.fallbackTokensUsed} ${translate('токенов')})`}${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
       : fallbackLabel
-        ? `${translate('Резерв:')} ${fallbackLabel}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} ${translate('токенов')})` : ''}${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
+        ? `${translate('Резерв:')} ${fallbackLabel}${fallbackTokenSummary}${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
         : null
   const clearedLogIdSet = useMemo(
     () => new Set(preference.clearedLogIds ?? []),

@@ -1044,13 +1044,16 @@ describe('hive dashboard', () => {
                 model: 'llama-3.3-70b-instruct-turbo-free',
                 requests_last_minute: 2,
                 requests_last_hour: 15,
+                requests_last_4_hours: 25,
                 requests_last_day: 40,
                 minute_cap: 7,
                 hour_cap: 190,
+                four_hour_cap: 600,
                 day_cap: 0,
-                limits: { rpm: 7, rph: 190, rpd: 0 },
+                limits: { rpm: 7, rph: 190, rp4h: 600, rpd: 0 },
                 minute_exhausted: false,
                 hour_exhausted: false,
+                four_hour_exhausted: false,
                 day_exhausted: false,
                 daily_cost_available: false,
                 daily_cost_nano_usd: null
@@ -1061,7 +1064,7 @@ describe('hive dashboard', () => {
       />
     )
 
-    expect(await screen.findByText(/2 \/ 7 за минуту · 15 \/ 190 за час · 40 за сутки/)).toBeTruthy()
+    expect(await screen.findByText(/2 \/ 7 за минуту · 15 \/ 190 за час · 25 \/ 600 за 4 часа · 40 за сутки/)).toBeTruthy()
     expect(screen.getByText(/Текущая модель: llama-3\.3-70b-instruct-turbo-free/)).toBeTruthy()
     expect(screen.queryByText(/лимиты запросов не настроены/)).toBeNull()
   })

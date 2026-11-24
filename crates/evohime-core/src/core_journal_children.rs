@@ -563,9 +563,11 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
             Ok(evohime_hive_contract::HiveDispatchWindows {
                 last_minute: u32::try_from(windows.last_minute).unwrap_or(u32::MAX),
                 last_hour: u32::try_from(windows.last_hour).unwrap_or(u32::MAX),
+                last_4_hours: u32::try_from(windows.last_4_hours).unwrap_or(u32::MAX),
                 last_day: u32::try_from(windows.last_day).unwrap_or(u32::MAX),
                 oldest_minute_ms: windows.oldest_minute_ms,
                 oldest_hour_ms: windows.oldest_hour_ms,
+                oldest_4_hours_ms: windows.oldest_4_hours_ms,
                 oldest_day_ms: windows.oldest_day_ms,
             })
         })
