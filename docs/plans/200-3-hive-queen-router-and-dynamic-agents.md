@@ -4,11 +4,11 @@
 
 ## Scope и изменяемые контракты
 
-1. **Регистрация новых ролей и секторов (`crates/evohime-core/src/agent_role_profiles.rs`, `crates/evohime-hive/src/state.rs`, `crates/evohime-hive/src/bin/daemon.rs`):**
+1. **Регистрация новых ролей и секторов (`crates/evohime-core/src/agent_role_profiles.rs`, `crates/evohime-hive/src/state.rs`, `crates/evohime-hive/src/city_map.rs`, `crates/evohime-hive/src/bin/daemon.rs`):**
    - Добавить операцию/инструмент `hive_register_role` (для агента-архитектора/Королевы), сохраняющий новую роль (название, сектор, специализация, bounded capabilities) в `events.db`.
-   - Проецировать созданные роли в `HiveStateSnapshot::departments` и в генератор `HiveCityMapSnapshot` в `evohime-hive-daemon`, чтобы новые сектора/дома появлялись на 3D-карте автоматически.
+   - Проецировать созданные роли в `HiveStateSnapshot::departments` и в `build_archipelago` (`HiveCityMapSnapshot` в `city_map.rs`), публикуемый `evohime-hive-daemon`, чтобы новые сектора/дома появлялись на 3D-карте автоматически.
 2. **Синхронизация 3D-машин с жизненным циклом `child.*` (`desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx`, `HiveCityScene.tsx`, `hive-agent-simulation.tsx`):**
-   - Удерживать `queenWorking` / `queenActive` в `true` на протяжении всей активной задачи Улья (включая время работы дочерних агентов, пока нет паузы или ожидания approval).
+   - В `OperationsPanel.tsx` (`isQueenThinking` и `QUEEN_TYPING_WATCHDOG_MS`) учитывать активных дочерних агентов (`hive.activeAgents` / события `child.*`), чтобы `queenWorking` / `queenActive` не гасились watchdog-таймером, пока Королева ждёт отчёт от агента.
    - Связать фазы машины (`delivering` → работа дома → `returning`) с реальными событиями `child.requested` / `Running` и `TypedChildReport`.
 
 ## Зависимости
