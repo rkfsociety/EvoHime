@@ -303,7 +303,10 @@ async fn literouter_sends_evohime_identity_headers() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
-        .and(header("user-agent", evohime_model_gateway::CLIENT_USER_AGENT))
+        .and(header(
+            "user-agent",
+            evohime_model_gateway::CLIENT_USER_AGENT,
+        ))
         .and(header("x-title", evohime_model_gateway::CLIENT_X_TITLE))
         .and(header(
             "http-referer",

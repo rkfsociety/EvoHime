@@ -201,7 +201,8 @@ impl Default for HiveSettings {
             hive_fallback_provider_limits: ProviderLimits::default(),
             hive_fallback_daily_token_quota: 0,
             hive_fallback_quota_reset_utc_midnight: false,
-            hive_fallback_reset_schedule: evohime_model_gateway::config::LimitResetSchedule::default(),
+            hive_fallback_reset_schedule:
+                evohime_model_gateway::config::LimitResetSchedule::default(),
             hive_token_quota_configured: false,
             hive_fallback_token_quota_configured: false,
             proactive_evolution_enabled: false,

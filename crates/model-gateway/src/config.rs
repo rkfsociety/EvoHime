@@ -145,8 +145,7 @@ impl LimitResetSchedule {
         let offset_ms = i64::from(self.utc_offset_hours.clamp(-12, 14)) * 3_600_000;
         let local_ms = now_ms.saturating_add(offset_ms);
         let day_start_local = local_ms.div_euclid(86_400_000) * 86_400_000;
-        let candidate_local =
-            day_start_local + i64::from(self.time_minutes.min(1_439)) * 60_000;
+        let candidate_local = day_start_local + i64::from(self.time_minutes.min(1_439)) * 60_000;
         let reset_local = if candidate_local <= local_ms {
             candidate_local
         } else {

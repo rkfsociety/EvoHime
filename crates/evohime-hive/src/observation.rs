@@ -227,7 +227,9 @@ pub async fn build_hive_observation_for_hive(
         observation.quota_reset_utc_midnight = route.quota_reset_utc_midnight;
         if let Ok(used) = journal
             .route_tokens_since(
-                route.effective_reset_schedule().window_start_ms(observation.now_ms),
+                route
+                    .effective_reset_schedule()
+                    .window_start_ms(observation.now_ms),
                 &route_name,
             )
             .await

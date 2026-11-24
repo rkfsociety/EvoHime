@@ -402,7 +402,8 @@ impl IpcBridge {
         let mut settings = self.journal.hive_settings().await?;
         let parsed = serde_json::from_str::<evohime_model_gateway::ProviderLimits>(value);
         let Ok(limits) = parsed else {
-            return self.hive_limit_rejected(key, "request limits must contain rpm, rph, rp4h and rpd");
+            return self
+                .hive_limit_rejected(key, "request limits must contain rpm, rph, rp4h and rpd");
         };
         let (setting_key, output_key) = if key == "hive_provider_limits" {
             settings.hive_provider_limits = limits;
