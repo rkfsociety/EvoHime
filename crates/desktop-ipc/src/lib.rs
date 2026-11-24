@@ -592,7 +592,10 @@ mod tests {
     async fn async_transport_distinguishes_clean_eof_from_truncated_frame() {
         let (writer, mut reader) = tokio::io::duplex(64);
         drop(writer);
-        assert_eq!(transport::read_frame(&mut reader).await, Err(FrameError::Closed));
+        assert_eq!(
+            transport::read_frame(&mut reader).await,
+            Err(FrameError::Closed)
+        );
 
         let (mut writer, mut reader) = tokio::io::duplex(64);
         tokio::io::AsyncWriteExt::write_all(&mut writer, &[5, 0])
