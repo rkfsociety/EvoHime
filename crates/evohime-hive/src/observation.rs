@@ -60,6 +60,9 @@ pub struct MinimalChildWorkflowPayload {
     pub parent_task_id: String,
     /// Role assigned to the child worker.
     pub role: String,
+    /// Human-readable Russian name assigned to the child worker.
+    #[serde(default)]
+    pub display_name: Option<String>,
     /// Current lifecycle state of the child task.
     pub state: HiveChildState,
     /// Whether the child task was moved to dead-letter.

@@ -2088,7 +2088,17 @@ impl ToolAgent {
                     verification_done,
                     commit_done,
                 );
-                if !missing.is_empty() && iteration + 1 < self.max_iterations {
+                let queen_explicit_terminal = is_hive_queen && {
+                    let trimmed = result.content.trim();
+                    trimmed == "SKIP"
+                        || trimmed.starts_with("SKIP ")
+                        || trimmed.starts_with("SKIP\n")
+                        || trimmed.starts_with("SKIP\r")
+                        || trimmed.starts_with("SKIP:")
+                        || trimmed.starts_with("SKIP.")
+                        || trimmed.starts_with("FAILED:")
+                };
+                if !missing.is_empty() && !queen_explicit_terminal && iteration + 1 < self.max_iterations {
                     let repeated = last_delivery_missing.as_deref() == Some(missing.as_slice());
                     delivery_gate_repeats = if repeated {
                         delivery_gate_repeats + 1
@@ -2109,7 +2119,7 @@ impl ToolAgent {
                             }),
                         );
                     } else {
-                        let next_step = delivery_next_step(
+                        let next_step = delivery_next_step_for_agent(
                             delivery_requirements,
                             DeliveryProgress {
                                 research_done,
@@ -2121,6 +2131,7 @@ impl ToolAgent {
                                 research_has_content,
                                 research_has_search,
                             },
+                            is_hive_queen,
                         );
                         let continuation = format!(
                             "Задача ещё не завершена. Не выполнены: {}. {next_step}",

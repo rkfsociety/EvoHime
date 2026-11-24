@@ -741,7 +741,7 @@ pub(crate) fn build_agent_system_prompt(tool_names: &[String]) -> String {
     ];
     if has(evohime_tool_runtime::agent::HIVE_DELEGATE_NAME) {
         rules.push(
-            "Ты — Королева Улья Ева, чистый маршрутизатор и оркестратор. У тебя нет прямых инструментов чтения/записи файлов, shell, git или браузера: делегируй шаги через `hive_delegate_agent` специализированным ролям (`researcher`, `planner`, `architect`, `implementer`, `tester`, `reviewer`, `releaser`). Стандартный конвейер для нетривиальной задачи: `researcher` -> `planner` -> `implementer` (обязательно передавай понятный `plan_summary`, чтобы пользователь подтвердил план перед первым изменением) -> `tester` -> `reviewer` -> `releaser` (если нужен коммит). Если для задачи нужна новая специализированная роль и сектор Улья, сначала зарегистрируй её через `hive_register_role`.".into(),
+            "Ты — Королева Улья Ева, чистый маршрутизатор и оркестратор. У тебя нет прямых инструментов чтения/записи файлов, shell, git или браузера: делегируй шаги через `hive_delegate_agent` специализированным ролям (`researcher`, `planner`, `architect`, `implementer`, `tester`, `reviewer`, `releaser`). При каждом вызове `hive_delegate_agent` задавай короткое понятное имя агента на русском языке в поле `agent_name` (например: `Исследователь ядра`, `Разработчик Улья`, `Тестировщик IPC`). Стандартный конвейер для нетривиальной задачи: `researcher` -> `planner` -> `implementer` (обязательно передавай понятный `plan_summary`, чтобы пользователь подтвердил план перед первым изменением) -> `tester` -> `reviewer` -> `releaser` (если нужен коммит). Если для задачи нужна новая специализированная роль и сектор Улья, сначала зарегистрируй её через `hive_register_role`.".into(),
         );
     }
     if has(evohime_tool_runtime::self_development::TOOL_READ_FILE)
@@ -1205,6 +1205,29 @@ pub(crate) fn delivery_next_step(
     requirements: DeliveryRequirements,
     progress: DeliveryProgress,
 ) -> &'static str {
+    delivery_next_step_for_agent(requirements, progress, false)
+}
+
+pub(crate) fn delivery_next_step_for_agent(
+    requirements: DeliveryRequirements,
+    progress: DeliveryProgress,
+    is_hive_queen: bool,
+) -> &'static str {
+    if is_hive_queen {
+        if requirements.research && !progress.research_done {
+            return "НЕМЕДЛЕННО делегируй исследование через hive_delegate_agent с ролью \"researcher\" и русским именем в agent_name. Не пиши отчёт.";
+        }
+        if !progress.mutation_done && requirements.mutation {
+            return "НЕМЕДЛЕННО делегируй внесение изменений через hive_delegate_agent с ролью \"implementer\" (передай plan_summary и русское имя в agent_name). Не пиши отчёт.";
+        }
+        if !progress.verification_done && requirements.verification {
+            return "НЕМЕДЛЕННО делегируй проверку и тесты через hive_delegate_agent с ролью \"tester\" (передай plan_summary и русское имя в agent_name). Не пиши отчёт.";
+        }
+        if !progress.commit_done && requirements.commit {
+            return "НЕМЕДЛЕННО делегируй создание коммита через hive_delegate_agent с ролью \"releaser\" (передай plan_summary и русское имя в agent_name). Не пиши отчёт.";
+        }
+        return "НЕМЕДЛЕННО продолжи координацию через hive_delegate_agent или заверши задачу итоговым отчётом.";
+    }
     if requirements.research && !progress.research_done {
         if !progress.research_has_overview {
             "НЕМЕДЛЕННО вызови read-only filesystem_list с полным JSON {\"path\":\".\"}. Не пиши отчёт."

@@ -161,6 +161,41 @@ fn validate_role_slug(raw: &str) -> Result<String, ToolError> {
     Ok(normalized)
 }
 
+fn resolve_agent_display_name(requested: Option<&str>, role: &str, child_task_id: &str) -> String {
+    if let Some(custom) = requested.map(str::trim).filter(|name| !name.is_empty()) {
+        return custom.chars().take(64).collect();
+    }
+    const NAMES: [&str; 12] = [
+        "Артём",
+        "Алиса",
+        "Марк",
+        "Вера",
+        "Денис",
+        "Кира",
+        "Олег",
+        "Ника",
+        "Иван",
+        "Лиза",
+        "Глеб",
+        "Соня",
+    ];
+    let role_ru = match role {
+        "researcher" => "Исследователь",
+        "planner" => "Планировщик",
+        "architect" => "Архитектор",
+        "implementer" => "Разработчик",
+        "tester" => "Тестировщик",
+        "reviewer" => "Ревьюер",
+        "releaser" => "Релиз-инженер",
+        _ => role,
+    };
+    let hash = child_task_id
+        .bytes()
+        .fold(0usize, |acc, byte| acc.wrapping_mul(31).wrapping_add(usize::from(byte)));
+    let person = NAMES.get(hash % NAMES.len()).copied().unwrap_or("Агент");
+    format!("{role_ru} {person}")
+}
+
 /// Parameters for [`ToolAgent::execute_hive_delegate_agent`].
 pub(super) struct HiveDelegateRequest<'a> {
     pub context: &'a ToolContext,
@@ -197,6 +232,7 @@ impl ToolAgent {
         parent_task_id: &str,
         child_task_id: &str,
         role: &str,
+        display_name: &str,
         state: &str,
     ) {
         let Some(journal) = self.journal.as_ref() else {
@@ -206,6 +242,7 @@ impl ToolAgent {
             "child_task_id": child_task_id,
             "parent_task_id": parent_task_id,
             "role": role,
+            "display_name": display_name,
             "state": state,
             "dead_letter": false,
             "depth": 1,
@@ -275,8 +312,16 @@ impl ToolAgent {
                 .clamp(1_000, timeout_cap),
         );
         let child_task_id = format!("{parent_task_id}:role-{role}-{}", uuid::Uuid::new_v4());
-        self.record_child_workflow_projection(parent_task_id, &child_task_id, &role, "running")
-            .await;
+        let display_name =
+            resolve_agent_display_name(parsed.agent_name.as_deref(), &role, &child_task_id);
+        self.record_child_workflow_projection(
+            parent_task_id,
+            &child_task_id,
+            &role,
+            &display_name,
+            "running",
+        )
+        .await;
 
         let agent = Self {
             gateway: Arc::clone(&self.gateway),
@@ -342,6 +387,7 @@ impl ToolAgent {
                     parent_task_id,
                     &child_task_id,
                     &role,
+                    &display_name,
                     "accepted",
                 )
                 .await;
@@ -360,9 +406,12 @@ impl ToolAgent {
                 let diff_checked = role == "tester";
                 let committed = role == "releaser";
                 Ok(ToolResult {
-                    output: format!("hive_delegate_agent ({role}, status=accepted):\n{bounded}"),
+                    output: format!(
+                        "hive_delegate_agent ({display_name}, role={role}, status=accepted):\n{bounded}"
+                    ),
                     structured: serde_json::json!({
                         "role": role,
+                        "display_name": display_name,
                         "child_task_id": child_task_id,
                         "status": "accepted",
                         "summary": bounded,
@@ -381,6 +430,7 @@ impl ToolAgent {
                     parent_task_id,
                     &child_task_id,
                     &role,
+                    &display_name,
                     "failed",
                 )
                 .await;

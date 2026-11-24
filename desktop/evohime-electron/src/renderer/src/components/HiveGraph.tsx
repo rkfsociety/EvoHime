@@ -5,6 +5,7 @@ import { translate } from '../i18n'
 /** Минимальное представление активного агента из `HiveStateSnapshot` для графа улья. */
 export interface HiveGraphAgent {
   readonly id: string
+  readonly displayName?: string
   readonly role: string
   readonly currentAction: string
   readonly depth: number
@@ -71,8 +72,8 @@ function computeAgentPositions(agents: readonly HiveGraphAgent[]): PositionedAge
       x: Math.round((CENTER_X + Math.cos(angle) * radius) * 10) / 10,
       y: Math.round((CENTER_Y + Math.sin(angle) * radius) * 10) / 10,
       running: isHiveAgentRunning(agent.currentAction),
-      monogram: agentShortMonogram(agent.role, agent.id),
-      shortRole: truncateLabel(agent.role || 'worker', 12)
+      monogram: agentShortMonogram(agent.displayName || agent.role, agent.id),
+      shortRole: truncateLabel(agent.displayName || agent.role || 'Агент', 14)
     }
   })
 }
@@ -187,14 +188,14 @@ export function HiveGraph({ queenName, queenActive, activeAgents }: HiveGraphPro
                 data-agent-state={running ? 'running' : 'idle'}
                 tabIndex={0}
                 role="button"
-                aria-label={`${agent.id} (${agent.role}): ${agent.currentAction || 'idle'}`}
+                aria-label={`${agent.displayName || agent.role || agent.id} (${agent.role}): ${agent.currentAction || 'idle'}`}
                 onMouseEnter={() => setHoveredId(agent.id)}
                 onMouseLeave={() => setHoveredId((prev) => (prev === agent.id ? null : prev))}
                 onFocus={() => setHoveredId(agent.id)}
                 onBlur={() => setHoveredId((prev) => (prev === agent.id ? null : prev))}
                 onClick={() => setSelectedId((prev) => (prev === agent.id ? null : agent.id))}
               >
-                <title>{`${agent.id} · ${agent.role} (${agent.currentAction || 'idle'})`}</title>
+                <title>{`${agent.displayName || agent.role || agent.id} · ${agent.role} (${agent.currentAction || 'idle'})`}</title>
                 {running ? <circle className="hive-graph__node-aura" cx={x} cy={y} r={nodeRadius + 9} fill={`url(#${runningGlowId})`} /> : null}
                 <circle className="hive-graph__node-core" cx={x} cy={y} r={nodeRadius} />
                 <g className="hive-graph__node-upright" style={{ transformOrigin: `${x}px ${y}px` }}>

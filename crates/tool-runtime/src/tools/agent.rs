@@ -12,7 +12,7 @@ pub const HIVE_REGISTER_ROLE_NAME: &str = "hive_register_role";
 /// Input contract and fan-out guidance shown in tool catalogs.
 pub const DESCRIPTION: &str = "Spawn a budgeted read-only subagent with its own prompt. Input: { prompt, max_steps?, timeout_ms?, model_route? }. The subagent may read files, git history and memory, but cannot edit, run commands, browse, or delegate further. Fan-out by scheduling multiple agent_run steps without depends_on.";
 /// Description for Hive role-based agent delegation.
-pub const HIVE_DELEGATE_DESCRIPTION: &str = "Delegate a step to a specialized Hive worker role (researcher, planner, implementer, tester, reviewer, releaser, architect, or a registered custom role). Input: { role, prompt, department?, plan_summary?, scope?, acceptance_criteria?, max_steps?, timeout_ms?, model_route? }. For mutating or verification roles (implementer, tester, releaser), provide plan_summary explaining what and why will be changed/verified before requesting user approval.";
+pub const HIVE_DELEGATE_DESCRIPTION: &str = "Delegate a step to a specialized Hive worker role (researcher, planner, implementer, tester, reviewer, releaser, architect, or a registered custom role). Input: { role, prompt, agent_name?, department?, plan_summary?, scope?, acceptance_criteria?, max_steps?, timeout_ms?, model_route? }. Always set agent_name to a short human-readable Russian name (e.g. 'Исследователь ядра', 'Разработчик Улья'). For mutating or verification roles (implementer, tester, releaser), provide plan_summary explaining what and why will be changed/verified before requesting user approval.";
 /// Description for registering a new Hive agent role and sector.
 pub const HIVE_REGISTER_ROLE_DESCRIPTION: &str = "Register a new specialized Hive agent role and department/sector for the city map. Input: { role, display_name, department, objective, capabilities?, strategy? }.";
 /// No additional tool permission is checked by this registry adapter.
@@ -92,6 +92,8 @@ pub struct HiveDelegateInput {
     pub role: String,
     /// Nonempty task prompt for the delegated worker.
     pub prompt: String,
+    /// Optional human-readable Russian name for this worker.
+    pub agent_name: Option<String>,
     /// Optional department / sector name.
     pub department: Option<String>,
     /// User-facing plan summary for approval preview before mutations.
@@ -157,6 +159,7 @@ pub fn parse_hive_delegate_input(input: &Value) -> Result<HiveDelegateInput, Too
     Ok(HiveDelegateInput {
         role,
         prompt,
+        agent_name: opt_str("agent_name"),
         department: opt_str("department"),
         plan_summary: opt_str("plan_summary"),
         scope: opt_str("scope"),

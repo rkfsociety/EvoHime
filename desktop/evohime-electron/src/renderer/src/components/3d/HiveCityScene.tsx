@@ -33,6 +33,7 @@ export interface HiveCityDepartmentPin {
 /** Эвристический агент для HUD-инспектора здания (только роль/действие). */
 export interface HiveCityAgentHint {
   readonly id: string
+  readonly displayName?: string
   readonly role: string
   readonly currentAction: string
 }
@@ -488,7 +489,7 @@ function ArchipelagoInspector({
         ) : (
           <ul>
             {agents.map((agent) => (
-              <li key={agent.id}>{agent.role}: {agent.currentAction}</li>
+              <li key={agent.id}>{agent.displayName || agent.role}: {agent.currentAction}</li>
             ))}
           </ul>
         )}

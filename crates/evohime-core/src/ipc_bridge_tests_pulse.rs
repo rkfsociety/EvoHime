@@ -42,6 +42,7 @@ impl ObservationProbe for CalmProbe {
                 quota_reset_utc_midnight: false,
                 allow_paid_fallback: false,
                 literouter_all_models_exhausted: false,
+                evolution_in_flight: false,
             })
         })
     }

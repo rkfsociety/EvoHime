@@ -294,6 +294,7 @@ interface HiveStateView {
   }[]
   readonly activeAgents: readonly {
     readonly id: string
+    readonly displayName?: string
     readonly role: string
     readonly currentAction: string
     readonly depth: number
@@ -502,14 +503,18 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       activeCount: count(item['active_count'], 65_535),
       maxCapacity: count(item['max_capacity'], 65_535)
     })),
-    activeAgents: list(root['active_agents'], 64).map((item) => ({
-      id: text(item['id']),
-      role: text(item['role']),
-      currentAction: text(item['current_action'], 64),
-      depth: count(item['depth'], 255),
-      spawnedSubagents: count(item['spawned_subagents'], 65_535),
-      ceiling: count(item['ceiling'], 65_535)
-    })),
+    activeAgents: list(root['active_agents'], 64).map((item) => {
+      const displayName = text(item['display_name'], 64)
+      return {
+        id: text(item['id']),
+        ...(displayName ? { displayName } : {}),
+        role: text(item['role']),
+        currentAction: text(item['current_action'], 64),
+        depth: count(item['depth'], 255),
+        spawnedSubagents: count(item['spawned_subagents'], 65_535),
+        ceiling: count(item['ceiling'], 65_535)
+      }
+    }),
     taskFlow: {
       processing: count(taskFlow['processing'], 255),
       analyzing: count(taskFlow['analyzing'], 255),
@@ -3315,19 +3320,22 @@ export function HiveDashboard({
               </ul>
             ) : hive && visibleAgents.length > 0 ? (
               <ul className="hive-agent-list">
-                {visibleAgents.slice(0, 8).map((agent) => (
+                {visibleAgents.slice(0, 8).map((agent) => {
+                  const agentLabel = agent.displayName || translate(departmentLabel(agent.role)) || 'Агент'
+                  return (
                   <li key={agent.id}>
-                    <span className="hive-agent__avatar" aria-hidden="true">{agentMonogram(agent.id)}</span>
+                    <span className="hive-agent__avatar" aria-hidden="true">{agentMonogram(agentLabel)}</span>
                     <div className="hive-agent__body">
                       <div className="hive-agent__topline">
-                        <strong>{agent.id || 'worker'}</strong>
+                        <strong>{agentLabel}</strong>
                         <span className="hive-role-badge">{translate(departmentLabel(agent.role))}</span>
                       </div>
                       <small>{translate(agent.currentAction) || translate('ожидание')}</small>
                     </div>
                     <span className="hive-agent__meta">{agent.spawnedSubagents} / {agent.ceiling}</span>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             ) : (
               <p className="hive-empty">

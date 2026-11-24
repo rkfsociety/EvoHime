@@ -115,6 +115,9 @@ pub struct HiveDepartment {
 pub struct HiveActiveAgent {
     /// Stable child-task identifier.
     pub id: String,
+    /// Human-readable Russian name shown in the Hive UI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     /// Delegated role.
     pub role: String,
     /// Bounded description of the current lifecycle step.
@@ -502,8 +505,16 @@ impl HiveStateSnapshot {
             spawned = spawned.saturating_add(u64::from(projection.spawned_subagents));
             ceiling = ceiling.saturating_add(u64::from(projection.planned_ceiling));
             if active_agents.len() < MAX_HIVE_ACTIVE_AGENTS {
+                let display_name = projection
+                    .display_name
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .map(bounded_id)
+                    .unwrap_or_else(|| fallback_russian_agent_name(role, &projection.child_task_id));
                 active_agents.push(HiveActiveAgent {
                     id: bounded_id(&projection.child_task_id),
+                    display_name: Some(display_name),
                     role: bounded_id(role),
                     current_action: current_action(projection.state),
                     depth: projection.depth,
@@ -931,6 +942,39 @@ fn bounded_id(value: &str) -> String {
     value.chars().take(128).collect()
 }
 
+fn fallback_russian_agent_name(role: &str, child_task_id: &str) -> String {
+    const NAMES: [&str; 12] = [
+        "Артём",
+        "Алиса",
+        "Марк",
+        "Вера",
+        "Денис",
+        "Кира",
+        "Олег",
+        "Ника",
+        "Иван",
+        "Лиза",
+        "Глеб",
+        "Соня",
+    ];
+    let role_ru = match role {
+        "researcher" => "Исследователь",
+        "planner" => "Планировщик",
+        "architect" => "Архитектор",
+        "implementer" => "Разработчик",
+        "tester" => "Тестировщик",
+        "reviewer" => "Ревьюер",
+        "releaser" => "Релиз-инженер",
+        other if !other.trim().is_empty() => other.trim(),
+        _ => "Агент",
+    };
+    let hash = child_task_id
+        .bytes()
+        .fold(0usize, |acc, byte| acc.wrapping_mul(31).wrapping_add(usize::from(byte)));
+    let person = NAMES.get(hash % NAMES.len()).copied().unwrap_or("Улья");
+    bounded_id(&format!("{role_ru} {person}"))
+}
+
 fn bounded_u16(value: usize) -> u16 {
     value.min(u16::MAX as usize) as u16
 }
@@ -947,6 +991,7 @@ mod tests {
             parent_task_id: "queen".into(),
             child_task_id: id.into(),
             role: role.into(),
+            display_name: None,
             state,
             dead_letter: false,
             depth: 1,

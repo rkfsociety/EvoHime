@@ -145,6 +145,7 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({
                 "role": string("Worker role (researcher, planner, implementer, tester, reviewer, releaser, architect, or custom role)"),
                 "prompt": string("Clear task instructions for the worker"),
+                "agent_name": string("Short human-readable Russian name for this agent (e.g. 'Исследователь ядра')"),
                 "department": string("Optional sector/department identifier"),
                 "plan_summary": string("User-facing summary of the plan required before mutating/test steps"),
                 "scope": string("Optional target files or module scope"),

@@ -144,6 +144,8 @@ pub struct ObservationCycleReport {
     pub allow_paid_fallback: bool,
     /// Whether all free LiteRouter models are currently in cooldown.
     pub literouter_all_models_exhausted: bool,
+    /// Whether a proactive evolution task is currently in flight.
+    pub evolution_in_flight: bool,
 }
 
 /// Discovered uncompleted roadmap item and its workspace-relative file path.
@@ -306,7 +308,6 @@ struct Inner {
     telemetry: Option<Arc<dyn HiveTelemetrySink>>,
     state: std::sync::Mutex<DaemonState>,
     last_llm_dispatch_at: std::sync::Mutex<Option<std::time::Instant>>,
-    dispatched_evolutions: std::sync::Mutex<HashSet<String>>,
     notify: tokio::sync::Notify,
     shutdown: tokio_util::sync::CancellationToken,
     started: AtomicBool,
@@ -416,7 +417,6 @@ impl HiveObservationDaemon {
                 last_proactive_enabled: None,
             }),
             last_llm_dispatch_at: std::sync::Mutex::new(None),
-            dispatched_evolutions: std::sync::Mutex::new(HashSet::new()),
             notify: tokio::sync::Notify::new(),
             shutdown: tokio_util::sync::CancellationToken::new(),
             started: AtomicBool::new(false),
@@ -711,10 +711,6 @@ impl Inner {
                 local_interval
             }
             ObservationDecision::Evolve { items } => {
-                if !self.llm_dispatch_due(llm_interval) {
-                    self.publish(HIVE_OBSERVATION_OBSERVING, next_wake_at(local_interval), "");
-                    return local_interval;
-                }
                 if !report.route_is_primary {
                     self.publish(
                         HIVE_OBSERVATION_WAITING_FOR_LIMITS,
@@ -731,32 +727,6 @@ impl Inner {
                     );
                     return local_interval;
                 }
-                let batch_key = items
-                    .iter()
-                    .map(|item| {
-                        evolution_item_key(
-                            report.eva_workspace_path.as_deref(),
-                            Some(&item.file_path),
-                            &item.text,
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("|");
-                let already_dispatched = {
-                    let guard = self
-                        .dispatched_evolutions
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    guard.contains(&batch_key)
-                };
-                if already_dispatched {
-                    self.publish(
-                        HIVE_OBSERVATION_WAITING_FOR_TASKS,
-                        next_wake_at(local_interval),
-                        "no_pending_tasks",
-                    );
-                    return local_interval;
-                }
                 match self
                     .tasks
                     .dispatch_evolution(&items, report.eva_workspace_path.as_deref())
@@ -764,16 +734,6 @@ impl Inner {
                 {
                     Ok(task_id) => {
                         self.mark_llm_dispatched();
-                        {
-                            let mut guard = self
-                                .dispatched_evolutions
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if guard.len() >= MAX_SEEN_FAILURES {
-                                guard.clear();
-                            }
-                            guard.insert(batch_key);
-                        }
                         self.probe.mark_evolution_dispatched(
                             &task_id,
                             report.eva_workspace_path.as_deref(),
@@ -787,6 +747,25 @@ impl Inner {
                                 "items_count": items.len(),
                             }),
                         );
+                    }
+                    Err(error)
+                        if is_all_models_exhausted_error(&error)
+                            || error == "hive_quota_exhausted" =>
+                    {
+                        self.publish(
+                            HIVE_OBSERVATION_WAITING_FOR_LIMITS,
+                            next_wake_at(local_interval),
+                            "provider_limits_exhausted",
+                        );
+                        self.log(
+                            "warning",
+                            "hive.evolution_waiting_for_limits",
+                            serde_json::json!({
+                                "error": error,
+                                "items_count": items.len(),
+                            }),
+                        );
+                        return local_interval;
                     }
                     Err(error) => {
                         self.log(
@@ -993,7 +972,7 @@ pub(crate) fn decide(report: &ObservationCycleReport, now_ms: i64) -> Observatio
     }
     if report.proactive_evolution_enabled
         && report.eva_workspace_path.is_some()
-        && !report.roadmap_items.is_empty()
+        && !report.evolution_in_flight
     {
         return ObservationDecision::Evolve {
             items: report.roadmap_items.clone(),
@@ -1102,6 +1081,8 @@ struct ObservationChildProjection {
     child_task_id: String,
     parent_task_id: String,
     role: String,
+    #[serde(default)]
+    display_name: Option<String>,
     state: HiveChildState,
     #[serde(default)]
     reason_code: Option<String>,
@@ -1436,6 +1417,7 @@ impl ObservationProbe for JournalObservationProbe {
                     child_task_id: p.child_task_id.clone(),
                     parent_task_id: p.parent_task_id.clone(),
                     role: p.role.clone(),
+                    display_name: p.display_name.clone(),
                     state: p.state,
                     dead_letter: p.dead_letter,
                     depth: p.depth,
@@ -1452,6 +1434,11 @@ impl ObservationProbe for JournalObservationProbe {
             );
             let in_flight = self.reconcile_pending_recoveries(&records);
             self.reconcile_pending_evolutions(&records);
+            let evolution_in_flight = !self
+                .pending_evolutions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_empty();
             let failed_workers = self.new_failures(&projections, &in_flight);
             let failed_worker_contexts =
                 build_failed_worker_contexts(&failed_workers, &projections, &records);
@@ -1518,6 +1505,7 @@ impl ObservationProbe for JournalObservationProbe {
                 quota_reset_utc_midnight,
                 allow_paid_fallback,
                 literouter_all_models_exhausted: false,
+                evolution_in_flight,
             })
         })
     }
@@ -2021,13 +2009,24 @@ fn format_roadmap_items_list(items: &[RoadmapItem]) -> String {
 }
 
 fn proactive_evolution_prompt(items: &[RoadmapItem]) -> String {
+    if items.is_empty() {
+        return "Ты — Королева Ева. Ты работаешь в непрерывном автономном режиме 24/7. \
+Активных невыполненных пунктов в планах сейчас нет, поэтому проведи цикл самостоятельного изучения, анализа и улучшения проекта:\n\
+1. Изучи `AGENTS.md`, `docs/architecture.md`, `git log -n 5` и ключевые модули/тесты/логи (роль `researcher`, задавай понятное русское имя в `agent_name`).\n\
+2. Проанализируй найденные проблемы, техдолг, узкие места или недостающее покрытие тестами и составь конкретный план (роль `planner`).\n\
+3. Зафиксируй полезные выводы в `.project/` или документации и при необходимости реализуй одно безопасное улучшение с понятным `plan_summary` (роль `implementer`).\n\
+4. Проверь изменения тестами/линтерами (роль `tester`).\n\
+5. При успешной проверке создай task-only коммит (роль `releaser`).\n\
+6. Если подходящих изменений нет, запиши результаты анализа и верни ответ \"SKIP\"."
+            .to_owned();
+    }
     let items_list = format_roadmap_items_list(items);
     format!(
         "Ты — Королева Ева. Ты работаешь в автономном режиме. Вот список невыполненных задач из твоих файлов планов:\n\
 {items_list}\n\n\
 Проанализируй этот список. Выбери РОВНО ОДНУ задачу, которую ты можешь безопасно и качественно реализовать прямо сейчас (учитывая твои инструменты `eva_workspace_*` и контекст проекта из `AGENTS.md`).\n\n\
 Если задача требует слишком много ресурсов или ты не уверена в её безопасности, выбери другую. Если ВСЕ задачи слишком сложные, верни ответ \"SKIP\".\n\n\
-Если ты выбрала задачу, твои действия (делегируй шаги специализированным ролям через `hive_delegate_agent` или используй `eva_workspace_*` при изолированной саморазработке):\n\
+Если ты выбрала задачу, твои действия (делегируй шаги специализированным ролям через `hive_delegate_agent` с понятным русским именем в `agent_name` или используй `eva_workspace_*` при изолированной саморазработке):\n\
 1. Изучи `AGENTS.md` и `docs/architecture.md` (роль `researcher`).\n\
 2. Выполни `git log -n 5` и составь план (роль `planner`).\n\
 3. Реализуй выбранную задачу с понятным `plan_summary` (роль `implementer` или `eva_workspace_write_file`).\n\
@@ -2238,6 +2237,7 @@ mod tests {
             quota_reset_utc_midnight: false,
             allow_paid_fallback: false,
             literouter_all_models_exhausted: false,
+            evolution_in_flight: false,
         }
     }
 
@@ -2986,7 +2986,9 @@ mod tests {
         daemon.shutdown();
 
         // Anti-loop protection: the same item must not be re-dispatched after failure.
-        assert!(requests.try_recv().is_err());
+        while let Ok(next_req) = requests.try_recv() {
+            assert!(!next_req.prompt.contains("Add proactive metrics endpoint"));
+        }
 
         let prompt = proactive_evolution_prompt(&[RoadmapItem {
             file_path: "docs/development-plan.md".into(),
@@ -3131,7 +3133,10 @@ mod tests {
             JournalObservationProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
         let report = probe.observe().await.expect("observe");
         assert!(report.roadmap_items.is_empty());
-        assert_eq!(decide(&report, now_millis()), ObservationDecision::AllGood);
+        assert_eq!(
+            decide(&report, now_millis()),
+            ObservationDecision::Evolve { items: Vec::new() }
+        );
     }
 
     #[test]

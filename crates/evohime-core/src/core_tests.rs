@@ -866,6 +866,24 @@ mod tests {
             },
         )
         .contains("Cargo.toml"));
+
+        let queen_step = super::delivery_next_step_for_agent(
+            requirements,
+            super::DeliveryProgress {
+                research_done: true,
+                mutation_done: false,
+                verification_done: false,
+                commit_done: false,
+                research_observations: 3,
+                research_has_overview: true,
+                research_has_content: true,
+                research_has_search: true,
+            },
+            true,
+        );
+        assert!(queen_step.contains("hive_delegate_agent"));
+        assert!(queen_step.contains("implementer"));
+        assert!(!queen_step.contains("filesystem_patch"));
     }
 
     #[test]
