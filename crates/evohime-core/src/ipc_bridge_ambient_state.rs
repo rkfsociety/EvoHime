@@ -75,13 +75,30 @@ impl IpcBridge {
             return listening_result(snapshot.state, Some(Code::StorageFailed));
         }
 
-        let sent = self
+        let mut sent = self
             .ambient
             .send(crate::ambient::ListenerControl::Policy(Box::new((
-                policy,
+                policy.clone(),
                 control.clone(),
             ))))
             .await;
+        if sent.is_err() && request.enabled {
+            // Supervisor starts `evohime-listener` on demand once `ambient-control.json`
+            // has `enabled: true`; wait briefly for the listener to connect.
+            for _ in 0..25 {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                sent = self
+                    .ambient
+                    .send(crate::ambient::ListenerControl::Policy(Box::new((
+                        policy.clone(),
+                        control.clone(),
+                    ))))
+                    .await;
+                if sent.is_ok() {
+                    break;
+                }
+            }
+        }
         if let Err(code) = sent {
             // Листенера нет. Намерение уже сохранено и применится при его
             // следующем подключении, но утверждать, что микрофон включён,

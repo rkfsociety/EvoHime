@@ -1033,6 +1033,19 @@ async fn run_supervisor_command_channel(
     }
 }
 
+const AMBIENT_CONTROL_FILE_NAME: &str = "ambient-control.json";
+const LISTENER_POLL_INTERVAL: StdDuration = StdDuration::from_secs(1);
+
+fn listener_enabled_in_data_dir(data_dir: &Path) -> bool {
+    let Ok(bytes) = fs::read(data_dir.join(AMBIENT_CONTROL_FILE_NAME)) else {
+        return false;
+    };
+    serde_json::from_slice::<serde_json::Value>(&bytes)
+        .ok()
+        .and_then(|value| value.get("enabled").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false)
+}
+
 /// Listener is deliberately outside the Core generation Job Object. Its own
 /// bounded job lets it survive a Core crash while still guaranteeing cleanup
 /// when this supervisor task ends.
@@ -1046,8 +1059,13 @@ async fn run_listener_supervision(
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
         .unwrap_or(3);
+    let data_dir = core_data_dir();
     let mut restarts = 0;
     loop {
+        while !listener_enabled_in_data_dir(&data_dir) {
+            restarts = 0;
+            tokio::time::sleep(LISTENER_POLL_INTERVAL).await;
+        }
         let job = match JobObject::create_with_limits(Some(LISTENER_MEMORY_LIMIT_BYTES), Some(20)) {
             Ok(job) => job,
             Err(error) => {
@@ -1076,12 +1094,30 @@ async fn run_listener_supervision(
             return;
         }
         let _ = logger.write("listener.spawned", json!({"restart": restarts}));
-        let status = child.wait().await;
+        let mut disabled_by_user = false;
+        let status = loop {
+            tokio::select! {
+                status = child.wait() => break status,
+                _ = tokio::time::sleep(LISTENER_POLL_INTERVAL) => {
+                    if !listener_enabled_in_data_dir(&data_dir) {
+                        disabled_by_user = true;
+                        // Give the listener a brief window to report Stopped to Core.
+                        tokio::time::sleep(StdDuration::from_millis(500)).await;
+                        let _ = child.kill().await;
+                        break child.wait().await;
+                    }
+                }
+            }
+        };
         drop(job);
         let _ = logger.write(
             "listener.exit",
-            json!({"status": status.ok().and_then(|s| s.code())}),
+            json!({"status": status.ok().and_then(|s| s.code()), "disabled": disabled_by_user}),
         );
+        if disabled_by_user {
+            restarts = 0;
+            continue;
+        }
         if restarts >= max_restarts {
             let _ = logger.write(
                 "listener.restart_budget_exhausted",
@@ -1859,5 +1895,21 @@ mod tests {
 
         assert!(fresh.exists(), "fresh legacy file survives");
         assert!(!stale.exists(), "stale legacy file removed");
+    }
+
+    #[test]
+    fn listener_enabled_reads_ambient_control_safely() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(!listener_enabled_in_data_dir(dir.path()));
+
+        let control = dir.path().join(AMBIENT_CONTROL_FILE_NAME);
+        fs::write(&control, b"not json").expect("write invalid");
+        assert!(!listener_enabled_in_data_dir(dir.path()));
+
+        fs::write(&control, br#"{"enabled":false}"#).expect("write false");
+        assert!(!listener_enabled_in_data_dir(dir.path()));
+
+        fs::write(&control, br#"{"enabled":true}"#).expect("write true");
+        assert!(listener_enabled_in_data_dir(dir.path()));
     }
 }
