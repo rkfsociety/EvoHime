@@ -86,7 +86,11 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     },
     onApplyComplete: (succeeded) => {
       if (shuttingDown || !succeeded) {
-        options.log('warn', 'updater.apply_finished_without_recheck', { succeeded, shuttingDown })
+        options.log(
+          succeeded ? 'info' : 'warn',
+          'updater.apply_finished_without_recheck',
+          { succeeded, shuttingDown }
+        )
         return
       }
       options.log('info', 'updater.apply_completed_recheck', {})
