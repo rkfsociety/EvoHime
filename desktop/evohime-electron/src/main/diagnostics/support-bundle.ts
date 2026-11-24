@@ -20,13 +20,106 @@ const MAX_LOG_LINES_PER_SOURCE = 40
 const MAX_LOG_FILES = 8
 const MAX_LOG_BYTES = 64 * 1024
 
-/** Claims one live task failure for the automatic support report path. */
+const EXTERNAL_OR_USER_ERROR_CODES = new Set([
+  'permission_denied',
+  'cancelled',
+  'timeout',
+  'client_blocked',
+  'sensitive_data_blocked',
+  'egress_payload_too_large',
+  'tool_iteration_limit',
+  'no_routes_configured',
+  'both_routes_unavailable',
+  'budget_unavailable',
+  'context_limit_exceeded',
+  'reroute_approval_declined',
+  'policy_violation',
+  'run_deadline_exceeded',
+  'fallback_limit_reached'
+])
+
+const EXTERNAL_OR_USER_ROUTING_STATUSES = new Set([
+  'cancelled',
+  'no_routes_configured',
+  'both_routes_unavailable',
+  'budget_unavailable',
+  'context_limit_exceeded',
+  'reroute_approval_declined',
+  'policy_violation',
+  'run_deadline_exceeded',
+  'fallback_limit_reached'
+])
+
+function isExternalOrUserCode(token: unknown): boolean {
+  if (typeof token !== 'string') return false
+  const normalized = token.trim().toLowerCase()
+  return normalized.startsWith('provider_') || EXTERNAL_OR_USER_ERROR_CODES.has(normalized)
+}
+
+function isExternalOrUserText(text: unknown): boolean {
+  if (typeof text !== 'string') return false
+  const lower = text.toLowerCase()
+  if (/\bprovider_[a-z0-9_]+\b/.test(lower)) return true
+  if (/\b(permission_denied|permission denied|access denied|both_routes_unavailable|no_routes_configured|budget_unavailable|context_limit_exceeded|reroute_approval_declined|policy_violation|sensitive_data_blocked|egress_payload_too_large|tool_iteration_limit)\b/.test(lower)) {
+    return true
+  }
+  return false
+}
+
+function parseRecord(payload: string | undefined): Record<string, unknown> | null {
+  if (!payload) return null
+  try {
+    const parsed = JSON.parse(payload) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+function isExternalOrUserFailure(
+  event: { readonly taskId: string; readonly payload?: string },
+  recentEvents?: readonly { readonly eventType: string; readonly taskId: string; readonly payload?: string }[]
+): boolean {
+  const record = parseRecord(event.payload)
+  if (record) {
+    if (
+      isExternalOrUserCode(record.error_code)
+      || isExternalOrUserCode(record.reason_code)
+      || isExternalOrUserCode(record.terminal_status)
+      || isExternalOrUserText(record.error)
+      || isExternalOrUserText(record.message)
+      || isExternalOrUserText(record.reason)
+    ) {
+      return true
+    }
+  } else if (isExternalOrUserText(event.payload)) {
+    return true
+  }
+
+  if (!recentEvents) return false
+  for (const candidate of recentEvents) {
+    if (candidate.taskId !== event.taskId || candidate.eventType !== 'routing.terminal') continue
+    const routing = parseRecord(candidate.payload)
+    if (!routing) continue
+    const status = typeof routing.terminal_status === 'string' ? routing.terminal_status.trim().toLowerCase() : ''
+    if (EXTERNAL_OR_USER_ROUTING_STATUSES.has(status) || isExternalOrUserCode(routing.reason_code)) {
+      return true
+    }
+  }
+  return false
+}
+
+/** Claims one live internal task failure for the automatic support report path. */
 export function claimAutomaticSupportReport(
-  event: { readonly eventType: string; readonly taskId: string },
+  event: { readonly eventType: string; readonly taskId: string; readonly payload?: string },
   isLive: boolean,
-  claimedTaskIds: Set<string>
+  claimedTaskIds: Set<string>,
+  recentEvents?: readonly { readonly eventType: string; readonly taskId: string; readonly payload?: string }[]
 ): boolean {
   if (!isLive || event.eventType !== 'task.failed' || event.taskId.length === 0 || claimedTaskIds.has(event.taskId)) {
+    return false
+  }
+  if (isExternalOrUserFailure(event, recentEvents)) {
     return false
   }
   if (claimedTaskIds.size >= 64) {

@@ -165,4 +165,52 @@ describe('support bundle v2', () => {
     expect(claimAutomaticSupportReport({ eventType: 'task.failed', taskId: 'task-2' }, true, claimed)).toBe(true)
     expect(claimed).toEqual(new Set(['task-1', 'task-2']))
   })
+
+  it('skips automatic support reports for provider, permission, and user-side failures', () => {
+    const claimed = new Set<string>()
+
+    expect(claimAutomaticSupportReport({
+      eventType: 'task.failed',
+      taskId: 'task-provider-code',
+      payload: JSON.stringify({ error_code: 'provider_unavailable' })
+    }, true, claimed)).toBe(false)
+
+    expect(claimAutomaticSupportReport({
+      eventType: 'task.failed',
+      taskId: 'task-permission',
+      payload: JSON.stringify({ error_code: 'permission_denied' })
+    }, true, claimed)).toBe(false)
+
+    expect(claimAutomaticSupportReport({
+      eventType: 'task.failed',
+      taskId: 'task-cancelled',
+      payload: JSON.stringify({ error_code: 'cancelled' })
+    }, true, claimed)).toBe(false)
+
+    expect(claimAutomaticSupportReport({
+      eventType: 'task.failed',
+      taskId: 'task-routing-unavailable',
+      payload: JSON.stringify({ error_code: 'task_failed' })
+    }, true, claimed, [
+      {
+        eventType: 'routing.terminal',
+        taskId: 'task-routing-unavailable',
+        payload: JSON.stringify({ terminal_status: 'both_routes_unavailable', reason_code: 'provider_unavailable' })
+      }
+    ])).toBe(false)
+
+    expect(claimAutomaticSupportReport({
+      eventType: 'task.failed',
+      taskId: 'task-routing-internal',
+      payload: JSON.stringify({ error_code: 'task_failed' })
+    }, true, claimed, [
+      {
+        eventType: 'routing.terminal',
+        taskId: 'task-routing-internal',
+        payload: JSON.stringify({ terminal_status: 'internal_error', reason_code: 'internal_error' })
+      }
+    ])).toBe(true)
+
+    expect(claimed).toEqual(new Set(['task-routing-internal']))
+  })
 })

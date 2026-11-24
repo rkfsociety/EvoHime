@@ -221,7 +221,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
         lastVoiceCommandAtMs = Date.now()
         overlay?.flashHeard()
       }
-      if (claimAutomaticSupportReport(event, lastShellState?.connection === 'connected', claimedAutomaticSupportReports) && automaticSupportReport) {
+      if (claimAutomaticSupportReport(event, lastShellState?.connection === 'connected', claimedAutomaticSupportReports, recentCoreEvents) && automaticSupportReport) {
         const timer = setTimeout(() => {
           const report = automaticSupportReport
           if (!report) return
