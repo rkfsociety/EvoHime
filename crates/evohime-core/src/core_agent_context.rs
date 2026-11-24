@@ -264,27 +264,29 @@ fn resolve_route_snapshot_with_redaction_fallback(
 ) -> Result<(String, Option<Vec<ChatMessage>>), AgentRunError> {
     let content_privacy = classify_messages_privacy(messages)?;
     routing_request.required_privacy = routing_request.required_privacy.max(content_privacy);
-    match gateway.provenance_route_snapshot_hash_with_model(routing_request, selected_model) {
-        Ok(hash) => Ok((hash, None)),
-        Err(error) => {
-            let error_text = error.to_string();
-            if routing_request.required_privacy > PrivacyClass::Internal
-                && error_text.contains("privacy_violation")
-            {
-                let redacted = guarded_provider_messages(task_id, messages)?;
-                let redacted_privacy = classify_messages_privacy(&redacted)?;
-                routing_request.required_privacy = PrivacyClass::Internal.max(redacted_privacy);
-                let hash = gateway
-                    .provenance_route_snapshot_hash_with_model(routing_request, selected_model)
-                    .map_err(|err| {
-                        AgentRunError::Provider(ProviderError::Config(err.to_string()))
-                    })?;
-                Ok((hash, Some(redacted)))
-            } else {
-                Err(AgentRunError::Provider(ProviderError::Config(error_text)))
-            }
-        }
+    let snapshot_allows_privacy = gateway
+        .route_policy_snapshot(routing_request, 0)
+        .map(|snapshot| {
+            snapshot.candidates.is_empty()
+                || snapshot
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate.privacy >= routing_request.required_privacy)
+        })
+        .unwrap_or(true);
+    if routing_request.required_privacy > PrivacyClass::Internal && !snapshot_allows_privacy {
+        let redacted = guarded_provider_messages(task_id, messages)?;
+        let redacted_privacy = classify_messages_privacy(&redacted)?;
+        routing_request.required_privacy = PrivacyClass::Internal.max(redacted_privacy);
+        let hash = gateway
+            .provenance_route_snapshot_hash_with_model(routing_request, selected_model)
+            .map_err(|err| AgentRunError::Provider(ProviderError::Config(err.to_string())))?;
+        return Ok((hash, Some(redacted)));
     }
+    let hash = gateway
+        .provenance_route_snapshot_hash_with_model(routing_request, selected_model)
+        .map_err(|err| AgentRunError::Provider(ProviderError::Config(err.to_string())))?;
+    Ok((hash, None))
 }
 
 /// Redacts every outgoing model message and maps guardrail failures to stable

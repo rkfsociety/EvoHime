@@ -1577,9 +1577,9 @@ mod tests {
     use super::{
         day_catalog_epoch_days, heartbeat_is_current_generation, heartbeat_is_stale,
         heartbeat_is_stale_for_generation, is_day_catalog_name, is_deferred_update_recovery_error,
-        now_ms, open_rotated_append_limited, prune_old_logs, recover_pending_update,
-        restart_backoff, should_reset_restart_budget, utc_day_string, JobObject, SupervisorSession,
-        LOG_RETENTION_DAYS,
+        listener_enabled_in_data_dir, now_ms, open_rotated_append_limited, prune_old_logs,
+        recover_pending_update, restart_backoff, should_reset_restart_budget, utc_day_string,
+        JobObject, SupervisorSession, AMBIENT_CONTROL_FILE_NAME, LOG_RETENTION_DAYS,
     };
     use evohime_tx::UpdateTransaction;
     use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
