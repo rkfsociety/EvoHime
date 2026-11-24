@@ -232,6 +232,9 @@ export function UpdaterApp(): React.JSX.Element {
             draggable={false}
             data-testid="updater-hero-art"
           />
+          <div className="updater-hero-particles" data-testid="updater-hero-particles">
+            <span /><span /><span /><span /><span /><span /><span /><span />
+          </div>
         </div>
 
         <div className="updater-panel">
