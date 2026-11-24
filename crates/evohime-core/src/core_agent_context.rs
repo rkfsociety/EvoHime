@@ -243,6 +243,48 @@ mod provider_error_diagnostic_tests {
     }
 }
 
+fn classify_messages_privacy(messages: &[ChatMessage]) -> Result<PrivacyClass, AgentRunError> {
+    messages
+        .iter()
+        .map(|message| {
+            sensitive_data_guardrails::classify_text(&message.content)
+                .map(|summary| sensitive_data_guardrails::required_privacy(&summary))
+                .map_err(|_| AgentRunError::Internal("egress_guardrail_unavailable".into()))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(|levels| levels.into_iter().max().unwrap_or(PrivacyClass::Public))
+}
+
+fn resolve_route_snapshot_with_redaction_fallback(
+    gateway: &ModelGateway,
+    task_id: &str,
+    messages: &[ChatMessage],
+    routing_request: &mut RoutingRequest,
+    selected_model: Option<&str>,
+) -> Result<(String, Option<Vec<ChatMessage>>), AgentRunError> {
+    let content_privacy = classify_messages_privacy(messages)?;
+    routing_request.required_privacy = routing_request.required_privacy.max(content_privacy);
+    match gateway.provenance_route_snapshot_hash_with_model(routing_request, selected_model) {
+        Ok(hash) => Ok((hash, None)),
+        Err(error) => {
+            let error_text = error.to_string();
+            if routing_request.required_privacy > PrivacyClass::Internal
+                && error_text.contains("privacy_violation")
+            {
+                let redacted = guarded_provider_messages(task_id, messages)?;
+                let redacted_privacy = classify_messages_privacy(&redacted)?;
+                routing_request.required_privacy = PrivacyClass::Internal.max(redacted_privacy);
+                let hash = gateway
+                    .provenance_route_snapshot_hash_with_model(routing_request, selected_model)
+                    .map_err(|err| AgentRunError::Provider(ProviderError::Config(err.to_string())))?;
+                Ok((hash, Some(redacted)))
+            } else {
+                Err(AgentRunError::Provider(ProviderError::Config(error_text)))
+            }
+        }
+    }
+}
+
 /// Redacts every outgoing model message and maps guardrail failures to stable
 /// error codes.
 ///
@@ -1479,29 +1521,20 @@ impl ToolAgent {
                 estimated_input_tokens,
                 quality_delta: 0.05,
             };
-            // Content-derived privacy is raised before route resolution.  The
-            // exact payload is still scanned again by `guarded_provider_messages`
-            // immediately before dispatch; this pass must never lower the
-            // caller/profile requirement.
-            let content_privacy = messages
-                .iter()
-                .map(|message| {
-                    sensitive_data_guardrails::classify_text(&message.content)
-                        .map(|summary| sensitive_data_guardrails::required_privacy(&summary))
-                        .map_err(|_| AgentRunError::Internal("egress_guardrail_unavailable".into()))
-                })
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .max()
-                .unwrap_or(PrivacyClass::Public);
-            routing_request.required_privacy =
-                routing_request.required_privacy.max(content_privacy);
-            let route_snapshot_hash = self
-                .gateway
-                .provenance_route_snapshot_hash_with_model(&routing_request, selected_model)
-                .map_err(|error| {
-                    AgentRunError::Provider(ProviderError::Config(error.to_string()))
-                })?;
+            // Content-derived privacy is raised before route resolution.  When all
+            // routes are excluded solely by `privacy_violation` (for example,
+            // cloud-only routes like `hive`), `guarded_provider_messages` runs
+            // early so maskable/redactable data is sanitized and re-evaluated
+            // before rejecting the request.
+            let (route_snapshot_hash, pre_redacted_messages) =
+                resolve_route_snapshot_with_redaction_fallback(
+                    &self.gateway,
+                    task_id,
+                    messages,
+                    &mut routing_request,
+                    selected_model,
+                )?;
+            let effective_messages = pre_redacted_messages.as_deref().unwrap_or(messages);
 
             let request_id = if let Some(journal) = &self.journal {
                 let request_id = uuid::Uuid::now_v7().to_string();
@@ -1516,7 +1549,7 @@ impl ToolAgent {
                     parent_request_id,
                     previous_request_hash,
                     ledger,
-                    messages,
+                    messages: effective_messages,
                     specs: effective_specs,
                     source_refs,
                     max_output_tokens,
@@ -1569,7 +1602,10 @@ impl ToolAgent {
                 None
             };
 
-            let provider_messages = guarded_provider_messages(task_id, messages)?;
+            let provider_messages = match pre_redacted_messages {
+                Some(redacted) => redacted,
+                None => guarded_provider_messages(task_id, messages)?,
+            };
             let strategy_hook = match (&self.journal, request_id.as_ref()) {
                 (Some(journal), Some(request_id)) => Some(CorePromptStrategyRouteHook {
                     journal: journal.clone(),
@@ -1845,5 +1881,100 @@ mod prompt_strategy_fanout_tests {
         assert_eq!(format_model_call_id("task-1", Some(1), 0), "task-1-0");
         assert_eq!(format_model_call_id("task-1", Some(2), 0), "task-1-c2-0");
         assert_eq!(format_model_call_id("task-1", Some(3), 4), "task-1-c3-4");
+    }
+
+    #[test]
+    fn route_snapshot_redaction_fallback_allows_cloud_route_after_masking() {
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            "hive".to_owned(),
+            evohime_model_gateway::config::ModelRouteConfig::openai_compatible(
+                "test-key",
+                "https://api.example.test/v1",
+                "test-model",
+            ),
+        );
+        let gateway = ModelGateway::from_config(&evohime_model_gateway::config::ModelGatewayConfig {
+            default_route: "hive".to_owned(),
+            routes,
+        })
+        .expect("gateway");
+        let messages = vec![ChatMessage::text(
+            ChatRole::Tool,
+            "Contact: alice@example.com",
+        )];
+        let mut routing_request = RoutingRequest {
+            required_capabilities: vec!["chat".into()],
+            max_cost_micros_per_1k_tokens: None,
+            max_latency_ms: None,
+            required_privacy: PrivacyClass::Internal,
+            allow_fallback: true,
+            preferred_route: Some("hive".into()),
+            task_class: Some("complex".into()),
+            offline: false,
+            allow_cloud: true,
+            estimated_input_tokens: 100,
+            quality_delta: 0.05,
+        };
+
+        let (hash, pre_redacted) = resolve_route_snapshot_with_redaction_fallback(
+            &gateway,
+            "eva-pulse-test",
+            &messages,
+            &mut routing_request,
+            None,
+        )
+        .expect("redaction fallback should allow cloud hive route");
+
+        assert!(!hash.is_empty());
+        let redacted = pre_redacted.expect("messages should be pre-redacted");
+        assert!(!redacted[0].content.contains("alice@example.com"));
+        assert_eq!(routing_request.required_privacy, PrivacyClass::Internal);
+    }
+
+    #[test]
+    fn route_snapshot_redaction_fallback_still_blocks_private_keys() {
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            "hive".to_owned(),
+            evohime_model_gateway::config::ModelRouteConfig::openai_compatible(
+                "test-key",
+                "https://api.example.test/v1",
+                "test-model",
+            ),
+        );
+        let gateway = ModelGateway::from_config(&evohime_model_gateway::config::ModelGatewayConfig {
+            default_route: "hive".to_owned(),
+            routes,
+        })
+        .expect("gateway");
+        let messages = vec![ChatMessage::text(
+            ChatRole::Tool,
+            "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----",
+        )];
+        let mut routing_request = RoutingRequest {
+            required_capabilities: vec!["chat".into()],
+            max_cost_micros_per_1k_tokens: None,
+            max_latency_ms: None,
+            required_privacy: PrivacyClass::Internal,
+            allow_fallback: true,
+            preferred_route: Some("hive".into()),
+            task_class: Some("complex".into()),
+            offline: false,
+            allow_cloud: true,
+            estimated_input_tokens: 100,
+            quality_delta: 0.05,
+        };
+
+        let err = resolve_route_snapshot_with_redaction_fallback(
+            &gateway,
+            "eva-pulse-test",
+            &messages,
+            &mut routing_request,
+            None,
+        )
+        .expect_err("private key must stay blocked");
+
+        assert!(err.to_string().contains("sensitive_data_blocked"));
     }
 }

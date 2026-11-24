@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, net, Notification, safeStorage } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, Notification, safeStorage, session } from 'electron'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { execFile, execFileSync, spawn, type ChildProcess } from 'node:child_process'
@@ -177,7 +177,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
         broadcast({ kind: 'repair', status })
       },
       log,
-      fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
+      fetch: mainFetch
     })
     lastRepairStatus = repair.status
 
@@ -296,7 +296,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
       const token = await resolveGithubToken({ configured: updateConfig.githubToken })
       const url = await reportSupportBundle(updateConfig, bundle, {
         token: token?.token ?? null,
-        fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
+        fetch: mainFetch
       })
       log('info', 'shell.diagnostics_issue_created', { url })
       return url
@@ -550,6 +550,18 @@ function observeAmbientEvent(eventType: string, payload: string): void {
  * речевого рантайма — разные решения пользователя и разные релизные ассеты.
  * Общими остаются только репозиторий и способ добыть токен GitHub.
  */
+let mainEgressSession: Electron.Session | null = null
+
+function mainFetch(input: string | Request | URL, init?: RequestInit): Promise<Response> {
+  if (!mainEgressSession) {
+    // Use an isolated partition without renderer webRequest blocks while keeping
+    // Chromium's network stack (Windows proxy and certificate store).
+    mainEgressSession = session.fromPartition('evohime-main-egress', { cache: false })
+  }
+  const target = input instanceof URL ? input.toString() : input
+  return mainEgressSession.fetch(target, init)
+}
+
 function createListenerRuntimeService(): ListenerRuntimeService {
   const config = loadUpdateConfig({
     dataDirectory: dataDirectory(),
@@ -560,7 +572,7 @@ function createListenerRuntimeService(): ListenerRuntimeService {
     toolsDirectory: join(dataDirectory(), 'tools', 'listener'),
     // Electron's network stack honours the Windows proxy/certificate store;
     // Node/undici fetch does not reliably do so on a desktop installation.
-    fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+    fetch: mainFetch,
     repositoryUrl: config.repositoryUrl,
     // Токен только повышает лимит анонимных запросов к GitHub; его отсутствие
     // не ошибка, поэтому неудачный поиск даёт `null`, а не отказ.
@@ -576,7 +588,7 @@ function createListenerRuntimeService(): ListenerRuntimeService {
 function createOllamaRuntimeService(): OllamaRuntimeService {
   return new OllamaRuntimeService({
     // Electron's network stack honours the Windows proxy/certificate store.
-    fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+    fetch: mainFetch,
     // A Chromium client/filter can reject executable downloads before an HTTP
     // response exists. Node's transport provides a narrow fallback for that
     // specific error while the URL/redirect allowlist remains in the service.
@@ -613,6 +625,7 @@ function createUpdateService(): UpdateController {
       installDirectory: dirname(app.getPath('exe')),
       intervalMs: config.checkIntervalMs,
       periodicCheck: true,
+      autoStage: true,
       skipLaunchGate: postUpdateLaunch || updaterCheckedLaunch,
       emit: (status) => {
         lastUpdateStatus = status
