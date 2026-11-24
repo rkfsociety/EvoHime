@@ -511,7 +511,9 @@ impl HiveStateSnapshot {
                     .map(str::trim)
                     .filter(|name| !name.is_empty())
                     .map(bounded_id)
-                    .unwrap_or_else(|| fallback_russian_agent_name(role, &projection.child_task_id));
+                    .unwrap_or_else(|| {
+                        fallback_russian_agent_name(role, &projection.child_task_id)
+                    });
                 active_agents.push(HiveActiveAgent {
                     id: bounded_id(&projection.child_task_id),
                     display_name: Some(display_name),
@@ -968,9 +970,9 @@ fn fallback_russian_agent_name(role: &str, child_task_id: &str) -> String {
         other if !other.trim().is_empty() => other.trim(),
         _ => "Агент",
     };
-    let hash = child_task_id
-        .bytes()
-        .fold(0usize, |acc, byte| acc.wrapping_mul(31).wrapping_add(usize::from(byte)));
+    let hash = child_task_id.bytes().fold(0usize, |acc, byte| {
+        acc.wrapping_mul(31).wrapping_add(usize::from(byte))
+    });
     let person = NAMES.get(hash % NAMES.len()).copied().unwrap_or("Улья");
     bounded_id(&format!("{role_ru} {person}"))
 }

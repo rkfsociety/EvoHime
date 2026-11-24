@@ -3321,7 +3321,7 @@ export function HiveDashboard({
             ) : hive && visibleAgents.length > 0 ? (
               <ul className="hive-agent-list">
                 {visibleAgents.slice(0, 8).map((agent) => {
-                  const agentLabel = agent.displayName || translate(departmentLabel(agent.role)) || 'Агент'
+                  const agentLabel = agent.displayName || agent.id || translate(departmentLabel(agent.role)) || 'Агент'
                   return (
                   <li key={agent.id}>
                     <span className="hive-agent__avatar" aria-hidden="true">{agentMonogram(agentLabel)}</span>

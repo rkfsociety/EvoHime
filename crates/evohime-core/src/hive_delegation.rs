@@ -189,9 +189,9 @@ fn resolve_agent_display_name(requested: Option<&str>, role: &str, child_task_id
         "releaser" => "Релиз-инженер",
         _ => role,
     };
-    let hash = child_task_id
-        .bytes()
-        .fold(0usize, |acc, byte| acc.wrapping_mul(31).wrapping_add(usize::from(byte)));
+    let hash = child_task_id.bytes().fold(0usize, |acc, byte| {
+        acc.wrapping_mul(31).wrapping_add(usize::from(byte))
+    });
     let person = NAMES.get(hash % NAMES.len()).copied().unwrap_or("Агент");
     format!("{role_ru} {person}")
 }

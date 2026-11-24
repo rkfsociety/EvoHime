@@ -2098,7 +2098,10 @@ impl ToolAgent {
                         || trimmed.starts_with("SKIP.")
                         || trimmed.starts_with("FAILED:")
                 };
-                if !missing.is_empty() && !queen_explicit_terminal && iteration + 1 < self.max_iterations {
+                if !missing.is_empty()
+                    && !queen_explicit_terminal
+                    && iteration + 1 < self.max_iterations
+                {
                     let repeated = last_delivery_missing.as_deref() == Some(missing.as_slice());
                     delivery_gate_repeats = if repeated {
                         delivery_gate_repeats + 1
