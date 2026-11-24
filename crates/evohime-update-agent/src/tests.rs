@@ -1,12 +1,14 @@
 use super::{
-    cleanup_failed_staging, copy_reader_bounded, is_github_api_url, is_github_release_asset_url,
-    is_trusted_github_url, merge_installed_manifest_to, normalize_github_token,
-    parse_git_credential_password, parse_json_body, read_installed_module_manifest,
-    read_update_config, resolve_github_token_with, stream_file_hash, updater_bootstrap_script,
+    all_updates_already_staged, cleanup_failed_staging, copy_reader_bounded, is_github_api_url,
+    is_github_release_asset_url, is_trusted_github_url, merge_installed_manifest_to,
+    normalize_github_token, parse_git_credential_password, parse_json_body,
+    prune_stale_staged_entries, read_installed_module_manifest, read_update_config,
+    resolve_github_token_with, stream_file_hash, updater_bootstrap_script,
     updater_first_if_required, updater_http_client, validate_compatible_manifest,
-    validate_runtime_manifest, write_staged_manifest, CompatibleComponent, CompatibleManifest,
-    RuntimeReleaseEntry, RuntimeReleaseManifest, UpdateCandidate, UpdaterBootstrapPaths,
-    UpdaterRequirement,
+    validate_runtime_manifest, write_staged_cache_manifest, write_staged_manifest,
+    CompatibleComponent, CompatibleManifest, RuntimeReleaseEntry, RuntimeReleaseManifest,
+    StagedCacheEntry, StagedCacheManifest, UpdateCandidate, UpdaterBootstrapPaths, UpdaterLock,
+    UpdaterRequirement, STAGED_CACHE_FILE, STAGED_CACHE_SCHEMA,
 };
 use sha2::Digest;
 use std::{
@@ -1056,4 +1058,109 @@ fn updater_bootstrap_validates_new_worker_before_removing_backup() {
     assert!(script.contains("Program Files"));
     assert!(script.contains("set \"UPDATER=C:\\Program Files\\EvoHime\\evohime-updater.exe\""));
     assert!(!script.contains("set \"UPDATER=\"C:\\Program Files"));
+}
+
+fn test_temp_dir(label: &str) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock is after Unix epoch")
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("evohime-updater-{label}-{stamp}"));
+    fs::create_dir_all(&dir).expect("create temp dir");
+    dir
+}
+
+#[test]
+fn updater_lock_prevents_concurrent_access_until_dropped() {
+    let root = test_temp_dir("lock");
+    let first = UpdaterLock::try_acquire(&root).expect("acquire first");
+    assert!(first.is_some());
+    let second = UpdaterLock::try_acquire(&root).expect("second attempt");
+    assert!(second.is_none());
+    drop(first);
+    let third = UpdaterLock::try_acquire(&root).expect("reacquire after drop");
+    assert!(third.is_some());
+    drop(third);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn staged_cache_validates_matching_artifacts_and_rejects_stale_versions() {
+    let root = test_temp_dir("staged-cache");
+    let staging = root.join("update-staging");
+    fs::create_dir_all(&staging).expect("staging dir");
+
+    let payload = b"core-binary-v2";
+    let artifact_path = staging.join("evohime-core.exe");
+    fs::write(&artifact_path, payload).expect("write artifact");
+    let (size, sha256) = stream_file_hash(&artifact_path).expect("hash");
+
+    let candidate = UpdateCandidate {
+        module: "core".to_owned(),
+        installed: "0.1.0".to_owned(),
+        available: "0.2.0".to_owned(),
+        artifact: "evohime-core.exe".to_owned(),
+        download_url: "https://github.com/rkfsociety/EvoHime/releases/download/v0.2.0/evohime-core.exe".to_owned(),
+        sha256: sha256.clone(),
+        size,
+        summary: String::new(),
+        changes: Vec::new(),
+        dependencies: Vec::new(),
+        restart: "restart".to_owned(),
+    };
+
+    write_staged_cache_manifest(
+        &staging,
+        &StagedCacheManifest {
+            schema: STAGED_CACHE_SCHEMA,
+            modules: vec![StagedCacheEntry {
+                module: "core".to_owned(),
+                version: "0.2.0".to_owned(),
+                sha256,
+                size,
+                artifact: "evohime-core.exe".to_owned(),
+            }],
+        },
+    )
+    .expect("write staged manifest");
+
+    assert!(all_updates_already_staged(&staging, std::slice::from_ref(&candidate)));
+
+    let newer_candidate = UpdateCandidate {
+        available: "0.3.0".to_owned(),
+        ..candidate
+    };
+    assert!(!all_updates_already_staged(&staging, &[newer_candidate]));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn prune_stale_staged_entries_keeps_active_artifacts_and_removes_old_ones() {
+    let root = test_temp_dir("prune-staged");
+    let staging = root.join("update-staging");
+    fs::create_dir_all(&staging).expect("staging dir");
+    fs::write(staging.join("evohime-core.exe"), b"new").expect("new");
+    fs::write(staging.join("obsolete.exe"), b"old").expect("old");
+    fs::write(staging.join(STAGED_CACHE_FILE), b"{}").expect("manifest");
+
+    let candidate = UpdateCandidate {
+        module: "core".to_owned(),
+        installed: "0.1.0".to_owned(),
+        available: "0.2.0".to_owned(),
+        artifact: "evohime-core.exe".to_owned(),
+        download_url: "https://github.com/rkfsociety/EvoHime/releases/download/v0.2.0/evohime-core.exe".to_owned(),
+        sha256: "0".repeat(64),
+        size: 3,
+        summary: String::new(),
+        changes: Vec::new(),
+        dependencies: Vec::new(),
+        restart: "restart".to_owned(),
+    };
+
+    prune_stale_staged_entries(&staging, &[candidate]);
+    assert!(staging.join("evohime-core.exe").is_file());
+    assert!(staging.join(STAGED_CACHE_FILE).is_file());
+    assert!(!staging.join("obsolete.exe").exists());
+    let _ = fs::remove_dir_all(root);
 }

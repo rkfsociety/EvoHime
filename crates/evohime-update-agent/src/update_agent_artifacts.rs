@@ -7,12 +7,12 @@ pub(super) fn cleanup_completed_staging(staging: &Path, keep_for_bootstrap: bool
 }
 
 pub(super) fn apply_listener_runtime_if_needed(
-    client: &UpdaterHttpClient,
+    client: Option<&UpdaterHttpClient>,
     update: Option<&UpdateCandidate>,
     data_dir: &Path,
     progress: ProgressCallback<'_>,
 ) -> Result<(), String> {
-    if let Some(update) = update {
+    if let (Some(client), Some(update)) = (client, update) {
         apply_listener_runtime(client, update, data_dir, progress)?;
     }
     Ok(())

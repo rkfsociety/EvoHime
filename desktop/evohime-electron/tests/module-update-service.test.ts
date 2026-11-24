@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { spawnMock } = vi.hoisted(() => ({
-  spawnMock: vi.fn(() => ({
+  spawnMock: vi.fn((_command?: string, _args?: readonly string[], _options?: unknown) => ({
     once: vi.fn((event: string, listener: (code?: number | null, signal?: NodeJS.Signals | null) => void) => {
       if (event === 'spawn') queueMicrotask(() => listener())
       if (event === 'close') queueMicrotask(() => listener(0, null))
@@ -535,6 +535,118 @@ describe('ModuleUpdateService', () => {
       await Promise.resolve()
 
       expect(completed).toBe(true)
+      service.stop()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('starts background --stage when autoStage is enabled and maps staged to ready without quitting', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-auto-stage-'))
+    try {
+      const state = join(root, 'update-state')
+      mkdirSync(state)
+      let quitForApply = false
+      const closes: Array<(code: number | null, signal: NodeJS.Signals | null) => void> = []
+      spawnMock.mockImplementation(() => ({
+        once: vi.fn((event: string, listener: (code: number | null, signal: NodeJS.Signals | null) => void) => {
+          if (event === 'close') closes.push(listener)
+        }),
+        unref: vi.fn()
+      }))
+
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        autoStage: true,
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: join(root, 'install'),
+        emit: () => {},
+        intervalMs: 60_000,
+        quitForApply: () => { quitForApply = true }
+      })
+
+      const checkPromise = service.check()
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'available',
+        message: 'Доступны обновления модулей.',
+        available: [{ module: 'core', installed: '0.1.0', available: '0.2.0' }]
+      }))
+      closes.shift()?.(0, null)
+      await checkPromise
+      await Promise.resolve()
+
+      expect(spawnMock).toHaveBeenCalledTimes(2)
+      expect(spawnMock.mock.calls[1]?.[1]?.[0]).toBe('--stage')
+
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'staged',
+        message: 'Обновление скачано в фоне и готово к установке.',
+        available: [{ module: 'core', installed: '0.1.0', available: '0.2.0' }]
+      }))
+      closes.shift()?.(0, null)
+      await Promise.resolve()
+
+      expect(service.status.phase).toBe('ready')
+      expect(service.status.restartRequired).toBe(true)
+      expect(quitForApply).toBe(false)
+      service.stop()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps available status and applies backoff when background --stage fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-auto-stage-backoff-'))
+    try {
+      const state = join(root, 'update-state')
+      mkdirSync(state)
+      const closes: Array<(code: number | null, signal: NodeJS.Signals | null) => void> = []
+      spawnMock.mockImplementation(() => ({
+        once: vi.fn((event: string, listener: (code: number | null, signal: NodeJS.Signals | null) => void) => {
+          if (event === 'close') closes.push(listener)
+        }),
+        unref: vi.fn()
+      }))
+
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        autoStage: true,
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: join(root, 'install'),
+        emit: () => {},
+        intervalMs: 60_000
+      })
+
+      const firstCheck = service.check()
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'available',
+        message: 'Доступны обновления модулей.',
+        available: [{ module: 'core', installed: '0.1.0', available: '0.2.0' }]
+      }))
+      closes.shift()?.(0, null)
+      await firstCheck
+      await Promise.resolve()
+
+      expect(spawnMock).toHaveBeenCalledTimes(2)
+      expect(spawnMock.mock.calls[1]?.[1]?.[0]).toBe('--stage')
+
+      // Background --stage exits with error without overwriting phase to failed
+      closes.shift()?.(1, null)
+      await Promise.resolve()
+      expect(service.status.phase).toBe('available')
+
+      // Immediate re-check for the same version must not re-spawn --stage during backoff
+      const secondCheck = service.check()
+      closes.shift()?.(0, null)
+      await secondCheck
+      await Promise.resolve()
+
+      expect(spawnMock).toHaveBeenCalledTimes(3)
+      expect(spawnMock.mock.calls[2]?.[1]?.[0]).toBe('--check')
       service.stop()
     } finally {
       rmSync(root, { recursive: true, force: true })

@@ -37,6 +37,8 @@ export interface ModuleUpdateServiceOptions {
   readonly intervalMs: number
   /** Run `evohime-updater.exe --check` on each interval tick instead of only polling `updater.json`. */
   readonly periodicCheck?: boolean
+  /** Automatically download and verify available updates in the background (`--stage`). */
+  readonly autoStage?: boolean
   /** Skip only the first launch check when a transaction has just relaunched the shell. */
   readonly skipLaunchGate?: boolean
   /** Closes the visible updater only after downloads finish and file replacement must begin. */
@@ -74,7 +76,11 @@ export class ModuleUpdateService {
   private lastSerialized = ''
   private exitRequested = false
   private checkInFlight = false
+  private stageInFlight = false
   private applyInFlight = false
+  private stageFailureCount = 0
+  private stageBackoffUntilMs = 0
+  private lastStageFingerprint = ''
 
   constructor(private readonly options: ModuleUpdateServiceOptions) {
     this.current = options.enabled
@@ -128,16 +134,19 @@ export class ModuleUpdateService {
   }
 
   async check(): Promise<UpdateStatus> {
-    if (this.checkInFlight) return this.current
+    if (this.checkInFlight || this.stageInFlight || this.applyInFlight) return this.current
     this.checkInFlight = true
     try {
       this.lastSerialized = ''
       this.patchLocal({ phase: 'checking', message: 'Проверяю версии и целостность модулей…', error: null })
       await this.startUpdater('--check')
-      return this.current
     } finally {
       this.checkInFlight = false
     }
+    if (this.options.autoStage && this.current.phase === 'available' && (this.current.availableModules?.length ?? 0) > 0) {
+      void this.stageInBackground()
+    }
+    return this.current
   }
 
   async prepare(): Promise<UpdateStatus> {
@@ -210,13 +219,52 @@ export class ModuleUpdateService {
   }
 
   private async runPeriodicCheck(): Promise<void> {
-    if (!this.options.enabled || this.checkInFlight) return
-    if (this.current.phase === 'checking' || this.current.phase === 'applying') return
+    if (!this.options.enabled || this.checkInFlight || this.stageInFlight || this.applyInFlight) return
+    if (this.current.phase === 'checking' || this.current.phase === 'preparing' || this.current.phase === 'applying') return
     this.checkInFlight = true
     try {
       await this.startUpdater('--check')
     } finally {
       this.checkInFlight = false
+    }
+    if (this.options.autoStage && this.current.phase === 'available' && (this.current.availableModules?.length ?? 0) > 0) {
+      void this.stageInBackground()
+    }
+  }
+
+  private async stageInBackground(): Promise<void> {
+    if (!this.options.enabled || !this.options.autoStage) return
+    if (this.checkInFlight || this.stageInFlight || this.applyInFlight) return
+    if (this.current.phase !== 'available') return
+    const modules = this.current.availableModules ?? []
+    if (modules.length === 0) return
+
+    const versions = this.current.availableModuleVersions ?? {}
+    const fingerprint = modules.map((module) => `${module}:${versions[module] ?? ''}`).join(',')
+    if (fingerprint !== this.lastStageFingerprint) {
+      this.stageFailureCount = 0
+      this.stageBackoffUntilMs = 0
+      this.lastStageFingerprint = fingerprint
+    }
+    if (Date.now() < this.stageBackoffUntilMs) return
+
+    this.stageInFlight = true
+    this.startApplyPolling()
+    try {
+      const succeeded = await this.startUpdater('--stage')
+      if (succeeded) {
+        this.stageFailureCount = 0
+        this.stageBackoffUntilMs = 0
+      } else {
+        this.stageFailureCount += 1
+        const backoffMs = Math.min(15 * 60_000, 60_000 * 2 ** (this.stageFailureCount - 1))
+        this.stageBackoffUntilMs = Date.now() + backoffMs
+      }
+    } finally {
+      this.stageInFlight = false
+      if (!this.applyInFlight) {
+        this.stopApplyPolling()
+      }
     }
   }
 
@@ -226,7 +274,7 @@ export class ModuleUpdateService {
     return 'continue'
   }
 
-  private startUpdater(mode: '--check' | '--apply'): Promise<boolean> {
+  private startUpdater(mode: '--check' | '--stage' | '--apply'): Promise<boolean> {
     if (!this.options.enabled) return Promise.resolve(false)
     const args = [
       mode,
@@ -252,11 +300,20 @@ export class ModuleUpdateService {
         { detached: true, stdio: 'ignore', windowsHide: true, shell: useWindowsShell }
       )
       child.once('error', () => {
+        if (mode === '--stage') {
+          this.refresh()
+          resolveCompletion(false)
+          return
+        }
         this.patchLocal({ phase: 'failed', message: 'Не удалось запустить updater worker.', error: 'Updater worker недоступен.' })
         resolveCompletion(false)
       })
       child.once('close', (code: number | null, signal: NodeJS.Signals | null) => {
         const workerStatus = this.refresh()
+        if (mode === '--stage') {
+          resolveCompletion(code === 0)
+          return
+        }
         // The worker deliberately exits with code 0 after writing
         // requires_exit=true for updater self-replacement. The bootstrap
         // script then waits for this UI to close before replacing files.
@@ -364,7 +421,7 @@ export class ModuleUpdateService {
       downloadSpeedBytesPerSec,
       activeModule,
       completedModules,
-      restartRequired: false,
+      restartRequired: phase === 'ready',
       evidence: [],
       ...(parsed.recovery ? { recovery: parsed.recovery } : {})
     }
@@ -419,6 +476,10 @@ function toUpdatePhase(value: string | undefined, hasAvailable: boolean): Update
       return 'available'
     case 'checking':
       return 'checking'
+    case 'preparing':
+      return 'preparing'
+    case 'staged':
+      return hasAvailable ? 'ready' : 'up-to-date'
     case 'applying':
       return 'applying'
     case 'ready':

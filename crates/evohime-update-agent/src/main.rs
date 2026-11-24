@@ -37,7 +37,10 @@ fn main() -> ExitCode {
     if args.iter().any(|arg| arg == "--launch") {
         return launch_shell(&args);
     }
-    if args.iter().any(|arg| arg == "--check" || arg == "--apply") {
+    if args
+        .iter()
+        .any(|arg| arg == "--check" || arg == "--stage" || arg == "--apply")
+    {
         return control_update(&args);
     }
     let Some(path) = argument_value(&args, "--manifest") else {
@@ -68,6 +71,8 @@ fn main() -> ExitCode {
 }
 
 fn control_update(args: &[String]) -> ExitCode {
+    let is_check = args.iter().any(|arg| arg == "--check");
+    let is_stage = args.iter().any(|arg| arg == "--stage");
     let Some(install_dir) = argument_value(args, "--install-dir")
         .map(PathBuf::from)
         .or_else(|| {
@@ -79,6 +84,23 @@ fn control_update(args: &[String]) -> ExitCode {
         return fail("cannot determine install directory");
     };
     let data_dir = data_directory(&install_dir);
+    let _lock = if is_check || is_stage {
+        match UpdaterLock::try_acquire(&data_dir) {
+            Ok(Some(lock)) => lock,
+            Ok(None) => return ExitCode::SUCCESS,
+            Err(error) => return fail(error),
+        }
+    } else {
+        match UpdaterLock::acquire_with_wait(&data_dir, Duration::from_secs(15)) {
+            Ok(Some(lock)) => lock,
+            Ok(None) => {
+                let message = "Другой процесс обновления уже выполняется.";
+                write_status(&data_dir, "failed", message, &[]);
+                return fail(message);
+            }
+            Err(error) => return fail(error),
+        }
+    };
     let wait_pid = match optional_process_id(args, "--wait-pid") {
         Ok(value) => value,
         Err(error) => return fail(error),
@@ -86,32 +108,87 @@ fn control_update(args: &[String]) -> ExitCode {
     let relaunch = argument_value(args, "--relaunch").map(PathBuf::from);
     let health_file = argument_value(args, "--health-file").map(PathBuf::from);
     let _ = ensure_fallback(&install_dir, &data_dir);
-    write_recovery_phase(&data_dir, "prepared", None);
+    if !is_stage {
+        write_recovery_phase(&data_dir, "prepared", None);
+    }
     let updates = match remote_updates(&data_dir, &install_dir) {
         Ok(updates) => updates,
         Err(error) => {
+            if is_stage {
+                return fail(error);
+            }
             write_recovery_phase(&data_dir, "manual-recovery", Some("manifest-or-network"));
             write_status(&data_dir, "failed", &error, &[]);
             return fail(error);
         }
     };
-    if args.iter().any(|arg| arg == "--check") {
+    if is_check {
         write_recovery_phase(&data_dir, "verified", None);
+        if updates.is_empty() {
+            write_status(&data_dir, "ready", "Все модули актуальны.", &[]);
+        } else if all_updates_already_staged(&data_dir.join("update-staging"), &updates) {
+            write_status(
+                &data_dir,
+                "staged",
+                "Обновление скачано в фоне и готово к установке.",
+                &updates,
+            );
+        } else {
+            write_status(&data_dir, "available", "Доступны обновления модулей.", &updates);
+        }
+        return ExitCode::SUCCESS;
+    }
+    if is_stage {
+        if updates.is_empty() {
+            cleanup_completed_staging(&data_dir.join("update-staging"), false);
+            write_status(&data_dir, "ready", "Все модули актуальны.", &[]);
+            return ExitCode::SUCCESS;
+        }
+        if all_updates_already_staged(&data_dir.join("update-staging"), &updates) {
+            write_status(
+                &data_dir,
+                "staged",
+                "Обновление скачано в фоне и готово к установке.",
+                &updates,
+            );
+            return ExitCode::SUCCESS;
+        }
         write_status(
             &data_dir,
-            if updates.is_empty() {
-                "ready"
-            } else {
-                "available"
-            },
-            if updates.is_empty() {
-                "Все модули актуальны."
-            } else {
-                "Доступны обновления модулей."
-            },
+            "preparing",
+            "Скачиваю обновления модулей в фоне…",
             &updates,
         );
-        return ExitCode::SUCCESS;
+        let telemetry_state = std::cell::RefCell::new(DownloadTelemetryState::default());
+        let result = stage_updates_into_cache(&data_dir, &updates, &|message, percent, download| {
+            let now = std::time::Instant::now();
+            let (telemetry, should_write) =
+                telemetry_state.borrow_mut().record(now, percent, download);
+            if should_write {
+                write_status_with_telemetry(
+                    &data_dir,
+                    "preparing",
+                    &format!("{message} — {percent}%"),
+                    &updates,
+                    telemetry,
+                );
+            }
+        });
+        return match result {
+            Ok(_) => {
+                write_status(
+                    &data_dir,
+                    "staged",
+                    "Обновление скачано в фоне и готово к установке.",
+                    &updates,
+                );
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                write_status(&data_dir, "available", "Доступны обновления модулей.", &updates);
+                fail(error)
+            }
+        };
     }
     write_status(
         &data_dir,
@@ -1133,6 +1210,445 @@ fn validate_runtime_manifest(manifest: &RuntimeReleaseManifest) -> Result<(), St
     Ok(())
 }
 
+const STAGED_CACHE_SCHEMA: u32 = 1;
+const STAGED_CACHE_FILE: &str = "staged.json";
+
+struct UpdaterLock {
+    _file: fs::File,
+    #[cfg(not(windows))]
+    path: PathBuf,
+}
+
+impl UpdaterLock {
+    fn try_acquire(data_dir: &Path) -> Result<Option<Self>, String> {
+        let state = data_dir.join("update-state");
+        fs::create_dir_all(&state).map_err(|error| error.to_string())?;
+        let lock_path = state.join("updater.lock");
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            match fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .share_mode(0)
+                .open(&lock_path)
+            {
+                Ok(file) => Ok(Some(Self { _file: file })),
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::PermissionDenied
+                        || error.raw_os_error() == Some(32) =>
+                {
+                    Ok(None)
+                }
+                Err(error) => Err(error.to_string()),
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            match fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&lock_path)
+            {
+                Ok(file) => Ok(Some(Self {
+                    _file: file,
+                    path: lock_path,
+                })),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(None),
+                Err(error) => Err(error.to_string()),
+            }
+        }
+    }
+
+    fn acquire_with_wait(data_dir: &Path, timeout: Duration) -> Result<Option<Self>, String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(lock) = Self::try_acquire(data_dir)? {
+                return Ok(Some(lock));
+            }
+            if Instant::now() >= deadline {
+                return Ok(None);
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+    }
+}
+
+#[cfg(not(windows))]
+impl Drop for UpdaterLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct StagedCacheManifest {
+    schema: u32,
+    modules: Vec<StagedCacheEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct StagedCacheEntry {
+    module: String,
+    version: String,
+    sha256: String,
+    size: u64,
+    artifact: String,
+}
+
+fn read_staged_cache_manifest(staging: &Path) -> StagedCacheManifest {
+    let path = staging.join(STAGED_CACHE_FILE);
+    read_bounded_text(&path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<StagedCacheManifest>(&text).ok())
+        .filter(|manifest| manifest.schema == STAGED_CACHE_SCHEMA)
+        .unwrap_or(StagedCacheManifest {
+            schema: STAGED_CACHE_SCHEMA,
+            modules: Vec::new(),
+        })
+}
+
+fn write_staged_cache_manifest(staging: &Path, manifest: &StagedCacheManifest) -> Result<(), String> {
+    let path = staging.join(STAGED_CACHE_FILE);
+    let temp = staging.join(format!("{STAGED_CACHE_FILE}.tmp"));
+    let bytes = serde_json::to_vec_pretty(manifest).map_err(|error| error.to_string())?;
+    fs::write(&temp, bytes).map_err(|error| error.to_string())?;
+    if path.exists() {
+        let _ = fs::remove_file(&path);
+    }
+    fs::rename(&temp, &path).map_err(|error| error.to_string())
+}
+
+fn verify_file_matches_candidate(path: &Path, update: &UpdateCandidate) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    match stream_file_hash(path) {
+        Ok((size, sha256)) => size == update.size && sha256.eq_ignore_ascii_case(&update.sha256),
+        Err(_) => false,
+    }
+}
+
+fn is_module_staged_and_valid(
+    staging: &Path,
+    cached: Option<&StagedCacheEntry>,
+    update: &UpdateCandidate,
+) -> bool {
+    if update.module == "listener-runtime" {
+        return true;
+    }
+    let Some(entry) = cached else {
+        return false;
+    };
+    if entry.module != update.module
+        || entry.version != update.available
+        || entry.size != update.size
+        || !entry.sha256.eq_ignore_ascii_case(&update.sha256)
+    {
+        return false;
+    }
+    match update.module.as_str() {
+        "shell-host" => {
+            verify_file_matches_candidate(&staging.join("shell-host.zip"), update)
+                && staging.join("shell-host").join("EvoHime.exe").is_file()
+                && staging
+                    .join("shell-host")
+                    .join("resources")
+                    .join("app.asar")
+                    .is_file()
+        }
+        "ui-bundle" => {
+            verify_file_matches_candidate(&staging.join("ui-bundle.zip"), update)
+                && staging.join("ui-bundle").join("index.html").is_file()
+        }
+        "updater" => {
+            verify_file_matches_candidate(&staging.join("updater.zip"), update)
+                && staging.join("updater").is_dir()
+                && validate_pe_image(&staging.join("evohime-updater.exe.next")).is_ok()
+        }
+        _ => {
+            !update.artifact.is_empty()
+                && !update.artifact.contains('/')
+                && !update.artifact.contains('\\')
+                && verify_file_matches_candidate(&staging.join(&update.artifact), update)
+        }
+    }
+}
+
+fn all_updates_already_staged(staging: &Path, updates: &[UpdateCandidate]) -> bool {
+    if updates.is_empty() {
+        return false;
+    }
+    let cache = read_staged_cache_manifest(staging);
+    updates.iter().all(|update| {
+        let entry = cache
+            .modules
+            .iter()
+            .find(|item| item.module == update.module);
+        is_module_staged_and_valid(staging, entry, update)
+    })
+}
+
+fn replace_staged_path(source: &Path, destination: &Path) -> Result<(), String> {
+    if destination.exists() {
+        if destination.is_dir() {
+            fs::remove_dir_all(destination).map_err(|error| error.to_string())?;
+        } else {
+            fs::remove_file(destination).map_err(|error| error.to_string())?;
+        }
+    }
+    fs::rename(source, destination).map_err(|error| error.to_string())
+}
+
+fn prune_stale_staged_entries(staging: &Path, updates: &[UpdateCandidate]) {
+    let keep_files: std::collections::HashSet<&str> = updates
+        .iter()
+        .filter(|update| update.module != "listener-runtime")
+        .map(|update| match update.module.as_str() {
+            "shell-host" => "shell-host.zip",
+            "ui-bundle" => "ui-bundle.zip",
+            "updater" => "updater.zip",
+            _ => update.artifact.as_str(),
+        })
+        .collect();
+    let keep_shell = updates.iter().any(|u| u.module == "shell-host");
+    let keep_ui = updates.iter().any(|u| u.module == "ui-bundle");
+    let keep_updater = updates.iter().any(|u| u.module == "updater");
+    if let Ok(entries) = fs::read_dir(staging) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name_str) = name.to_str() else {
+                continue;
+            };
+            if name_str == STAGED_CACHE_FILE
+                || name_str.starts_with(".tmp-")
+                || keep_files.contains(name_str)
+                || (name_str == "shell-host" && keep_shell)
+                || (name_str == "ui-bundle" && keep_ui)
+                || ((name_str == "updater" || name_str == "evohime-updater.exe.next")
+                    && keep_updater)
+            {
+                continue;
+            }
+            let path = entry.path();
+            if path.is_dir() {
+                let _ = fs::remove_dir_all(path);
+            } else {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+}
+
+fn stage_updates_into_cache(
+    data_dir: &Path,
+    updates: &[UpdateCandidate],
+    progress: ProgressCallback<'_>,
+) -> Result<(), String> {
+    let staging = data_dir.join("update-staging");
+    fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
+    let cache = read_staged_cache_manifest(&staging);
+    let mut missing = Vec::new();
+    for update in updates {
+        let entry = cache
+            .modules
+            .iter()
+            .find(|item| item.module == update.module);
+        if !is_module_staged_and_valid(&staging, entry, update) {
+            missing.push(update);
+        }
+    }
+    if missing.is_empty() {
+        prune_stale_staged_entries(&staging, updates);
+        let new_entries = updates
+            .iter()
+            .filter(|update| update.module != "listener-runtime")
+            .map(|update| StagedCacheEntry {
+                module: update.module.clone(),
+                version: update.available.clone(),
+                sha256: update.sha256.clone(),
+                size: update.size,
+                artifact: update.artifact.clone(),
+            })
+            .collect();
+        write_staged_cache_manifest(
+            &staging,
+            &StagedCacheManifest {
+                schema: STAGED_CACHE_SCHEMA,
+                modules: new_entries,
+            },
+        )?;
+        return Ok(());
+    }
+
+    let work = staging.join(format!(".tmp-{}", std::process::id()));
+    if work.exists() {
+        fs::remove_dir_all(&work).map_err(|error| error.to_string())?;
+    }
+    fs::create_dir_all(&work).map_err(|error| error.to_string())?;
+    let stage_result = (|| -> Result<(), String> {
+        let client = updater_http_client(resolve_github_token(&read_update_config(
+            &data_dir.join("update.json"),
+        )?))?;
+        let native_missing = missing
+            .iter()
+            .copied()
+            .filter(|update| {
+                update.module != "updater"
+                    && update.module != "ui-bundle"
+                    && update.module != "shell-host"
+                    && update.module != "listener-runtime"
+            })
+            .collect::<Vec<_>>();
+        let total_bytes = native_missing.iter().map(|update| update.size).sum::<u64>();
+        let mut completed_bytes = 0u64;
+        for update in native_missing {
+            if update.artifact.contains('/')
+                || update.artifact.contains('\\')
+                || update.artifact.is_empty()
+            {
+                return Err(format!(
+                    "updater: небезопасный artifact для {}",
+                    update.module
+                ));
+            }
+            progress(
+                &format!("Скачивание {}", update.module),
+                progress_percent(completed_bytes, total_bytes),
+                Some((&update.module, completed_bytes, total_bytes)),
+            );
+            download_verified_file(&client, update, &work.join(&update.artifact), |downloaded| {
+                progress(
+                    &format!("Скачивание {}", update.module),
+                    progress_percent(completed_bytes + downloaded, total_bytes),
+                    Some((&update.module, completed_bytes + downloaded, total_bytes)),
+                )
+            })?;
+            completed_bytes += update.size;
+            progress(
+                &format!("Скачан {}", update.module),
+                progress_percent(completed_bytes, total_bytes),
+                None,
+            );
+        }
+        if let Some(update) = missing.iter().copied().find(|u| u.module == "shell-host") {
+            progress(
+                "Скачивание shell-host",
+                0,
+                Some(("shell-host", 0, update.size)),
+            );
+            download_verified_file(&client, update, &work.join("shell-host.zip"), |downloaded| {
+                progress(
+                    "Скачивание shell-host",
+                    progress_percent(downloaded, update.size),
+                    Some(("shell-host", downloaded, update.size)),
+                )
+            })?;
+            extract_shell_host(&work.join("shell-host.zip"), &work.join("shell-host"))?;
+            progress("shell-host подготовлен", 100, None);
+        }
+        if let Some(update) = missing.iter().copied().find(|u| u.module == "ui-bundle") {
+            progress(
+                "Скачивание ui-bundle",
+                0,
+                Some(("ui-bundle", 0, update.size)),
+            );
+            download_verified_file(&client, update, &work.join("ui-bundle.zip"), |downloaded| {
+                progress(
+                    "Скачивание ui-bundle",
+                    progress_percent(downloaded, update.size),
+                    Some(("ui-bundle", downloaded, update.size)),
+                )
+            })?;
+            extract_ui_bundle(&work.join("ui-bundle.zip"), &work.join("ui-bundle"))?;
+            progress("ui-bundle подготовлен", 100, None);
+        }
+        if let Some(update) = missing.iter().copied().find(|u| u.module == "updater") {
+            progress("Скачивание updater", 0, Some(("updater", 0, update.size)));
+            download_verified_file(&client, update, &work.join("updater.zip"), |downloaded| {
+                progress(
+                    "Скачивание updater",
+                    progress_percent(downloaded, update.size),
+                    Some(("updater", downloaded, update.size)),
+                )
+            })?;
+            extract_updater_package(&work.join("updater.zip"), &work.join("updater-package"))?;
+            fs::copy(
+                work.join("updater-package").join("evohime-updater.exe"),
+                work.join("evohime-updater.exe.next"),
+            )
+            .map_err(|error| error.to_string())?;
+            validate_pe_image(&work.join("evohime-updater.exe.next"))
+                .map_err(|error| format!("updater: staged worker PE validation failed: {error}"))?;
+            fs::rename(
+                work.join("updater-package").join("updater"),
+                work.join("updater"),
+            )
+            .map_err(|error| error.to_string())?;
+            let _ = fs::remove_dir_all(work.join("updater-package"));
+            progress("updater подготовлен", 100, None);
+        }
+
+        // Promote verified artifacts from isolated temp dir into staging.
+        for update in &missing {
+            match update.module.as_str() {
+                "shell-host" => {
+                    replace_staged_path(
+                        &work.join("shell-host.zip"),
+                        &staging.join("shell-host.zip"),
+                    )?;
+                    replace_staged_path(&work.join("shell-host"), &staging.join("shell-host"))?;
+                }
+                "ui-bundle" => {
+                    replace_staged_path(
+                        &work.join("ui-bundle.zip"),
+                        &staging.join("ui-bundle.zip"),
+                    )?;
+                    replace_staged_path(&work.join("ui-bundle"), &staging.join("ui-bundle"))?;
+                }
+                "updater" => {
+                    replace_staged_path(&work.join("updater.zip"), &staging.join("updater.zip"))?;
+                    replace_staged_path(
+                        &work.join("evohime-updater.exe.next"),
+                        &staging.join("evohime-updater.exe.next"),
+                    )?;
+                    replace_staged_path(&work.join("updater"), &staging.join("updater"))?;
+                }
+                "listener-runtime" => {}
+                _ => {
+                    replace_staged_path(
+                        &work.join(&update.artifact),
+                        &staging.join(&update.artifact),
+                    )?;
+                }
+            }
+        }
+        prune_stale_staged_entries(&staging, updates);
+        let new_entries = updates
+            .iter()
+            .filter(|update| update.module != "listener-runtime")
+            .map(|update| StagedCacheEntry {
+                module: update.module.clone(),
+                version: update.available.clone(),
+                sha256: update.sha256.clone(),
+                size: update.size,
+                artifact: update.artifact.clone(),
+            })
+            .collect();
+        write_staged_cache_manifest(
+            &staging,
+            &StagedCacheManifest {
+                schema: STAGED_CACHE_SCHEMA,
+                modules: new_entries,
+            },
+        )?;
+        Ok(())
+    })();
+    let _ = fs::remove_dir_all(&work);
+    stage_result
+}
+
 fn apply_updates(
     install_dir: &Path,
     data_dir: &Path,
@@ -1166,149 +1682,39 @@ fn apply_updates_inner(
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
     let state = data_dir.join("update-state");
-    if staging.exists() {
-        fs::remove_dir_all(&staging).map_err(|error| error.to_string())?;
-    }
-    fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
-    let client = updater_http_client(resolve_github_token(&read_update_config(
-        &data_dir.join("update.json"),
-    )?))?;
+    stage_updates_into_cache(data_dir, updates, progress)?;
     let mut selected = Vec::new();
     let mut applied = Vec::new();
-    let mut ui_update = None;
-    let mut shell_host_update = None;
     let updater_update = updates.iter().find(|update| update.module == "updater");
     let runtime_update = updates
         .iter()
         .find(|update| update.module == "listener-runtime");
-    let native_updates = updates
-        .iter()
-        .filter(|update| {
-            update.module != "updater"
-                && update.module != "ui-bundle"
-                && update.module != "shell-host"
-                && update.module != "listener-runtime"
-        })
-        .collect::<Vec<_>>();
-    let total_bytes = native_updates.iter().map(|update| update.size).sum::<u64>();
-    let mut completed_bytes = 0u64;
-    for update in native_updates {
-        if update.artifact.contains('/')
-            || update.artifact.contains('\\')
-            || update.artifact.is_empty()
+    for update in updates {
+        if update.module != "updater"
+            && update.module != "ui-bundle"
+            && update.module != "shell-host"
+            && update.module != "listener-runtime"
         {
-            return Err(format!(
-                "updater: небезопасный artifact для {}",
-                update.module
-            ));
+            selected.push(update.artifact.clone());
+            applied.push(update);
         }
-        progress(
-            &format!("Скачивание {}", update.module),
-            progress_percent(completed_bytes, total_bytes),
-            Some((&update.module, completed_bytes, total_bytes)),
-        );
-        download_verified_file(
-            &client,
-            update,
-            &staging.join(&update.artifact),
-            |downloaded| {
-                progress(
-                    &format!("Скачивание {}", update.module),
-                    progress_percent(completed_bytes + downloaded, total_bytes),
-                    Some((&update.module, completed_bytes + downloaded, total_bytes)),
-                )
-            },
-        )?;
-        completed_bytes += update.size;
-        progress(
-            &format!("Скачан {}", update.module),
-            progress_percent(completed_bytes, total_bytes),
-            None,
-        );
-        selected.push(update.artifact.clone());
-        applied.push(update);
     }
-    if let Some(update) = updates.iter().find(|update| update.module == "shell-host") {
-        progress(
-            "Скачивание shell-host",
-            0,
-            Some(("shell-host", 0, update.size)),
-        );
-        download_verified_file(
-            &client,
-            update,
-            &staging.join("shell-host.zip"),
-            |downloaded| {
-                progress(
-                    "Скачивание shell-host",
-                    progress_percent(downloaded, update.size),
-                    Some(("shell-host", downloaded, update.size)),
-                )
-            },
-        )?;
-        extract_shell_host(&staging.join("shell-host.zip"), &staging.join("shell-host"))?;
+    let shell_host_update = updates.iter().find(|update| update.module == "shell-host");
+    if let Some(update) = shell_host_update {
         selected.push("shell-host.zip".to_owned());
         applied.push(update);
-        shell_host_update = Some(update);
-        progress("shell-host подготовлен", 100, None);
     }
-    if let Some(update) = updates.iter().find(|update| update.module == "ui-bundle") {
-        progress(
-            "Скачивание ui-bundle",
-            0,
-            Some(("ui-bundle", 0, update.size)),
-        );
-        download_verified_file(
-            &client,
-            update,
-            &staging.join("ui-bundle.zip"),
-            |downloaded| {
-                progress(
-                    "Скачивание ui-bundle",
-                    progress_percent(downloaded, update.size),
-                    Some(("ui-bundle", downloaded, update.size)),
-                )
-            },
-        )?;
-        extract_ui_bundle(&staging.join("ui-bundle.zip"), &staging.join("ui-bundle"))?;
-        ui_update = Some(update);
-        progress("ui-bundle подготовлен", 100, None);
-    }
-    if let Some(update) = updater_update {
-        progress("Скачивание updater", 0, Some(("updater", 0, update.size)));
-        download_verified_file(
-            &client,
-            update,
-            &staging.join("updater.zip"),
-            |downloaded| {
-                progress(
-                    "Скачивание updater",
-                    progress_percent(downloaded, update.size),
-                    Some(("updater", downloaded, update.size)),
-                )
-            },
-        )?;
-        extract_updater_package(
-            &staging.join("updater.zip"),
-            &staging.join("updater-package"),
-        )?;
-        fs::copy(
-            staging.join("updater-package").join("evohime-updater.exe"),
-            staging.join("evohime-updater.exe.next"),
-        )
-        .map_err(|error| error.to_string())?;
-        validate_pe_image(&staging.join("evohime-updater.exe.next"))
-            .map_err(|error| format!("updater: staged worker PE validation failed: {error}"))?;
-        fs::rename(
-            staging.join("updater-package").join("updater"),
-            staging.join("updater"),
-        )
-        .map_err(|error| error.to_string())?;
-        progress("updater подготовлен", 100, None);
-    }
+    let ui_update = updates.iter().find(|update| update.module == "ui-bundle");
+    let client = if runtime_update.is_some() {
+        Some(updater_http_client(resolve_github_token(
+            &read_update_config(&data_dir.join("update.json"))?,
+        ))?)
+    } else {
+        None
+    };
     if selected.is_empty() && ui_update.is_none() {
-        if let Some(update) = runtime_update {
-            apply_listener_runtime(&client, update, data_dir, progress)?;
+        if let (Some(update), Some(client)) = (runtime_update, client.as_ref()) {
+            apply_listener_runtime(client, update, data_dir, progress)?;
         }
         if let Some(update) = updater_update {
             let manifest_next = install_dir.join("evohime.components.json.next");
@@ -1376,7 +1782,7 @@ fn apply_updates_inner(
         let manifest_next = install_dir.join("evohime.components.json.next");
         component_updates.push(update);
         merge_installed_manifest_to(install_dir, &component_updates, &manifest_next)?;
-        apply_listener_runtime_if_needed(&client, runtime_update, data_dir, progress)?;
+        apply_listener_runtime_if_needed(client.as_ref(), runtime_update, data_dir, progress)?;
         schedule_updater_replacement(
             install_dir,
             data_dir,
@@ -1393,7 +1799,7 @@ fn apply_updates_inner(
         &component_updates,
         &install_dir.join("evohime.components.json"),
     )?;
-    apply_listener_runtime_if_needed(&client, runtime_update, data_dir, progress)?;
+    apply_listener_runtime_if_needed(client.as_ref(), runtime_update, data_dir, progress)?;
     cleanup_completed_staging(&staging, updater_update.is_some());
     write_status(data_dir, "ready", "Обновления модулей применены.", &[]);
     Ok(())
@@ -1954,8 +2360,16 @@ fn write_status_inner(
             completed_modules: telemetry.completed_modules,
         };
         let path = state.join("updater.json");
+        let temp = state.join("updater.json.tmp");
         if let Ok(value) = serde_json::to_vec_pretty(&status) {
-            let _ = fs::write(path, value);
+            if fs::write(&temp, value).is_ok() {
+                if path.exists() {
+                    let _ = fs::remove_file(&path);
+                }
+                if fs::rename(&temp, &path).is_err() {
+                    let _ = fs::remove_file(&temp);
+                }
+            }
         }
     }
 }
