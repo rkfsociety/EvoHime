@@ -1077,3 +1077,85 @@ fn reliability_snapshot_rejects_unbounded_or_inconsistent_metadata() {
     invalid.class = ReliabilityClass::Healthy;
     assert_eq!(invalid.validate(), Err("invalid reliability snapshot"));
 }
+
+#[tokio::test]
+async fn expired_catalog_refreshes_automatically_on_async_preflight() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind mock catalog server");
+    let addr = listener.local_addr().expect("local addr");
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        let mut buf = [0u8; 1024];
+        let _ = socket.read(&mut buf).await;
+        let body = r#"{"data":[{"id":"model-a"}]}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        socket
+            .write_all(response.as_bytes())
+            .await
+            .expect("write response");
+    });
+
+    let directory = tempfile::tempdir().expect("temp dir");
+    let journal = crate::EventJournal::open(directory.path().join("events.db")).expect("journal");
+    let route = ModelRouteConfig::openai_compatible(
+        "test-key",
+        format!("http://{addr}/v1"),
+        "model-a",
+    );
+    let profile = ProviderProfile::from_route_config(&route).expect("profile");
+    let expired = ProviderCatalogSnapshot::fresh_from_catalog(
+        &profile,
+        &[ModelCatalogEntry {
+            id: "model-a".into(),
+            context_tokens: None,
+            max_output_tokens: None,
+        }],
+        1,
+        "a".repeat(64),
+        1_000,
+        5_000,
+    )
+    .expect("expired snapshot");
+
+    let cache = new_provider_catalog_cache();
+    let scope_key = provider_catalog_scope_key(&profile);
+    cache
+        .write()
+        .expect("cache write")
+        .insert(scope_key.clone(), expired);
+
+    let config = evohime_model_gateway::ModelGatewayConfig {
+        default_route: "hive".into(),
+        routes: std::collections::HashMap::from([("hive".into(), route)]),
+    };
+    let preflight = ProviderCatalogRoutePreflight::new(config, cache.clone())
+        .with_quota_journal(journal.clone());
+
+    let sync_err = preflight
+        .check("hive", Some("model-a"), 10_000)
+        .expect_err("sync check stays fail-closed");
+    assert!(matches!(sync_err, ProviderError::Config(code) if code == "provider_catalog_expired"));
+
+    preflight
+        .check_for_request_async("hive", Some("model-a"), false, 10_000)
+        .await
+        .expect("async preflight refreshes expired catalog");
+
+    server.await.expect("server task");
+    let refreshed = cache
+        .read()
+        .expect("cache read")
+        .get(&scope_key)
+        .cloned()
+        .expect("refreshed snapshot in cache");
+    assert_eq!(refreshed.state, ProviderCatalogState::Fresh);
+    assert!(refreshed.expires_at_ms > 10_000);
+    assert!(refreshed.route_eligible_at("model-a", 10_000));
+}

@@ -1642,6 +1642,7 @@ pub(crate) fn free_access_evidence_scope_key(
 pub struct ProviderCatalogRoutePreflight {
     config: evohime_model_gateway::ModelGatewayConfig,
     cache: ProviderCatalogCache,
+    refresh_lock: Arc<tokio::sync::Mutex<()>>,
     quota_journal: Option<crate::EventJournal>,
     free_access_mode: crate::free_access_probe::FreeAccessRoutingMode,
     allow_paid_fallback: bool,
@@ -1658,6 +1659,7 @@ impl ProviderCatalogRoutePreflight {
         Self {
             config,
             cache,
+            refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
             quota_journal: None,
             free_access_mode: crate::free_access_probe::FreeAccessRoutingMode::Any,
             allow_paid_fallback: false,
@@ -1686,6 +1688,100 @@ impl ProviderCatalogRoutePreflight {
         self.free_access_evidence = Some(free_access_evidence);
         self
     }
+
+    async fn refresh_expired_catalog(&self, route: &str, now_ms: u64) {
+        let Some(route_config) = self.config.routes.get(route) else {
+            return;
+        };
+        if matches!(
+            route_config.provider,
+            evohime_model_gateway::providers::ProviderKind::Local
+                | evohime_model_gateway::providers::ProviderKind::Mock
+        ) {
+            return;
+        }
+        let Ok(profile) = ProviderProfile::from_route_config(route_config) else {
+            return;
+        };
+        let _guard = self.refresh_lock.lock().await;
+        let scope_key = provider_catalog_scope_key(&profile);
+        let previous_revision = {
+            let Ok(cache) = self.cache.read() else {
+                return;
+            };
+            if let Some(existing) = cache.get(&scope_key) {
+                if existing.state == ProviderCatalogState::Fresh && now_ms < existing.expires_at_ms
+                {
+                    return;
+                }
+                existing.revision
+            } else {
+                0
+            }
+        };
+        let next_revision = previous_revision.saturating_add(1).max(1);
+        let refresh_at_ms = now_ms;
+        let expires_at_ms = refresh_at_ms.saturating_add(24 * 60 * 60 * 1_000);
+        let snapshot = match evohime_model_gateway::fetch_model_catalog(route_config).await {
+            Ok(entries) => {
+                let catalog_hash =
+                    catalog_content_hash(&entries).unwrap_or_else(|_| "0".repeat(64));
+                ProviderCatalogSnapshot::fresh_from_catalog(
+                    &profile,
+                    &entries,
+                    next_revision,
+                    catalog_hash,
+                    refresh_at_ms,
+                    expires_at_ms,
+                )
+            }
+            Err(error) => {
+                let code = classify_catalog_error(&error);
+                let state = match code {
+                    CatalogFailureCode::DiscoveryUnsupported => {
+                        ProviderCatalogState::DiscoveryUnsupported
+                    }
+                    CatalogFailureCode::CredentialRejected => {
+                        ProviderCatalogState::CredentialRejected
+                    }
+                    _ => {
+                        tracing::warn!(
+                            target: "model.catalog",
+                            route,
+                            error_code = ?code,
+                            "expired provider catalog refresh failed"
+                        );
+                        return;
+                    }
+                };
+                let empty_hash = catalog_content_hash(&[]).unwrap_or_else(|_| "0".repeat(64));
+                ProviderCatalogSnapshot::failure(
+                    &profile,
+                    next_revision,
+                    empty_hash,
+                    state,
+                    code,
+                    refresh_at_ms,
+                    expires_at_ms,
+                )
+            }
+        };
+        let Ok(snapshot) = snapshot else {
+            return;
+        };
+        if let Ok(mut cache) = self.cache.write() {
+            cache.insert(scope_key, snapshot.clone());
+        }
+        if let Some(journal) = &self.quota_journal {
+            if let Ok(record) = snapshot.to_storage_record(&profile) {
+                let database = journal.database().lock().await;
+                let _ = evohime_local_storage::provider_profile_catalog_store::put(
+                    database.connection(),
+                    &record,
+                );
+            }
+        }
+    }
 }
 
 impl RoutePreflight for ProviderCatalogRoutePreflight {
@@ -1712,7 +1808,14 @@ impl RoutePreflight for ProviderCatalogRoutePreflight {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ProviderError>> + Send + 'a>>
     {
         Box::pin(async move {
-            self.check_with_requirements(route, model, requires_tool_calls, now_ms)?;
+            match self.check_with_requirements(route, model, requires_tool_calls, now_ms) {
+                Ok(()) => {}
+                Err(ProviderError::Config(code)) if code == "provider_catalog_expired" => {
+                    self.refresh_expired_catalog(route, now_ms).await;
+                    self.check_with_requirements(route, model, requires_tool_calls, now_ms)?;
+                }
+                Err(error) => return Err(error),
+            }
             self.check_token_quota(route, model, now_ms).await
         })
     }
