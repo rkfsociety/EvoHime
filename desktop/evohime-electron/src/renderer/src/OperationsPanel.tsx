@@ -3137,7 +3137,8 @@ export function HiveDashboard({
     () => isQueenThinking(hiveChatEvents, pendingTaskIds, sendingMessage, activeApprovalTaskIds, typingWatchdogExpiredTaskIds),
     [activeApprovalTaskIds, hiveChatEvents, pendingTaskIds, sendingMessage, typingWatchdogExpiredTaskIds]
   )
-  const queenWorking = queenTyping && !paused && !waitingApproval
+  const hasActiveHiveAgents = (hive?.activeAgents.length ?? 0) > 0
+  const queenWorking = (queenTyping || hasActiveHiveAgents) && !paused && !waitingApproval
   const queenActivity = useMemo(
     () => (queenTyping ? queenCurrentActivity(hiveChatEvents) : ''),
     [hiveChatEvents, queenTyping]

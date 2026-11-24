@@ -560,3 +560,10 @@ ownership store или blind retry не добавляются.
 незавершённых workflow-запусков: иначе он сохраняется, чтобы запущенные
 королевой дочерние агенты могли дочитать тот же каталог. Dirty worktree
 сохраняется всегда. В обычных чатах `eva_workspace_root` и профиль `queen` отключены.
+
+## Королева-маршрутизатор и динамические ролевые агенты
+
+Королева (`hive_world && agent_depth == 0`) работает как чистый маршрутизатор и оркестратор: прямые `filesystem_*`, `git_*`, `shell_execute` и `browser_*` инструменты исключены из её каталога, а `delivery_requirements` не деградируют и закрываются структурированными отчётами дочерних ролей:
+
+- **`hive_delegate_agent`** запускает специализированную роль (`researcher`, `planner`, `architect`, `implementer`, `tester`, `reviewer`, `releaser` или зарегистрированную пользовательскую роль) на глубине `1`. Read-only роли выполняются в изолированной read-only сессии; изменяющие, тестовые и релизные роли наследуют `session_id` Королевы, требуют непустой `plan_summary` (выводимый в `ApprovalRequired` при первом подтверждении плана) и записывают проекции `child.workflow` (`running` → `accepted`/`failed`) в журнал Core для отображения активных агентов в `HiveStateSnapshot`.
+- **`hive_register_role`** регистрирует новую специализированную роль и её сектор в `persistent_agents` SQLite (`PersistentAgent`), после чего она сразу доступна для `hive_delegate_agent` и попадает в `departments` 3D-города Улья.

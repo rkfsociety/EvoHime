@@ -1833,6 +1833,7 @@ fn capability_name_is_bounded(capability: &str) -> bool {
             | "workspace.write"
             | "git_diff"
             | "git_status"
+            | "git_commit"
             | "test.execute"
     )
 }
@@ -1841,7 +1842,8 @@ fn role_allows_capability(role: &str, capability: &str) -> bool {
     match role {
         "implementer" => !matches!(capability, "test.execute" | "git_commit" | "git_push"),
         "tester" => !matches!(capability, "workspace.write" | "git_commit" | "git_push"),
-        "researcher" | "reviewer" | "coordinator" => !matches!(
+        "releaser" => !matches!(capability, "workspace.write" | "test.execute" | "git_push"),
+        "researcher" | "reviewer" | "coordinator" | "planner" | "architect" => !matches!(
             capability,
             "workspace.write" | "test.execute" | "git_commit" | "git_push"
         ),

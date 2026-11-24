@@ -289,6 +289,18 @@ impl ToolRegistry {
             timeout: tools::agent::TIMEOUT,
         });
         registry.register(ToolDefinition {
+            name: tools::agent::HIVE_DELEGATE_NAME,
+            description: tools::agent::HIVE_DELEGATE_DESCRIPTION,
+            permissions: tools::agent::PERMISSIONS,
+            timeout: tools::agent::TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::agent::HIVE_REGISTER_ROLE_NAME,
+            description: tools::agent::HIVE_REGISTER_ROLE_DESCRIPTION,
+            permissions: tools::agent::PERMISSIONS,
+            timeout: tools::agent::TIMEOUT,
+        });
+        registry.register(ToolDefinition {
             name: tools::filesystem::NAME,
             description: tools::filesystem::DESCRIPTION,
             permissions: tools::filesystem::PERMISSIONS,
@@ -997,7 +1009,9 @@ impl ToolRegistry {
                 tools::memory::NAME => tools::memory::execute(ctx, input).await,
                 tools::goal::CREATE_NAME => tools::goal::execute_create(ctx, input).await,
                 tools::goal::NAME => tools::goal::execute(ctx, input).await,
-                tools::agent::NAME => tools::agent::execute(ctx, input).await,
+                tools::agent::NAME
+                | tools::agent::HIVE_DELEGATE_NAME
+                | tools::agent::HIVE_REGISTER_ROLE_NAME => tools::agent::execute(ctx, input).await,
                 tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
                 tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
                 tools::browser_session::NAVIGATE_NAME => {
@@ -1175,7 +1189,9 @@ impl ToolRegistry {
                 tools::memory::NAME => tools::memory::execute(ctx, input).await,
                 tools::goal::CREATE_NAME => tools::goal::execute_create(ctx, input).await,
                 tools::goal::NAME => tools::goal::execute(ctx, input).await,
-                tools::agent::NAME => tools::agent::execute(ctx, input).await,
+                tools::agent::NAME
+                | tools::agent::HIVE_DELEGATE_NAME
+                | tools::agent::HIVE_REGISTER_ROLE_NAME => tools::agent::execute(ctx, input).await,
                 tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
                 tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
                 tools::browser_session::NAVIGATE_NAME => {

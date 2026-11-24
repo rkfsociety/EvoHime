@@ -85,6 +85,17 @@ pub struct ConversationExecutionContext {
     /// `agent_run` refuses to start another subagent once the limit is reached,
     /// so a model cannot build an unbounded recursion chain.
     pub agent_depth: u32,
+    /// Optional Hive child role assigned by `hive_delegate_agent`
+    /// (e.g., `"researcher"`, `"planner"`, `"implementer"`, `"tester"`, `"reviewer"`, `"releaser"`).
+    pub child_role: Option<String>,
+    /// Optional explicit allowlist of tool names for a delegated Hive child agent.
+    pub child_allowed_tools: Option<Vec<String>>,
+    /// Optional parent permission session ID inherited by a delegated Hive child agent
+    /// so one user approval covers the delegated steps in the same task.
+    pub inherited_permission_session_id: Option<uuid::Uuid>,
+    /// Optional human-readable plan summary shown in `ApprovalRequired` previews
+    /// when a delegated child requests a protected action.
+    pub child_plan_summary: Option<String>,
 }
 
 /// Coordinates one-shot user approvals for protected agent actions.
@@ -1098,6 +1109,8 @@ mod strategy_provenance_projection_tests {
 mod context;
 #[path = "core_agent_execution.rs"]
 mod execution;
+#[path = "hive_delegation.rs"]
+mod hive_delegation;
 #[path = "core_agent_memory.rs"]
 mod memory;
 #[path = "core_agent_receipts.rs"]

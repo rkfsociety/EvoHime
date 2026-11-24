@@ -594,10 +594,17 @@ export function HiveCityScene({
     const total = ordered.reduce((sum, item) => sum + Math.max(1, item.maxCapacity), 0)
     const lots: HiveCityHouseLot[] = []
     let slot = 0
+    let fallbackColorIndex = 0
     for (const department of ordered) {
       const capacity = Math.max(1, department.maxCapacity)
+      const mappedAccent = DEPARTMENT_COORDS[department.key]?.accent
       const accent =
-        DEPARTMENT_COORDS[department.key]?.accent ?? FALLBACK_COORDS[0]?.accent ?? '#8d82e8'
+        mappedAccent ??
+        FALLBACK_COORDS[fallbackColorIndex % FALLBACK_COORDS.length]?.accent ??
+        '#8d82e8'
+      if (!mappedAccent) {
+        fallbackColorIndex += 1
+      }
       for (let index = 0; index < capacity; index += 1) {
         lots.push({
           departmentKey: department.key,

@@ -733,33 +733,37 @@ impl ToolAgent {
         execution_context: ConversationExecutionContext,
     ) -> Result<String, AgentRunError> {
         let hive_world = execution_context.preferred_route_hint.as_deref() == Some("hive");
-        let run_permission_session_id = if execution_context.read_only_subagent {
-            // A subagent gets its own session that allows reading only. The
-            // Hive/global mode may permit writes or approvals and must not leak
-            // into background delegation.
-            let session_id = uuid::Uuid::new_v4();
-            apply_read_only_subagent_modes(self.tools.permissions(), session_id).await;
-            Some(session_id)
-        } else if hive_world {
-            let session_id = uuid::Uuid::new_v4();
-            for (permission, mode) in crate::hive_permission_session::modes() {
-                self.tools
-                    .permissions()
-                    .set_session_mode(session_id, permission, mode)
-                    .await;
-            }
-            Some(session_id)
-        } else {
-            let session_id = uuid::Uuid::new_v4();
-            if let Some(mode) = execution_context
-                .session_binding
-                .as_ref()
-                .and_then(|binding| binding.permission_mode)
-            {
-                apply_session_permission_mode(self.tools.permissions(), session_id, mode).await;
-            }
-            Some(session_id)
-        };
+        let owns_permission_session = execution_context.inherited_permission_session_id.is_none();
+        let run_permission_session_id =
+            if let Some(inherited) = execution_context.inherited_permission_session_id {
+                Some(inherited)
+            } else if execution_context.read_only_subagent {
+                // A subagent gets its own session that allows reading only. The
+                // Hive/global mode may permit writes or approvals and must not leak
+                // into background delegation.
+                let session_id = uuid::Uuid::new_v4();
+                apply_read_only_subagent_modes(self.tools.permissions(), session_id).await;
+                Some(session_id)
+            } else if hive_world {
+                let session_id = uuid::Uuid::new_v4();
+                for (permission, mode) in crate::hive_permission_session::modes() {
+                    self.tools
+                        .permissions()
+                        .set_session_mode(session_id, permission, mode)
+                        .await;
+                }
+                Some(session_id)
+            } else {
+                let session_id = uuid::Uuid::new_v4();
+                if let Some(mode) = execution_context
+                    .session_binding
+                    .as_ref()
+                    .and_then(|binding| binding.permission_mode)
+                {
+                    apply_session_permission_mode(self.tools.permissions(), session_id, mode).await;
+                }
+                Some(session_id)
+            };
         let result = self
             .run_once_inner(
                 task_id,
@@ -771,8 +775,10 @@ impl ToolAgent {
                 run_permission_session_id,
             )
             .await;
-        if let Some(session_id) = run_permission_session_id {
-            self.tools.permissions().clear_session(session_id).await;
+        if owns_permission_session {
+            if let Some(session_id) = run_permission_session_id {
+                self.tools.permissions().clear_session(session_id).await;
+            }
         }
         result
     }
@@ -797,6 +803,10 @@ impl ToolAgent {
             session_binding,
             read_only_subagent,
             agent_depth,
+            child_role,
+            child_allowed_tools,
+            inherited_permission_session_id: _,
+            child_plan_summary,
         } = execution_context;
         let session_route_pin = if let Some(binding) = session_binding.as_ref() {
             self.gateway
@@ -825,6 +835,7 @@ impl ToolAgent {
             .to_owned();
         // World boundary: Hive and chat tasks never share memory scopes.
         let hive_world = preferred_route.as_deref() == Some("hive");
+        let is_hive_queen = hive_world && agent_depth == 0 && child_role.is_none();
         let task_id = task_id.into();
         let prompt = prompt.into();
         let task_uuid = match crate::eva_pulse_boundary::parse_hive_task_uuid(&task_id) {
@@ -880,6 +891,43 @@ impl ToolAgent {
         let self_development_intent = eva_workspace_isolated
             && (prompt.contains("eva_workspace_") || prompt.contains("eva_self_development"));
         for tool in self.tools.list() {
+            if let Some(ref allowed) = child_allowed_tools {
+                if !allowed.iter().any(|name| name == tool.name) {
+                    preflight.push((
+                        tool.name,
+                        Ok(evohime_tool_runtime::ToolPreflightDecision::Denied(
+                            evohime_permissions::Permission::ShellExecute,
+                        )),
+                    ));
+                    continue;
+                }
+            }
+            if !is_hive_queen
+                && matches!(
+                    tool.name,
+                    evohime_tool_runtime::agent::HIVE_DELEGATE_NAME
+                        | evohime_tool_runtime::agent::HIVE_REGISTER_ROLE_NAME
+                )
+            {
+                preflight.push((
+                    tool.name,
+                    Ok(evohime_tool_runtime::ToolPreflightDecision::Denied(
+                        evohime_permissions::Permission::ShellExecute,
+                    )),
+                ));
+                continue;
+            }
+            if is_hive_queen && super::hive_delegation::queen_excluded_direct_tool(tool.name) {
+                // Queen is a pure router/orchestrator and delegates workspace,
+                // shell, git and browser work to specialized child roles.
+                preflight.push((
+                    tool.name,
+                    Ok(evohime_tool_runtime::ToolPreflightDecision::Denied(
+                        evohime_permissions::Permission::ShellExecute,
+                    )),
+                ));
+                continue;
+            }
             if read_only_subagent && !subagent_tool_allowed(tool.name) {
                 // A subagent may not widen its own surface with workflow,
                 // delegation, network, browser, app or kernel tools.
@@ -982,6 +1030,10 @@ impl ToolAgent {
             required_ids.push("goal_create");
         }
         required_ids.push("goal_verify");
+        if is_hive_queen {
+            required_ids.push(evohime_tool_runtime::agent::HIVE_DELEGATE_NAME);
+            required_ids.push(evohime_tool_runtime::agent::HIVE_REGISTER_ROLE_NAME);
+        }
         if mutation_authorized {
             required_ids.extend_from_slice(FULL_ACCESS_WORKING_SET);
         }
@@ -1076,7 +1128,13 @@ impl ToolAgent {
         // Core never refuses a task because a tool is missing: requirements that
         // the granted session cannot satisfy are dropped, the model keeps the
         // tools it actually has, and the drop is visible in the trace.
-        let dropped_requirements = delivery_requirements.degrade_unavailable(&tool_names);
+        // The Hive Queen delegates workspace/test/commit steps to child roles,
+        // so her delivery requirements remain active and are satisfied by role reports.
+        let dropped_requirements = if is_hive_queen {
+            Vec::new()
+        } else {
+            delivery_requirements.degrade_unavailable(&tool_names)
+        };
         if !dropped_requirements.is_empty() {
             write_model_trace(
                 "task.delivery_requirements_degraded",
@@ -2437,6 +2495,25 @@ impl ToolAgent {
                             return Err(AgentRunError::Cancelled);
                         }
                         result
+                    } else if call.name == evohime_tool_runtime::agent::HIVE_DELEGATE_NAME {
+                        let result = self
+                            .execute_hive_delegate_agent(
+                                &context,
+                                &task_id,
+                                session_binding.as_ref(),
+                                hive_world,
+                                events,
+                                input,
+                                &cancellation,
+                            )
+                            .await;
+                        if cancellation.is_cancelled() {
+                            return Err(AgentRunError::Cancelled);
+                        }
+                        result
+                    } else if call.name == evohime_tool_runtime::agent::HIVE_REGISTER_ROLE_NAME {
+                        self.execute_hive_register_role(&context, hive_world, input)
+                            .await
                     } else if call.name == "memory_search" {
                         let result = async {
                             let journal = self.journal.as_ref().ok_or_else(|| {
@@ -2698,6 +2775,16 @@ impl ToolAgent {
                                 input,
                                 preview,
                             } = *details;
+                            let preview = match child_plan_summary.as_deref().map(str::trim) {
+                                Some(summary) if !summary.is_empty() => {
+                                    if preview.trim().is_empty() {
+                                        summary.to_owned()
+                                    } else {
+                                        format!("{summary}\n\n{preview}")
+                                    }
+                                }
+                                _ => preview,
+                            };
                             if let Err(error) = self
                                 .receipt_prepare_approval(ReceiptApprovalInput {
                                     task_id: &task_id,
@@ -2893,6 +2980,47 @@ impl ToolAgent {
                         TOOL_FILESYSTEM_READ | TOOL_FILESYSTEM_SEARCH
                     );
                     research_has_search |= call.name == TOOL_FILESYSTEM_SEARCH;
+                }
+                if call.name == evohime_tool_runtime::agent::HIVE_DELEGATE_NAME && outcome.ok {
+                    let structured = &outcome.structured;
+                    if structured
+                        .get("researched")
+                        .and_then(serde_json::Value::as_bool)
+                        == Some(true)
+                    {
+                        research_observations += 1;
+                        research_has_overview = true;
+                        research_has_content = true;
+                        research_has_search = true;
+                    }
+                    if structured
+                        .get("mutated")
+                        .and_then(serde_json::Value::as_bool)
+                        == Some(true)
+                    {
+                        mutation_done = true;
+                    }
+                    if structured
+                        .get("verified")
+                        .and_then(serde_json::Value::as_bool)
+                        == Some(true)
+                    {
+                        verification_test_passed = true;
+                    }
+                    if structured
+                        .get("diff_checked")
+                        .and_then(serde_json::Value::as_bool)
+                        == Some(true)
+                    {
+                        diff_check_passed = true;
+                    }
+                    if structured
+                        .get("committed")
+                        .and_then(serde_json::Value::as_bool)
+                        == Some(true)
+                    {
+                        commit_done = true;
+                    }
                 }
                 write_model_trace(
                     "tool.output",

@@ -141,6 +141,31 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"prompt":string("Task prompt"),"max_steps":integer(),"timeout_ms":integer(),"model_route":string("Optional model route")}),
             &["prompt"],
         ),
+        "hive_delegate_agent" => object(
+            serde_json::json!({
+                "role": string("Worker role (researcher, planner, implementer, tester, reviewer, releaser, architect, or custom role)"),
+                "prompt": string("Clear task instructions for the worker"),
+                "department": string("Optional sector/department identifier"),
+                "plan_summary": string("User-facing summary of the plan required before mutating/test steps"),
+                "scope": string("Optional target files or module scope"),
+                "acceptance_criteria": {"type": "array", "items": string("Verifiable completion criterion")},
+                "max_steps": integer(),
+                "timeout_ms": integer(),
+                "model_route": string("Optional model route")
+            }),
+            &["role", "prompt"],
+        ),
+        "hive_register_role" => object(
+            serde_json::json!({
+                "role": string("Lowercase role id [a-z0-9_-]"),
+                "display_name": string("Human-readable sector/role name"),
+                "department": string("Department or sector id"),
+                "objective": string("Role objective"),
+                "capabilities": {"type": "array", "items": string("Requested capability (workspace.read, workspace.search, workspace.write, test.execute, git_status, git_diff, git_commit)")},
+                "strategy": string("Optional strategy description")
+            }),
+            &["role", "display_name", "department", "objective"],
+        ),
         "memory_search" => object(
             serde_json::json!({"query":string("Search query"),"limit":integer()}),
             &["query"],

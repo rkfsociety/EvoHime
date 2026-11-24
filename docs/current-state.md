@@ -9,7 +9,7 @@ release-gates и результаты отдельных завершённых 
 
 ## Улей (Hive / EvaPulse)
 
-Улей реализован как Core-owned контур Королевы, child-агентов и отдельного
+Улей реализован как Core-owned контур Королевы-маршрутизатора, специализированных child-агентов (`hive_delegate_agent` / `hive_register_role`) и отдельного
 системного чата `hive-system-chat`; обычные чаты не попадают в Hive snapshot.
 EvaPulse — независимый фоновый daemon: он читает journal observations, соблюдает
 бюджет и изолированный каскад `hive` → `hive_fallback` → `Sleep`, а валидированные
