@@ -128,9 +128,7 @@ fn control_update(args: &[String]) -> ExitCode {
         &|message, percent, download| {
             let now = std::time::Instant::now();
             let (telemetry, should_write) =
-                telemetry_state
-                    .borrow_mut()
-                    .record(now, percent, download);
+                telemetry_state.borrow_mut().record(now, percent, download);
             if should_write {
                 write_status_with_telemetry(
                     &data_dir,
@@ -1252,7 +1250,11 @@ fn apply_updates_inner(
         progress("shell-host подготовлен", 100, None);
     }
     if let Some(update) = updates.iter().find(|update| update.module == "ui-bundle") {
-        progress("Скачивание ui-bundle", 0, Some(("ui-bundle", 0, update.size)));
+        progress(
+            "Скачивание ui-bundle",
+            0,
+            Some(("ui-bundle", 0, update.size)),
+        );
         download_verified_file(
             &client,
             update,
