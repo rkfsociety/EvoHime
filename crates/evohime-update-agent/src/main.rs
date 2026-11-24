@@ -134,7 +134,12 @@ fn control_update(args: &[String]) -> ExitCode {
                 &updates,
             );
         } else {
-            write_status(&data_dir, "available", "Доступны обновления модулей.", &updates);
+            write_status(
+                &data_dir,
+                "available",
+                "Доступны обновления модулей.",
+                &updates,
+            );
         }
         return ExitCode::SUCCESS;
     }
@@ -160,20 +165,21 @@ fn control_update(args: &[String]) -> ExitCode {
             &updates,
         );
         let telemetry_state = std::cell::RefCell::new(DownloadTelemetryState::default());
-        let result = stage_updates_into_cache(&data_dir, &updates, &|message, percent, download| {
-            let now = std::time::Instant::now();
-            let (telemetry, should_write) =
-                telemetry_state.borrow_mut().record(now, percent, download);
-            if should_write {
-                write_status_with_telemetry(
-                    &data_dir,
-                    "preparing",
-                    &format!("{message} — {percent}%"),
-                    &updates,
-                    telemetry,
-                );
-            }
-        });
+        let result =
+            stage_updates_into_cache(&data_dir, &updates, &|message, percent, download| {
+                let now = std::time::Instant::now();
+                let (telemetry, should_write) =
+                    telemetry_state.borrow_mut().record(now, percent, download);
+                if should_write {
+                    write_status_with_telemetry(
+                        &data_dir,
+                        "preparing",
+                        &format!("{message} — {percent}%"),
+                        &updates,
+                        telemetry,
+                    );
+                }
+            });
         return match result {
             Ok(_) => {
                 write_status(
@@ -185,7 +191,12 @@ fn control_update(args: &[String]) -> ExitCode {
                 ExitCode::SUCCESS
             }
             Err(error) => {
-                write_status(&data_dir, "available", "Доступны обновления модулей.", &updates);
+                write_status(
+                    &data_dir,
+                    "available",
+                    "Доступны обновления модулей.",
+                    &updates,
+                );
                 fail(error)
             }
         };
@@ -1309,7 +1320,10 @@ fn read_staged_cache_manifest(staging: &Path) -> StagedCacheManifest {
         })
 }
 
-fn write_staged_cache_manifest(staging: &Path, manifest: &StagedCacheManifest) -> Result<(), String> {
+fn write_staged_cache_manifest(
+    staging: &Path,
+    manifest: &StagedCacheManifest,
+) -> Result<(), String> {
     let path = staging.join(STAGED_CACHE_FILE);
     let temp = staging.join(format!("{STAGED_CACHE_FILE}.tmp"));
     let bytes = serde_json::to_vec_pretty(manifest).map_err(|error| error.to_string())?;
@@ -1518,13 +1532,18 @@ fn stage_updates_into_cache(
                 progress_percent(completed_bytes, total_bytes),
                 Some((&update.module, completed_bytes, total_bytes)),
             );
-            download_verified_file(&client, update, &work.join(&update.artifact), |downloaded| {
-                progress(
-                    &format!("Скачивание {}", update.module),
-                    progress_percent(completed_bytes + downloaded, total_bytes),
-                    Some((&update.module, completed_bytes + downloaded, total_bytes)),
-                )
-            })?;
+            download_verified_file(
+                &client,
+                update,
+                &work.join(&update.artifact),
+                |downloaded| {
+                    progress(
+                        &format!("Скачивание {}", update.module),
+                        progress_percent(completed_bytes + downloaded, total_bytes),
+                        Some((&update.module, completed_bytes + downloaded, total_bytes)),
+                    )
+                },
+            )?;
             completed_bytes += update.size;
             progress(
                 &format!("Скачан {}", update.module),
@@ -1538,13 +1557,18 @@ fn stage_updates_into_cache(
                 0,
                 Some(("shell-host", 0, update.size)),
             );
-            download_verified_file(&client, update, &work.join("shell-host.zip"), |downloaded| {
-                progress(
-                    "Скачивание shell-host",
-                    progress_percent(downloaded, update.size),
-                    Some(("shell-host", downloaded, update.size)),
-                )
-            })?;
+            download_verified_file(
+                &client,
+                update,
+                &work.join("shell-host.zip"),
+                |downloaded| {
+                    progress(
+                        "Скачивание shell-host",
+                        progress_percent(downloaded, update.size),
+                        Some(("shell-host", downloaded, update.size)),
+                    )
+                },
+            )?;
             extract_shell_host(&work.join("shell-host.zip"), &work.join("shell-host"))?;
             progress("shell-host подготовлен", 100, None);
         }

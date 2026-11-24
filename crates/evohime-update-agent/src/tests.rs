@@ -1100,7 +1100,9 @@ fn staged_cache_validates_matching_artifacts_and_rejects_stale_versions() {
         installed: "0.1.0".to_owned(),
         available: "0.2.0".to_owned(),
         artifact: "evohime-core.exe".to_owned(),
-        download_url: "https://github.com/rkfsociety/EvoHime/releases/download/v0.2.0/evohime-core.exe".to_owned(),
+        download_url:
+            "https://github.com/rkfsociety/EvoHime/releases/download/v0.2.0/evohime-core.exe"
+                .to_owned(),
         sha256: sha256.clone(),
         size,
         summary: String::new(),
@@ -1124,7 +1126,10 @@ fn staged_cache_validates_matching_artifacts_and_rejects_stale_versions() {
     )
     .expect("write staged manifest");
 
-    assert!(all_updates_already_staged(&staging, std::slice::from_ref(&candidate)));
+    assert!(all_updates_already_staged(
+        &staging,
+        std::slice::from_ref(&candidate)
+    ));
 
     let newer_candidate = UpdateCandidate {
         available: "0.3.0".to_owned(),
@@ -1149,7 +1154,9 @@ fn prune_stale_staged_entries_keeps_active_artifacts_and_removes_old_ones() {
         installed: "0.1.0".to_owned(),
         available: "0.2.0".to_owned(),
         artifact: "evohime-core.exe".to_owned(),
-        download_url: "https://github.com/rkfsociety/EvoHime/releases/download/v0.2.0/evohime-core.exe".to_owned(),
+        download_url:
+            "https://github.com/rkfsociety/EvoHime/releases/download/v0.2.0/evohime-core.exe"
+                .to_owned(),
         sha256: "0".repeat(64),
         size: 3,
         summary: String::new(),

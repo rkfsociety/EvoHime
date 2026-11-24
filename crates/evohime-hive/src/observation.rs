@@ -13,8 +13,8 @@ use evohime_model_gateway::{ModelGatewayConfig, ProviderProfileId};
 use serde::{Deserialize, Serialize};
 
 use crate::state::{
-    custom_daily_cost_nano_usd, deepseek_daily_cost_nano_usd, quota_window_start_ms,
-    HiveObservation, HIVE_DAY_WINDOW_MS, HIVE_HOUR_WINDOW_MS, HIVE_MINUTE_WINDOW_MS,
+    custom_daily_cost_nano_usd, deepseek_daily_cost_nano_usd, HiveObservation, HIVE_DAY_WINDOW_MS,
+    HIVE_HOUR_WINDOW_MS, HIVE_MINUTE_WINDOW_MS,
 };
 
 /// Bounded replay window used for the hive projection.

@@ -2203,17 +2203,16 @@ mod tests {
     async fn session_binding_isolates_parallel_permission_modes() {
         use crate::{ConversationExecutionContext, SessionBinding};
         use evohime_model_gateway::{
-            providers::{ChatFuture, ChatMessage, ModelProvider, ProviderKind, TokenStream},
+            providers::{
+                ChatFuture, ChatMessage, ChatRole, ModelProvider, ProviderKind, TokenStream,
+            },
             tools::{ChatResult, ToolSpec},
         };
         use evohime_permissions::{
             Permission, PermissionDecision, PermissionEngine, PermissionMode,
         };
-        use std::sync::atomic::{AtomicUsize, Ordering};
 
-        struct WriteOnceProvider {
-            calls: AtomicUsize,
-        }
+        struct WriteOnceProvider;
 
         impl ModelProvider for WriteOnceProvider {
             fn kind(&self) -> ProviderKind {
@@ -2235,18 +2234,26 @@ mod tests {
             fn chat_with_tools(
                 &self,
                 _model: Option<&str>,
-                _messages: &[ChatMessage],
+                messages: &[ChatMessage],
                 _tools: &[ToolSpec],
             ) -> ChatFuture {
-                let count = self.calls.fetch_add(1, Ordering::SeqCst);
+                let already_called_tool = messages
+                    .iter()
+                    .any(|message| message.role == ChatRole::Tool);
+                let target = if messages.iter().any(|message| {
+                    message.role == ChatRole::User && message.content.contains("a.txt")
+                }) {
+                    "a.txt"
+                } else {
+                    "b.txt"
+                };
                 Box::pin(async move {
-                    if count < 2 {
-                        let target = if count == 0 { "a.txt" } else { "b.txt" };
+                    if !already_called_tool {
                         Ok(ChatResult {
                             content: String::new(),
                             thinking: None,
                             tool_calls: vec![NativeToolCall {
-                                id: format!("call-{count}"),
+                                id: format!("call-{target}"),
                                 name: "write_file".into(),
                                 arguments: serde_json::json!({
                                     "path": target,
@@ -2274,9 +2281,7 @@ mod tests {
         let tools = Arc::new(ToolRegistry::bootstrap_with_permissions(
             permissions.clone(),
         ));
-        let gateway = Arc::new(ModelGateway::from_provider(Arc::new(WriteOnceProvider {
-            calls: AtomicUsize::new(0),
-        })));
+        let gateway = Arc::new(ModelGateway::from_provider(Arc::new(WriteOnceProvider)));
         let agent = ToolAgent::new(gateway, tools);
         let workspace = std::env::temp_dir().join(format!(
             "evohime-session-isolation-perms-{}",

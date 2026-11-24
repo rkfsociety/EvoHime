@@ -276,7 +276,9 @@ fn resolve_route_snapshot_with_redaction_fallback(
                 routing_request.required_privacy = PrivacyClass::Internal.max(redacted_privacy);
                 let hash = gateway
                     .provenance_route_snapshot_hash_with_model(routing_request, selected_model)
-                    .map_err(|err| AgentRunError::Provider(ProviderError::Config(err.to_string())))?;
+                    .map_err(|err| {
+                        AgentRunError::Provider(ProviderError::Config(err.to_string()))
+                    })?;
                 Ok((hash, Some(redacted)))
             } else {
                 Err(AgentRunError::Provider(ProviderError::Config(error_text)))
@@ -1894,11 +1896,12 @@ mod prompt_strategy_fanout_tests {
                 "test-model",
             ),
         );
-        let gateway = ModelGateway::from_config(&evohime_model_gateway::config::ModelGatewayConfig {
-            default_route: "hive".to_owned(),
-            routes,
-        })
-        .expect("gateway");
+        let gateway =
+            ModelGateway::from_config(&evohime_model_gateway::config::ModelGatewayConfig {
+                default_route: "hive".to_owned(),
+                routes,
+            })
+            .expect("gateway");
         let messages = vec![ChatMessage::text(
             ChatRole::Tool,
             "Contact: alice@example.com",
@@ -1943,11 +1946,12 @@ mod prompt_strategy_fanout_tests {
                 "test-model",
             ),
         );
-        let gateway = ModelGateway::from_config(&evohime_model_gateway::config::ModelGatewayConfig {
-            default_route: "hive".to_owned(),
-            routes,
-        })
-        .expect("gateway");
+        let gateway =
+            ModelGateway::from_config(&evohime_model_gateway::config::ModelGatewayConfig {
+                default_route: "hive".to_owned(),
+                routes,
+            })
+            .expect("gateway");
         let messages = vec![ChatMessage::text(
             ChatRole::Tool,
             "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----",
