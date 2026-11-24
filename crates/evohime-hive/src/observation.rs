@@ -241,10 +241,16 @@ pub async fn build_hive_observation_for_hive(
     observation.hour_cap = limits.rph;
     observation.day_cap = limits.rpd;
 
+    let per_model_limits = route
+        .model_rate_limits
+        .get(&model)
+        .is_some_and(|entry| entry.enabled);
+    let dispatch_model_scope = if per_model_limits { model.as_str() } else { "" };
+
     if let Ok(windows) = journal
         .model_dispatch_windows(
             transport,
-            &model,
+            dispatch_model_scope,
             observation.now_ms,
             HIVE_MINUTE_WINDOW_MS,
             HIVE_HOUR_WINDOW_MS,

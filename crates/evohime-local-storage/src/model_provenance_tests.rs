@@ -331,3 +331,47 @@ fn dispatch_windows_count_attempts_and_return_oldest_timestamp() {
     assert_eq!(counts.last_day, 3);
     assert_eq!(counts.oldest_day_ms, Some(100_000));
 }
+
+#[test]
+fn dispatch_windows_with_empty_model_aggregates_all_models_of_provider() {
+    let db = db();
+    db.execute(
+        "INSERT INTO context_ledger VALUES('l',?1)",
+        ["a".repeat(64)],
+    )
+    .unwrap();
+    let repo = ModelProvenanceRepository::new(&db);
+    for (index, provider, model, at) in [
+        (1, "literouter", "deepseek-v4.1-flash-1017:free", 210_000_i64),
+        (2, "literouter", "glm-5.3-flash-cheap:free", 240_000),
+        (3, "openai_compatible", "gpt-6-luna", 250_000),
+    ] {
+        let mut request = envelope();
+        request.request_id = format!("req-{index}");
+        request.logical_request_id = format!("log-{index}");
+        request.provider = provider.into();
+        request.model = model.into();
+        let record = repo
+            .commit_envelope(&request, CommitMode::FullForDispatch)
+            .unwrap();
+        repo.mark_dispatch(&record.request_id, at).unwrap();
+    }
+
+    let provider_counts = repo
+        .dispatch_windows("literouter", "", 260_000, 60_000, 3_600_000, 86_400_000)
+        .unwrap();
+    assert_eq!(provider_counts.last_minute, 2);
+    assert_eq!(provider_counts.oldest_minute_ms, Some(210_000));
+
+    let single_model_counts = repo
+        .dispatch_windows(
+            "literouter",
+            "deepseek-v4.1-flash-1017:free",
+            260_000,
+            60_000,
+            3_600_000,
+            86_400_000,
+        )
+        .unwrap();
+    assert_eq!(single_model_counts.last_minute, 1);
+}

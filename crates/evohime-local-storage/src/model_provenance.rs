@@ -892,15 +892,26 @@ impl<'a> ModelProvenanceRepository<'a> {
         hour_window_ms: i64,
         day_window_ms: i64,
     ) -> Result<DispatchWindowCounts> {
+        let trimmed_model = model.trim();
         let window = |span: i64| -> Result<(u64, Option<i64>)> {
             let from = now_ms.saturating_sub(span.max(0));
-            let row: (i64, Option<i64>) = self.connection.query_row(
-                "SELECT COUNT(*), MIN(dispatch_at) FROM model_requests
-                 WHERE provider=?1 AND model=?2 AND dispatch_at IS NOT NULL
-                   AND dispatch_at >= ?3 AND dispatch_at <= ?4",
-                params![provider, model, from, now_ms],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )?;
+            let row: (i64, Option<i64>) = if trimmed_model.is_empty() {
+                self.connection.query_row(
+                    "SELECT COUNT(*), MIN(dispatch_at) FROM model_requests
+                     WHERE provider=?1 AND dispatch_at IS NOT NULL
+                       AND dispatch_at >= ?2 AND dispatch_at <= ?3",
+                    params![provider, from, now_ms],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )?
+            } else {
+                self.connection.query_row(
+                    "SELECT COUNT(*), MIN(dispatch_at) FROM model_requests
+                     WHERE provider=?1 AND model=?2 AND dispatch_at IS NOT NULL
+                       AND dispatch_at >= ?3 AND dispatch_at <= ?4",
+                    params![provider, trimmed_model, from, now_ms],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )?
+            };
             Ok((row.0.max(0) as u64, row.1))
         };
         let (last_minute, oldest_minute_ms) = window(minute_window_ms)?;
