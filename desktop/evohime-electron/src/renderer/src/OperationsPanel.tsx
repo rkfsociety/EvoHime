@@ -883,8 +883,18 @@ const HIVE_INTERVALS = [1000, 2000, 5000, 10000] as const
 const HIVE_PREFERENCE_KEY = 'evohime.hive.dashboard.v1'
 const QUEEN_TYPING_WATCHDOG_MS = 60_000
 
+const MAX_CLEARED_UI_IDS = 200
+
 interface HivePreference {
   readonly intervalMs: number
+  readonly clearedLogIds?: readonly string[]
+  readonly clearedChatMessageIds?: readonly string[]
+}
+
+function normalizeClearedIds(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const ids = value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+  return ids.length > 0 ? ids.slice(-MAX_CLEARED_UI_IDS) : undefined
 }
 
 /** Единственный владелец этого состояния — оболочка: это режим отображения. */
@@ -898,7 +908,13 @@ function loadHivePreference(): HivePreference {
     const interval = typeof record['intervalMs'] === 'number' && (HIVE_INTERVALS as readonly number[]).includes(record['intervalMs'])
       ? record['intervalMs']
       : 2000
-    return { intervalMs: interval }
+    const clearedLogIds = normalizeClearedIds(record['clearedLogIds'])
+    const clearedChatMessageIds = normalizeClearedIds(record['clearedChatMessageIds'])
+    return {
+      intervalMs: interval,
+      ...(clearedLogIds ? { clearedLogIds } : {}),
+      ...(clearedChatMessageIds ? { clearedChatMessageIds } : {})
+    }
   } catch {
     return { intervalMs: 2000 }
   }
@@ -2968,19 +2984,34 @@ export function HiveDashboard({
       : fallbackLabel
         ? `${translate('Резерв:')} ${fallbackLabel}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} ${translate('токенов')})` : ''}${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
         : null
+  const clearedLogIdSet = useMemo(
+    () => new Set(preference.clearedLogIds ?? []),
+    [preference.clearedLogIds]
+  )
+  const clearedChatMessageIdSet = useMemo(
+    () => new Set(preference.clearedChatMessageIds ?? []),
+    [preference.clearedChatMessageIds]
+  )
   const realLogs = hiveLogEntries(hiveEvents, observedAt, observedAtMs, allLogs ? 40 : 6, allLogs, hiveChatTaskIds, observedAtForHiveEvent)
-  const logs = realLogs
+  const logs = useMemo(
+    () => realLogs.filter((entry) => !clearedLogIdSet.has(entry.id)),
+    [clearedLogIdSet, realLogs]
+  )
   const activityEvents = [
     ...hiveEvents,
     ...events.filter((event) => event.taskId.startsWith('eva-pulse-')
       && !hiveEvents.some((projected) => projected.taskId === event.taskId
         && projected.sequenceId === event.sequenceId && projected.eventType === event.eventType))
   ]
-  const activity = hiveLogEntries(
+  const rawActivity = hiveLogEntries(
     activityEvents.filter((event) => Boolean(event.taskId) && QUEEN_ACTIVITY_EVENTS.has(event.eventType)
       && (event.eventType !== 'tool.output' || /^(resource not found|tool execution failed|permission denied)/i.test(String(eventBody(event)['output'] ?? '')))),
     observedAt, observedAtMs, 40, true, hiveChatTaskIds, observedAtForHiveEvent
   ).map((entry) => ({ ...entry, text: entry.text.replace(/ · (?:eva-pulse-[\w-]+|task-[\w-]+)$/, '') }))
+  const activity = useMemo(
+    () => rawActivity.filter((entry) => !clearedLogIdSet.has(entry.id)),
+    [clearedLogIdSet, rawActivity]
+  )
   const latestLogId = logs[0]?.id ?? null
   useEffect(() => {
     if (logListRef.current) {
@@ -3029,10 +3060,34 @@ export function HiveDashboard({
     }
     return [...byTask.values()]
   }, [historyPrompts, localPrompts])
-  const hiveChatMessages = useMemo(
+  const rawHiveChatMessages = useMemo(
     () => extractHiveChatMessages(hiveChatEvents, combinedPrompts, 5),
     [combinedPrompts, hiveChatEvents]
   )
+  const hiveChatMessages = useMemo(
+    () => rawHiveChatMessages.filter((message) => !clearedChatMessageIdSet.has(message.id)),
+    [clearedChatMessageIdSet, rawHiveChatMessages]
+  )
+  const clearHiveLogs = useCallback((): void => {
+    const idsToClear = [...logs.map((entry) => entry.id), ...activity.map((entry) => entry.id)]
+    if (idsToClear.length === 0) return
+    setPreference((current) => {
+      const merged = [...new Set([...(current.clearedLogIds ?? []), ...idsToClear])].slice(-MAX_CLEARED_UI_IDS)
+      const next: HivePreference = { ...current, clearedLogIds: merged }
+      saveHivePreference(next)
+      return next
+    })
+  }, [activity, logs])
+  const clearHiveChat = useCallback((): void => {
+    const idsToClear = hiveChatMessages.map((message) => message.id)
+    if (idsToClear.length === 0) return
+    setPreference((current) => {
+      const merged = [...new Set([...(current.clearedChatMessageIds ?? []), ...idsToClear])].slice(-MAX_CLEARED_UI_IDS)
+      const next: HivePreference = { ...current, clearedChatMessageIds: merged }
+      saveHivePreference(next)
+      return next
+    })
+  }, [hiveChatMessages])
   const activeApprovalTaskIds = useMemo(
     () => new Set(effectiveActiveApprovals.map((approval) => approval.taskId).filter(Boolean)),
     [effectiveActiveApprovals]
@@ -3449,6 +3504,16 @@ export function HiveDashboard({
           >
             <div className="hive-panel__head">
               <h3>{translate('Ход работы Королевы')}</h3>
+              <div className="hive-panel__actions">
+                <button
+                  type="button"
+                  className="hive-link-button"
+                  disabled={activity.length === 0 && logs.length === 0}
+                  onClick={clearHiveLogs}
+                >
+                  {translate('Очистить')}
+                </button>
+              </div>
             </div>
             {activity.length ? (
               <ol className="hive-activity-list">
@@ -3479,6 +3544,14 @@ export function HiveDashboard({
                         ? 'Ошибка копирования'
                         : 'Копировать'
                   )}
+                </button>
+                <button
+                  type="button"
+                  className="hive-link-button"
+                  disabled={logs.length === 0 && activity.length === 0}
+                  onClick={clearHiveLogs}
+                >
+                  {translate('Очистить')}
                 </button>
               </div>
             </div>
@@ -3544,6 +3617,14 @@ export function HiveDashboard({
                   <h2>{translate('Диалог с Королевой Евой')}</h2>
                 </div>
                 <div className="hive-panel__actions">
+                  <button
+                    type="button"
+                    className="hive-link-button"
+                    disabled={hiveChatMessages.length === 0}
+                    onClick={clearHiveChat}
+                  >
+                    {translate('Очистить')}
+                  </button>
                   <button
                     type="button"
                     className="hive-link-button"

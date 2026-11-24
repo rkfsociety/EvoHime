@@ -2017,4 +2017,30 @@ describe('hive dashboard', () => {
     expect(screen.getByTestId('hive-city-scene')).toBeTruthy()
   })
 
+  it('ui_clears_hive_logs_and_chat_visually_without_deleting_backend_state', async () => {
+    const events = [
+      event('hive_state.snapshot', snapshot()),
+      event('hive.evolution_dispatched', { task_id: 'eva-pulse-1', items_count: 2 })
+    ]
+
+    render(<HiveDashboard connection="connected" events={events} />)
+
+    const logSection = screen.getByRole('region', { name: 'Логи улья' })
+    expect(within(logSection).getByText(/hive\.evolution_dispatched/)).toBeTruthy()
+    await userEvent.click(within(logSection).getByRole('button', { name: 'Очистить' }))
+    expect(within(logSection).queryByText(/hive\.evolution_dispatched/)).toBeNull()
+    expect(within(logSection).getByText('Событий пока нет.')).toBeTruthy()
+
+    await openQueenChatDrawer()
+    const input = await screen.findByLabelText('Сообщение Королеве Еве')
+    await userEvent.type(input, 'Привет Королева{enter}')
+
+    const chatDrawer = screen.getByRole('complementary', { name: 'Диалог с Королевой Евой' })
+    expect(await within(chatDrawer).findByText('Привет Королева')).toBeTruthy()
+    const callsAfterSend = calls.length
+    await userEvent.click(within(chatDrawer).getByRole('button', { name: 'Очистить' }))
+    expect(within(chatDrawer).queryByText('Привет Королева')).toBeNull()
+    expect(calls.length).toBe(callsAfterSend)
+  })
+
 })
