@@ -108,6 +108,33 @@ describe('sidebar update indicator', () => {
     expect(screen.queryByText('100%')).toBeNull()
   })
 
+  it('renders step status bar, progress bar, and active module progress inside the dialog', () => {
+    installApi()
+    render(
+      <UpdateIndicator
+        status={status({
+          phase: 'applying',
+          message: 'Скачивание core — 46%',
+          downloadProgress: 0.46,
+          steps: initialUpdateSteps().map((step) => ({ ...step, state: 'skipped' as const })),
+          availableModules: ['shell-host', 'core'],
+          installedModules: { 'shell-host': '0.0.000146', core: '0.0.000522' },
+          availableModuleVersions: { 'shell-host': '0.0.000147', core: '0.0.000524' }
+        })}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Прогресс скачивания обновления' }))
+    const progressbar = screen.getByRole('progressbar', { name: 'Прогресс обновления' })
+    expect(progressbar.getAttribute('aria-valuenow')).toBe('46')
+    expect(screen.getByText('Проверка')).toBeTruthy()
+    expect(screen.getByText('Загрузка')).toBeTruthy()
+    expect(screen.getByText('Установка')).toBeTruthy()
+    const coreRow = screen.getByText('core').closest('li')
+    expect(coreRow?.className).toContain('update-confirm__module--active')
+    expect(coreRow?.textContent).toContain('46%')
+  })
+
   it('opens the module version details after the update is ready', () => {
     const invoke = installApi()
     render(<UpdateIndicator status={status({
