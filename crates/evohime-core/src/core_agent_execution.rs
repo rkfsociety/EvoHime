@@ -741,17 +741,15 @@ impl ToolAgent {
             apply_read_only_subagent_modes(self.tools.permissions(), session_id).await;
             Some(session_id)
         } else if !hive_world {
+            let session_id = uuid::Uuid::new_v4();
             if let Some(mode) = execution_context
                 .session_binding
                 .as_ref()
                 .and_then(|binding| binding.permission_mode)
             {
-                let session_id = uuid::Uuid::new_v4();
                 apply_session_permission_mode(self.tools.permissions(), session_id, mode).await;
-                Some(session_id)
-            } else {
-                None
             }
+            Some(session_id)
         } else {
             None
         };
@@ -2752,6 +2750,15 @@ impl ToolAgent {
                                         "approval denied: mutation not performed",
                                     )
                                 } else {
+                                    if !hive_world && !read_only_subagent {
+                                        if let Some(session_id) = context.session_id {
+                                            grant_session_plan_execution_permissions(
+                                                self.tools.permissions(),
+                                                session_id,
+                                            )
+                                            .await;
+                                        }
+                                    }
                                     match self
                                         .receipt_claim_approval(ReceiptClaimInput {
                                             task_id: &task_id,
@@ -3244,13 +3251,35 @@ async fn apply_session_permission_mode(
         Permission::MemorySearch,
     ] {
         let effective = match (mode, permission) {
-            (PermissionMode::Deny, Permission::FilesystemRead | Permission::GitRead) => {
-                PermissionMode::Allow
-            }
+            (
+                PermissionMode::Deny | PermissionMode::Ask,
+                Permission::FilesystemRead | Permission::GitRead,
+            ) => PermissionMode::Allow,
+            (PermissionMode::Ask, Permission::MemorySearch) => PermissionMode::Allow,
             _ => mode,
         };
         permissions
             .set_session_mode(session_id, permission, effective)
+            .await;
+    }
+}
+
+/// После первого подтверждения пользователем изменений в текущей задаче
+/// разрешает дальнейшие правки файлов, git-операции и проверки в рамках
+/// её изолированной `session_id`, не дёргая пользователя на каждый шаг плана.
+async fn grant_session_plan_execution_permissions(
+    permissions: &evohime_permissions::PermissionEngine,
+    session_id: uuid::Uuid,
+) {
+    use evohime_permissions::{Permission, PermissionMode};
+
+    for permission in [
+        Permission::FilesystemWrite,
+        Permission::GitWrite,
+        Permission::ShellExecute,
+    ] {
+        permissions
+            .set_session_mode(session_id, permission, PermissionMode::Allow)
             .await;
     }
 }
@@ -4080,6 +4109,54 @@ mod tests {
             ToolPreflightDecision::ApprovalRequired { .. }
         ));
         assert!(tool_preflight_can_be_offered(&Ok(decision), true));
+    }
+
+    #[tokio::test]
+    async fn ask_session_allows_project_reads_and_unlocks_plan_mutations_after_approval() {
+        use evohime_permissions::{Permission, PermissionMode};
+
+        let permissions = PermissionEngine::new();
+        let session_id = uuid::Uuid::new_v4();
+        apply_session_permission_mode(&permissions, session_id, PermissionMode::Ask).await;
+
+        assert_eq!(
+            permissions
+                .effective_mode(Some(session_id), Permission::FilesystemRead)
+                .await,
+            PermissionMode::Allow
+        );
+        assert_eq!(
+            permissions
+                .effective_mode(Some(session_id), Permission::GitRead)
+                .await,
+            PermissionMode::Allow
+        );
+        assert_eq!(
+            permissions
+                .effective_mode(Some(session_id), Permission::FilesystemWrite)
+                .await,
+            PermissionMode::Ask
+        );
+
+        grant_session_plan_execution_permissions(&permissions, session_id).await;
+        assert_eq!(
+            permissions
+                .effective_mode(Some(session_id), Permission::FilesystemWrite)
+                .await,
+            PermissionMode::Allow
+        );
+        assert_eq!(
+            permissions
+                .effective_mode(Some(session_id), Permission::ShellExecute)
+                .await,
+            PermissionMode::Allow
+        );
+        assert_eq!(
+            permissions
+                .effective_mode(Some(session_id), Permission::GitWrite)
+                .await,
+            PermissionMode::Allow
+        );
     }
 }
 
