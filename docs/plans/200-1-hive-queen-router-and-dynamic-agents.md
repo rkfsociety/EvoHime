@@ -4,8 +4,8 @@
 
 ## Scope и изменяемые контракты
 
-1. **Расширение `ChildRole` (`crates/evohime-core/src/child_roles.rs`):**
-   - Добавить `git.write` в допустимые capabilities для роли `Implementer` (или выделенной релизной роли), чтобы агенты могли завершать цикл коммитом в worktree.
+1. **Расширение `ChildRole` и `child_contracts.rs` (`crates/evohime-core/src/child_roles.rs`, `child_contracts.rs`):**
+   - Сохранить разделение `implementer` (`workspace.write`, без `test.execute`/`git_commit`) и `tester` (`test.execute`), предусмотренное в `child_contracts.rs`, а для коммита в worktree добавить выделенную роль/профиль с `git_commit` (допускается только после принятого отчёта `tester`).
    - Для `ChildRole::Custom` разрешить привязку capability-профиля из `crates/evohime-core/src/agent_role_profiles.rs` вместо жёсткого `["workspace.read", "workspace.search"]`.
 2. **Ролевой инструмент делегирования Королевы (`hive_delegate_agent`):**
    - Обёртка поверх `TypedChildTaskRequest` (`role`, `department`, `prompt`, `scope`, `acceptance_criteria`, `grants`, `plan_summary`).
