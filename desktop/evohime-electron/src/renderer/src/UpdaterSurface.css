@@ -730,24 +730,103 @@ button { font: inherit; }
 
 .updater-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: stretch;
   margin-top: 10px;
 }
 
 .updater-retry-button {
   appearance: none;
-  border: 1px solid rgb(241 143 165 / 42%);
-  background: rgb(241 143 165 / 14%);
-  color: #ffe4ec;
+  width: 100%;
+  border: 1px solid rgb(241 143 165 / 52%);
+  background: linear-gradient(180deg, rgb(241 143 165 / 24%), rgb(241 143 165 / 14%));
+  color: #fff1f5;
   border-radius: 10px;
-  padding: 7px 14px;
-  font-size: 12px;
+  padding: 8px 14px;
+  font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 140ms ease, border-color 140ms ease;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
 }
 
 .updater-retry-button:hover {
-  background: rgb(241 143 165 / 24%);
-  border-color: rgb(241 143 165 / 64%);
+  background: linear-gradient(180deg, rgb(241 143 165 / 32%), rgb(241 143 165 / 20%));
+  border-color: rgb(241 143 165 / 72%);
+}
+
+.updater-retry-button:focus-visible {
+  outline: 2px solid #f18fa5;
+  outline-offset: 2px;
+}
+
+.updater-utility-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.updater-link-button {
+  appearance: none;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.updater-link-button:hover {
+  color: #dbeafe;
+  text-decoration: underline;
+}
+
+.updater-link-button:focus-visible {
+  outline: 2px solid #8d82e8;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.updater-changelog {
+  width: 100%;
+  max-height: 116px;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgb(141 130 232 / 24%);
+  border-radius: 10px;
+  background: rgb(7 9 20 / 72%);
+  text-align: left;
+}
+
+.updater-changelog__group + .updater-changelog__group {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgb(255 255 255 / 7%);
+}
+
+.updater-changelog__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: #e2e8f0;
+  font-size: 11px;
+}
+
+.updater-changelog__title span {
+  color: #7b89ad;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 10px;
+}
+
+.updater-changelog ul {
+  margin: 4px 0 0;
+  padding-left: 14px;
+  color: #a6b4d4;
+  font-size: 11px;
+  line-height: 1.38;
 }

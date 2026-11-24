@@ -188,4 +188,20 @@ describe('updaterUiStatus', () => {
       ['shell-host', 'pending']
     ])
   })
+
+  it('normalizes network download errors into a clear summary while preserving detail and changes', () => {
+    const view = updaterUiStatus(status({
+      phase: 'failed',
+      message: 'updater: download shell-host.zip: HTTP 502 Bad Gateway',
+      error: 'updater: download shell-host.zip: HTTP 502 Bad Gateway',
+      activeModule: 'shell-host',
+      availableModules: ['shell-host'],
+      availableModuleVersions: { 'shell-host': '1.5.0' },
+      availableModuleChanges: { 'shell-host': ['Ускорен запуск окна'] }
+    }))
+
+    expect(view.message).toBe('Не удалось скачать shell-host')
+    expect(view.detail).toBe('updater: download shell-host.zip: HTTP 502 Bad Gateway')
+    expect(view.modules[0]?.changes).toEqual(['Ускорен запуск окна'])
+  })
 })

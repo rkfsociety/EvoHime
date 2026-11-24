@@ -10,6 +10,7 @@ export interface UpdaterUiModule {
   readonly installed: string
   readonly available: string | null
   readonly summary: string
+  readonly changes?: readonly string[]
   readonly state?: UpdaterModuleState
 }
 
@@ -30,6 +31,7 @@ export interface EvoHimeUpdaterApi {
   subscribe(listener: (status: UpdaterUiStatus) => void): () => void
   close(): Promise<void>
   minimize(): Promise<void>
+  hideToTray?(): Promise<void>
   retry?(): Promise<void>
 }
 
@@ -65,13 +67,15 @@ export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
   const installed = status.installedModules ?? {}
   const versions = status.availableModuleVersions ?? {}
   const summaries = status.availableModuleSummaries ?? {}
+  const changesMap = status.availableModuleChanges ?? {}
   const ids = available.length > 0 ? available : DEFAULT_MODULES
   const modules = ids.map((id) => ({
     id,
     label: MODULE_LABELS[id] ?? id,
     installed: installed[id] ?? 'установлено',
     available: versions[id] ?? null,
-    summary: summaries[id] ?? (available.length > 0 ? 'Подготовлено к безопасному обновлению.' : 'Работает в установленной версии.')
+    summary: summaries[id] ?? (available.length > 0 ? 'Подготовлено к безопасному обновлению.' : 'Работает в установленной версии.'),
+    changes: changesMap[id] ?? []
   }))
 
   const percent = phase === 'applying'
@@ -89,6 +93,10 @@ export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
   const activeModuleId = status.activeModule ?? (downloading ? extractDownloadModule(strippedMessage) : null)
   const activeModuleInfo = findActiveModuleInfo(modules, activeModuleId)
 
+  const rawFailure = phase === 'failed'
+    ? formatFailureCopy(rawMessage, activeModuleId, status.detail)
+    : null
+
   const message = downloading
     ? formatDownloadSubtitle({
         moduleLabel: activeModuleId ?? strippedMessage,
@@ -96,7 +104,9 @@ export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
         totalBytes: status.totalBytes ?? null,
         speedBytesPerSec: status.downloadSpeedBytesPerSec ?? null
       })
-    : strippedMessage
+    : rawFailure ? rawFailure.message : strippedMessage
+
+  const detail = rawFailure ? rawFailure.detail : status.detail
 
   const badge = downloading
     ? formatDownloadBadge({
@@ -125,7 +135,7 @@ export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
     heading: downloading ? 'Скачиваю обновление' : phaseHeading(phase),
     badge,
     message,
-    detail: status.detail,
+    detail,
     percent,
     modules: modulesWithState,
     canApply: phase === 'available' && available.length > 0,
@@ -314,4 +324,20 @@ function resolveModuleState(input: {
     return 'pending'
   }
   return 'pending'
+}
+
+function formatFailureCopy(
+  rawMessage: string,
+  activeModuleId: string | null,
+  existingDetail: string
+): { readonly message: string; readonly detail: string } {
+  const isNetworkOrDownload = /timeout|timed out|connection|network|dns|econn|enotfound|http|5\d\d|404|скач|загруз|github|сбой сети|ошибка сети/i.test(rawMessage)
+  if (isNetworkOrDownload && activeModuleId) {
+    const friendly = `Не удалось скачать ${activeModuleId}`
+    const detail = existingDetail.length > 0
+      ? existingDetail
+      : rawMessage === friendly ? '' : rawMessage
+    return { message: friendly, detail }
+  }
+  return { message: rawMessage, detail: existingDetail }
 }

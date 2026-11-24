@@ -318,4 +318,53 @@ describe('standalone updater window', () => {
     expect(screen.queryByText(/AI COMPANION FOR A BRIGHTER YOU/)).toBeNull()
     expect(document.querySelector('.updater-hero-glow')).toBeNull()
   })
+
+  it('supports hiding to tray, toggling changelog, and retrying a network error', async () => {
+    const hideToTray = vi.fn(async () => {})
+    const retry = vi.fn(async () => {})
+    window.evohimeUpdater = {
+      getStatus: vi.fn(async () => updaterUiStatus(status({
+        phase: 'applying',
+        message: 'Скачивание shell-host — 30%',
+        activeModule: 'shell-host',
+        availableModules: ['shell-host'],
+        installedModules: { 'shell-host': '1.4.2' },
+        availableModuleVersions: { 'shell-host': '1.5.0' },
+        availableModuleChanges: { 'shell-host': ['Новый экран обновления'] }
+      }))),
+      subscribe: vi.fn(() => () => {}),
+      close: vi.fn(async () => {}),
+      minimize: vi.fn(async () => {}),
+      hideToTray,
+      retry
+    }
+
+    const { unmount } = render(<UpdaterApp />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Свернуть в трей' })).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть в трей' }))
+    expect(hideToTray).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Что нового' }))
+    expect(screen.getByText('Новый экран обновления')).toBeTruthy()
+    unmount()
+
+    window.evohimeUpdater = {
+      getStatus: vi.fn(async () => updaterUiStatus(status({
+        phase: 'failed',
+        message: 'updater: download shell-host: connection timed out',
+        error: 'updater: download shell-host: connection timed out',
+        activeModule: 'shell-host'
+      }))),
+      subscribe: vi.fn(() => () => {}),
+      close: vi.fn(async () => {}),
+      minimize: vi.fn(async () => {}),
+      retry
+    }
+
+    render(<UpdaterApp />)
+    await waitFor(() => expect(screen.getByText('Не удалось скачать shell-host')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(retry).toHaveBeenCalledTimes(1)
+  })
 })

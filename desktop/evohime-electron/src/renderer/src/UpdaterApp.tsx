@@ -167,6 +167,7 @@ function UpdaterLotusLogo(): React.JSX.Element {
 
 export function UpdaterApp(): React.JSX.Element {
   const [status, setStatus] = useState<UpdaterUiStatus>(fallback)
+  const [changelogOpen, setChangelogOpen] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -204,6 +205,12 @@ export function UpdaterApp(): React.JSX.Element {
   )
   const visibleModules = updatableModules.slice(0, 4)
   const extraModulesCount = updatableModules.length - visibleModules.length
+  const changelogModules = useMemo(
+    () => updatableModules.filter((module) => (module.changes?.length ?? 0) > 0),
+    [updatableModules]
+  )
+  const canHideToTray = (status.phase === 'applying' || status.phase === 'checking')
+    && typeof window.evohimeUpdater?.hideToTray === 'function'
 
   return (
     <main className="updater-shell">
@@ -300,6 +307,48 @@ export function UpdaterApp(): React.JSX.Element {
                 <span className="updater-module-chip updater-module-chip--more">+{extraModulesCount}</span>
               ) : null}
             </div>
+          ) : null}
+
+          {changelogModules.length > 0 || canHideToTray ? (
+            <div className="updater-utility-row">
+              {changelogModules.length > 0 ? (
+                <button
+                  type="button"
+                  className="updater-link-button"
+                  aria-expanded={changelogOpen}
+                  onClick={() => setChangelogOpen((open) => !open)}
+                >
+                  {translate('Что нового')}
+                </button>
+              ) : <span />}
+              {canHideToTray ? (
+                <button
+                  type="button"
+                  className="updater-link-button"
+                  onClick={() => void window.evohimeUpdater.hideToTray?.()}
+                >
+                  {translate('Свернуть в трей')}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {changelogOpen && changelogModules.length > 0 ? (
+            <section className="updater-changelog" aria-label={translate("Список изменений")}>
+              {changelogModules.map((module) => (
+                <div key={module.id} className="updater-changelog__group">
+                  <div className="updater-changelog__title">
+                    <strong>{translate(module.label)}</strong>
+                    {module.available ? <span>{module.installed} → {module.available}</span> : null}
+                  </div>
+                  <ul>
+                    {(module.changes ?? []).slice(0, 4).map((item, index) => (
+                      <li key={index}>{translate(item)}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </section>
           ) : null}
 
           <ol className="updater-steps" aria-label={translate("Этапы обновления")}>

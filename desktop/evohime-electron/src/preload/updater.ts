@@ -11,6 +11,7 @@ const api: EvoHimeUpdaterApi = {
   },
   close: () => ipcRenderer.invoke('updater.close') as Promise<void>,
   minimize: () => ipcRenderer.invoke('updater.minimize') as Promise<void>,
+  hideToTray: () => ipcRenderer.invoke('updater.hide-to-tray') as Promise<void>,
   retry: () => ipcRenderer.invoke('updater.retry') as Promise<void>
 }
 

@@ -1,10 +1,10 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 
 import type { ShellLog } from './diagnostics/logger'
-import { dataDirectory } from './paths'
+import { dataDirectory, resourcePath } from './paths'
 import { hardenSession, hardenWebContents, isProduction, type HardeningOptions } from './security'
 import { loadUpdateConfig } from './update/config'
 import { ModuleUpdateService, shouldApplyBootstrap } from './update/module-update-service'
@@ -33,8 +33,11 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   let shuttingDown = false
   let allowQuitAfterFlush = false
   let shutdownStarted = false
+  let updaterTray: Tray | null = null
   const exitAfterLoggerFlush = (): void => {
     shuttingDown = true
+    updaterTray?.destroy()
+    updaterTray = null
     void options.flushLogs().then((flushed) => {
       if (!flushed) process.stderr.write('EvoHime updater diagnostics flush timed out; exiting with a bounded log tail.\n')
       app.exit(0)
@@ -48,6 +51,21 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     if (updaterWindow.isMinimized()) updaterWindow.restore()
     if (!updaterWindow.isVisible()) updaterWindow.show()
     updaterWindow.focus()
+  }
+
+  const ensureUpdaterTray = (): void => {
+    if (updaterTray) return
+    const iconFile = resourcePath('evohime-agent.ico')
+    const icon = existsSync(iconFile) ? nativeImage.createFromPath(iconFile) : nativeImage.createEmpty()
+    const tray = new Tray(icon)
+    tray.setToolTip('EvoHime — Центр обновлений')
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Открыть окно', click: () => focusUpdaterWindow() },
+      { type: 'separator' },
+      { label: 'Закрыть', click: () => { shuttingDown = true; tray.destroy(); updaterTray = null; app.quit() } }
+    ]))
+    tray.on('click', () => focusUpdaterWindow())
+    updaterTray = tray
   }
 
   app.on('second-instance', () => {
@@ -149,13 +167,20 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   ipcMain.removeHandler('updater.get-status')
   ipcMain.removeHandler('updater.close')
   ipcMain.removeHandler('updater.minimize')
+  ipcMain.removeHandler('updater.hide-to-tray')
   ipcMain.removeHandler('updater.retry')
   ipcMain.handle('updater.get-status', () => updaterUiStatus(service.status))
   ipcMain.handle('updater.close', () => {
     shuttingDown = true
+    updaterTray?.destroy()
+    updaterTray = null
     app.quit()
   })
   ipcMain.handle('updater.minimize', () => updaterWindow?.minimize())
+  ipcMain.handle('updater.hide-to-tray', () => {
+    ensureUpdaterTray()
+    updaterWindow?.hide()
+  })
   ipcMain.handle('updater.retry', () => {
     if (!shuttingDown && !gateRunning && !crashGuard.blocked) {
       options.log('info', 'updater.retry_requested', {})
