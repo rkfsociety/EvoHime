@@ -270,7 +270,7 @@ impl HiveSettings {
             self.hive_provider_limits,
             self.hive_fallback_provider_limits,
         ] {
-            if [limits.rpm, limits.rph, limits.rpd]
+            if [limits.rpm, limits.rph, limits.rp4h, limits.rpd]
                 .iter()
                 .any(|limit| *limit > 10_000)
             {
@@ -517,10 +517,10 @@ impl HiveSettings {
                 {"name": "hive_model", "type": "optional_string", "default": null},
                 {"name": "hive_fallback_provider_profile", "type": "optional_string", "default": null},
                 {"name": "hive_fallback_model", "type": "optional_string", "default": null},
-                {"name": "hive_provider_limits", "type": "provider_limits", "default": {"rpm": 0, "rph": 0, "rpd": 0}},
+                {"name": "hive_provider_limits", "type": "provider_limits", "default": {"rpm": 0, "rph": 0, "rp4h": 0, "rpd": 0}},
                 {"name": "hive_daily_token_quota", "type": "u64", "default": 0},
                 {"name": "hive_quota_reset_utc_midnight", "type": "bool", "default": false},
-                {"name": "hive_fallback_provider_limits", "type": "provider_limits", "default": {"rpm": 0, "rph": 0, "rpd": 0}},
+                {"name": "hive_fallback_provider_limits", "type": "provider_limits", "default": {"rpm": 0, "rph": 0, "rp4h": 0, "rpd": 0}},
                 {"name": "hive_fallback_daily_token_quota", "type": "u64", "default": 0},
                 {"name": "hive_fallback_quota_reset_utc_midnight", "type": "bool", "default": false},
                 {"name": "hive_token_quota_configured", "type": "bool", "default": false},

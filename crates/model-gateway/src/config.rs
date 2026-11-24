@@ -126,6 +126,9 @@ pub struct ModelRateLimitConfig {
     /// Maximum requests in a rolling hour; zero means unlimited.
     #[serde(default)]
     pub rph: u32,
+    /// Maximum requests in a rolling 4-hour window; zero means unlimited.
+    #[serde(default)]
+    pub rp4h: u32,
     /// Maximum requests in a rolling day; zero means unlimited.
     #[serde(default)]
     pub rpd: u32,
@@ -142,6 +145,23 @@ pub struct ModelRateLimitConfig {
     /// Optional user-configured token pricing in USD per 1M tokens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pricing: Option<ModelPricingConfig>,
+}
+
+impl ModelRateLimitConfig {
+    /// Returns whether any rolling request window cap is enabled and non-zero.
+    pub fn has_request_caps(&self) -> bool {
+        self.enabled && (self.rpm > 0 || self.rph > 0 || self.rp4h > 0 || self.rpd > 0)
+    }
+
+    /// Returns `(cap, window_duration)` pairs across all rolling request windows.
+    pub fn request_windows(&self) -> [(u32, Duration); 4] {
+        [
+            (self.rpm, Duration::from_secs(60)),
+            (self.rph, Duration::from_secs(3_600)),
+            (self.rp4h, Duration::from_secs(4 * 3_600)),
+            (self.rpd, Duration::from_secs(86_400)),
+        ]
+    }
 }
 
 /// Upper bound accepted for one route's configured daily token quota.
@@ -161,6 +181,9 @@ pub struct ProviderLimits {
     /// Maximum requests per rolling hour (`0` means unlimited).
     #[serde(default)]
     pub rph: u32,
+    /// Maximum requests per rolling 4-hour window (`0` means unlimited).
+    #[serde(default)]
+    pub rp4h: u32,
     /// Maximum requests per rolling day (`0` means unlimited).
     #[serde(default)]
     pub rpd: u32,
@@ -538,10 +561,12 @@ impl ModelRouteConfig {
             ModelRateLimitConfig {
                 enabled: limits.rpm > 0
                     || limits.rph > 0
+                    || limits.rp4h > 0
                     || limits.rpd > 0
                     || daily_token_quota.is_some(),
                 rpm: limits.rpm,
                 rph: limits.rph,
+                rp4h: limits.rp4h,
                 rpd: limits.rpd,
                 daily_token_quota,
                 quota_reset_utc_midnight,
@@ -593,6 +618,7 @@ impl ModelRouteConfig {
             return ProviderLimits {
                 rpm: limits.rpm,
                 rph: limits.rph,
+                rp4h: limits.rp4h,
                 rpd: limits.rpd,
             };
         }
@@ -605,6 +631,7 @@ impl ModelRouteConfig {
             return ProviderLimits {
                 rpm: limits.rpm,
                 rph: limits.rph,
+                rp4h: limits.rp4h,
                 rpd: limits.rpd,
             };
         }
@@ -1151,7 +1178,7 @@ fn validate_model_rate_limits(
                 || model.chars().count() > 128
                 || model.contains('\0')
                 || model.chars().any(char::is_whitespace)
-                || [limit.rpm, limit.rph, limit.rpd]
+                || [limit.rpm, limit.rph, limit.rp4h, limit.rpd]
                     .iter()
                     .any(|value| *value > 10_000)
                 || limit
@@ -1651,6 +1678,7 @@ mod tests {
                 enabled: true,
                 rpm: 12,
                 rph: 120,
+                rp4h: 360,
                 rpd: 1_000,
                 daily_token_quota: None,
                 quota_reset_utc_midnight: false,
@@ -1662,6 +1690,7 @@ mod tests {
             ProviderLimits {
                 rpm: 12,
                 rph: 120,
+                rp4h: 360,
                 rpd: 1_000,
             }
         );
@@ -1669,6 +1698,7 @@ mod tests {
         let fallback_limits = ProviderLimits {
             rpm: 20,
             rph: 300,
+            rp4h: 900,
             rpd: 5_000,
         };
         let openai = ModelRouteConfig::openai_compatible(
@@ -1698,6 +1728,7 @@ mod tests {
             enabled,
             rpm: 0,
             rph: 0,
+            rp4h: 0,
             rpd: 0,
             daily_token_quota: Some(quota),
             quota_reset_utc_midnight: reset,
@@ -1745,6 +1776,7 @@ mod tests {
             enabled,
             rpm,
             rph: 0,
+            rp4h: 0,
             rpd: 0,
             daily_token_quota: None,
             quota_reset_utc_midnight: false,

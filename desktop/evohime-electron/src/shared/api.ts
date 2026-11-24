@@ -61,6 +61,7 @@ export interface ProtocolVersion {
 export interface ProviderLimits {
   readonly rpm: number
   readonly rph: number
+  readonly rp4h?: number
   readonly rpd: number
 }
 
@@ -743,6 +744,7 @@ export interface ModelRateLimitSettings {
   readonly enabled: boolean
   readonly rpm: number
   readonly rph: number
+  readonly rp4h?: number
   readonly rpd: number
   readonly dailyTokenQuota?: number | null
   readonly quotaResetUtcMidnight?: boolean

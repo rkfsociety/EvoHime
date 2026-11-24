@@ -98,18 +98,18 @@ impl OpenAIResponsesProvider {
             if let Some(limits) = self
                 .model_rate_limits
                 .get(model)
-                .filter(|limits| limits.enabled)
+                .filter(|limits| limits.has_request_caps())
                 .or_else(|| {
-                    self.model_rate_limits.get("*").filter(|limits| {
-                        limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
-                    })
+                    self.model_rate_limits
+                        .get("*")
+                        .filter(|limits| limits.has_request_caps())
                 })
             {
                 let now = Instant::now();
                 let key = if self
                     .model_rate_limits
                     .get(model)
-                    .is_some_and(|limits| limits.enabled)
+                    .is_some_and(|limits| limits.has_request_caps())
                 {
                     model
                 } else {
@@ -121,11 +121,7 @@ impl OpenAIResponsesProvider {
                 }) {
                     timestamps.pop_front();
                 }
-                for (cap, window) in [
-                    (limits.rpm, Duration::from_secs(60)),
-                    (limits.rph, Duration::from_secs(3600)),
-                    (limits.rpd, Duration::from_secs(86400)),
-                ] {
+                for (cap, window) in limits.request_windows() {
                     if cap == 0 {
                         continue;
                     }
@@ -156,11 +152,11 @@ impl OpenAIResponsesProvider {
             if self
                 .model_rate_limits
                 .get(model)
-                .filter(|limits| limits.enabled)
+                .filter(|limits| limits.has_request_caps())
                 .or_else(|| {
-                    self.model_rate_limits.get("*").filter(|limits| {
-                        limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
-                    })
+                    self.model_rate_limits
+                        .get("*")
+                        .filter(|limits| limits.has_request_caps())
                 })
                 .is_some()
             {
@@ -170,7 +166,7 @@ impl OpenAIResponsesProvider {
                         if self
                             .model_rate_limits
                             .get(model)
-                            .is_some_and(|limits| limits.enabled)
+                            .is_some_and(|limits| limits.has_request_caps())
                         {
                             model
                         } else {

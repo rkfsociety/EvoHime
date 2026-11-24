@@ -110,6 +110,7 @@ function buildModelLimitDrafts(
         enabled: settings.enabled === true,
         rpm: String(settings.rpm ?? 0),
         rph: String(settings.rph ?? 0),
+        rp4h: String(settings.rp4h ?? 0),
         rpd: String(settings.rpd ?? 0),
         dailyTokenQuota: String(settings.dailyTokenQuota ?? ''),
         quotaResetUtcMidnight: settings.quotaResetUtcMidnight === true,
@@ -128,6 +129,7 @@ function buildModelLimitDrafts(
       enabled: false,
       rpm: '0',
       rph: '0',
+      rp4h: '0',
       rpd: '0',
       dailyTokenQuota: '',
       quotaResetUtcMidnight: false,
@@ -145,6 +147,7 @@ function buildModelLimitDrafts(
       enabled: false,
       rpm: '0',
       rph: '0',
+      rp4h: '0',
       rpd: '0',
       dailyTokenQuota: '',
       quotaResetUtcMidnight: false,
@@ -162,6 +165,7 @@ function buildModelLimitDrafts(
       enabled: false,
       rpm: '0',
       rph: '0',
+      rp4h: '0',
       rpd: '0',
       dailyTokenQuota: '',
       quotaResetUtcMidnight: false,
@@ -416,6 +420,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           enabled: false,
           rpm: '0',
           rph: '0',
+          rp4h: '0',
           rpd: '0',
           dailyTokenQuota: '',
           quotaResetUtcMidnight: false,
@@ -451,9 +456,10 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
         if (!trimmedModel && trimmedModel !== '*') continue
         const rpm = parseModelCap(entry.rpm)
         const rph = parseModelCap(entry.rph)
+        const rp4h = parseModelCap(entry.rp4h)
         const rpd = parseModelCap(entry.rpd)
-        if (rpm === null || rph === null || rpd === null) {
-          setStatus({ kind: 'failed', message: 'Лимиты RPM/RPH/RPD должны быть целыми числами от 0 до 10000.' })
+        if (rpm === null || rph === null || rp4h === null || rpd === null) {
+          setStatus({ kind: 'failed', message: 'Лимиты RPM/RPH/RP4H/RPD должны быть целыми числами от 0 до 10000.' })
           return
         }
         let dailyTokenQuota: number | null = null
@@ -480,6 +486,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           enabled: entry.enabled,
           rpm,
           rph,
+          rp4h,
           rpd,
           ...(trimmedModel === '*' ? { dailyTokenQuota, quotaResetUtcMidnight: entry.quotaResetUtcMidnight } : {}),
           ...(pricing ? { pricing } : {})

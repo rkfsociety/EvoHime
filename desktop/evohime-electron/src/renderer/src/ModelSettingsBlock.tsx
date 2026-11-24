@@ -6,6 +6,7 @@ export interface ModelLimitDraft {
   readonly enabled: boolean
   readonly rpm: string
   readonly rph: string
+  readonly rp4h: string
   readonly rpd: string
   readonly dailyTokenQuota: string
   readonly quotaResetUtcMidnight: boolean
@@ -52,6 +53,7 @@ export function ModelSettingsBlock({
           const modelInputId = `provider-limit-model-${entry.key}`
           const rpmId = `provider-model-rpm-${entry.key}`
           const rphId = `provider-model-rph-${entry.key}`
+          const rp4hId = `provider-model-rp4h-${entry.key}`
           const rpdId = `provider-model-rpd-${entry.key}`
           const priceInputId = `provider-model-price-input-${entry.key}`
           const priceCachedId = `provider-model-price-cached-${entry.key}`
@@ -143,6 +145,19 @@ export function ModelSettingsBlock({
                     step={1}
                     value={entry.rph}
                     onChange={(event) => onUpdateEntry(entry.key, { rph: event.target.value })}
+                    disabled={busy || !entry.enabled}
+                  />
+                </label>
+                <label htmlFor={rp4hId}>
+                  RP4H
+                  <input
+                    id={rp4hId}
+                    type="number"
+                    min={0}
+                    max={10_000}
+                    step={1}
+                    value={entry.rp4h}
+                    onChange={(event) => onUpdateEntry(entry.key, { rp4h: event.target.value })}
                     disabled={busy || !entry.enabled}
                   />
                 </label>

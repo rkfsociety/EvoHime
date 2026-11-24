@@ -661,6 +661,7 @@ function hivePercent(value: number, ceiling: number): number {
 type HiveRequestLimitsDraft = {
   readonly rpm: number
   readonly rph: number | null
+  readonly rp4h: number | null
   readonly rpd: number | null
 }
 
@@ -673,6 +674,7 @@ function hiveLimitsDraftFromStored(limits: ProviderLimits): HiveRequestLimitsDra
     // untouched editor keeps deriving both windows from a freshly typed RPM
     // instead of pinning them to an explicit zero.
     rph: limits.rph === limits.rpm * 60 ? null : limits.rph,
+    rp4h: (limits.rp4h ?? 0) === limits.rpm * 240 ? null : (limits.rp4h ?? null),
     rpd: limits.rpd === limits.rpm * 1440 ? null : limits.rpd
   }
 }
@@ -702,7 +704,7 @@ function HiveRequestLimitsEditor({
     <fieldset className="provider-form__tier" aria-label={translate(title)}>
       <legend>{translate(title)}</legend>
       <div className="provider-form__grid">
-        {(['rpm', 'rph', 'rpd'] as const).map((key) => (
+        {(['rpm', 'rph', 'rp4h', 'rpd'] as const).map((key) => (
           <label key={key} htmlFor={`${prefix}-${key}`}>
             {key.toUpperCase()}
             <input
@@ -1648,8 +1650,8 @@ export function HiveDashboard({
   const [hiveProviderSaved, setHiveProviderSaved] = useState(false)
   const [hiveApiKeySaved, setHiveApiKeySaved] = useState(false)
   const [dailyBudgetSaved, setDailyBudgetSaved] = useState(false)
-  const [hivePrimaryLimitsDraft, setHivePrimaryLimitsDraft] = useState<HiveRequestLimitsDraft>({ rpm: 0, rph: null, rpd: null })
-  const [hiveFallbackLimitsDraft, setHiveFallbackLimitsDraft] = useState<HiveRequestLimitsDraft>({ rpm: 0, rph: null, rpd: null })
+  const [hivePrimaryLimitsDraft, setHivePrimaryLimitsDraft] = useState<HiveRequestLimitsDraft>({ rpm: 0, rph: null, rp4h: null, rpd: null })
+  const [hiveFallbackLimitsDraft, setHiveFallbackLimitsDraft] = useState<HiveRequestLimitsDraft>({ rpm: 0, rph: null, rp4h: null, rpd: null })
   const [hivePrimaryQuotaDraft, setHivePrimaryQuotaDraft] = useState('0')
   const [hiveFallbackQuotaDraft, setHiveFallbackQuotaDraft] = useState('0')
   const [hivePrimaryQuotaResetDraft, setHivePrimaryQuotaResetDraft] = useState(false)
@@ -2480,12 +2482,13 @@ export function HiveDashboard({
     const resolveLimits = (draft: HiveRequestLimitsDraft): ProviderLimits => ({
       rpm: draft.rpm,
       rph: draft.rph ?? (draft.rpm > 0 ? draft.rpm * 60 : 0),
+      rp4h: draft.rp4h ?? (draft.rpm > 0 ? draft.rpm * 240 : 0),
       rpd: draft.rpd ?? (draft.rpm > 0 ? draft.rpm * 1440 : 0)
     })
     const primaryLimits = resolveLimits(hivePrimaryLimitsDraft)
     const fallbackLimits = resolveLimits(hiveFallbackLimitsDraft)
-    const values = [primaryLimits.rpm, primaryLimits.rph, primaryLimits.rpd,
-      fallbackLimits.rpm, fallbackLimits.rph, fallbackLimits.rpd]
+    const values = [primaryLimits.rpm, primaryLimits.rph, primaryLimits.rp4h ?? 0, primaryLimits.rpd,
+      fallbackLimits.rpm, fallbackLimits.rph, fallbackLimits.rp4h ?? 0, fallbackLimits.rpd]
     const primaryQuota = Number(hivePrimaryQuotaDraft)
     const fallbackQuota = Number(hiveFallbackQuotaDraft)
     if (values.some((value) => !Number.isInteger(value) || value < 0 || value > 4_294_967_295)

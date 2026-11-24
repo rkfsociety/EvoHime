@@ -691,6 +691,11 @@ describe('provider input bounds', () => {
     expect(normalizeModelRateLimits({ 'gpt-4o': { enabled: true, rpm: 10, rph: 100, rpd: 500 } })).toEqual({
       'gpt-4o': { enabled: true, rpm: 10, rph: 100, rpd: 500 }
     })
+    expect(normalizeModelRateLimits({ 'gpt-4o': { enabled: true, rpm: 10, rph: 200, rp4h: 600, rpd: 500 } })).toEqual({
+      'gpt-4o': { enabled: true, rpm: 10, rph: 200, rp4h: 600, rpd: 500 }
+    })
+    expect(normalizeModelRateLimits({ 'gpt-4o': { enabled: true, rpm: 0, rph: 0, rp4h: -1, rpd: 0 } })).toBeNull()
+    expect(normalizeModelRateLimits({ 'gpt-4o': { enabled: true, rpm: 0, rph: 0, rp4h: 10_001, rpd: 0 } })).toBeNull()
     expect(normalizeModelRateLimits({ 'gpt-4o': { enabled: true, rpm: -1, rph: 0, rpd: 0 } })).toBeNull()
     expect(normalizeModelRateLimits({ 'gpt-4o': { enabled: true, rpm: 10_001, rph: 0, rpd: 0 } })).toBeNull()
     expect(normalizeModelRateLimits(Object.fromEntries(

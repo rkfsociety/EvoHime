@@ -598,6 +598,7 @@ fn budget_from(observation: &HiveObservation) -> HiveBudget {
         limits: ProviderLimits {
             rpm: minute_cap,
             rph: hour_cap,
+            rp4h: 0,
             rpd: day_cap,
         },
         // A cap of zero is the configured "unlimited" value, never "reached".

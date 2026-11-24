@@ -384,9 +384,8 @@ impl LiteRouterProvider {
 
     /// Whether a rolling cap is actually configured for this model.
     fn tracks_model_limits(&self, model: &str) -> bool {
-        self.model_limits_for(model).is_some_and(|limits| {
-            limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
-        })
+        self.model_limits_for(model)
+            .is_some_and(ModelRateLimitConfig::has_request_caps)
     }
 
     fn model_limits_for(&self, model: &str) -> Option<&ModelRateLimitConfig> {
@@ -426,9 +425,10 @@ impl LiteRouterProvider {
                 gate.last_request
                     .and_then(|previous| interval.checked_sub(previous.elapsed()))
             });
-            if let Some(limits) = self.model_limits_for(model).filter(|limits| {
-                limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
-            }) {
+            if let Some(limits) = self
+                .model_limits_for(model)
+                .filter(|limits| limits.has_request_caps())
+            {
                 let now = Instant::now();
                 let timestamps = gate
                     .model_requests
@@ -439,11 +439,7 @@ impl LiteRouterProvider {
                 }) {
                     timestamps.pop_front();
                 }
-                for (cap, window) in [
-                    (limits.rpm, Duration::from_secs(60)),
-                    (limits.rph, Duration::from_secs(3600)),
-                    (limits.rpd, Duration::from_secs(86400)),
-                ] {
+                for (cap, window) in limits.request_windows() {
                     if cap == 0 {
                         continue;
                     }
@@ -1076,6 +1072,7 @@ mod tests {
                 enabled: true,
                 rpm: 1,
                 rph: 0,
+                rp4h: 0,
                 rpd: 0,
                 daily_token_quota: None,
                 quota_reset_utc_midnight: false,
@@ -1110,6 +1107,52 @@ mod tests {
         assert_eq!(gate.model_requests["model-a"].len(), 1);
         assert!(!gate.model_requests.contains_key("model-b"));
         assert_eq!(provider.model_rate_limits["model-a"].rpm, 1);
+    }
+
+    #[tokio::test]
+    async fn rolling_rp4h_cap_blocks_when_four_hour_limit_is_reached() {
+        let mut limits = HashMap::new();
+        limits.insert(
+            "model-4h".to_owned(),
+            ModelRateLimitConfig {
+                enabled: true,
+                rpm: 0,
+                rph: 0,
+                rp4h: 1,
+                rpd: 0,
+                daily_token_quota: None,
+                quota_reset_utc_midnight: false,
+                pricing: None,
+            },
+        );
+        assert!(limits["model-4h"].has_request_caps());
+        assert_eq!(
+            limits["model-4h"].request_windows()[2],
+            (1, Duration::from_secs(4 * 3_600))
+        );
+
+        let provider = LiteRouterProvider::with_pacing_and_model_limits(
+            LiteRouterConfig {
+                api_key: "key".into(),
+                base_url: "https://api.literouter.com/v1".into(),
+                model: "model-4h".into(),
+            },
+            RetryPolicy::default(),
+            RequestPacingConfig::disabled(),
+            limits,
+        )
+        .expect("provider created");
+
+        provider.wait_for_request_slot("model-4h").await;
+        let blocked = tokio::time::timeout(
+            Duration::from_millis(40),
+            provider.wait_for_request_slot("model-4h"),
+        )
+        .await;
+        assert!(
+            blocked.is_err(),
+            "second request inside 4h window must wait until rp4h cap expires"
+        );
     }
 
     #[test]

@@ -214,12 +214,18 @@ function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
     enabled: boolean
     rpm: number
     rph: number
+    rp4h?: number
     rpd: number
   }
   for (const key of numbers) {
     const n = value[key]
     if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > MAX_MODEL_RATE) return null
     result[key] = n
+  }
+  const rp4h = value['rp4h']
+  if (rp4h !== undefined) {
+    if (typeof rp4h !== 'number' || !Number.isInteger(rp4h) || rp4h < 0 || rp4h > MAX_MODEL_RATE) return null
+    result.rp4h = rp4h
   }
   const pricing = normalizeModelPricing(value['pricing'])
   if (pricing === null) return null

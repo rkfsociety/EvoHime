@@ -200,7 +200,7 @@ describe('provider form', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
     const save = calls.find((call) => call.command === 'provider.save')
     expect((save?.payload as { modelRateLimits: Record<string, unknown> }).modelRateLimits['deepseek:free']).toEqual({
-      enabled: true, rpm: 12, rph: 0, rpd: 0
+      enabled: true, rpm: 12, rph: 0, rp4h: 0, rpd: 0
     })
   })
 
@@ -665,6 +665,7 @@ describe('provider form', () => {
 
     const checkboxes = screen.getAllByRole('checkbox', { name: /Включить лимиты для этой модели/i })
     const rpmInputs = screen.getAllByLabelText('RPM')
+    const rp4hInputs = screen.getAllByLabelText('RP4H')
     const rpdInputs = screen.getAllByLabelText('RPD')
 
     await userEvent.click(checkboxes[0])
@@ -674,6 +675,8 @@ describe('provider form', () => {
     await userEvent.click(checkboxes[1])
     await userEvent.clear(rpmInputs[2])
     await userEvent.type(rpmInputs[2], '25')
+    await userEvent.clear(rp4hInputs[2])
+    await userEvent.type(rp4hInputs[2], '600')
     await userEvent.clear(rpdInputs[2])
     await userEvent.type(rpdInputs[2], '500')
 
@@ -681,9 +684,9 @@ describe('provider form', () => {
 
     const save = calls.find((call) => call.command === 'provider.save')
     expect((save?.payload as { modelRateLimits: Record<string, unknown> }).modelRateLimits).toEqual({
-      '*': { enabled: false, rpm: 0, rph: 0, rpd: 0, dailyTokenQuota: null, quotaResetUtcMidnight: false },
-      'deepseek:free': { enabled: true, rpm: 10, rph: 0, rpd: 0 },
-      'qwen:free': { enabled: true, rpm: 25, rph: 0, rpd: 500 }
+      '*': { enabled: false, rpm: 0, rph: 0, rp4h: 0, rpd: 0, dailyTokenQuota: null, quotaResetUtcMidnight: false },
+      'deepseek:free': { enabled: true, rpm: 10, rph: 0, rp4h: 0, rpd: 0 },
+      'qwen:free': { enabled: true, rpm: 25, rph: 0, rp4h: 600, rpd: 500 }
     })
   })
 })
