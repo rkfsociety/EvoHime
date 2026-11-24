@@ -161,6 +161,17 @@ fn validate_role_slug(raw: &str) -> Result<String, ToolError> {
     Ok(normalized)
 }
 
+/// Parameters for [`ToolAgent::execute_hive_delegate_agent`].
+pub(super) struct HiveDelegateRequest<'a> {
+    pub context: &'a ToolContext,
+    pub parent_task_id: &'a str,
+    pub parent_binding: Option<&'a crate::SessionBinding>,
+    pub hive_world: bool,
+    pub events: &'a EventSink,
+    pub input: serde_json::Value,
+    pub cancellation: &'a CancellationToken,
+}
+
 impl ToolAgent {
     async fn resolve_custom_role_tools(&self, role: &str) -> Option<Vec<String>> {
         let journal = self.journal.as_ref()?;
@@ -211,14 +222,17 @@ impl ToolAgent {
     /// Executes a specialized Hive child agent delegated by the Queen (`agent_depth == 0`).
     pub(super) async fn execute_hive_delegate_agent(
         &self,
-        context: &ToolContext,
-        parent_task_id: &str,
-        parent_binding: Option<&crate::SessionBinding>,
-        hive_world: bool,
-        events: &EventSink,
-        input: serde_json::Value,
-        cancellation: &CancellationToken,
+        request: HiveDelegateRequest<'_>,
     ) -> Result<ToolResult, ToolError> {
+        let HiveDelegateRequest {
+            context,
+            parent_task_id,
+            parent_binding,
+            hive_world,
+            events,
+            input,
+            cancellation,
+        } = request;
         if !hive_world || context.agent_depth != 0 {
             return Err(ToolError::Execution(
                 "hive_delegate_agent is only available to the Hive Queen at depth 0".into(),

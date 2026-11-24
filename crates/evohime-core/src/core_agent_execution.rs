@@ -2499,13 +2499,15 @@ impl ToolAgent {
                     } else if call.name == evohime_tool_runtime::agent::HIVE_DELEGATE_NAME {
                         let result = self
                             .execute_hive_delegate_agent(
-                                &context,
-                                &task_id,
-                                session_binding.as_ref(),
-                                hive_world,
-                                events,
-                                input,
-                                &cancellation,
+                                super::hive_delegation::HiveDelegateRequest {
+                                    context: &context,
+                                    parent_task_id: &task_id,
+                                    parent_binding: session_binding.as_ref(),
+                                    hive_world,
+                                    events,
+                                    input,
+                                    cancellation: &cancellation,
+                                },
                             )
                             .await;
                         if cancellation.is_cancelled() {
