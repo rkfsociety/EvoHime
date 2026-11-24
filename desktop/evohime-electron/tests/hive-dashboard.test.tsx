@@ -655,6 +655,39 @@ describe('hive dashboard', () => {
     expect(activity.textContent).not.toContain('other.txt')
   })
 
+  it('attributes delegated hive agent events to the agent rather than Eva', async () => {
+    const parentTaskId = 'task-queen-1'
+    const activeChildTaskId = `${parentTaskId}:role-researcher-11111111-2222-3333-4444-555555555555`
+    const finishedChildTaskId = `${parentTaskId}:role-implementer-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee`
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot({
+            active_agents: [{
+              id: activeChildTaskId,
+              display_name: 'Исследователь ядра',
+              role: 'researcher',
+              current_action: 'reading'
+            }]
+          })),
+          hiveConversationPage('history', [
+            { kind: 'tool_started', taskId: parentTaskId, payload: { tool_name: 'hive_delegate_agent', arguments: '{}' } },
+            { kind: 'tool_started', taskId: activeChildTaskId, payload: { tool_name: 'filesystem_read', arguments: '{"path":"AGENTS.md"}' } },
+            { kind: 'tool_started', taskId: finishedChildTaskId, payload: { tool_name: 'filesystem_read', arguments: '{"path":"docs/architecture.md"}' } }
+          ])
+        ]}
+      />
+    )
+    const activity = await screen.findByLabelText('Ход работы Королевы')
+    const activityList = activity.querySelector('.hive-activity-list') as HTMLElement
+    expect(within(activityList).getByText('Ева вызывает hive_delegate_agent')).toBeTruthy()
+    expect(within(activityList).getByText('Исследователь ядра читает файл: AGENTS.md')).toBeTruthy()
+    expect(within(activityList).getByText('Разработчик читает файл: docs/architecture.md')).toBeTruthy()
+    expect(activityList.textContent).not.toContain('Ева читает файл: AGENTS.md')
+    expect(activityList.textContent).not.toContain('Ева читает файл: docs/architecture.md')
+  })
+
   it('читает опубликованную проекцию старой версии', async () => {
     render(
       <HiveDashboard

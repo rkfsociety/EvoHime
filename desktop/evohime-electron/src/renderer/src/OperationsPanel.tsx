@@ -1080,9 +1080,55 @@ function describeToolStart(body: Record<string, unknown>): string {
   return target ? `${action}: ${target}` : action
 }
 
+const HIVE_ROLE_AGENT_LABELS: Readonly<Record<string, string>> = {
+  researcher: 'Исследователь',
+  planner: 'Планировщик',
+  architect: 'Архитектор',
+  implementer: 'Разработчик',
+  developer: 'Разработчик',
+  coder: 'Разработчик',
+  tester: 'Тестировщик',
+  reviewer: 'Ревьюер',
+  releaser: 'Релизер',
+  analyst: 'Аналитик',
+  documenter: 'Документатор',
+  integrator: 'Интегратор',
+  support: 'Поддержка'
+}
+
+/** Извлекает роль дочернего агента из `child_task_id` вида `<parent>:role-<role>-<uuid>`. */
+function parseDelegatedRoleFromTaskId(taskId: string): string | null {
+  const marker = ':role-'
+  const idx = taskId.indexOf(marker)
+  if (idx === -1) return null
+  const tail = taskId.slice(idx + marker.length)
+  if (!tail) return null
+  const withoutUuid = tail.replace(/-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, '')
+  if (withoutUuid !== tail) return withoutUuid || null
+  const lastDash = tail.lastIndexOf('-')
+  return (lastDash > 0 ? tail.slice(0, lastDash) : tail) || null
+}
+
+/** Имя субъекта события: «Ева» для задач Королевы или имя/роль делегированного агента Улья. */
+function resolveEventActorLabel(
+  taskId: string,
+  activeAgents: HiveStateView['activeAgents'] = []
+): string {
+  const active = activeAgents.find((agent) => agent.id === taskId)
+  if (active?.displayName?.trim()) return active.displayName.trim()
+  const role = active?.role || parseDelegatedRoleFromTaskId(taskId)
+  if (!role) return 'Ева'
+  const normalized = role.trim().toLowerCase()
+  const known = HIVE_ROLE_AGENT_LABELS[normalized]
+  if (known) return known
+  const dept = departmentLabel(role)
+  return dept !== role ? dept : `Агент (${role})`
+}
+
 /** Человекочитаемая строка лога; незнакомое событие остаётся подписью по типу. */
-function describeHiveEvent(event: CoreEvent): string {
+function describeHiveEvent(event: CoreEvent, activeAgents: HiveStateView['activeAgents'] = []): string {
   const body = eventBody(event)
+  const actor = resolveEventActorLabel(event.taskId, activeAgents)
   if (event.eventType === 'task.failed' && !body['error_code'] && !body['error']) {
     return `Задача остановлена с ошибкой · ${event.taskId}`
   }
@@ -1092,10 +1138,10 @@ function describeHiveEvent(event: CoreEvent): string {
   switch (event.eventType) {
     case 'agent.message.delta': {
       const content = typeof body['content'] === 'string' ? body['content'].trim() : ''
-      return content || 'Ева отвечает'
+      return content || `${actor} отвечает`
     }
     case 'tool.started':
-      return `Ева ${describeToolStart(body)}`
+      return `${actor} ${describeToolStart(body)}`
     case 'tool.output': {
       const output = typeof body['output'] === 'string' ? body['output'] : ''
       const failed = /^(resource not found|tool execution failed|permission denied)/i.test(output)
@@ -1107,15 +1153,18 @@ function describeHiveEvent(event: CoreEvent): string {
     case 'model.context': {
       const model = typeof body['model'] === 'string' ? body['model'] : ''
       const tokens = typeof body['estimated_tokens'] === 'number' ? ` · ~${body['estimated_tokens']} токенов` : ''
-      return `Ева думает${model ? ` (${model})` : ''}${tokens}`
+      return `${actor} думает${model ? ` (${model})` : ''}${tokens}`
     }
     default:
       return `${HIVE_LOG_LABELS[event.eventType] ?? event.eventType}${event.taskId ? ` · ${event.taskId}` : ''}`
   }
 }
 
-/** Что Королева делает прямо сейчас: по последнему событию её незавершённой задачи. */
-function queenCurrentActivity(events: readonly CoreEvent[]): string {
+/** Что Королева или делегированный агент делает прямо сейчас: по последнему событию незавершённой задачи. */
+function queenCurrentActivity(
+  events: readonly CoreEvent[],
+  activeAgents: HiveStateView['activeAgents'] = []
+): string {
   let latestEvent: CoreEvent | undefined
   for (const event of events) {
     if (!event.taskId || event.eventType === 'hive_state.snapshot') continue
@@ -1123,10 +1172,11 @@ function queenCurrentActivity(events: readonly CoreEvent[]): string {
     if (!latestEvent || event.sequenceId > latestEvent.sequenceId) latestEvent = event
   }
   if (!latestEvent) return 'Обрабатывает запрос'
+  const actor = resolveEventActorLabel(latestEvent.taskId, activeAgents)
   const body = eventBody(latestEvent)
-  if (latestEvent.eventType === 'tool.started') return `Ева ${describeToolStart(body)}`
+  if (latestEvent.eventType === 'tool.started') return `${actor} ${describeToolStart(body)}`
   if (latestEvent.eventType === 'tool.output') return 'Анализирует результат инструмента'
-  return 'Ева думает над следующим шагом'
+  return `${actor} думает над следующим шагом`
 }
 
 function hiveLogEntries(
@@ -1136,7 +1186,8 @@ function hiveLogEntries(
   limit: number,
   includeNoise = true,
   chatTaskIds: ReadonlySet<string> = new Set(),
-  observedAtFor: (event: CoreEvent) => string = (event) => observedAt.get(coreEventKey(event)) ?? '—'
+  observedAtFor: (event: CoreEvent) => string = (event) => observedAt.get(coreEventKey(event)) ?? '—',
+  activeAgents: HiveStateView['activeAgents'] = []
 ): readonly HiveLogEntry[] {
   return events
     .filter((event) => event.eventType !== 'hive_state.snapshot' && event.eventType !== 'hive.observation_status')
@@ -1154,7 +1205,7 @@ function hiveLogEntries(
         id: key,
         at: observedAtFor(event),
         level: hiveLogLevel(event.eventType),
-        text: describeHiveEvent(event)
+        text: describeHiveEvent(event, activeAgents)
       }
     })
 }
@@ -3003,7 +3054,7 @@ export function HiveDashboard({
     () => new Set(preference.clearedChatMessageIds ?? []),
     [preference.clearedChatMessageIds]
   )
-  const realLogs = hiveLogEntries(hiveEvents, observedAt, observedAtMs, allLogs ? 40 : 6, allLogs, hiveChatTaskIds, observedAtForHiveEvent)
+  const realLogs = hiveLogEntries(hiveEvents, observedAt, observedAtMs, allLogs ? 40 : 6, allLogs, hiveChatTaskIds, observedAtForHiveEvent, hive?.activeAgents)
   const logs = useMemo(
     () => realLogs.filter((entry) => !clearedLogIdSet.has(entry.id)),
     [clearedLogIdSet, realLogs]
@@ -3017,7 +3068,7 @@ export function HiveDashboard({
   const rawActivity = hiveLogEntries(
     activityEvents.filter((event) => Boolean(event.taskId) && QUEEN_ACTIVITY_EVENTS.has(event.eventType)
       && (event.eventType !== 'tool.output' || /^(resource not found|tool execution failed|permission denied)/i.test(String(eventBody(event)['output'] ?? '')))),
-    observedAt, observedAtMs, 40, true, hiveChatTaskIds, observedAtForHiveEvent
+    observedAt, observedAtMs, 40, true, hiveChatTaskIds, observedAtForHiveEvent, hive?.activeAgents
   ).map((entry) => ({ ...entry, text: entry.text.replace(/ · (?:eva-pulse-[\w-]+|task-[\w-]+)$/, '') }))
   const activity = useMemo(
     () => rawActivity.filter((entry) => !clearedLogIdSet.has(entry.id)),
@@ -3149,8 +3200,8 @@ export function HiveDashboard({
   const hasActiveHiveAgents = (hive?.activeAgents.length ?? 0) > 0
   const queenWorking = (queenTyping || hasActiveHiveAgents) && !paused && !waitingApproval
   const queenActivity = useMemo(
-    () => (queenTyping ? queenCurrentActivity(hiveChatEvents) : ''),
-    [hiveChatEvents, queenTyping]
+    () => (queenTyping ? queenCurrentActivity(hiveChatEvents, hive?.activeAgents) : ''),
+    [hive?.activeAgents, hiveChatEvents, queenTyping]
   )
   useEffect(() => {
     if (!hiveChatOpen || hiveSettingsOpen || typeof window === 'undefined') return undefined
