@@ -165,6 +165,7 @@ export function RegulatedIntersection3D({
   const radialRedRefs = useRef<Array<THREE.Mesh | null>>([])
   const radialAmberRefs = useRef<Array<THREE.Mesh | null>>([])
   const radialGreenRefs = useRef<Array<THREE.Mesh | null>>([])
+  const lastSignalKeyRef = useRef<string>('')
 
   useEffect(() => () => {
     stopLineMat.dispose()
@@ -192,6 +193,9 @@ export function RegulatedIntersection3D({
     const elapsed = paused ? 0 : simClockRef ? simClockRef.current : state.clock.elapsedTime
     const light = getTrafficLightState(elapsed)
     const blinkOn = Math.floor(elapsed * 6) % 2 === 0
+    const signalKey = `${light}:${blinkOn ? 1 : 0}`
+    if (lastSignalKeyRef.current === signalKey) return
+    lastSignalKeyRef.current = signalKey
 
     const ringRed = light === 'radial_green' || light === 'radial_green_blink' || light === 'amber_to_ring' ? lampRedOn : lampRedOff
     const ringAmber =
@@ -606,6 +610,7 @@ export function isVehicleAheadBlocked(
   selfPriority: RoadPriority = 'main'
 ): boolean {
   const effectiveGap = Math.max(minGap, 1.15)
+  const effectiveGapSq = effectiveGap * effectiveGap
   const selfState = peers[selfIndex]
   const selfBlocked = selfState?.blockedSec ?? 0
   const selfInIntersection = selfState?.inIntersection === true
@@ -616,8 +621,9 @@ export function isVehicleAheadBlocked(
     if (other.lastX === undefined || other.lastZ === undefined) continue
     const dx = other.lastX - x
     const dz = other.lastZ - z
-    const dist = Math.hypot(dx, dz)
-    if (dist >= effectiveGap) continue
+    const distSq = dx * dx + dz * dz
+    if (distSq >= effectiveGapSq) continue
+    const dist = Math.sqrt(distSq)
     const dot = dx * dirX + dz * dirZ
     const cross = Math.abs(dx * -dirZ + dz * dirX)
     const otherDirX = other.lastDirX ?? dirX
@@ -756,24 +762,17 @@ export function doCarBoxesOverlap(
   const dx = bx - ax
   const dz = bz - az
 
-  const axes: readonly [number, number][] = [
-    [adx, adz],
-    [-adz, adx],
-    [bdx, bdz],
-    [-bdz, bdx]
-  ]
-
-  for (let i = 0; i < axes.length; i += 1) {
-    const axis = axes[i]!
-    const ux = axis[0]
-    const uz = axis[1]
+  const axisSeparates = (ux: number, uz: number): boolean => {
     const projDist = Math.abs(dx * ux + dz * uz)
     const ra = halfLength * Math.abs(adx * ux + adz * uz) + halfWidth * Math.abs(-adz * ux + adx * uz)
     const rb = halfLength * Math.abs(bdx * ux + bdz * uz) + halfWidth * Math.abs(-bdz * ux + bdx * uz)
-    if (projDist >= ra + rb) {
-      return false
-    }
+    return projDist >= ra + rb
   }
+
+  if (axisSeparates(adx, adz)) return false
+  if (axisSeparates(-adz, adx)) return false
+  if (axisSeparates(bdx, bdz)) return false
+  if (axisSeparates(-bdz, bdx)) return false
   return true
 }
 
@@ -792,6 +791,7 @@ export function isPoseCollidingWithPeers(
   prevZ?: number
 ): boolean {
   const broadRadius = CAR_HALF_LENGTH * 2 + 0.08
+  const broadRadiusSq = broadRadius * broadRadius
   for (let i = 0; i < peers.length; i += 1) {
     if (i === selfIndex) continue
     const other = peers[i]
@@ -801,8 +801,10 @@ export function isPoseCollidingWithPeers(
       const aheadDot = (other.lastX - prevX) * dirX + (other.lastZ - prevZ) * dirZ
       if (aheadDot < -0.05) continue
     }
-    const nextDist = Math.hypot(other.lastX - x, other.lastZ - z)
-    if (nextDist >= broadRadius) continue
+    const ox = other.lastX - x
+    const oz = other.lastZ - z
+    const nextDistSq = ox * ox + oz * oz
+    if (nextDistSq >= broadRadiusSq) continue
     if (
       doCarBoxesOverlap(
         x,
@@ -816,6 +818,7 @@ export function isPoseCollidingWithPeers(
       )
     ) {
       if (prevX !== undefined && prevZ !== undefined) {
+        const nextDist = Math.sqrt(nextDistSq)
         const prevDist = Math.hypot(other.lastX - prevX, other.lastZ - prevZ)
         if (nextDist > prevDist + 0.002) {
           continue

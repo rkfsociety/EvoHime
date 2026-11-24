@@ -546,6 +546,7 @@ export function QueenRoads3D({
     })
   }, [houseAngles, innerBoulevardR, mainAvenueR, moduleBuildings, ringRadius, view.x, view.z, homeEdgeR, homeGarageR])
 
+  const rootGroupRef = useRef<THREE.Group>(null)
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const gateLampRef = useRef<THREE.Mesh>(null)
   const instanceColor = useMemo(() => new THREE.Color(), [])
@@ -555,6 +556,20 @@ export function QueenRoads3D({
   const processingLotRef = useRef<{ lotIndex: number; remaining: number } | null>(null)
   const layoutSignatureRef = useRef<string>('')
   const simTimeRef = useRef<number>(0)
+  const staticPoseKeyRef = useRef<string>('')
+
+  useLayoutEffect(() => {
+    const group = rootGroupRef.current
+    if (!group) return
+    const noop = (): void => {}
+    group.traverse((obj) => {
+      obj.raycast = noop
+    })
+  }, [lots.length, moduleBuildings.length])
+
+  useLayoutEffect(() => {
+    staticPoseKeyRef.current = ''
+  }, [lots, houseAngles, view.x, view.z, active, paused])
 
   useLayoutEffect(() => {
     const layoutSignature = lots
@@ -613,6 +628,8 @@ export function QueenRoads3D({
     const queue = queueRef.current
 
     if (!active) {
+      if (staticPoseKeyRef.current === 'inactive') return
+      staticPoseKeyRef.current = 'inactive'
       deliveredMapRef.current.clear()
       queue.length = 0
       processingLotRef.current = null
@@ -629,6 +646,8 @@ export function QueenRoads3D({
     }
 
     if (paused) {
+      if (staticPoseKeyRef.current === 'paused') return
+      staticPoseKeyRef.current = 'paused'
       lots.forEach((lot, index) => {
         if (lot.active) deliveredMapRef.current.set(lot.slot, true)
         if (index >= mesh.count) return
@@ -650,6 +669,8 @@ export function QueenRoads3D({
       mesh.instanceMatrix.needsUpdate = true
       return
     }
+
+    staticPoseKeyRef.current = ''
 
     const clampedScale = Math.max(1, Math.min(100, timeScale))
     const totalDt = Math.min(delta, 0.05) * clampedScale
@@ -1518,7 +1539,7 @@ export function QueenRoads3D({
   const gateZ = view.z + Math.sin(QUEEN_GATE_ANGLE) * 2.52
 
   return (
-    <group>
+    <group ref={rootGroupRef}>
       {/* ЕДИНСТВЕННЫЙ парадный въезд в Цитадель Королевы с золотой аркой ворот (стыкуется ровно по внутреннему краю кольца). */}
       <RoadSegment3D
         from={[view.x + Math.cos(QUEEN_GATE_ANGLE) * 2.4, view.z + Math.sin(QUEEN_GATE_ANGLE) * 2.4]}

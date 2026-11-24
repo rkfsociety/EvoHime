@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -83,7 +84,19 @@ export interface HiveArchipelago3DProps {
   readonly timeScale?: number | undefined
 }
 
-function IslandGround({
+const NO_RAYCAST = (): void => {}
+
+function useDisableRaycast(ref: MutableRefObject<THREE.Object3D | null>, dep?: unknown): void {
+  useLayoutEffect(() => {
+    const root = ref.current
+    if (!root) return
+    root.traverse((obj) => {
+      obj.raycast = NO_RAYCAST
+    })
+  }, [ref, dep])
+}
+
+const IslandGround = memo(function IslandGround({
   view,
   selected,
   onSelect
@@ -93,6 +106,8 @@ function IslandGround({
   onSelect: () => void
 }) {
   const ref = useRef<THREE.Group>(null)
+  const decorRef = useRef<THREE.Group>(null)
+  useDisableRaycast(decorRef, view.radius)
   useLayoutEffect(() => {
     const group = ref.current
     if (!group) return
@@ -189,34 +204,36 @@ function IslandGround({
       >
         <cylinderGeometry args={[view.radius, view.radius * 0.93, 0.75, 6]} />
       </mesh>
-      {rimSegments.map((seg, index) => (
-        <mesh
-          key={`rim-${index}`}
-          position={[seg.x, 0.02, seg.z]}
-          rotation={[0, -seg.angle, 0]}
-          material={rim}
-        >
-          <boxGeometry args={[seg.length, 0.09, 0.14]} />
-        </mesh>
-      ))}
-      <mesh position={[0, -0.75 - rockHeight / 2, 0]} rotation={[Math.PI, Math.PI / 6, 0]} material={rockMaterial}>
-        <cylinderGeometry args={[view.radius * 0.24, view.radius * 0.88, rockHeight, 6]} />
-      </mesh>
-      <group>
-        {rocks.map((rock, index) => (
+      <group ref={decorRef}>
+        {rimSegments.map((seg, index) => (
           <mesh
-            key={index}
-            position={[rock.x, rock.y, rock.z]}
-            rotation={[rock.rotation, rock.rotation * 0.7, 0]}
+            key={`rim-${index}`}
+            position={[seg.x, 0.02, seg.z]}
+            rotation={[0, -seg.angle, 0]}
+            material={rim}
+          >
+            <boxGeometry args={[seg.length, 0.09, 0.14]} />
+          </mesh>
+        ))}
+        <mesh position={[0, -0.75 - rockHeight / 2, 0]} rotation={[Math.PI, Math.PI / 6, 0]} material={rockMaterial}>
+          <cylinderGeometry args={[view.radius * 0.24, view.radius * 0.88, rockHeight, 6]} />
+        </mesh>
+        <group>
+          {rocks.map((rock, index) => (
+            <mesh
+              key={index}
+              position={[rock.x, rock.y, rock.z]}
+              rotation={[rock.rotation, rock.rotation * 0.7, 0]}
             material={rockMaterial}
           >
             <dodecahedronGeometry args={[rock.size, 0]} />
           </mesh>
         ))}
+        </group>
       </group>
     </group>
   )
-}
+})
 
 interface BridgeRoadSpec {
   readonly islandId: string
@@ -263,8 +280,11 @@ function BridgeSpan3D({
     const group = groupRef.current
     if (!group) return
     const target = road.phase === 'exiting' ? 0.02 : 1
+    if (Math.abs(scaleRef.current - target) < 1e-4) return
     const factor = paused ? 1 : 1 - Math.exp(-7.5 * Math.min(delta, 0.1))
-    const next = Math.max(0.02, scaleRef.current + (target - scaleRef.current) * factor)
+    const next = Math.abs(target - scaleRef.current) * factor < 1e-4
+      ? target
+      : Math.max(0.02, scaleRef.current + (target - scaleRef.current) * factor)
     scaleRef.current = next
     group.position.set(road.from[0], 0, road.from[1])
     group.rotation.set(0, -road.angle, 0)
@@ -309,7 +329,7 @@ function BridgeSpan3D({
 /**
  * Наземные 4-полосные магистрали между Столицей и Городами-спутниками.
  */
-function ConnectingBridges({
+const ConnectingBridges = memo(function ConnectingBridges({
   capital,
   satellites,
   paused
@@ -318,6 +338,8 @@ function ConnectingBridges({
   satellites: readonly CityIslandView[]
   paused: boolean
 }) {
+  const groupRef = useRef<THREE.Group>(null)
+  useDisableRaycast(groupRef, satellites.length)
   const skin = useCitySkin()
   const centerLineMaterial = useMemo(
     () =>
@@ -383,7 +405,7 @@ function ConnectingBridges({
   if (roadData.length === 0) return <></>
 
   return (
-    <group>
+    <group ref={groupRef}>
       {roadData.map((road) => (
         <BridgeSpan3D
           key={`bridge-group-${road.islandId}`}
@@ -396,13 +418,13 @@ function ConnectingBridges({
       ))}
     </group>
   )
-}
+})
 
 /**
  * Артикулированная башня одного модуля: стилобат с цветом категории,
  * разнообразные архитектурные силуэты и 3D-табличка при наведении/выборе.
  */
-function BuildingComplex3D({
+const BuildingComplex3D = memo(function BuildingComplex3D({
   view,
   item,
   skin,
@@ -523,12 +545,15 @@ function BuildingComplex3D({
       rotation={[0, radialRotY, 0]}
       userData={{ testid: `hive-archipelago-tower-${item.building.id}`, buildingId: item.building.id }}
       onPointerDown={handlePointerDown}
-      onPointerMove={(event: ThreeEvent<PointerEvent>) => {
+      onPointerOver={(event: ThreeEvent<PointerEvent>) => {
         if ((event.buttons & 4) !== 0) return
         event.stopPropagation()
-        onHoverBuilding(item.building.id)
+        if (!hovered) onHoverBuilding(item.building.id)
       }}
-      onPointerOut={() => onHoverBuilding(null)}
+      onPointerOut={(event: ThreeEvent<PointerEvent>) => {
+        event.stopPropagation()
+        if (hovered) onHoverBuilding(null)
+      }}
     >
       <mesh position={[0, 0.05, 0]} material={skin.plinth}>
         <boxGeometry args={[1.56, 0.1, 1.56]} />
@@ -571,7 +596,7 @@ function BuildingComplex3D({
 
       {lit ? (
         <>
-          <mesh position={[0, height / 2 + 0.1, 0]}>
+          <mesh position={[0, height / 2 + 0.1, 0]} raycast={NO_RAYCAST}>
             <boxGeometry args={[1.64, height + 0.4, 1.64]} />
             <meshBasicMaterial color="#ffd98a" wireframe transparent opacity={0.45} />
           </mesh>
@@ -587,10 +612,10 @@ function BuildingComplex3D({
       ) : null}
     </group>
   )
-}
+})
 
 /** Башни одного острова: артикулированные комплексы по детерминированным силуэтам. */
-function IslandTowers({
+const IslandTowers = memo(function IslandTowers({
   view,
   skin,
   accent,
@@ -627,16 +652,18 @@ function IslandTowers({
       ))}
     </group>
   )
-}
+})
 
 /** Плоская табличка названия острова у передней грани плиты (смещается в сторону, если грань занята дорогой). */
-function IslandNameplate({
+const IslandNameplate = memo(function IslandNameplate({
   view,
   hasSouthBridge = false
 }: {
   view: CityIslandView
   hasSouthBridge?: boolean
 }) {
+  const groupRef = useRef<THREE.Group>(null)
+  useDisableRaycast(groupRef, view.island.id)
   const hue = displayIslandHue(view.island.id, view.island.role)
   const accent = `hsl(${hue}, 78%, 64%)`
   const subtitle =
@@ -647,22 +674,24 @@ function IslandNameplate({
   const labelX = view.island.role === 'capital' && hasSouthBridge ? view.x + 3.2 : view.x
   const labelZ = isNorthSatellite ? view.z - view.radius - 0.95 : view.z + view.radius + 0.95
   return (
-    <GroundLabel3D
-      text={view.island.name}
-      subtitle={subtitle}
-      accentColor={accent}
-      position={[labelX, 0.025, labelZ]}
-      size={[4.8, 1.2]}
-      fontSize={34}
-    />
+    <group ref={groupRef}>
+      <GroundLabel3D
+        text={view.island.name}
+        subtitle={subtitle}
+        accentColor={accent}
+        position={[labelX, 0.025, labelZ]}
+        size={[4.8, 1.2]}
+        fontSize={34}
+      />
+    </group>
   )
-}
+})
 
 /**
  * Городская уличная сеть острова: кольцевые проспекты, радиальные авеню,
  * уличные фонари с тёплыми огнями и зелёные скверы/деревья на бульварах.
  */
-function CityStreets3D({
+const CityStreets3D = memo(function CityStreets3D({
   view,
   skin,
   mainAvenueRadius = MAIN_AVENUES_RADIUS,
@@ -675,6 +704,8 @@ function CityStreets3D({
   paused?: boolean
   simClockRef?: MutableRefObject<number> | undefined
 }) {
+  const groupRef = useRef<THREE.Group>(null)
+  useDisableRaycast(groupRef, view.buildings.length)
   const isCapital = view.island.role === 'capital'
   const laneMaterial = useMemo(
     () =>
@@ -777,7 +808,7 @@ function CityStreets3D({
   }, [ringRadii, view.x, view.z])
 
   return (
-    <group>
+    <group ref={groupRef}>
       {ringRadii.map((r, idx) => (
         <group key={`avenue-ring-${idx}`}>
           <mesh position={[view.x, 0.015, view.z]} rotation={[-Math.PI / 2, 0, 0]} material={skin.roadBed}>
@@ -863,7 +894,7 @@ function CityStreets3D({
       ))}
     </group>
   )
-}
+})
 
 /** Один дом работника департамента на кольце вокруг Цитадели Королевы. */
 function DepartmentHouse3D({
@@ -901,21 +932,37 @@ function DepartmentHouse3D({
   const beaconRef = useRef<THREE.Mesh>(null)
   const coreRingMatRef = useRef<THREE.MeshBasicMaterial>(null)
   const garageLampMatRef = useRef<THREE.MeshBasicMaterial>(null)
+  const lastStateRef = useRef<{ working: boolean; active: boolean; accent: string } | null>(null)
 
   useFrame((state) => {
     const delivered = paused || deliveredMapRef.current.get(lot.slot) === true
     const working = lot.active && delivered
-    if (coreRingMatRef.current) {
-      coreRingMatRef.current.color.set(working ? '#ffe6a3' : lot.accent)
-      coreRingMatRef.current.opacity = working ? 0.96 : lot.active ? 0.65 : 0.28
+    const prev = lastStateRef.current
+    if (
+      prev === null ||
+      prev.working !== working ||
+      prev.active !== lot.active ||
+      prev.accent !== lot.accent
+    ) {
+      lastStateRef.current = { working, active: lot.active, accent: lot.accent }
+      if (coreRingMatRef.current) {
+        coreRingMatRef.current.color.set(working ? '#ffe6a3' : lot.accent)
+        coreRingMatRef.current.opacity = working ? 0.96 : lot.active ? 0.65 : 0.28
+      }
+      if (garageLampMatRef.current) {
+        garageLampMatRef.current.color.set(working ? '#7ef2c4' : '#3a4668')
+      }
+      if (beaconRef.current) {
+        beaconRef.current.visible = working
+      }
     }
-    if (garageLampMatRef.current) {
-      garageLampMatRef.current.color.set(working ? '#7ef2c4' : '#3a4668')
+    if (!working || !beaconRef.current) return
+    if (paused) {
+      beaconRef.current.position.y = 1.08 + Math.sin(lot.slot) * 0.06
+      beaconRef.current.rotation.y = 0
+      return
     }
-    if (!beaconRef.current) return
-    beaconRef.current.visible = working
-    if (!working) return
-    const t = paused ? 0 : state.clock.elapsedTime
+    const t = state.clock.elapsedTime
     beaconRef.current.position.y = 1.08 + Math.sin(t * 2.4 + lot.slot) * 0.06
     beaconRef.current.rotation.y = t * 1.4
   })
@@ -991,19 +1038,30 @@ function DepartmentHouse3D({
 }
 
 /** Маяк спутника: мягкое дышащее гало над центром острова без цитадели. */
-function BeaconGlow3D({ view, paused }: { view: CityIslandView; paused: boolean }) {
+const BeaconGlow3D = memo(function BeaconGlow3D({ view, paused }: { view: CityIslandView; paused: boolean }) {
+  const groupRef = useRef<THREE.Group>(null)
   const coreRef = useRef<THREE.Mesh>(null)
   const haloRef = useRef<THREE.Mesh>(null)
+  const pausedAppliedRef = useRef<boolean>(false)
+  useDisableRaycast(groupRef, view.island.id)
   const hue = displayIslandHue(view.island.id, view.island.role)
   const color = `hsl(${hue}, 82%, 66%)`
 
   useFrame((state) => {
-    const t = paused ? 0 : state.clock.elapsedTime
+    if (paused) {
+      if (pausedAppliedRef.current) return
+      pausedAppliedRef.current = true
+      if (coreRef.current) coreRef.current.scale.setScalar(0.38)
+      if (haloRef.current) haloRef.current.scale.setScalar(1)
+      return
+    }
+    pausedAppliedRef.current = false
+    const t = state.clock.elapsedTime
     if (coreRef.current) coreRef.current.scale.setScalar(0.38 + 0.06 * Math.sin(t * 1.9))
     if (haloRef.current) haloRef.current.scale.setScalar(1 + 0.08 * Math.sin(t * 1.2))
   })
   return (
-    <group position={[view.x, 1.8, view.z]}>
+    <group ref={groupRef} position={[view.x, 1.8, view.z]}>
       <mesh ref={coreRef}>
         <octahedronGeometry args={[0.45, 0]} />
         <meshBasicMaterial color="#ffe9b0" />
@@ -1014,10 +1072,10 @@ function BeaconGlow3D({ view, paused }: { view: CityIslandView; paused: boolean 
       </mesh>
     </group>
   )
-}
+})
 
 /** Starfield: static deterministic points on a far shell; no motion cost. */
-function Starfield(): React.JSX.Element | null {
+const Starfield = memo(function Starfield(): React.JSX.Element | null {
   const geometry = useMemo(() => {
     const positions = new Float32Array(300 * 3)
     for (let index = 0; index < 300; index += 1) {
@@ -1035,14 +1093,14 @@ function Starfield(): React.JSX.Element | null {
   }, [])
   useEffect(() => () => geometry.dispose(), [geometry])
   return (
-    <points geometry={geometry}>
+    <points geometry={geometry} raycast={NO_RAYCAST}>
       <pointsMaterial color="#9fb4ff" size={1.4} sizeAttenuation={false} transparent opacity={0.6} />
     </points>
   )
-}
+})
 
 /** Дома работников департаментов и подписи их секторов на кольце столицы. */
-function DepartmentHouses3D({
+const DepartmentHouses3D = memo(function DepartmentHouses3D({
   view,
   lots,
   deliveredMapRef,
@@ -1270,16 +1328,19 @@ function DepartmentHouses3D({
       ))}
     </group>
   )
-}
+})
 
 /**
  * Шпиль Королевы: восьмигранные ярусы со светящимися фасадами, золотые пояса,
  * конус-корона, кристалл-маяк с пульсом и вертикальный луч света.
  */
-function QueenTower3D({ view, skin, paused }: { view: CityIslandView; skin: CitySkin; paused: boolean }) {
+const QueenTower3D = memo(function QueenTower3D({ view, skin, paused }: { view: CityIslandView; skin: CitySkin; paused: boolean }) {
+  const groupRef = useRef<THREE.Group>(null)
   const beaconRef = useRef<THREE.Mesh>(null)
   const haloRef = useRef<THREE.Mesh>(null)
   const beamRef = useRef<THREE.Mesh>(null)
+  const pausedAppliedRef = useRef<boolean>(false)
+  useDisableRaycast(groupRef, view.island.id)
   const facade = skin.facades[0]?.material ?? skin.roof
   const tierMaterials = useMemo<[THREE.Material, THREE.Material, THREE.Material]>(
     () => [facade, skin.roof, skin.roof],
@@ -1343,7 +1404,19 @@ function QueenTower3D({ view, skin, paused }: { view: CityIslandView; skin: City
   }, [view])
 
   useFrame((state) => {
-    const t = paused ? 0 : state.clock.elapsedTime
+    if (paused) {
+      if (pausedAppliedRef.current) return
+      pausedAppliedRef.current = true
+      if (beaconRef.current) beaconRef.current.scale.setScalar(1)
+      if (haloRef.current) haloRef.current.scale.setScalar(1)
+      if (beamRef.current) {
+        const material = beamRef.current.material as THREE.MeshBasicMaterial
+        material.opacity = 0.12
+      }
+      return
+    }
+    pausedAppliedRef.current = false
+    const t = state.clock.elapsedTime
     if (beaconRef.current) {
       beaconRef.current.scale.setScalar(1 + 0.14 * Math.sin(t * 2.1))
     }
@@ -1357,7 +1430,7 @@ function QueenTower3D({ view, skin, paused }: { view: CityIslandView; skin: City
   })
 
   return (
-    <group position={[plan.x, 0, plan.z]} scale={[1, 0.78, 1]}>
+    <group ref={groupRef} position={[plan.x, 0, plan.z]} scale={[1, 0.78, 1]}>
       <mesh position={[0, 0.25, 0]} rotation={[0, Math.PI / 6, 0]} material={skin.plinth}>
         <cylinderGeometry args={[2.3, 2.45, 0.5, 6]} />
       </mesh>
@@ -1400,7 +1473,7 @@ function QueenTower3D({ view, skin, paused }: { view: CityIslandView; skin: City
       </mesh>
     </group>
   )
-}
+})
 
 /** Fixed top-down rig: pans the look target and lerps ortho zoom without resetting on selection. */
 function CameraRig({
@@ -1410,7 +1483,7 @@ function CameraRig({
   overviewZoom: number
   paused: boolean
 }) {
-  const { camera, gl } = useThree()
+  const { camera, gl, invalidate } = useThree()
   const look = useRef(new THREE.Vector3(0, 0, 0))
   const desired = useRef(new THREE.Vector3(0, 0, 0))
   const desiredZoom = useRef(overviewZoom)
@@ -1427,6 +1500,7 @@ function CameraRig({
       event.preventDefault()
       const scale = event.deltaY < 0 ? 1.12 : 1 / 1.12
       desiredZoom.current = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, desiredZoom.current * scale))
+      invalidate()
     }
     const onMouseDown = (event: MouseEvent): void => {
       if (event.button === 1) event.preventDefault()
@@ -1461,6 +1535,7 @@ function CameraRig({
       const worldPerPx = 1 / Math.max(1, zoom)
       desired.current.x = Math.max(-120, Math.min(120, desired.current.x - dx * worldPerPx))
       desired.current.z = Math.max(-120, Math.min(120, desired.current.z - dy * worldPerPx))
+      invalidate()
     }
     const stopPan = (event: PointerEvent): void => {
       if (!panRef.current.active && event.button !== 1) return
@@ -1497,16 +1572,26 @@ function CameraRig({
       window.removeEventListener('pointerup', stopPan)
       dom.style.cursor = ''
     }
-  }, [camera, gl])
+  }, [camera, gl, invalidate])
 
   useFrame((_, delta) => {
+    const ortho = camera as THREE.OrthographicCamera
+    const zoomDiff = typeof ortho.zoom === 'number' ? Math.abs(desiredZoom.current - ortho.zoom) : 0
+    if (look.current.distanceToSquared(desired.current) < 1e-8 && zoomDiff < 1e-5) {
+      return
+    }
     const factor = paused ? 1 : 1 - Math.exp(-7 * Math.min(delta, 0.1))
-    look.current.lerp(desired.current, factor)
+    if (factor >= 1 || look.current.distanceToSquared(desired.current) * factor * factor < 1e-8) {
+      look.current.copy(desired.current)
+    } else {
+      look.current.lerp(desired.current, factor)
+    }
     camera.position.copy(look.current).add(TOP_CAMERA_OFFSET)
     camera.lookAt(look.current)
-    const ortho = camera as THREE.OrthographicCamera
     if (typeof ortho.zoom === 'number') {
-      ortho.zoom = ortho.zoom + (desiredZoom.current - ortho.zoom) * factor
+      ortho.zoom = factor >= 1 || zoomDiff * factor < 1e-5
+        ? desiredZoom.current
+        : ortho.zoom + (desiredZoom.current - ortho.zoom) * factor
       ortho.updateProjectionMatrix()
     }
   })
@@ -1566,9 +1651,12 @@ function IslandGroup3D({
   useFrame((_, delta) => {
     const group = groupRef.current
     if (!group) return
+    if (Math.abs(scaleRef.current - targetScale) < 1e-4) return
     const factor = paused ? 1 : 1 - Math.exp(-7.5 * Math.min(delta, 0.1))
     const current = scaleRef.current
-    const next = Math.max(0.02, current + (targetScale - current) * factor)
+    const next = Math.abs(targetScale - current) * factor < 1e-4
+      ? targetScale
+      : Math.max(0.02, current + (targetScale - current) * factor)
     scaleRef.current = next
     // Масштабируем строго вокруг собственного центра острова (view.x, view.z),
     // чтобы город вырастал на своём месте, а не летел из центра столицы (0,0,0)!
@@ -1706,6 +1794,7 @@ export function HiveArchipelago3D({
       data-testid="hive-archipelago-3d"
     >
       <Canvas
+        frameloop={paused ? 'demand' : 'always'}
         orthographic
         camera={{
           position: TOP_CAMERA_OFFSET.toArray(),
@@ -1713,7 +1802,7 @@ export function HiveArchipelago3D({
           near: 0.1,
           far: 600
         }}
-        dpr={[1, 2]}
+        dpr={[1, 1.5]}
         gl={{ antialias: true, powerPreference: 'low-power' }}
         style={{ width: '100%', height: '100%' }}
         onCreated={({ gl }) => {
