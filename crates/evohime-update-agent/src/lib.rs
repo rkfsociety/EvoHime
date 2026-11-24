@@ -351,6 +351,18 @@ pub struct UpdaterStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     /// Recovery state attached when an interrupted update was detected.
     pub recovery: Option<RecoveryStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Module currently being downloaded or prepared, when known.
+    pub active_module: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Bytes downloaded so far for the active download scope.
+    pub downloaded_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Total expected bytes for the active download scope.
+    pub total_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Smoothed download speed in bytes per second.
+    pub speed_bytes_per_sec: Option<u64>,
 }
 
 fn is_false(value: &bool) -> bool {

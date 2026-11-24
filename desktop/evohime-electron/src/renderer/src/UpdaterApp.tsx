@@ -31,8 +31,9 @@ interface UpdaterStep {
 }
 
 function resolveSteps(status: UpdaterUiStatus): readonly UpdaterStep[] {
-  const { phase, message, percent, modules } = status
+  const { phase, heading, message, percent, modules } = status
   const hasAvailableModules = modules.some((module) => module.available !== null)
+  const downloading = heading === 'Скачиваю обновление' || isDownloadPhaseMessage(message)
 
   let check: UpdaterStepState = 'pending'
   let download: UpdaterStepState = 'pending'
@@ -45,7 +46,7 @@ function resolveSteps(status: UpdaterUiStatus): readonly UpdaterStep[] {
     download = 'active'
   } else if (phase === 'applying') {
     check = 'done'
-    const installing = isInstallPhaseMessage(message) || (!isDownloadPhaseMessage(message) && percent !== null && percent >= 80)
+    const installing = !downloading && (isInstallPhaseMessage(message) || (percent !== null && percent >= 80))
     if (installing) {
       download = 'done'
       install = 'active'
@@ -61,9 +62,9 @@ function resolveSteps(status: UpdaterUiStatus): readonly UpdaterStep[] {
     download = 'done'
     install = 'done'
   } else {
-    if (!hasAvailableModules && percent === null && !isDownloadPhaseMessage(message) && !isInstallPhaseMessage(message)) {
+    if (!hasAvailableModules && percent === null && !downloading && !isInstallPhaseMessage(message)) {
       check = 'error'
-    } else if (isInstallPhaseMessage(message) || (percent !== null && percent >= 80)) {
+    } else if (!downloading && (isInstallPhaseMessage(message) || (percent !== null && percent >= 80))) {
       check = 'done'
       download = 'done'
       install = 'error'

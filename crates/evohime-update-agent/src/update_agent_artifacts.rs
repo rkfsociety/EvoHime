@@ -10,7 +10,7 @@ pub(super) fn apply_listener_runtime_if_needed(
     client: &UpdaterHttpClient,
     update: Option<&UpdateCandidate>,
     data_dir: &Path,
-    progress: &dyn Fn(&str, u8),
+    progress: &dyn Fn(&str, u8, Option<(&str, u64, u64)>),
 ) -> Result<(), String> {
     if let Some(update) = update {
         apply_listener_runtime(client, update, data_dir, progress)?;
@@ -384,7 +384,7 @@ pub(super) fn apply_listener_runtime(
     client: &UpdaterHttpClient,
     update: &UpdateCandidate,
     data_dir: &Path,
-    progress: &dyn Fn(&str, u8),
+    progress: &dyn Fn(&str, u8, Option<(&str, u64, u64)>),
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging").join("listener-runtime");
     let result = apply_listener_runtime_inner(client, update, data_dir, progress);
@@ -395,7 +395,7 @@ pub(super) fn apply_listener_runtime_inner(
     client: &UpdaterHttpClient,
     update: &UpdateCandidate,
     data_dir: &Path,
-    progress: &dyn Fn(&str, u8),
+    progress: &dyn Fn(&str, u8, Option<(&str, u64, u64)>),
 ) -> Result<(), String> {
     let runtime: RuntimeReleaseManifest =
         get_json(client, &update.download_url, "manifest listener-runtime")?;
@@ -439,11 +439,13 @@ pub(super) fn apply_listener_runtime_inner(
         progress(
             &format!("Скачивание listener-runtime: {}", entry.name),
             progress_percent(completed, total),
+            Some(("listener-runtime", completed, total)),
         );
         download_verified_file(client, &file_update, &target, |downloaded| {
             progress(
                 &format!("Скачивание listener-runtime: {}", entry.name),
                 progress_percent(completed + downloaded, total),
+                Some(("listener-runtime", completed + downloaded, total)),
             )
         })?;
         completed += entry.size;
@@ -477,7 +479,7 @@ pub(super) fn apply_listener_runtime_inner(
     if had_old {
         fs::remove_dir_all(&backup).map_err(|error| error.to_string())?;
     }
-    progress("listener-runtime применён", 100);
+    progress("listener-runtime применён", 100, None);
     Ok(())
 }
 

@@ -20,6 +20,10 @@ export interface ModuleUpdaterStatus {
   }[]
   readonly requires_exit?: boolean
   readonly recovery?: UpdateStatus['recovery']
+  readonly active_module?: string | null
+  readonly downloaded_bytes?: number | null
+  readonly total_bytes?: number | null
+  readonly speed_bytes_per_sec?: number | null
 }
 
 export interface ModuleUpdateServiceOptions {
@@ -320,6 +324,15 @@ export class ModuleUpdateService {
     const phase = toUpdatePhase(parsed.phase, available.length > 0)
     const message = parsed.message ?? 'Состояние модульных обновлений обновлено.'
     const parsedPercent = phase === 'applying' ? parsePercent(message) : null
+    const downloadedBytes = asNonNegativeNumber(parsed.downloaded_bytes)
+    const totalBytes = asPositiveNumber(parsed.total_bytes)
+    const downloadSpeedBytesPerSec = asNonNegativeNumber(parsed.speed_bytes_per_sec)
+    const activeModule = typeof parsed.active_module === 'string' && parsed.active_module.length > 0
+      ? parsed.active_module
+      : null
+    const downloadProgress = downloadedBytes !== null && totalBytes !== null
+      ? Math.min(1, downloadedBytes / totalBytes)
+      : parsedPercent === null ? null : parsedPercent / 100
     const next: UpdateStatus = {
       phase,
       blocking: false,
@@ -332,7 +345,7 @@ export class ModuleUpdateService {
       branch: this.options.branch,
       error: phase === 'failed' ? parsed.error ?? parsed.message ?? 'Проверка модулей не удалась.' : null,
       checkedAtMs: Date.now(),
-      downloadProgress: parsedPercent === null ? null : parsedPercent / 100,
+      downloadProgress,
       selectedComponents: [],
       availableModules: available.map((item) => item.module),
       availableModuleVersions: Object.fromEntries(available.map((item) => [item.module, item.available])),
@@ -342,8 +355,10 @@ export class ModuleUpdateService {
       availableModuleChanges: Object.fromEntries(
         available.map((item) => [item.module, Array.isArray(item.changes) ? item.changes : []])
       ),
-      downloadedBytes: null,
-      totalBytes: null,
+      downloadedBytes,
+      totalBytes,
+      downloadSpeedBytesPerSec,
+      activeModule,
       restartRequired: false,
       evidence: [],
       ...(parsed.recovery ? { recovery: parsed.recovery } : {})
@@ -380,6 +395,14 @@ function readInstalledModules(installDirectory: string): Readonly<Record<string,
 
 function quoteShellArgument(value: string): string {
   return `"${value.replace(/"/g, '\\"')}"`
+}
+
+function asNonNegativeNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
+
+function asPositiveNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
 }
 
 function toUpdatePhase(value: string | undefined, hasAvailable: boolean): UpdateStatus['phase'] {

@@ -245,18 +245,27 @@ describe('standalone updater window', () => {
     expect(document.querySelector('.updater-status-spinner')).toBeNull()
   })
 
-  it('shows action/module without duplicating percent in the message', async () => {
+  it('shows telemetry and version without duplicating download wording or percent', async () => {
+    const mb = 1024 * 1024
     installUpdaterApi(updaterUiStatus(status({
       phase: 'applying',
-      message: 'Скачивание shell-host — 28%'
+      message: 'Скачивание shell-host — 85%',
+      activeModule: 'shell-host',
+      downloadedBytes: Math.round(24.3 * mb),
+      totalBytes: Math.round(43.1 * mb),
+      downloadSpeedBytesPerSec: Math.round(4.8 * mb),
+      availableModules: ['shell-host'],
+      installedModules: { 'shell-host': '1.4.2' },
+      availableModuleVersions: { 'shell-host': '1.5.0' }
     })))
     render(<UpdaterApp />)
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Скачиваю обновление' })).toBeTruthy())
-    expect(document.querySelector('.updater-message')?.textContent).toBe('Скачивание shell-host')
-    expect(document.querySelector('.updater-progress__label')?.textContent).toBe('28%')
-    expect(document.querySelector('.updater-progress__badge')?.textContent).toBe('Загрузка')
+    expect(document.querySelector('.updater-message')?.textContent).toBe('shell-host · 4.8 МБ/с · осталось ~4 с')
+    expect(document.querySelector('.updater-progress__label')?.textContent).toBe('85%')
+    expect(document.querySelector('.updater-progress__badge')?.textContent).toBe('v1.4.2 → v1.5.0 · 24.3 / 43.1 МБ')
     expect(document.querySelector('[data-step-id="download"]')?.getAttribute('data-step-state')).toBe('active')
+    expect(document.querySelector('[data-step-id="install"]')?.getAttribute('data-step-state')).toBe('pending')
   })
 
   it('tracks live update steps and updatable module chips without decorative glyphs or footer', async () => {

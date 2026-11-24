@@ -92,6 +92,8 @@ export interface UpdateStatus {
   readonly availableModuleChanges?: Readonly<Record<string, readonly string[]>>
   readonly downloadedBytes?: number | null
   readonly totalBytes?: number | null
+  readonly downloadSpeedBytesPerSec?: number | null
+  readonly activeModule?: string | null
   /** True once a staged package is waiting for the restart. */
   readonly restartRequired: boolean
   /** Bounded stage evidence retained for rollback/update diagnostics. */

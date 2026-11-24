@@ -71,9 +71,11 @@ export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
     summary: summaries[id] ?? (available.length > 0 ? 'Подготовлено к безопасному обновлению.' : 'Работает в установленной версии.')
   }))
 
-  const percent = phase === 'applying' ? parsePercent(status.message) : null
+  const percent = phase === 'applying'
+    ? (parsePercent(status.message) ?? (status.downloadProgress !== null ? Math.min(100, Math.round(status.downloadProgress * 100)) : null))
+    : null
   const rawMessage = status.error ?? status.message
-  const message = status.error || phase !== 'applying' ? rawMessage : stripPercentSuffix(rawMessage)
+  const strippedMessage = status.error || phase !== 'applying' ? rawMessage : stripPercentSuffix(rawMessage)
 
   // The `applying` phase covers both downloading module artifacts and swapping
   // them on disk. Headings and badges must follow the actual sub-step, same way
@@ -81,10 +83,31 @@ export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
   // the message says "Скачивание shell-host".
   const downloading = phase === 'applying' && !isInstallPhaseMessage(rawMessage) && isDownloadPhaseMessage(rawMessage)
 
+  const activeModuleId = status.activeModule ?? (downloading ? extractDownloadModule(strippedMessage) : null)
+  const activeModuleInfo = findActiveModuleInfo(modules, activeModuleId)
+
+  const message = downloading
+    ? formatDownloadSubtitle({
+        moduleLabel: activeModuleId ?? strippedMessage,
+        downloadedBytes: status.downloadedBytes ?? null,
+        totalBytes: status.totalBytes ?? null,
+        speedBytesPerSec: status.downloadSpeedBytesPerSec ?? null
+      })
+    : strippedMessage
+
+  const badge = downloading
+    ? formatDownloadBadge({
+        module: activeModuleInfo,
+        downloadedBytes: status.downloadedBytes ?? null,
+        totalBytes: status.totalBytes ?? null,
+        speedBytesPerSec: status.downloadSpeedBytesPerSec ?? null
+      })
+    : phaseBadge(phase)
+
   return {
     phase,
     heading: downloading ? 'Скачиваю обновление' : phaseHeading(phase),
-    badge: downloading ? 'Загрузка' : phaseBadge(phase),
+    badge,
     message,
     detail: status.detail,
     percent,
@@ -134,4 +157,110 @@ export function parsePercent(message: string): number | null {
 
 function stripPercentSuffix(message: string): string {
   return message.replace(PERCENT_SUFFIX, '').trimEnd()
+}
+
+function extractDownloadModule(message: string): string | null {
+  const match = message.match(/^(?:скачивание|загрузка)\s+(.+)$/i)
+  const moduleName = match?.[1]?.replace(/\.{3}|…$/g, '').trim()
+  return moduleName && moduleName.length > 0 ? moduleName : null
+}
+
+function findActiveModuleInfo(
+  modules: readonly UpdaterUiModule[],
+  activeModuleId: string | null
+): UpdaterUiModule | null {
+  if (activeModuleId) {
+    const exact = modules.find((item) => item.id === activeModuleId)
+    if (exact && exact.available !== null) return exact
+    const prefix = modules.find((item) => activeModuleId.startsWith(`${item.id}:`) && item.available !== null)
+    if (prefix) return prefix
+  }
+  const updatable = modules.filter((item) => item.available !== null)
+  return updatable.length === 1 ? (updatable[0] ?? null) : null
+}
+
+interface DownloadTelemetryInput {
+  readonly moduleLabel: string
+  readonly downloadedBytes: number | null
+  readonly totalBytes: number | null
+  readonly speedBytesPerSec: number | null
+}
+
+function formatDownloadSubtitle(input: DownloadTelemetryInput): string {
+  const parts: string[] = []
+  if (input.moduleLabel.length > 0) {
+    parts.push(input.moduleLabel)
+  }
+  const hasSpeed = input.speedBytesPerSec !== null && input.speedBytesPerSec > 0
+  const hasBytes = input.downloadedBytes !== null && input.totalBytes !== null && input.totalBytes > 0
+  if (hasSpeed && input.speedBytesPerSec !== null) {
+    parts.push(formatSpeed(input.speedBytesPerSec))
+    if (hasBytes && input.totalBytes !== null && input.downloadedBytes !== null && input.totalBytes > input.downloadedBytes) {
+      parts.push(formatEta((input.totalBytes - input.downloadedBytes) / input.speedBytesPerSec))
+    }
+  } else if (hasBytes && input.downloadedBytes !== null && input.totalBytes !== null) {
+    parts.push(formatBytePair(input.downloadedBytes, input.totalBytes))
+  }
+  return parts.join(' · ')
+}
+
+function formatDownloadBadge(input: {
+  readonly module: UpdaterUiModule | null
+  readonly downloadedBytes: number | null
+  readonly totalBytes: number | null
+  readonly speedBytesPerSec: number | null
+}): string {
+  const versionPair = input.module && input.module.available !== null && input.module.installed !== 'установлено'
+    ? `${formatVersionLabel(input.module.installed)} → ${formatVersionLabel(input.module.available)}`
+    : null
+  const hasBytes = input.downloadedBytes !== null && input.totalBytes !== null && input.totalBytes > 0
+  const hasSpeed = input.speedBytesPerSec !== null && input.speedBytesPerSec > 0
+  const bytePair = hasBytes && input.downloadedBytes !== null && input.totalBytes !== null
+    ? formatBytePair(input.downloadedBytes, input.totalBytes)
+    : null
+
+  if (versionPair && bytePair && hasSpeed) {
+    return `${versionPair} · ${bytePair}`
+  }
+  if (versionPair) {
+    return versionPair
+  }
+  if (bytePair) {
+    return bytePair
+  }
+  return 'Обновление'
+}
+
+function formatVersionLabel(version: string): string {
+  return /^\d/.test(version) ? `v${version}` : version
+}
+
+function formatMegabytes(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(1)
+}
+
+function formatBytePair(downloadedBytes: number, totalBytes: number): string {
+  if (totalBytes < 1024 * 1024) {
+    const doneKb = Math.round(downloadedBytes / 1024)
+    const totalKb = Math.max(1, Math.round(totalBytes / 1024))
+    return `${doneKb} / ${totalKb} КБ`
+  }
+  return `${formatMegabytes(downloadedBytes)} / ${formatMegabytes(totalBytes)} МБ`
+}
+
+function formatSpeed(bytesPerSec: number): string {
+  if (bytesPerSec < 1024 * 1024) {
+    const kbPerSec = Math.max(1, Math.round(bytesPerSec / 1024))
+    return `${kbPerSec} КБ/с`
+  }
+  return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} МБ/с`
+}
+
+function formatEta(seconds: number): string {
+  const rounded = Math.max(1, Math.round(seconds))
+  if (rounded < 60) {
+    return `осталось ~${rounded} с`
+  }
+  const minutes = Math.round(rounded / 60)
+  return `осталось ~${minutes} мин`
 }

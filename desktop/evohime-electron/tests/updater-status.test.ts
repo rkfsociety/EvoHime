@@ -61,25 +61,56 @@ describe('updaterUiStatus', () => {
     })
   })
 
-  it('extracts bounded progress from the worker status and strips the trailing percent from message', () => {
+  it('extracts bounded progress from the worker status and formats download telemetry without tautology', () => {
     const first = updaterUiStatus(status({ phase: 'applying', message: 'Скачивание core — 74%' }))
     expect(first.percent).toBe(74)
-    expect(first.message).toBe('Скачивание core')
+    expect(first.message).toBe('core')
 
     const clamped = updaterUiStatus(status({ phase: 'applying', message: 'Скачивание core — 144%' }))
     expect(clamped.percent).toBe(100)
-    expect(clamped.message).toBe('Скачивание core')
+    expect(clamped.message).toBe('core')
 
     const preparing = updaterUiStatus(status({ phase: 'applying', message: 'Подготовка' }))
     expect(preparing.percent).toBeNull()
     expect(preparing.message).toBe('Подготовка')
   })
 
-  it('labels the download sub-step of the applying phase as download, not install', () => {
-    const download = updaterUiStatus(status({ phase: 'applying', message: 'Скачивание shell-host — 60%' }))
+  it('shows download speed, ETA, size and module version without repeating download wording', () => {
+    const mb = 1024 * 1024
+    const download = updaterUiStatus(status({
+      phase: 'applying',
+      message: 'Скачивание shell-host — 56%',
+      activeModule: 'shell-host',
+      downloadedBytes: Math.round(24.3 * mb),
+      totalBytes: Math.round(43.1 * mb),
+      downloadSpeedBytesPerSec: Math.round(4.8 * mb),
+      availableModules: ['shell-host'],
+      installedModules: { 'shell-host': '1.4.2' },
+      availableModuleVersions: { 'shell-host': '1.5.0' }
+    }))
 
     expect(download.heading).toBe('Скачиваю обновление')
-    expect(download.badge).toBe('Загрузка')
+    expect(download.message).toBe('shell-host · 4.8 МБ/с · осталось ~4 с')
+    expect(download.badge).toBe('v1.4.2 → v1.5.0 · 24.3 / 43.1 МБ')
+
+    const withoutSpeed = updaterUiStatus(status({
+      phase: 'applying',
+      message: 'Скачивание shell-host — 56%',
+      activeModule: 'shell-host',
+      downloadedBytes: Math.round(24.3 * mb),
+      totalBytes: Math.round(43.1 * mb),
+      availableModules: ['shell-host'],
+      installedModules: { 'shell-host': '1.4.2' },
+      availableModuleVersions: { 'shell-host': '1.5.0' }
+    }))
+
+    expect(withoutSpeed.message).toBe('shell-host · 24.3 / 43.1 МБ')
+    expect(withoutSpeed.badge).toBe('v1.4.2 → v1.5.0')
+
+    const minimal = updaterUiStatus(status({ phase: 'applying', message: 'Скачивание shell-host — 60%' }))
+    expect(minimal.heading).toBe('Скачиваю обновление')
+    expect(minimal.badge).toBe('Обновление')
+    expect(minimal.message).toBe('shell-host')
 
     const install = updaterUiStatus(status({ phase: 'applying', message: 'Установка компонентов — 90%' }))
 

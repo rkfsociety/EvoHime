@@ -117,6 +117,7 @@ fn control_update(args: &[String]) -> ExitCode {
         &updates,
     );
     write_recovery_phase(&data_dir, "downloaded", None);
+    let telemetry_state = std::cell::RefCell::new(DownloadTelemetryState::default());
     let result = apply_updates(
         &install_dir,
         &data_dir,
@@ -124,13 +125,21 @@ fn control_update(args: &[String]) -> ExitCode {
         wait_pid,
         relaunch.as_deref(),
         health_file.as_deref(),
-        &|message, percent| {
-            write_status(
-                &data_dir,
-                "applying",
-                &format!("{message} — {percent}%"),
-                &updates,
-            );
+        &|message, percent, download| {
+            let now = std::time::Instant::now();
+            let (telemetry, should_write) =
+                telemetry_state
+                    .borrow_mut()
+                    .record(now, percent, download);
+            if should_write {
+                write_status_with_telemetry(
+                    &data_dir,
+                    "applying",
+                    &format!("{message} — {percent}%"),
+                    &updates,
+                    telemetry,
+                );
+            }
         },
     );
     match result {
@@ -1130,7 +1139,7 @@ fn apply_updates(
     wait_pid: Option<u32>,
     relaunch: Option<&Path>,
     health_file: Option<&Path>,
-    progress: &dyn Fn(&str, u8),
+    progress: &dyn Fn(&str, u8, Option<(&str, u64, u64)>),
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
     let result = apply_updates_inner(
@@ -1152,7 +1161,7 @@ fn apply_updates_inner(
     wait_pid: Option<u32>,
     relaunch: Option<&Path>,
     health_file: Option<&Path>,
-    progress: &dyn Fn(&str, u8),
+    progress: &dyn Fn(&str, u8, Option<(&str, u64, u64)>),
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
     let state = data_dir.join("update-state");
@@ -1195,6 +1204,7 @@ fn apply_updates_inner(
         progress(
             &format!("Скачивание {}", update.module),
             progress_percent(completed_bytes, total_bytes),
+            Some((&update.module, completed_bytes, total_bytes)),
         );
         download_verified_file(
             &client,
@@ -1204,6 +1214,7 @@ fn apply_updates_inner(
                 progress(
                     &format!("Скачивание {}", update.module),
                     progress_percent(completed_bytes + downloaded, total_bytes),
+                    Some((&update.module, completed_bytes + downloaded, total_bytes)),
                 )
             },
         )?;
@@ -1211,12 +1222,17 @@ fn apply_updates_inner(
         progress(
             &format!("Скачан {}", update.module),
             progress_percent(completed_bytes, total_bytes),
+            None,
         );
         selected.push(update.artifact.clone());
         applied.push(update);
     }
     if let Some(update) = updates.iter().find(|update| update.module == "shell-host") {
-        progress("Скачивание shell-host", 0);
+        progress(
+            "Скачивание shell-host",
+            0,
+            Some(("shell-host", 0, update.size)),
+        );
         download_verified_file(
             &client,
             update,
@@ -1225,6 +1241,7 @@ fn apply_updates_inner(
                 progress(
                     "Скачивание shell-host",
                     progress_percent(downloaded, update.size),
+                    Some(("shell-host", downloaded, update.size)),
                 )
             },
         )?;
@@ -1232,10 +1249,10 @@ fn apply_updates_inner(
         selected.push("shell-host.zip".to_owned());
         applied.push(update);
         shell_host_update = Some(update);
-        progress("shell-host подготовлен", 100);
+        progress("shell-host подготовлен", 100, None);
     }
     if let Some(update) = updates.iter().find(|update| update.module == "ui-bundle") {
-        progress("Скачивание ui-bundle", 0);
+        progress("Скачивание ui-bundle", 0, Some(("ui-bundle", 0, update.size)));
         download_verified_file(
             &client,
             update,
@@ -1244,15 +1261,16 @@ fn apply_updates_inner(
                 progress(
                     "Скачивание ui-bundle",
                     progress_percent(downloaded, update.size),
+                    Some(("ui-bundle", downloaded, update.size)),
                 )
             },
         )?;
         extract_ui_bundle(&staging.join("ui-bundle.zip"), &staging.join("ui-bundle"))?;
         ui_update = Some(update);
-        progress("ui-bundle подготовлен", 100);
+        progress("ui-bundle подготовлен", 100, None);
     }
     if let Some(update) = updater_update {
-        progress("Скачивание updater", 0);
+        progress("Скачивание updater", 0, Some(("updater", 0, update.size)));
         download_verified_file(
             &client,
             update,
@@ -1261,6 +1279,7 @@ fn apply_updates_inner(
                 progress(
                     "Скачивание updater",
                     progress_percent(downloaded, update.size),
+                    Some(("updater", downloaded, update.size)),
                 )
             },
         )?;
@@ -1280,7 +1299,7 @@ fn apply_updates_inner(
             staging.join("updater"),
         )
         .map_err(|error| error.to_string())?;
-        progress("updater подготовлен", 100);
+        progress("updater подготовлен", 100, None);
     }
     if selected.is_empty() && ui_update.is_none() {
         if let Some(update) = runtime_update {
@@ -1321,7 +1340,7 @@ fn apply_updates_inner(
         .filter(|path| path.as_str() != "shell-host.zip")
         .cloned()
         .collect::<Vec<_>>();
-    progress("Применение модулей", 0);
+    progress("Применение модулей", 0, None);
     write_status_requiring_exit(
         data_dir,
         "Загрузка завершена. Закрываю окно на время применения…",
@@ -1346,7 +1365,7 @@ fn apply_updates_inner(
         health_file,
     })
     .map_err(|error| format!("updater: встроенное применение модулей не удалось: {error}"))?;
-    progress("Модули применены", 100);
+    progress("Модули применены", 100, None);
     let mut component_updates = applied.into_iter().chain(ui_update).collect::<Vec<_>>();
     if let Some(update) = updater_update {
         let manifest_next = install_dir.join("evohime.components.json.next");
@@ -1760,12 +1779,117 @@ fn updater_bootstrap_script(pid: u32, paths: &UpdaterBootstrapPaths<'_>) -> Stri
     )
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct DownloadTelemetry<'a> {
+    active_module: Option<&'a str>,
+    downloaded_bytes: Option<u64>,
+    total_bytes: Option<u64>,
+    speed_bytes_per_sec: Option<u64>,
+}
+
+#[derive(Debug, Default)]
+struct DownloadTelemetryState {
+    last_sample_at: Option<std::time::Instant>,
+    last_bytes: u64,
+    last_module: Option<String>,
+    smoothed_speed: Option<u64>,
+    last_write_at: Option<std::time::Instant>,
+    last_percent: Option<u8>,
+}
+
+impl DownloadTelemetryState {
+    fn record<'a>(
+        &mut self,
+        now: std::time::Instant,
+        percent: u8,
+        download: Option<(&'a str, u64, u64)>,
+    ) -> (DownloadTelemetry<'a>, bool) {
+        let Some((module, downloaded, total)) = download else {
+            self.last_sample_at = None;
+            self.last_bytes = 0;
+            self.last_module = None;
+            self.smoothed_speed = None;
+            self.last_write_at = Some(now);
+            self.last_percent = Some(percent);
+            return (DownloadTelemetry::default(), true);
+        };
+
+        let same_module = self.last_module.as_deref() == Some(module);
+        if !same_module || downloaded < self.last_bytes {
+            self.last_module = Some(module.to_owned());
+            self.last_sample_at = Some(now);
+            self.last_bytes = downloaded;
+            self.smoothed_speed = None;
+        } else if let Some(prev_at) = self.last_sample_at {
+            let elapsed = now.duration_since(prev_at).as_secs_f64();
+            if elapsed >= 0.25 && downloaded > self.last_bytes {
+                let instant = (downloaded - self.last_bytes) as f64 / elapsed;
+                let ema = match self.smoothed_speed {
+                    Some(prev) => 0.3 * instant + 0.7 * (prev as f64),
+                    None => instant,
+                };
+                self.smoothed_speed = Some(ema.round().max(0.0) as u64);
+                self.last_sample_at = Some(now);
+                self.last_bytes = downloaded;
+            }
+        } else {
+            self.last_sample_at = Some(now);
+            self.last_bytes = downloaded;
+        }
+
+        let should_write = !same_module
+            || self.last_percent != Some(percent)
+            || downloaded == total
+            || self
+                .last_write_at
+                .is_none_or(|prev| now.duration_since(prev).as_millis() >= 200);
+        if should_write {
+            self.last_write_at = Some(now);
+            self.last_percent = Some(percent);
+        }
+
+        (
+            DownloadTelemetry {
+                active_module: Some(module),
+                downloaded_bytes: Some(downloaded),
+                total_bytes: Some(total),
+                speed_bytes_per_sec: self.smoothed_speed,
+            },
+            should_write,
+        )
+    }
+}
+
 fn write_status(data_dir: &Path, phase: &'static str, message: &str, updates: &[UpdateCandidate]) {
-    write_status_inner(data_dir, phase, message, updates, false);
+    write_status_inner(
+        data_dir,
+        phase,
+        message,
+        updates,
+        false,
+        DownloadTelemetry::default(),
+    );
+}
+
+fn write_status_with_telemetry(
+    data_dir: &Path,
+    phase: &'static str,
+    message: &str,
+    updates: &[UpdateCandidate],
+    telemetry: DownloadTelemetry<'_>,
+) {
+    write_status_inner(data_dir, phase, message, updates, false, telemetry);
 }
 
 fn write_status_requiring_exit(data_dir: &Path, message: &str, updates: &[UpdateCandidate]) {
-    write_status_inner(data_dir, "applying", message, updates, true);
+    write_status_inner(
+        data_dir,
+        "applying",
+        message,
+        updates,
+        true,
+        DownloadTelemetry::default(),
+    );
 }
 
 fn write_status_inner(
@@ -1774,6 +1898,7 @@ fn write_status_inner(
     message: &str,
     updates: &[UpdateCandidate],
     requires_exit: bool,
+    telemetry: DownloadTelemetry<'_>,
 ) {
     let state = data_dir.join("update-state");
     if fs::create_dir_all(&state).is_ok() {
@@ -1795,6 +1920,10 @@ fn write_status_inner(
                 .collect(),
             requires_exit,
             recovery: recovery_status(data_dir),
+            active_module: telemetry.active_module.map(str::to_owned),
+            downloaded_bytes: telemetry.downloaded_bytes,
+            total_bytes: telemetry.total_bytes,
+            speed_bytes_per_sec: telemetry.speed_bytes_per_sec,
         };
         let path = state.join("updater.json");
         if let Ok(value) = serde_json::to_vec_pretty(&status) {
