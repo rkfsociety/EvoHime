@@ -269,15 +269,23 @@ export function UpdaterApp(): React.JSX.Element {
 
           {visibleModules.length > 0 ? (
             <div className="updater-modules" aria-label={translate("Обновляемые модули")}>
-              {visibleModules.map((module) => (
-                <span
-                  key={module.id}
-                  className="updater-module-chip"
-                  title={`${module.label}: ${module.installed} → ${module.available}`}
-                >
-                  {translate(module.label)}
-                </span>
-              ))}
+              {visibleModules.map((module) => {
+                const state = module.state ?? 'pending'
+                return (
+                  <span
+                    key={module.id}
+                    className={`updater-module-chip updater-module-chip--${state}`}
+                    data-module-id={module.id}
+                    data-module-state={state}
+                    title={`${module.label}: ${module.installed} → ${module.available}`}
+                  >
+                    <span className="updater-module-chip__indicator" aria-hidden="true">
+                      {state === 'done' ? '✓' : state === 'error' ? '!' : null}
+                    </span>
+                    <span className="updater-module-chip__label">{translate(module.label)}</span>
+                  </span>
+                )
+              })}
               {extraModulesCount > 0 ? (
                 <span className="updater-module-chip updater-module-chip--more">+{extraModulesCount}</span>
               ) : null}

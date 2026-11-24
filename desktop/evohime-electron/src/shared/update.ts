@@ -94,6 +94,7 @@ export interface UpdateStatus {
   readonly totalBytes?: number | null
   readonly downloadSpeedBytesPerSec?: number | null
   readonly activeModule?: string | null
+  readonly completedModules?: readonly string[]
   /** True once a staged package is waiting for the restart. */
   readonly restartRequired: boolean
   /** Bounded stage evidence retained for rollback/update diagnostics. */

@@ -363,6 +363,9 @@ pub struct UpdaterStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     /// Smoothed download speed in bytes per second.
     pub speed_bytes_per_sec: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Module identifiers whose download/staging has already completed in this run.
+    pub completed_modules: Vec<String>,
 }
 
 fn is_false(value: &bool) -> bool {

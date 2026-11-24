@@ -24,6 +24,7 @@ export interface ModuleUpdaterStatus {
   readonly downloaded_bytes?: number | null
   readonly total_bytes?: number | null
   readonly speed_bytes_per_sec?: number | null
+  readonly completed_modules?: readonly string[]
 }
 
 export interface ModuleUpdateServiceOptions {
@@ -330,6 +331,9 @@ export class ModuleUpdateService {
     const activeModule = typeof parsed.active_module === 'string' && parsed.active_module.length > 0
       ? parsed.active_module
       : null
+    const completedModules = Array.isArray(parsed.completed_modules)
+      ? parsed.completed_modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
+      : []
     const downloadProgress = downloadedBytes !== null && totalBytes !== null
       ? Math.min(1, downloadedBytes / totalBytes)
       : parsedPercent === null ? null : parsedPercent / 100
@@ -359,6 +363,7 @@ export class ModuleUpdateService {
       totalBytes,
       downloadSpeedBytesPerSec,
       activeModule,
+      completedModules,
       restartRequired: false,
       evidence: [],
       ...(parsed.recovery ? { recovery: parsed.recovery } : {})

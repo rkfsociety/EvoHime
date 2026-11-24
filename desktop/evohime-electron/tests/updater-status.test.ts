@@ -147,4 +147,45 @@ describe('updaterUiStatus', () => {
     expect(view.canApply).toBe(false)
     expect(view.message).toContain('invalid shell-host archive')
   })
+
+  it('tracks module chip states across done, active, pending, and error', () => {
+    const downloading = updaterUiStatus(status({
+      phase: 'applying',
+      message: 'Скачивание ui-bundle — 40%',
+      activeModule: 'ui-bundle',
+      completedModules: ['core'],
+      availableModules: ['core', 'ui-bundle', 'shell-host'],
+      availableModuleVersions: {
+        core: '1.0.1',
+        'ui-bundle': '1.0.1',
+        'shell-host': '1.0.1'
+      }
+    }))
+
+    expect(downloading.modules.map((item) => [item.id, item.state])).toEqual([
+      ['core', 'done'],
+      ['ui-bundle', 'active'],
+      ['shell-host', 'pending']
+    ])
+
+    const failed = updaterUiStatus(status({
+      phase: 'failed',
+      message: 'Ошибка скачивания ui-bundle',
+      error: 'Ошибка скачивания ui-bundle',
+      activeModule: 'ui-bundle',
+      completedModules: ['core'],
+      availableModules: ['core', 'ui-bundle', 'shell-host'],
+      availableModuleVersions: {
+        core: '1.0.1',
+        'ui-bundle': '1.0.1',
+        'shell-host': '1.0.1'
+      }
+    }))
+
+    expect(failed.modules.map((item) => [item.id, item.state])).toEqual([
+      ['core', 'done'],
+      ['ui-bundle', 'error'],
+      ['shell-host', 'pending']
+    ])
+  })
 })

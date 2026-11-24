@@ -281,7 +281,7 @@ describe('standalone updater window', () => {
         { id: 'supervisor', label: 'Supervisor', installed: '1.0.0', available: null, summary: 'Без изменений' }
       ]
     }))
-    render(<UpdaterApp />)
+    const { unmount } = render(<UpdaterApp />)
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Устанавливаю обновление' })).toBeTruthy())
     expect(document.querySelector('[data-step-id="check"]')?.getAttribute('data-step-state')).toBe('done')
@@ -291,6 +291,23 @@ describe('standalone updater window', () => {
     expect(screen.getByText('EvoHime Core')).toBeTruthy()
     expect(screen.getByText('Оболочка Electron')).toBeTruthy()
     expect(screen.queryByText('Supervisor')).toBeNull()
+    expect(document.querySelector('[data-module-id="core"]')?.getAttribute('data-module-state')).toBe('pending')
+    unmount()
+
+    installUpdaterApi(updaterUiStatus(status({
+      phase: 'applying',
+      message: 'Скачивание shell-host — 50%',
+      activeModule: 'shell-host',
+      completedModules: ['core'],
+      availableModules: ['core', 'shell-host', 'ui-bundle'],
+      installedModules: { core: '1.0.0', 'shell-host': '1.0.0', 'ui-bundle': '1.0.0' },
+      availableModuleVersions: { core: '1.0.1', 'shell-host': '1.0.1', 'ui-bundle': '1.0.1' }
+    })))
+    render(<UpdaterApp />)
+    await waitFor(() => expect(document.querySelector('[data-module-id="core"]')?.getAttribute('data-module-state')).toBe('done'))
+    expect(document.querySelector('[data-module-id="core"] .updater-module-chip__indicator')?.textContent).toBe('✓')
+    expect(document.querySelector('[data-module-id="shell-host"]')?.getAttribute('data-module-state')).toBe('active')
+    expect(document.querySelector('[data-module-id="ui-bundle"]')?.getAttribute('data-module-state')).toBe('pending')
     expect(screen.queryByText(/[♢ϟ♡]/)).toBeNull()
     expect(screen.queryByText(/РАЗВИВАЕМСЯ ВМЕСТЕ/)).toBeNull()
     expect(screen.getByTestId('updater-hero-art')).toBeTruthy()

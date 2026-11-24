@@ -403,7 +403,10 @@ button { font: inherit; }
 }
 
 .updater-module-chip {
-  max-width: 160px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 176px;
   overflow: hidden;
   padding: 3px 9px;
   border: 1px solid rgb(141 130 232 / 34%);
@@ -413,8 +416,86 @@ button { font: inherit; }
   font-size: 10.5px;
   font-weight: 500;
   line-height: 1.3;
+  transition: border-color 200ms ease, background-color 200ms ease, color 200ms ease, opacity 200ms ease, box-shadow 200ms ease;
+}
+
+.updater-module-chip__indicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.updater-module-chip__label {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.updater-module-chip--done {
+  border-color: rgb(78 201 164 / 32%);
+  background: rgb(15 20 44 / 58%);
+  color: #a6b4d4;
+}
+
+.updater-module-chip--done .updater-module-chip__indicator {
+  color: #4ec9a4;
+  font-weight: 700;
+}
+
+.updater-module-chip--active {
+  border-color: rgb(141 130 232 / 78%);
+  background: rgb(141 130 232 / 14%);
+  color: #f1f5ff;
+  box-shadow: 0 0 10px rgb(141 130 232 / 24%);
+}
+
+.updater-module-chip--active .updater-module-chip__indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #a78bfa;
+  box-shadow: 0 0 6px rgb(167 139 250 / 85%);
+  animation: updater-chip-pulse 1.3s ease-in-out infinite;
+}
+
+.updater-module-chip--pending {
+  opacity: 0.56;
+  border-color: rgb(141 130 232 / 20%);
+  background: rgb(15 20 44 / 45%);
+  color: #8c99ba;
+}
+
+.updater-module-chip--pending .updater-module-chip__indicator {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.updater-module-chip--error {
+  border-color: rgb(241 143 165 / 52%);
+  background: rgb(241 143 165 / 12%);
+  color: #f4b2c8;
+}
+
+.updater-module-chip--error .updater-module-chip__indicator {
+  color: #f18fa5;
+  font-weight: 700;
+}
+
+@keyframes updater-chip-pulse {
+  0%, 100% {
+    transform: scale(0.9);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 1;
+  }
 }
 
 .updater-module-chip--more {
@@ -498,7 +579,8 @@ button { font: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   .updater-status-spinner--indeterminate,
-  .updater-progress--indeterminate .updater-progress__value {
+  .updater-progress--indeterminate .updater-progress__value,
+  .updater-module-chip--active .updater-module-chip__indicator {
     animation: none;
   }
 }

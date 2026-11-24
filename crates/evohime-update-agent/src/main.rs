@@ -1779,12 +1779,13 @@ fn updater_bootstrap_script(pid: u32, paths: &UpdaterBootstrapPaths<'_>) -> Stri
     )
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 struct DownloadTelemetry<'a> {
     active_module: Option<&'a str>,
     downloaded_bytes: Option<u64>,
     total_bytes: Option<u64>,
     speed_bytes_per_sec: Option<u64>,
+    completed_modules: Vec<String>,
 }
 
 #[derive(Debug, Default)]
@@ -1795,9 +1796,16 @@ struct DownloadTelemetryState {
     smoothed_speed: Option<u64>,
     last_write_at: Option<std::time::Instant>,
     last_percent: Option<u8>,
+    completed_modules: Vec<String>,
 }
 
 impl DownloadTelemetryState {
+    fn mark_module_completed(&mut self, module: &str) {
+        if !self.completed_modules.iter().any(|item| item == module) {
+            self.completed_modules.push(module.to_owned());
+        }
+    }
+
     fn record<'a>(
         &mut self,
         now: std::time::Instant,
@@ -1805,16 +1813,29 @@ impl DownloadTelemetryState {
         download: Option<(&'a str, u64, u64)>,
     ) -> (DownloadTelemetry<'a>, bool) {
         let Some((module, downloaded, total)) = download else {
+            if let Some(prev) = self.last_module.take() {
+                self.mark_module_completed(&prev);
+            }
             self.last_sample_at = None;
             self.last_bytes = 0;
-            self.last_module = None;
             self.smoothed_speed = None;
             self.last_write_at = Some(now);
             self.last_percent = Some(percent);
-            return (DownloadTelemetry::default(), true);
+            return (
+                DownloadTelemetry {
+                    completed_modules: self.completed_modules.clone(),
+                    ..DownloadTelemetry::default()
+                },
+                true,
+            );
         };
 
         let same_module = self.last_module.as_deref() == Some(module);
+        if !same_module {
+            if let Some(prev) = self.last_module.take() {
+                self.mark_module_completed(&prev);
+            }
+        }
         if !same_module || downloaded < self.last_bytes {
             self.last_module = Some(module.to_owned());
             self.last_sample_at = Some(now);
@@ -1854,6 +1875,7 @@ impl DownloadTelemetryState {
                 downloaded_bytes: Some(downloaded),
                 total_bytes: Some(total),
                 speed_bytes_per_sec: self.smoothed_speed,
+                completed_modules: self.completed_modules.clone(),
             },
             should_write,
         )
@@ -1924,6 +1946,7 @@ fn write_status_inner(
             downloaded_bytes: telemetry.downloaded_bytes,
             total_bytes: telemetry.total_bytes,
             speed_bytes_per_sec: telemetry.speed_bytes_per_sec,
+            completed_modules: telemetry.completed_modules,
         };
         let path = state.join("updater.json");
         if let Ok(value) = serde_json::to_vec_pretty(&status) {

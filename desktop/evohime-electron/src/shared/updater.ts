@@ -2,12 +2,15 @@ import type { UpdateStatus } from './update'
 
 export type UpdaterUiPhase = 'checking' | 'ready' | 'available' | 'applying' | 'recovering' | 'manual-recovery' | 'failed'
 
+export type UpdaterModuleState = 'pending' | 'active' | 'done' | 'error'
+
 export interface UpdaterUiModule {
   readonly id: string
   readonly label: string
   readonly installed: string
   readonly available: string | null
   readonly summary: string
+  readonly state?: UpdaterModuleState
 }
 
 export interface UpdaterUiStatus {
@@ -104,6 +107,19 @@ export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
       })
     : phaseBadge(phase)
 
+  const completedSet = new Set(status.completedModules ?? [])
+  const modulesWithState: readonly UpdaterUiModule[] = modules.map((module) => ({
+    ...module,
+    state: resolveModuleState({
+      id: module.id,
+      available: module.available !== null,
+      phase,
+      downloading,
+      activeModuleId,
+      completedSet
+    })
+  }))
+
   return {
     phase,
     heading: downloading ? 'Скачиваю обновление' : phaseHeading(phase),
@@ -111,7 +127,7 @@ export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
     message,
     detail: status.detail,
     percent,
-    modules,
+    modules: modulesWithState,
     canApply: phase === 'available' && available.length > 0,
     ...(status.recovery ? { recovery: status.recovery } : {})
   }
@@ -263,4 +279,39 @@ function formatEta(seconds: number): string {
   }
   const minutes = Math.round(rounded / 60)
   return `осталось ~${minutes} мин`
+}
+
+function resolveModuleState(input: {
+  readonly id: string
+  readonly available: boolean
+  readonly phase: UpdaterUiPhase
+  readonly downloading: boolean
+  readonly activeModuleId: string | null
+  readonly completedSet: ReadonlySet<string>
+}): UpdaterModuleState {
+  if (!input.available || input.phase === 'ready') {
+    return 'done'
+  }
+  if (input.phase === 'failed' || input.phase === 'manual-recovery') {
+    if (input.activeModuleId && (input.activeModuleId === input.id || input.activeModuleId.startsWith(`${input.id}:`))) {
+      return 'error'
+    }
+    return input.completedSet.has(input.id) ? 'done' : 'pending'
+  }
+  if (input.phase === 'recovering') {
+    return 'done'
+  }
+  if (input.phase === 'applying') {
+    if (!input.downloading) {
+      return 'done'
+    }
+    if (input.completedSet.has(input.id)) {
+      return 'done'
+    }
+    if (input.activeModuleId && (input.activeModuleId === input.id || input.activeModuleId.startsWith(`${input.id}:`))) {
+      return 'active'
+    }
+    return 'pending'
+  }
+  return 'pending'
 }
