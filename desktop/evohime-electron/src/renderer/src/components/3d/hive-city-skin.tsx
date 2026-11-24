@@ -9,7 +9,6 @@ import * as THREE from 'three'
 import {
   CAPITAL_TOWER_INNER_RADIUS,
   displayIslandHue,
-  fnv1a32,
   type CityBuildingKind,
   type CityIslandView
 } from '@shared/hive-city-map'
@@ -71,80 +70,8 @@ export function buildingKindLabel(kind: CityBuildingKind): string {
   }
 }
 
-const FACADE_VARIANTS = 4
-
-export interface FacadeSet {
-  readonly material: THREE.MeshStandardMaterial
-  readonly albedo: THREE.CanvasTexture
-  readonly emissive: THREE.CanvasTexture
-}
-
-function createFacadeSet(variant: number): FacadeSet {
-  const width = 128
-  const height = 256
-  const columns = 6
-  const rows = 14
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const context = canvas.getContext('2d')
-  const emissiveCanvas = document.createElement('canvas')
-  emissiveCanvas.width = width
-  emissiveCanvas.height = height
-  const emissiveContext = emissiveCanvas.getContext('2d')
-  if (context !== null && emissiveContext !== null) {
-    const bases = ['#2d385e', '#283254', '#333f68', '#2a3558']
-    context.fillStyle = bases[variant % bases.length] ?? '#2d385e'
-    context.fillRect(0, 0, width, height)
-    emissiveContext.fillStyle = '#000000'
-    emissiveContext.fillRect(0, 0, width, height)
-    const litColors = ['#ffd37a', '#ffb861', '#ffe8b8', '#8cc4ff']
-    const cellWidth = width / columns
-    const cellHeight = height / rows
-    for (let row = 0; row < rows; row += 1) {
-      for (let column = 0; column < columns; column += 1) {
-        const seed = fnv1a32(`facade-${variant}-${row}-${column}`)
-        if (seed % 100 < 48) {
-          const color = litColors[(seed >>> 7) % litColors.length] ?? '#ffd37a'
-          context.fillStyle = color
-          emissiveContext.fillStyle = color
-        } else {
-          context.fillStyle = '#141b33'
-          emissiveContext.fillStyle = '#000000'
-        }
-        context.fillRect(
-          column * cellWidth + cellWidth * 0.24,
-          row * cellHeight + cellHeight * 0.26,
-          cellWidth * 0.52,
-          cellHeight * 0.46
-        )
-        emissiveContext.fillRect(
-          column * cellWidth + cellWidth * 0.24,
-          row * cellHeight + cellHeight * 0.26,
-          cellWidth * 0.52,
-          cellHeight * 0.46
-        )
-      }
-    }
-  }
-  const albedo = new THREE.CanvasTexture(canvas)
-  albedo.colorSpace = THREE.SRGBColorSpace
-  const emissive = new THREE.CanvasTexture(emissiveCanvas)
-  emissive.colorSpace = THREE.SRGBColorSpace
-  const material = new THREE.MeshStandardMaterial({
-    map: albedo,
-    emissive: new THREE.Color('#ffffff'),
-    emissiveMap: emissive,
-    emissiveIntensity: 1.15,
-    roughness: 0.62,
-    metalness: 0.24
-  })
-  return { material, albedo, emissive }
-}
-
 /** Shared per-canvas materials of the whole archipelago. */
 export interface CitySkin {
-  readonly facades: readonly FacadeSet[]
   readonly roof: THREE.MeshStandardMaterial
   readonly plinth: THREE.MeshStandardMaterial
   readonly gold: THREE.MeshStandardMaterial
@@ -155,7 +82,6 @@ export interface CitySkin {
 
 function createCitySkin(): CitySkin {
   return {
-    facades: Array.from({ length: FACADE_VARIANTS }, (_, index) => createFacadeSet(index)),
     roof: new THREE.MeshStandardMaterial({ color: '#1b2340', roughness: 0.75, metalness: 0.18 }),
     plinth: new THREE.MeshStandardMaterial({ color: '#202948', roughness: 0.82, metalness: 0.14 }),
     gold: new THREE.MeshStandardMaterial({
@@ -189,11 +115,6 @@ const CitySkinContext = createContext<CitySkin | null>(null)
 export function CitySkinProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const skin = useMemo(() => createCitySkin(), [])
   useEffect(() => () => {
-    for (const facade of skin.facades) {
-      facade.albedo.dispose()
-      facade.emissive.dispose()
-      facade.material.dispose()
-    }
     skin.roof.dispose()
     skin.plinth.dispose()
     skin.gold.dispose()

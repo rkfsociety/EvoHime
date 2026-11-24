@@ -639,7 +639,6 @@ export function HiveCityScene({
 
   const [focusIslandId, setFocusIslandId] = useState<string | null>(null)
   const [inspector, setInspector] = useState<InspectorTarget | null>(null)
-  const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null)
 
   useEffect(() => {
     setFocusIslandId((current) =>
@@ -681,7 +680,6 @@ export function HiveCityScene({
   const handleClearSelection = useCallback((): void => {
     setFocusIslandId(null)
     setInspector(null)
-    setHoveredBuildingId(null)
     if (selectedDepartment != null) {
       onSelectDepartment?.(selectedDepartment)
     }
@@ -778,7 +776,6 @@ export function HiveCityScene({
                     paused={animationsPaused}
                     selectedIslandId={focusIslandId}
                     selectedBuildingId={inspectorBuildingId}
-                    hoveredBuildingId={hoveredBuildingId}
                     droneCount={droneCount}
                     queenActive={queenActive}
                     departmentHouses={effectiveDepartmentHouses}
@@ -786,7 +783,6 @@ export function HiveCityScene({
                     onSelectDepartment={onSelectDepartment}
                     onSelectIsland={handleSelectIsland}
                     onSelectBuilding={handleSelectBuilding}
-                    onHoverBuilding={setHoveredBuildingId}
                     onBackgroundClick={handleClearSelection}
                     onContextLost={handleContextLost}
                     timeScale={timeScale}

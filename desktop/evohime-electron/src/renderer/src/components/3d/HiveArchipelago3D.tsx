@@ -70,7 +70,7 @@ export interface HiveArchipelago3DProps {
   readonly paused: boolean
   readonly selectedIslandId: string | null
   readonly selectedBuildingId: string | null
-  readonly hoveredBuildingId: string | null
+  readonly hoveredBuildingId?: string | null | undefined
   readonly droneCount: number
   readonly queenActive?: boolean | undefined
   readonly departmentHouses?: readonly HiveCityHouseLot[] | undefined
@@ -78,13 +78,19 @@ export interface HiveArchipelago3DProps {
   readonly onSelectDepartment?: ((departmentKey: string) => void) | undefined
   readonly onSelectIsland: (islandId: string) => void
   readonly onSelectBuilding: (islandId: string, buildingId: string) => void
-  readonly onHoverBuilding: (buildingId: string | null) => void
+  readonly onHoverBuilding?: ((buildingId: string | null) => void) | undefined
   readonly onBackgroundClick: () => void
   readonly onContextLost: () => void
   readonly timeScale?: number | undefined
 }
 
 const NO_RAYCAST = (): void => {}
+
+const HITBOX_MATERIAL = new THREE.MeshBasicMaterial({
+  transparent: true,
+  opacity: 0,
+  depthWrite: false
+})
 
 function useDisableRaycast(ref: MutableRefObject<THREE.Object3D | null>, dep?: unknown): void {
   useLayoutEffect(() => {
@@ -125,15 +131,6 @@ const IslandGround = memo(function IslandGround({
       }),
     [streets]
   )
-  const side = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: new THREE.Color().setHSL(accentHue / 360, 0.36, 0.18),
-        roughness: 0.85,
-        metalness: 0.15
-      }),
-    [accentHue]
-  )
   const rim = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
@@ -143,16 +140,10 @@ const IslandGround = memo(function IslandGround({
       }),
     [accentHue, selected]
   )
-  const rockMaterial = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#171d32', roughness: 0.92, metalness: 0.08 }),
-    []
-  )
   useEffect(() => () => {
     top.dispose()
-    side.dispose()
     rim.dispose()
-    rockMaterial.dispose()
-  }, [top, side, rim, rockMaterial])
+  }, [top, rim])
 
   const rimSegments = useMemo(() => {
     const r = view.radius
@@ -174,35 +165,19 @@ const IslandGround = memo(function IslandGround({
     })
   }, [view.radius])
 
-  const rocks = useMemo(() => {
-    const seed = fnv1a32(`${view.island.id}/rocks`)
-    return Array.from({ length: 5 }, (_, index) => {
-      const angle = (((seed >>> (index * 5)) % 360) / 180) * Math.PI
-      const distance = 0.52 + (((seed >>> (index * 3 + 2)) % 100) / 100) * 0.24
-      return {
-        x: Math.cos(angle) * view.radius * distance,
-        y: -1.6 - (((seed >>> (index * 4 + 1)) % 100) / 100) * view.radius * 0.22,
-        z: Math.sin(angle) * view.radius * distance,
-        size: 0.45 + (((seed >>> (index * 6)) % 100) / 100) * 0.55,
-        rotation: (index * Math.PI) / 5
-      }
-    })
-  }, [view.island.id, view.radius])
-  const rockHeight = view.radius * 0.48
-
   return (
     <group ref={ref}>
       <mesh
-        position={[0, -0.375, 0]}
+        position={[0, -0.07, 0]}
         rotation={[0, Math.PI / 6, 0]}
-        material={[side, top, side]}
+        material={top}
         onPointerDown={(event: ThreeEvent<PointerEvent>) => {
           if (event.button !== 0) return
           event.stopPropagation()
           onSelect()
         }}
       >
-        <cylinderGeometry args={[view.radius, view.radius * 0.93, 0.75, 6]} />
+        <cylinderGeometry args={[view.radius, view.radius, 0.14, 6]} />
       </mesh>
       <group ref={decorRef}>
         {rimSegments.map((seg, index) => (
@@ -215,21 +190,6 @@ const IslandGround = memo(function IslandGround({
             <boxGeometry args={[seg.length, 0.09, 0.14]} />
           </mesh>
         ))}
-        <mesh position={[0, -0.75 - rockHeight / 2, 0]} rotation={[Math.PI, Math.PI / 6, 0]} material={rockMaterial}>
-          <cylinderGeometry args={[view.radius * 0.24, view.radius * 0.88, rockHeight, 6]} />
-        </mesh>
-        <group>
-          {rocks.map((rock, index) => (
-            <mesh
-              key={index}
-              position={[rock.x, rock.y, rock.z]}
-              rotation={[rock.rotation, rock.rotation * 0.7, 0]}
-            material={rockMaterial}
-          >
-            <dodecahedronGeometry args={[rock.size, 0]} />
-          </mesh>
-        ))}
-        </group>
       </group>
     </group>
   )
@@ -431,8 +391,7 @@ const BuildingComplex3D = memo(function BuildingComplex3D({
   accent,
   selected,
   hovered,
-  onSelectBuilding,
-  onHoverBuilding
+  onSelectBuilding
 }: {
   view: CityIslandView
   item: CityBuildingView
@@ -441,8 +400,11 @@ const BuildingComplex3D = memo(function BuildingComplex3D({
   selected: boolean
   hovered: boolean
   onSelectBuilding: (islandId: string, buildingId: string) => void
-  onHoverBuilding: (buildingId: string | null) => void
 }) {
+  const [localHovered, setLocalHovered] = useState(false)
+  const visualRef = useRef<THREE.Group>(null)
+  useDisableRaycast(visualRef, item.building.id)
+
   const variant = useMemo(() => {
     switch (item.building.kind) {
       case 'gateway':
@@ -469,74 +431,39 @@ const BuildingComplex3D = memo(function BuildingComplex3D({
   const z = view.z + item.z
   const kindColor = buildingKindColor(item.building.kind)
 
-  const annexes = useMemo(() => {
+  const annex = useMemo(() => {
     const seed = fnv1a32(`${view.island.id}/${item.building.id}/annex`)
     const side1 = seed % 2 === 0 ? 1 : -1
     const side2 = (seed >>> 3) % 2 === 0 ? 1 : -1
-    return [
-      {
-        dx: side1 * 0.44,
-        dz: -side2 * 0.42,
-        w: 0.44 + ((seed >>> 5) % 14) / 100,
-        d: 0.42 + ((seed >>> 8) % 14) / 100,
-        h: Math.max(0.5, height * (0.34 + ((seed >>> 11) % 16) / 100))
-      }
-    ]
+    return {
+      dx: side1 * 0.44,
+      dz: -side2 * 0.42,
+      w: 0.44 + ((seed >>> 5) % 14) / 100,
+      d: 0.42 + ((seed >>> 8) % 14) / 100,
+      h: Math.max(0.32, height * 0.45)
+    }
   }, [view.island.id, item.building.id, height])
 
-  const layers = useMemo<Array<{ w: number; h: number; accent: boolean; rot: number; y: number; dx: number }>>(() => {
-    const baseH = 0.12
-    const band = 0.06
-    const bodyH = Math.max(0.8, height - baseH)
+  const topDeck = useMemo(() => {
     switch (variant) {
-      case 0: {
-        const main = bodyH - band * 2
-        return [
-          { w: width * 1.1, h: main * 0.55, accent: false, rot: 0, y: baseH + main * 0.275, dx: 0 },
-          { w: width * 0.9, h: band, accent: true, rot: 0, y: baseH + main * 0.55 + band / 2, dx: 0 },
-          { w: width * 0.8, h: main * 0.3, accent: false, rot: 0, y: baseH + main * 0.55 + band + main * 0.15, dx: 0 },
-          { w: width * 0.62, h: band, accent: true, rot: 0, y: baseH + main * 0.85 + band / 2, dx: 0 },
-          { w: width * 0.52, h: main * 0.15, accent: false, rot: 0, y: baseH + main * 0.85 + band + main * 0.075, dx: 0 }
-        ]
-      }
-      case 1: {
-        const podium = bodyH * 0.24
-        const tower = bodyH - podium
-        return [
-          { w: width * 1.24, h: podium, accent: false, rot: 0, y: baseH + podium / 2, dx: 0 },
-          { w: width * 0.54, h: tower, accent: false, rot: 0, y: baseH + podium + tower / 2, dx: -width * 0.32 },
-          { w: width * 0.5, h: tower * 0.72, accent: false, rot: 0, y: baseH + podium + (tower * 0.72) / 2, dx: width * 0.32 }
-        ]
-      }
-      case 2: {
-        const main = bodyH * 0.78
-        const spire = bodyH * 0.22
-        return [
-          { w: width * 1.12, h: main, accent: false, rot: 0, y: baseH + main / 2, dx: 0 },
-          { w: width * 0.72, h: main * 0.12, accent: true, rot: 0, y: baseH + main + main * 0.06, dx: 0 },
-          { w: width * 0.18, h: spire, accent: false, rot: 0, y: baseH + main + main * 0.12 + spire / 2, dx: 0 }
-        ]
-      }
-      default: {
-        const step = bodyH / 3
-        return [
-          { w: width * 1.16, h: step, accent: false, rot: 0, y: baseH + step / 2, dx: 0 },
-          { w: width * 0.88, h: step, accent: false, rot: 0, y: baseH + step * 1.5, dx: 0 },
-          { w: width * 0.58, h: step, accent: true, rot: 0, y: baseH + step * 2.5, dx: 0 }
-        ]
-      }
+      case 0:
+        return { w: width * 0.78, dx: 0 }
+      case 1:
+        return { w: width * 0.54, dx: -width * 0.28 }
+      case 2:
+        return { w: width * 0.68, dx: 0 }
+      default:
+        return { w: width * 0.84, dx: 0 }
     }
-  }, [height, variant])
+  }, [variant])
 
   const handlePointerDown = (event: ThreeEvent<PointerEvent>): void => {
     if (event.button !== 0) return
     event.stopPropagation()
     onSelectBuilding(view.island.id, item.building.id)
   }
-  const lit = selected || hovered
-  const facade = skin.facades[variant % skin.facades.length]?.material ?? skin.roof
-  const wallWithRoof = useMemo(() => [facade, facade, skin.roof, skin.roof, facade, facade], [facade, skin.roof])
-
+  const canHover = view.island.status === 'ready'
+  const lit = selected || hovered || (canHover && localHovered)
   const radialRotY = item.x !== 0 || item.z !== 0 ? -Math.atan2(item.z, item.x) : 0
 
   return (
@@ -544,55 +471,47 @@ const BuildingComplex3D = memo(function BuildingComplex3D({
       position={[x, 0, z]}
       rotation={[0, radialRotY, 0]}
       userData={{ testid: `hive-archipelago-tower-${item.building.id}`, buildingId: item.building.id }}
-      onPointerDown={handlePointerDown}
-      onPointerOver={(event: ThreeEvent<PointerEvent>) => {
-        if ((event.buttons & 4) !== 0) return
-        event.stopPropagation()
-        if (!hovered) onHoverBuilding(item.building.id)
-      }}
-      onPointerOut={(event: ThreeEvent<PointerEvent>) => {
-        event.stopPropagation()
-        if (hovered) onHoverBuilding(null)
-      }}
     >
-      <mesh position={[0, 0.05, 0]} material={skin.plinth}>
-        <boxGeometry args={[1.56, 0.1, 1.56]} />
-      </mesh>
-      <mesh position={[0, 0.105, 0]}>
-        <boxGeometry args={[1.5, 0.02, 1.5]} />
-        <meshBasicMaterial color={kindColor} transparent opacity={lit ? 0.9 : 0.42} />
+      <mesh
+        position={[0, height * 0.5 + 0.05, 0]}
+        material={HITBOX_MATERIAL}
+        onPointerDown={handlePointerDown}
+        onPointerOver={(event: ThreeEvent<PointerEvent>) => {
+          if (!canHover || (event.buttons & 4) !== 0) return
+          event.stopPropagation()
+          setLocalHovered(true)
+        }}
+        onPointerOut={(event: ThreeEvent<PointerEvent>) => {
+          if (!canHover) return
+          event.stopPropagation()
+          setLocalHovered(false)
+        }}
+      >
+        <boxGeometry args={[1.6, height + 0.25, 1.6]} />
       </mesh>
 
-      {annexes.map((annex, idx) => (
-        <mesh
-          key={`annex-${idx}`}
-          position={[annex.dx, 0.11 + annex.h / 2, annex.dz]}
-          material={wallWithRoof}
-          scale={[annex.w, annex.h, annex.d]}
-        >
-          <boxGeometry args={[1, 1, 1]} />
+      <group ref={visualRef}>
+        <mesh position={[0, 0.05, 0]} material={skin.plinth}>
+          <boxGeometry args={[1.56, 0.1, 1.56]} />
         </mesh>
-      ))}
-
-      {layers.map((layer, index) => (
-        <mesh
-          key={index}
-          position={[layer.dx, layer.y, 0]}
-          material={layer.accent ? accent : wallWithRoof}
-          rotation={[0, layer.rot, 0]}
-          scale={[layer.w, layer.h, layer.w]}
-        >
-          <boxGeometry args={[1, 1, 1]} />
+        <mesh position={[0, 0.105, 0]}>
+          <boxGeometry args={[1.5, 0.02, 1.5]} />
+          <meshBasicMaterial color={kindColor} transparent opacity={lit ? 0.9 : 0.42} />
         </mesh>
-      ))}
-
-      <mesh position={[0.16, height + 0.08, -0.16]} material={skin.roof}>
-        <boxGeometry args={[0.26, 0.16, 0.26]} />
-      </mesh>
-      <mesh position={[-0.18, height + 0.22, 0.18]}>
-        <cylinderGeometry args={[0.02, 0.03, 0.44, 6]} />
-        <meshBasicMaterial color={kindColor} />
-      </mesh>
+        <mesh position={[annex.dx, 0.11 + annex.h / 2, annex.dz]} material={skin.roof}>
+          <boxGeometry args={[annex.w, annex.h, annex.d]} />
+        </mesh>
+        <mesh position={[0, 0.12 + height * 0.36, 0]} material={skin.roof}>
+          <boxGeometry args={[width * 1.12, height * 0.72, width * 1.12]} />
+        </mesh>
+        <mesh position={[topDeck.dx, 0.12 + height * 0.8, 0]} material={accent}>
+          <boxGeometry args={[topDeck.w, height * 0.16, topDeck.w]} />
+        </mesh>
+        <mesh position={[-0.18, 0.12 + height * 0.9, 0.18]}>
+          <boxGeometry args={[0.16, 0.1, 0.16]} />
+          <meshBasicMaterial color={kindColor} />
+        </mesh>
+      </group>
 
       {lit ? (
         <>
@@ -621,8 +540,7 @@ const IslandTowers = memo(function IslandTowers({
   accent,
   selectedBuildingId,
   hoveredBuildingId,
-  onSelectBuilding,
-  onHoverBuilding
+  onSelectBuilding
 }: {
   view: CityIslandView
   skin: CitySkin
@@ -630,9 +548,8 @@ const IslandTowers = memo(function IslandTowers({
   selectedBuildingId: string | null
   hoveredBuildingId: string | null
   onSelectBuilding: (islandId: string, buildingId: string) => void
-  onHoverBuilding: (buildingId: string | null) => void
+  onHoverBuilding?: ((buildingId: string | null) => void) | undefined
 }) {
-  const activeId = hoveredBuildingId ?? selectedBuildingId
   const towerBuildings = view.buildings.filter((item) => item.building.kind !== 'citadel')
   if (towerBuildings.length === 0) return <></>
   return (
@@ -645,9 +562,8 @@ const IslandTowers = memo(function IslandTowers({
           skin={skin}
           accent={accent}
           selected={selectedBuildingId === item.building.id}
-          hovered={activeId === item.building.id}
+          hovered={hoveredBuildingId === item.building.id}
           onSelectBuilding={onSelectBuilding}
-          onHoverBuilding={onHoverBuilding}
         />
       ))}
     </group>
@@ -909,9 +825,7 @@ function DepartmentHouse3D({
   view: CityIslandView
   lot: HiveCityHouseLot
   houseMaterials: {
-    readonly activeBody: THREE.MeshStandardMaterial
     readonly activeRoof: THREE.MeshStandardMaterial
-    readonly idleBody: THREE.MeshStandardMaterial
     readonly idleRoof: THREE.MeshStandardMaterial
   }
   deliveredMapRef: React.MutableRefObject<Map<number, boolean>>
@@ -927,7 +841,8 @@ function DepartmentHouse3D({
     return [x, 0, z]
   }, [angle, ringRadius, view.x, view.z])
 
-  const body = lot.active ? houseMaterials.activeBody : houseMaterials.idleBody
+  const visualRef = useRef<THREE.Group>(null)
+  useDisableRaycast(visualRef, lot.slot)
   const roof = lot.active ? houseMaterials.activeRoof : houseMaterials.idleRoof
   const beaconRef = useRef<THREE.Mesh>(null)
   const coreRingMatRef = useRef<THREE.MeshBasicMaterial>(null)
@@ -958,12 +873,12 @@ function DepartmentHouse3D({
     }
     if (!working || !beaconRef.current) return
     if (paused) {
-      beaconRef.current.position.y = 1.08 + Math.sin(lot.slot) * 0.06
+      beaconRef.current.position.y = 0.72 + Math.sin(lot.slot) * 0.06
       beaconRef.current.rotation.y = 0
       return
     }
     const t = state.clock.elapsedTime
-    beaconRef.current.position.y = 1.08 + Math.sin(t * 2.4 + lot.slot) * 0.06
+    beaconRef.current.position.y = 0.72 + Math.sin(t * 2.4 + lot.slot) * 0.06
     beaconRef.current.rotation.y = t * 1.4
   })
 
@@ -976,63 +891,57 @@ function DepartmentHouse3D({
         dept: lot.departmentKey,
         active: lot.active
       }}
-      onPointerDown={(event: ThreeEvent<PointerEvent>) => {
-        if (event.button !== 0 || onSelectHouse === undefined) return
-        event.stopPropagation()
-        onSelectHouse()
-      }}
     >
-      <mesh position={[0, 0.03, 0]} rotation={[0, Math.PI / 6, 0]}>
-        <cylinderGeometry args={[0.56, 0.6, 0.06, 6]} />
-        <meshBasicMaterial color="#151d36" />
+      <mesh
+        position={[0, 0.25, 0]}
+        material={HITBOX_MATERIAL}
+        onPointerDown={(event: ThreeEvent<PointerEvent>) => {
+          if (event.button !== 0 || onSelectHouse === undefined) return
+          event.stopPropagation()
+          onSelectHouse()
+        }}
+      >
+        <cylinderGeometry args={[0.62, 0.62, 0.5, 6]} />
       </mesh>
-      <mesh position={[0, 0.065, 0]} rotation={[0, Math.PI / 6, 0]}>
-        <cylinderGeometry args={[0.52, 0.54, 0.018, 6]} />
-        <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.78 : 0.34} />
-      </mesh>
-
-      <mesh position={[-0.4, 0.16, 0]} material={body}>
-        <boxGeometry args={[0.28, 0.24, 0.38]} />
-      </mesh>
-      <mesh position={[-0.53, 0.14, 0]}>
-        <boxGeometry args={[0.04, 0.18, 0.26]} />
-        <meshBasicMaterial color="#090d1b" />
-      </mesh>
-      <mesh position={[-0.44, 0.29, 0]}>
-        <boxGeometry args={[0.2, 0.03, 0.32]} />
-        <meshBasicMaterial ref={garageLampMatRef} color="#3a4668" />
-      </mesh>
-
-      <mesh position={[0, 0.3, 0]} rotation={[0, Math.PI / 6, 0]} material={body}>
-        <cylinderGeometry args={[0.42, 0.46, 0.46, 6]} />
-      </mesh>
-      <mesh position={[0, 0.55, 0]} rotation={[0, Math.PI / 6, 0]}>
-        <cylinderGeometry args={[0.45, 0.45, 0.055, 6]} />
-        <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.92 : 0.42} />
-      </mesh>
-      <mesh position={[0, 0.69, 0]} rotation={[0, Math.PI / 6, 0]} material={roof}>
-        <cylinderGeometry args={[0.25, 0.43, 0.22, 6]} />
-      </mesh>
-      <mesh position={[0, 0.805, 0]} rotation={[0, Math.PI / 6, 0]}>
-        <cylinderGeometry args={[0.2, 0.22, 0.025, 6]} />
-        <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.96 : 0.48} />
-      </mesh>
-      <mesh position={[0, 0.82, 0]} rotation={[Math.PI / 2, 0, Math.PI / 6]}>
-        <torusGeometry args={[0.23, 0.028, 6, 6]} />
-        <meshBasicMaterial ref={coreRingMatRef} color={lot.accent} transparent opacity={0.5} />
-      </mesh>
-      {lot.active ? (
-        <mesh ref={beaconRef} position={[0, 1.38, 0]} visible={paused}>
-          <octahedronGeometry args={[0.13, 0]} />
-          <meshBasicMaterial color={lot.accent} />
+      <group ref={visualRef}>
+        <mesh position={[0, 0.03, 0]} rotation={[0, Math.PI / 6, 0]}>
+          <cylinderGeometry args={[0.56, 0.6, 0.06, 6]} />
+          <meshBasicMaterial color="#151d36" />
         </mesh>
-      ) : null}
-      {highlighted ? (
-        <mesh position={[0, 0.08, 0]} rotation={[Math.PI / 2, 0, Math.PI / 6]}>
-          <torusGeometry args={[0.63, 0.032, 6, 6]} />
-          <meshBasicMaterial color="#ffe9b0" transparent opacity={0.95} />
+        <mesh position={[0, 0.065, 0]} rotation={[0, Math.PI / 6, 0]}>
+          <cylinderGeometry args={[0.52, 0.54, 0.018, 6]} />
+          <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.78 : 0.34} />
         </mesh>
-      ) : null}
+
+        <mesh position={[-0.44, 0.12, 0]}>
+          <boxGeometry args={[0.24, 0.05, 0.34]} />
+          <meshBasicMaterial ref={garageLampMatRef} color="#3a4668" />
+        </mesh>
+
+        <mesh position={[0, 0.22, 0]} rotation={[0, Math.PI / 6, 0]} material={roof}>
+          <cylinderGeometry args={[0.25, 0.45, 0.26, 6]} />
+        </mesh>
+        <mesh position={[0, 0.36, 0]} rotation={[0, Math.PI / 6, 0]}>
+          <cylinderGeometry args={[0.2, 0.22, 0.025, 6]} />
+          <meshBasicMaterial color={lot.accent} transparent opacity={lot.active ? 0.96 : 0.48} />
+        </mesh>
+        <mesh position={[0, 0.38, 0]} rotation={[Math.PI / 2, 0, Math.PI / 6]}>
+          <torusGeometry args={[0.23, 0.028, 6, 6]} />
+          <meshBasicMaterial ref={coreRingMatRef} color={lot.accent} transparent opacity={0.5} />
+        </mesh>
+        {lot.active ? (
+          <mesh ref={beaconRef} position={[0, 0.72, 0]} visible={paused}>
+            <octahedronGeometry args={[0.13, 0]} />
+            <meshBasicMaterial color={lot.accent} />
+          </mesh>
+        ) : null}
+        {highlighted ? (
+          <mesh position={[0, 0.08, 0]} rotation={[Math.PI / 2, 0, Math.PI / 6]}>
+            <torusGeometry args={[0.63, 0.032, 6, 6]} />
+            <meshBasicMaterial color="#ffe9b0" transparent opacity={0.95} />
+          </mesh>
+        ) : null}
+      </group>
     </group>
   )
 }
@@ -1130,20 +1039,11 @@ const DepartmentHouses3D = memo(function DepartmentHouses3D({
   }, [selectedDepartment, lots, selectedHouseSlot])
   const houseMaterials = useMemo(
     () => ({
-      activeBody: new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#445075'),
-        roughness: 0.55,
-        metalness: 0.14
-      }),
       activeRoof: new THREE.MeshStandardMaterial({
         color: new THREE.Color('#ebc052'),
         emissive: new THREE.Color('#d89b2a'),
         emissiveIntensity: 0.65,
         roughness: 0.35
-      }),
-      idleBody: new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#2a324d'),
-        roughness: 0.7
       }),
       idleRoof: new THREE.MeshStandardMaterial({
         color: new THREE.Color('#475275'),
@@ -1155,9 +1055,7 @@ const DepartmentHouses3D = memo(function DepartmentHouses3D({
 
   useEffect(
     () => () => {
-      houseMaterials.activeBody.dispose()
       houseMaterials.activeRoof.dispose()
-      houseMaterials.idleBody.dispose()
       houseMaterials.idleRoof.dispose()
     },
     [houseMaterials]
@@ -1338,14 +1236,8 @@ const QueenTower3D = memo(function QueenTower3D({ view, skin, paused }: { view: 
   const groupRef = useRef<THREE.Group>(null)
   const beaconRef = useRef<THREE.Mesh>(null)
   const haloRef = useRef<THREE.Mesh>(null)
-  const beamRef = useRef<THREE.Mesh>(null)
   const pausedAppliedRef = useRef<boolean>(false)
   useDisableRaycast(groupRef, view.island.id)
-  const facade = skin.facades[0]?.material ?? skin.roof
-  const tierMaterials = useMemo<[THREE.Material, THREE.Material, THREE.Material]>(
-    () => [facade, skin.roof, skin.roof],
-    [facade, skin.roof]
-  )
 
   const evaIconTexture = useMemo(() => {
     const canvas = document.createElement('canvas')
@@ -1409,10 +1301,6 @@ const QueenTower3D = memo(function QueenTower3D({ view, skin, paused }: { view: 
       pausedAppliedRef.current = true
       if (beaconRef.current) beaconRef.current.scale.setScalar(1)
       if (haloRef.current) haloRef.current.scale.setScalar(1)
-      if (beamRef.current) {
-        const material = beamRef.current.material as THREE.MeshBasicMaterial
-        material.opacity = 0.12
-      }
       return
     }
     pausedAppliedRef.current = false
@@ -1423,51 +1311,25 @@ const QueenTower3D = memo(function QueenTower3D({ view, skin, paused }: { view: 
     if (haloRef.current) {
       haloRef.current.scale.setScalar(1 + 0.08 * Math.sin(t * 1.3))
     }
-    if (beamRef.current) {
-      const material = beamRef.current.material as THREE.MeshBasicMaterial
-      material.opacity = 0.12 + 0.05 * Math.sin(t * 1.7)
-    }
   })
 
   return (
     <group ref={groupRef} position={[plan.x, 0, plan.z]} scale={[1, 0.78, 1]}>
-      <mesh position={[0, 0.25, 0]} rotation={[0, Math.PI / 6, 0]} material={skin.plinth}>
-        <cylinderGeometry args={[2.3, 2.45, 0.5, 6]} />
+      <mesh position={[0, 0.15, 0]} rotation={[0, Math.PI / 6, 0]} material={skin.plinth}>
+        <cylinderGeometry args={[2.3, 2.35, 0.3, 6]} />
       </mesh>
-      <mesh position={[0, 0.53, 0]} rotation={[Math.PI / 2, 0, 0]} material={skin.gold}>
-        <torusGeometry args={[1.64, 0.055, 8, 32]} />
+      <mesh position={[0, 0.5, 0]} rotation={[0, Math.PI / 6, 0]} material={skin.gold}>
+        <coneGeometry args={[1.25, 0.7, 6]} />
       </mesh>
-      <mesh position={[0, 1.6, 0]} rotation={[0, Math.PI / 6, 0]} material={tierMaterials}>
-        <cylinderGeometry args={[1.35, 1.62, 2.2, 6]} />
-      </mesh>
-      <mesh position={[0, 2.72, 0]} rotation={[Math.PI / 2, 0, 0]} material={skin.gold}>
-        <torusGeometry args={[1.28, 0.045, 8, 32]} />
-      </mesh>
-      <mesh position={[0, 3.62, 0]} rotation={[0, Math.PI / 6, 0]} material={tierMaterials}>
-        <cylinderGeometry args={[1.05, 1.22, 1.8, 6]} />
-      </mesh>
-      <mesh position={[0, 4.54, 0]} rotation={[Math.PI / 2, 0, 0]} material={skin.gold}>
-        <torusGeometry args={[1.0, 0.04, 8, 32]} />
-      </mesh>
-      <mesh position={[0, 5.28, 0]} rotation={[0, Math.PI / 6, 0]} material={tierMaterials}>
-        <cylinderGeometry args={[0.8, 0.98, 1.5, 6]} />
-      </mesh>
-      <mesh position={[0, 6.08, 0]} rotation={[0, Math.PI / 6, 0]} material={skin.gold}>
-        <coneGeometry args={[0.72, 1.1, 6]} />
-      </mesh>
-      <mesh ref={beaconRef} position={[0, 6.95, 0]}>
+      <mesh ref={beaconRef} position={[0, 1.1, 0]}>
         <icosahedronGeometry args={[0.32, 0]} />
         <meshBasicMaterial color="#ffe9b0" />
       </mesh>
-      <mesh ref={haloRef} position={[0, 6.95, 0]}>
-        <sphereGeometry args={[0.74, 14, 14]} />
+      <mesh ref={haloRef} position={[0, 1.1, 0]}>
+        <sphereGeometry args={[0.85, 14, 14]} />
         <meshBasicMaterial color="#ffe9b0" transparent opacity={0.18} depthWrite={false} />
       </mesh>
-      <mesh ref={beamRef} position={[0, 9.4, 0]}>
-        <cylinderGeometry args={[0.09, 0.14, 4.6, 6, 1, true]} />
-        <meshBasicMaterial color="#ffd98a" transparent opacity={0.14} blending={THREE.AdditiveBlending} depthWrite={false} />
-      </mesh>
-      <mesh position={[0, 7.45, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 1.6, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[1.65, 1.65]} />
         <meshBasicMaterial map={evaIconTexture} transparent depthWrite={false} />
       </mesh>
@@ -1594,6 +1456,7 @@ function CameraRig({
         : ortho.zoom + (desiredZoom.current - ortho.zoom) * factor
       ortho.updateProjectionMatrix()
     }
+    invalidate()
   })
 
   return null
@@ -1636,7 +1499,7 @@ function IslandGroup3D({
   hasSouthBridge?: boolean
   onSelectIsland: (islandId: string) => void
   onSelectBuilding: (islandId: string, buildingId: string) => void
-  onHoverBuilding: (buildingId: string | null) => void
+  onHoverBuilding?: ((buildingId: string | null) => void) | undefined
   onBackgroundClick: () => void
   timeScale?: number | undefined
   simClockRef?: MutableRefObject<number> | undefined
@@ -1745,13 +1608,13 @@ function IslandGroup3D({
  * Полный 3D-режим. Родитель оборачивает его в ErrorBoundary: при любой
  * ошибке контекста рендер переключается на SVG-режим без перезагрузки окна.
  */
-export function HiveArchipelago3D({
+export const HiveArchipelago3D = memo(function HiveArchipelago3D({
   capital,
   satellites,
   paused,
   selectedIslandId,
   selectedBuildingId,
-  hoveredBuildingId,
+  hoveredBuildingId = null,
   droneCount,
   queenActive = true,
   departmentHouses,
@@ -1794,7 +1657,7 @@ export function HiveArchipelago3D({
       data-testid="hive-archipelago-3d"
     >
       <Canvas
-        frameloop={paused ? 'demand' : 'always'}
+        frameloop={paused || !queenActive ? 'demand' : 'always'}
         orthographic
         camera={{
           position: TOP_CAMERA_OFFSET.toArray(),
@@ -1848,15 +1711,15 @@ export function HiveArchipelago3D({
       </Canvas>
     </div>
   )
-}
+})
 
-function FloatingCityGroup({
+const FloatingCityGroup = memo(function FloatingCityGroup({
   capital,
   satellites,
   paused,
   selectedIslandId,
   selectedBuildingId,
-  hoveredBuildingId,
+  hoveredBuildingId = null,
   droneCount,
   queenActive = true,
   departmentHouses,
@@ -1882,7 +1745,7 @@ function FloatingCityGroup({
   readonly onSelectDepartment: ((departmentKey: string) => void) | undefined
   readonly onSelectIsland: (islandId: string) => void
   readonly onSelectBuilding: (islandId: string, buildingId: string) => void
-  readonly onHoverBuilding: (buildingId: string | null) => void
+  readonly onHoverBuilding?: ((buildingId: string | null) => void) | undefined
   readonly onBackgroundClick: () => void
   readonly timeScale?: number | undefined
   readonly simClockRef?: MutableRefObject<number> | undefined
@@ -1930,4 +1793,4 @@ function FloatingCityGroup({
       ))}
     </group>
   )
-}
+})

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
+import { useRef, type MutableRefObject } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
@@ -113,6 +113,24 @@ export function RoadSegment3D({
  * Регулируемый перекрёсток на пересечении кольца и прямой магистрали от ворот Королевы:
  * разрывает сплошную разметку кольца для легальных разворотов и поворотов, рисует стоп-линии и светофоры.
  */
+const INTERSECTION_STOP_LINE_MAT = new THREE.MeshBasicMaterial({
+  color: '#e8ecf8',
+  transparent: true,
+  opacity: 0.88,
+  depthWrite: false
+})
+const INTERSECTION_HOUSING_MAT = new THREE.MeshStandardMaterial({
+  color: '#0f1422',
+  roughness: 0.7,
+  metalness: 0.3
+})
+const INTERSECTION_LAMP_RED_ON = new THREE.MeshBasicMaterial({ color: '#ff3b30' })
+const INTERSECTION_LAMP_AMBER_ON = new THREE.MeshBasicMaterial({ color: '#ffb020' })
+const INTERSECTION_LAMP_GREEN_ON = new THREE.MeshBasicMaterial({ color: '#22e564' })
+const INTERSECTION_LAMP_RED_OFF = new THREE.MeshBasicMaterial({ color: '#3b1215' })
+const INTERSECTION_LAMP_AMBER_OFF = new THREE.MeshBasicMaterial({ color: '#3b2a0e' })
+const INTERSECTION_LAMP_GREEN_OFF = new THREE.MeshBasicMaterial({ color: '#0e331c' })
+
 export function RegulatedIntersection3D({
   x,
   z,
@@ -134,30 +152,14 @@ export function RegulatedIntersection3D({
   hasInnerRadial?: boolean | undefined
   hasOuterRadial?: boolean | undefined
 }) {
-  const stopLineMat = useMemo(
-    () =>
-      new THREE.MeshBasicMaterial({
-        color: '#e8ecf8',
-        transparent: true,
-        opacity: 0.88,
-        depthWrite: false
-      }),
-    []
-  )
-  const poleMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#1b2238', roughness: 0.6, metalness: 0.4 }),
-    []
-  )
-  const housingMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#0f1422', roughness: 0.7, metalness: 0.3 }),
-    []
-  )
-  const lampRedOn = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ff3b30' }), [])
-  const lampAmberOn = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ffb020' }), [])
-  const lampGreenOn = useMemo(() => new THREE.MeshBasicMaterial({ color: '#22e564' }), [])
-  const lampRedOff = useMemo(() => new THREE.MeshBasicMaterial({ color: '#3b1215' }), [])
-  const lampAmberOff = useMemo(() => new THREE.MeshBasicMaterial({ color: '#3b2a0e' }), [])
-  const lampGreenOff = useMemo(() => new THREE.MeshBasicMaterial({ color: '#0e331c' }), [])
+  const stopLineMat = INTERSECTION_STOP_LINE_MAT
+  const housingMat = INTERSECTION_HOUSING_MAT
+  const lampRedOn = INTERSECTION_LAMP_RED_ON
+  const lampAmberOn = INTERSECTION_LAMP_AMBER_ON
+  const lampGreenOn = INTERSECTION_LAMP_GREEN_ON
+  const lampRedOff = INTERSECTION_LAMP_RED_OFF
+  const lampAmberOff = INTERSECTION_LAMP_AMBER_OFF
+  const lampGreenOff = INTERSECTION_LAMP_GREEN_OFF
 
   const ringRedRefs = useRef<Array<THREE.Mesh | null>>([])
   const ringAmberRefs = useRef<Array<THREE.Mesh | null>>([])
@@ -166,28 +168,6 @@ export function RegulatedIntersection3D({
   const radialAmberRefs = useRef<Array<THREE.Mesh | null>>([])
   const radialGreenRefs = useRef<Array<THREE.Mesh | null>>([])
   const lastSignalKeyRef = useRef<string>('')
-
-  useEffect(() => () => {
-    stopLineMat.dispose()
-    poleMat.dispose()
-    housingMat.dispose()
-    lampRedOn.dispose()
-    lampAmberOn.dispose()
-    lampGreenOn.dispose()
-    lampRedOff.dispose()
-    lampAmberOff.dispose()
-    lampGreenOff.dispose()
-  }, [
-    stopLineMat,
-    poleMat,
-    housingMat,
-    lampRedOn,
-    lampAmberOn,
-    lampGreenOn,
-    lampRedOff,
-    lampAmberOff,
-    lampGreenOff
-  ])
 
   useFrame((state) => {
     const elapsed = paused ? 0 : simClockRef ? simClockRef.current : state.clock.elapsedTime
@@ -261,20 +241,8 @@ export function RegulatedIntersection3D({
     greenRefs: MutableRefObject<Array<THREE.Mesh | null>>,
     initGreen: boolean
   ) => {
-    const dx = head.headX - head.poleX
-    const dz = head.headZ - head.poleZ
-    const armLen = Math.hypot(dx, dz)
-    const armX = (head.poleX + head.headX) * 0.5
-    const armZ = (head.poleZ + head.headZ) * 0.5
-    const armAlongX = Math.abs(dx) >= Math.abs(dz)
     return (
       <group key={key}>
-        <mesh position={[head.poleX, 0.22, head.poleZ]} material={poleMat}>
-          <cylinderGeometry args={[0.022, 0.028, 0.44, 6]} />
-        </mesh>
-        <mesh position={[armX, 0.43, armZ]} material={poleMat}>
-          <boxGeometry args={[armAlongX ? armLen : 0.026, 0.024, armAlongX ? 0.026 : armLen]} />
-        </mesh>
         <group position={[head.headX, 0.44, head.headZ]} rotation={[0, head.rotY, 0]}>
           <mesh material={housingMat}>
             <boxGeometry args={[0.085, 0.055, 0.29]} />

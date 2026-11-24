@@ -3129,7 +3129,7 @@ export function HiveDashboard({
             activeDepartmentsLabel={translate('Работает')}
             cityMap={cityMap}
             suppressLegacyPanorama
-            activeAgents={hive?.activeAgents ?? []}
+            activeAgents={hive?.activeAgents ?? EMPTY_ACTIVE_AGENTS}
           />
         </section>
 
@@ -4108,6 +4108,7 @@ export function HiveDashboard({
 }
 
 /** Read-only projection of Core-owned memory/child/schedule state. */
+const EMPTY_ACTIVE_AGENTS: readonly never[] = []
 let lastKnownCityMap: HiveCityMapPayload | null = null
 
 export function OperationsPanel({ connection, events, repair }: Props): React.JSX.Element {
