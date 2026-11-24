@@ -1364,12 +1364,12 @@ mod tests {
         let policy = default_policy("model");
         let docs = "pwsh .\\scripts\\build-listener-runtime.ps1 -Rungs tiny\nElectron supervisor workspace";
         let docs_redacted = redact_text(&policy, docs).unwrap();
-        assert_eq!(docs_redacted.output, docs);
+        assert_eq!(docs_redacted.value, docs);
 
         let pii = "phone +1 (415) 555-2671 card 4111 1111 1111 1111 tax 123456789";
         let pii_redacted = redact_text(&policy, pii).unwrap();
-        assert_ne!(pii_redacted.output, pii);
-        let after = classify_text(&pii_redacted.output).unwrap();
+        assert_ne!(pii_redacted.value, pii);
+        let after = classify_text(&pii_redacted.value).unwrap();
         assert_eq!(after.required_privacy, "public");
         assert!(after.findings.is_empty());
     }

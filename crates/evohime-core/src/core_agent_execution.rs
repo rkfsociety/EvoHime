@@ -3318,7 +3318,8 @@ fn tool_preflight_can_be_offered(
 #[cfg(test)]
 mod tests {
     use super::{
-        adaptive_catalog_query, apply_read_only_subagent_modes, bounded_tool_output,
+        adaptive_catalog_query, apply_read_only_subagent_modes, apply_session_permission_mode,
+        bounded_tool_output, grant_session_plan_execution_permissions,
         inject_observed_expected_hash, model_tool_observation, request_allows_mutation,
         subagent_tool_allowed, tool_preflight_can_be_offered, update_observed_file_revision,
         ToolAgent, MAX_TRACE_TOOL_OUTPUT_BYTES, TOOL_OUTPUT_TRUNCATION_SUFFIX,
@@ -4108,49 +4109,47 @@ mod tests {
 
     #[tokio::test]
     async fn ask_session_allows_project_reads_and_unlocks_plan_mutations_after_approval() {
-        use evohime_permissions::{Permission, PermissionMode};
-
         let permissions = PermissionEngine::new();
         let session_id = uuid::Uuid::new_v4();
+        let check = || PermissionCheck {
+            session_id: Some(session_id),
+            ..PermissionCheck::default()
+        };
         apply_session_permission_mode(&permissions, session_id, PermissionMode::Ask).await;
 
         assert_eq!(
             permissions
-                .effective_mode(Some(session_id), Permission::FilesystemRead)
+                .check_scoped(Permission::FilesystemRead, &check())
                 .await,
-            PermissionMode::Allow
+            PermissionDecision::Allowed
+        );
+        assert_eq!(
+            permissions.check_scoped(Permission::GitRead, &check()).await,
+            PermissionDecision::Allowed
         );
         assert_eq!(
             permissions
-                .effective_mode(Some(session_id), Permission::GitRead)
+                .check_scoped(Permission::FilesystemWrite, &check())
                 .await,
-            PermissionMode::Allow
-        );
-        assert_eq!(
-            permissions
-                .effective_mode(Some(session_id), Permission::FilesystemWrite)
-                .await,
-            PermissionMode::Ask
+            PermissionDecision::NeedsApproval
         );
 
         grant_session_plan_execution_permissions(&permissions, session_id).await;
         assert_eq!(
             permissions
-                .effective_mode(Some(session_id), Permission::FilesystemWrite)
+                .check_scoped(Permission::FilesystemWrite, &check())
                 .await,
-            PermissionMode::Allow
+            PermissionDecision::Allowed
         );
         assert_eq!(
             permissions
-                .effective_mode(Some(session_id), Permission::ShellExecute)
+                .check_scoped(Permission::ShellExecute, &check())
                 .await,
-            PermissionMode::Allow
+            PermissionDecision::Allowed
         );
         assert_eq!(
-            permissions
-                .effective_mode(Some(session_id), Permission::GitWrite)
-                .await,
-            PermissionMode::Allow
+            permissions.check_scoped(Permission::GitWrite, &check()).await,
+            PermissionDecision::Allowed
         );
     }
 }
