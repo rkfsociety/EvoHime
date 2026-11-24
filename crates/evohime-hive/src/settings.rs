@@ -131,6 +131,9 @@ pub struct HiveSettings {
     /// Whether the primary token quota resets at UTC midnight.
     #[serde(default)]
     pub hive_quota_reset_utc_midnight: bool,
+    /// Daily reset schedule for the isolated primary Hive provider.
+    #[serde(default)]
+    pub hive_reset_schedule: evohime_model_gateway::config::LimitResetSchedule,
     /// User-defined request caps for the isolated Hive fallback provider.
     #[serde(default)]
     pub hive_fallback_provider_limits: ProviderLimits,
@@ -140,6 +143,9 @@ pub struct HiveSettings {
     /// Whether the fallback token quota resets at UTC midnight.
     #[serde(default)]
     pub hive_fallback_quota_reset_utc_midnight: bool,
+    /// Daily reset schedule for the isolated Hive fallback provider.
+    #[serde(default)]
+    pub hive_fallback_reset_schedule: evohime_model_gateway::config::LimitResetSchedule,
     /// Whether a primary token quota was explicitly configured by the user.
     #[serde(default)]
     pub hive_token_quota_configured: bool,
@@ -191,9 +197,11 @@ impl Default for HiveSettings {
             hive_provider_limits: ProviderLimits::default(),
             hive_daily_token_quota: 0,
             hive_quota_reset_utc_midnight: false,
+            hive_reset_schedule: evohime_model_gateway::config::LimitResetSchedule::default(),
             hive_fallback_provider_limits: ProviderLimits::default(),
             hive_fallback_daily_token_quota: 0,
             hive_fallback_quota_reset_utc_midnight: false,
+            hive_fallback_reset_schedule: evohime_model_gateway::config::LimitResetSchedule::default(),
             hive_token_quota_configured: false,
             hive_fallback_token_quota_configured: false,
             proactive_evolution_enabled: false,
@@ -202,6 +210,24 @@ impl Default for HiveSettings {
 }
 
 impl HiveSettings {
+    /// Returns the effective daily reset schedule for the primary Hive provider.
+    pub fn primary_reset_schedule(&self) -> evohime_model_gateway::config::LimitResetSchedule {
+        let mut schedule = self.hive_reset_schedule;
+        if self.hive_quota_reset_utc_midnight {
+            schedule.enabled = true;
+        }
+        schedule
+    }
+
+    /// Returns the effective daily reset schedule for the fallback Hive provider.
+    pub fn fallback_reset_schedule(&self) -> evohime_model_gateway::config::LimitResetSchedule {
+        let mut schedule = self.hive_fallback_reset_schedule;
+        if self.hive_fallback_quota_reset_utc_midnight {
+            schedule.enabled = true;
+        }
+        schedule
+    }
+
     /// Validates persisted or freshly submitted settings.
     pub fn validate(&self) -> Result<(), HiveSettingsError> {
         if self.schema_version != HIVE_SETTINGS_SCHEMA_VERSION {
@@ -280,6 +306,9 @@ impl HiveSettings {
         if self.hive_daily_token_quota > 1_000_000_000_000
             || self.hive_fallback_daily_token_quota > 1_000_000_000_000
         {
+            return Err(HiveSettingsError::InvalidProviderLimit);
+        }
+        if !self.hive_reset_schedule.is_valid() || !self.hive_fallback_reset_schedule.is_valid() {
             return Err(HiveSettingsError::InvalidProviderLimit);
         }
         if let Some(eva_path) = self.eva_workspace_path() {

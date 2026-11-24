@@ -65,6 +65,12 @@ export interface ProviderLimits {
   readonly rpd: number
 }
 
+export interface LimitResetSchedule {
+  readonly enabled: boolean
+  readonly time_minutes: number
+  readonly utc_offset_hours: number
+}
+
 export interface ShellState {
   readonly connection: ConnectionState
   /** Negotiated protocol, present only once a handshake succeeded. */
@@ -748,6 +754,9 @@ export interface ModelRateLimitSettings {
   readonly rpd: number
   readonly dailyTokenQuota?: number | null
   readonly quotaResetUtcMidnight?: boolean
+  readonly resetScheduleEnabled?: boolean
+  readonly resetTimeMinutes?: number
+  readonly resetUtcOffsetHours?: number
   readonly pricing?: ModelPricingSettings
 }
 

@@ -21,7 +21,12 @@ import {
   type RequestPacingSettings
 } from '@shared/api'
 
-import { ModelSettingsBlock, type ModelLimitDraft } from './ModelSettingsBlock'
+import {
+  ModelSettingsBlock,
+  formatResetTime,
+  parseResetTime,
+  type ModelLimitDraft
+} from './ModelSettingsBlock'
 import { ProviderBaseFields } from './ProviderBaseFields'
 import { ProviderSpecificSettings } from './ProviderSpecificSettings'
 import { translate, formatDateTime } from './i18n'
@@ -113,7 +118,9 @@ function buildModelLimitDrafts(
         rp4h: String(settings.rp4h ?? 0),
         rpd: String(settings.rpd ?? 0),
         dailyTokenQuota: String(settings.dailyTokenQuota ?? ''),
-        quotaResetUtcMidnight: settings.quotaResetUtcMidnight === true,
+        resetScheduleEnabled: settings.resetScheduleEnabled === true || settings.quotaResetUtcMidnight === true,
+        resetTime: formatResetTime(settings.resetTimeMinutes ?? 0),
+        resetUtcOffsetHours: settings.resetUtcOffsetHours ?? 0,
         pricingEnabled: settings.pricing !== undefined,
         inputUsdPer1M: String(settings.pricing?.inputUsdPer1M ?? 0),
         cachedInputUsdPer1M: String(settings.pricing?.cachedInputUsdPer1M ?? 0),
@@ -132,7 +139,9 @@ function buildModelLimitDrafts(
       rp4h: '0',
       rpd: '0',
       dailyTokenQuota: '',
-      quotaResetUtcMidnight: false,
+      resetScheduleEnabled: false,
+      resetTime: '00:00',
+      resetUtcOffsetHours: 0,
       pricingEnabled: false,
       inputUsdPer1M: '0',
       cachedInputUsdPer1M: '0',
@@ -150,7 +159,9 @@ function buildModelLimitDrafts(
       rp4h: '0',
       rpd: '0',
       dailyTokenQuota: '',
-      quotaResetUtcMidnight: false,
+      resetScheduleEnabled: false,
+      resetTime: '00:00',
+      resetUtcOffsetHours: 0,
       pricingEnabled: false,
       inputUsdPer1M: '0',
       cachedInputUsdPer1M: '0',
@@ -168,7 +179,9 @@ function buildModelLimitDrafts(
       rp4h: '0',
       rpd: '0',
       dailyTokenQuota: '',
-      quotaResetUtcMidnight: false,
+      resetScheduleEnabled: false,
+      resetTime: '00:00',
+      resetUtcOffsetHours: 0,
       pricingEnabled: false,
       inputUsdPer1M: '0',
       cachedInputUsdPer1M: '0',
@@ -423,7 +436,9 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           rp4h: '0',
           rpd: '0',
           dailyTokenQuota: '',
-          quotaResetUtcMidnight: false,
+          resetScheduleEnabled: false,
+          resetTime: '00:00',
+          resetUtcOffsetHours: 0,
           pricingEnabled: false,
           inputUsdPer1M: '0',
           cachedInputUsdPer1M: '0',
@@ -482,13 +497,30 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           }
           pricing = { inputUsdPer1M, cachedInputUsdPer1M, outputUsdPer1M }
         }
+        let resetTimeMinutes = 0
+        if (trimmedModel === '*' && entry.resetScheduleEnabled) {
+          const parsedTime = parseResetTime(entry.resetTime)
+          if (parsedTime === null) {
+            setStatus({ kind: 'failed', message: 'Укажи корректное время сброса лимитов в формате ЧЧ:ММ.' })
+            return
+          }
+          resetTimeMinutes = parsedTime
+        }
         nextModelRateLimits[trimmedModel] = {
           enabled: entry.enabled,
           rpm,
           rph,
           rp4h,
           rpd,
-          ...(trimmedModel === '*' ? { dailyTokenQuota, quotaResetUtcMidnight: entry.quotaResetUtcMidnight } : {}),
+          ...(trimmedModel === '*'
+            ? {
+                dailyTokenQuota,
+                quotaResetUtcMidnight: entry.resetScheduleEnabled,
+                resetScheduleEnabled: entry.resetScheduleEnabled,
+                resetTimeMinutes,
+                resetUtcOffsetHours: entry.resetUtcOffsetHours
+              }
+            : {}),
           ...(pricing ? { pricing } : {})
         }
       }

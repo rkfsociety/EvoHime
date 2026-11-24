@@ -114,6 +114,56 @@ pub struct ModelPricingConfig {
     pub output_usd_per_1m: f64,
 }
 
+/// Schedule defining when provider-level request caps and daily token quotas reset.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LimitResetSchedule {
+    /// Whether all request caps and daily token quotas reset at a fixed daily time.
+    ///
+    /// When `false`, request caps use rolling windows (`60s`, `1h`, `4h`, `24h`)
+    /// and token quotas use a rolling 24-hour window.
+    #[serde(default, alias = "resetScheduleEnabled")]
+    pub enabled: bool,
+    /// Minute of day in the provider's timezone (`0..=1439`, e.g. `0` for `00:00`).
+    #[serde(default, alias = "resetTimeMinutes")]
+    pub time_minutes: u16,
+    /// Fixed UTC offset in hours (`-12..=14`, e.g. `+2` for `UTC+2`, `-3` for `UTC-3`).
+    #[serde(default, alias = "resetUtcOffsetHours")]
+    pub utc_offset_hours: i8,
+}
+
+impl LimitResetSchedule {
+    /// Returns whether `time_minutes` and `utc_offset_hours` are within valid calendar bounds.
+    pub fn is_valid(self) -> bool {
+        self.time_minutes < 1_440 && (-12..=14).contains(&self.utc_offset_hours)
+    }
+
+    /// Returns the Unix timestamp in milliseconds of the start of the active window.
+    pub fn window_start_ms(self, now_ms: i64) -> i64 {
+        if !self.enabled {
+            return now_ms.saturating_sub(86_400_000);
+        }
+        let offset_ms = i64::from(self.utc_offset_hours.clamp(-12, 14)) * 3_600_000;
+        let local_ms = now_ms.saturating_add(offset_ms);
+        let day_start_local = local_ms.div_euclid(86_400_000) * 86_400_000;
+        let candidate_local =
+            day_start_local + i64::from(self.time_minutes.min(1_439)) * 60_000;
+        let reset_local = if candidate_local <= local_ms {
+            candidate_local
+        } else {
+            candidate_local - 86_400_000
+        };
+        reset_local - offset_ms
+    }
+
+    /// Returns the Unix timestamp in milliseconds of the next scheduled reset (or +1h if rolling).
+    pub fn next_reset_ms(self, now_ms: i64) -> i64 {
+        if !self.enabled {
+            return now_ms.saturating_add(3_600_000);
+        }
+        self.window_start_ms(now_ms).saturating_add(86_400_000)
+    }
+}
+
 /// Optional rolling request caps and token pricing for one exact model identifier.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct ModelRateLimitConfig {
@@ -139,9 +189,18 @@ pub struct ModelRateLimitConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub daily_token_quota: Option<u64>,
-    /// Whether the token ceiling resets at UTC midnight.
+    /// Whether the token ceiling resets at UTC midnight (legacy flag).
     #[serde(default, alias = "quotaResetUtcMidnight")]
     pub quota_reset_utc_midnight: bool,
+    /// Whether all provider limits reset on a fixed daily schedule.
+    #[serde(default, alias = "resetScheduleEnabled")]
+    pub reset_schedule_enabled: bool,
+    /// Minute of day (`0..=1439`) when the scheduled reset occurs.
+    #[serde(default, alias = "resetTimeMinutes")]
+    pub reset_time_minutes: u16,
+    /// Fixed UTC offset in hours (`-12..=14`) for the scheduled reset.
+    #[serde(default, alias = "resetUtcOffsetHours")]
+    pub reset_utc_offset_hours: i8,
     /// Optional user-configured token pricing in USD per 1M tokens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pricing: Option<ModelPricingConfig>,
@@ -161,6 +220,15 @@ impl ModelRateLimitConfig {
             (self.rp4h, Duration::from_secs(4 * 3_600)),
             (self.rpd, Duration::from_secs(86_400)),
         ]
+    }
+
+    /// Returns the normalized daily reset schedule for this configuration.
+    pub fn reset_schedule(&self) -> LimitResetSchedule {
+        LimitResetSchedule {
+            enabled: self.reset_schedule_enabled || self.quota_reset_utc_midnight,
+            time_minutes: self.reset_time_minutes.min(1_439),
+            utc_offset_hours: self.reset_utc_offset_hours.clamp(-12, 14),
+        }
     }
 }
 
@@ -464,6 +532,9 @@ pub struct ModelRouteConfig {
     /// Whether `daily_token_quota` resets at 00:00 UTC.
     #[serde(default)]
     pub quota_reset_utc_midnight: bool,
+    /// Daily reset schedule for all provider limits and token quotas.
+    #[serde(default)]
+    pub limit_reset_schedule: LimitResetSchedule,
 }
 
 fn default_thinking_support() -> bool {
@@ -498,6 +569,7 @@ impl ModelRouteConfig {
             provider_limits: ProviderLimits::default(),
             daily_token_quota: None,
             quota_reset_utc_midnight: false,
+            limit_reset_schedule: LimitResetSchedule::default(),
         }
     }
 
@@ -536,23 +608,40 @@ impl ModelRouteConfig {
         self
     }
 
-    /// Configures a daily token quota and whether it resets at 00:00 UTC.
-    pub fn with_daily_token_quota(
+    /// Configures a daily token quota and reset schedule.
+    pub fn with_daily_token_quota_schedule(
         mut self,
         daily_token_quota: Option<u64>,
-        quota_reset_utc_midnight: bool,
+        schedule: LimitResetSchedule,
     ) -> Self {
-        self.daily_token_quota = daily_token_quota;
-        self.quota_reset_utc_midnight = quota_reset_utc_midnight;
+        self.daily_token_quota = daily_token_quota.filter(|quota| *quota > 0);
+        self.quota_reset_utc_midnight = schedule.enabled;
+        self.limit_reset_schedule = schedule;
         self
     }
 
-    /// Replaces the route-wide limits with a wildcard model entry.
-    pub fn with_route_wide_limits(
+    /// Configures a daily token quota and whether it resets at 00:00 UTC.
+    pub fn with_daily_token_quota(
+        self,
+        daily_token_quota: Option<u64>,
+        quota_reset_utc_midnight: bool,
+    ) -> Self {
+        self.with_daily_token_quota_schedule(
+            daily_token_quota,
+            LimitResetSchedule {
+                enabled: quota_reset_utc_midnight,
+                time_minutes: 0,
+                utc_offset_hours: 0,
+            },
+        )
+    }
+
+    /// Replaces the route-wide limits with a wildcard model entry and reset schedule.
+    pub fn with_route_wide_limits_with_schedule(
         mut self,
         limits: ProviderLimits,
         daily_token_quota: Option<u64>,
-        quota_reset_utc_midnight: bool,
+        schedule: LimitResetSchedule,
     ) -> Self {
         // A zero quota is "no quota", matching the rest of the settings paths.
         let daily_token_quota = daily_token_quota.filter(|quota| *quota > 0);
@@ -569,11 +658,51 @@ impl ModelRouteConfig {
                 rp4h: limits.rp4h,
                 rpd: limits.rpd,
                 daily_token_quota,
-                quota_reset_utc_midnight,
+                quota_reset_utc_midnight: schedule.enabled,
+                reset_schedule_enabled: schedule.enabled,
+                reset_time_minutes: schedule.time_minutes,
+                reset_utc_offset_hours: schedule.utc_offset_hours,
                 pricing: None,
             },
         );
         self
+    }
+
+    /// Replaces the route-wide limits with a wildcard model entry.
+    pub fn with_route_wide_limits(
+        self,
+        limits: ProviderLimits,
+        daily_token_quota: Option<u64>,
+        quota_reset_utc_midnight: bool,
+    ) -> Self {
+        self.with_route_wide_limits_with_schedule(
+            limits,
+            daily_token_quota,
+            LimitResetSchedule {
+                enabled: quota_reset_utc_midnight,
+                time_minutes: 0,
+                utc_offset_hours: 0,
+            },
+        )
+    }
+
+    /// Returns the effective daily reset schedule for this route.
+    pub fn effective_reset_schedule(&self) -> LimitResetSchedule {
+        if let Some(wildcard) = self
+            .model_rate_limits
+            .get("*")
+            .filter(|limits| limits.enabled)
+        {
+            return wildcard.reset_schedule();
+        }
+        if self.limit_reset_schedule.enabled {
+            return self.limit_reset_schedule;
+        }
+        LimitResetSchedule {
+            enabled: self.quota_reset_utc_midnight,
+            time_minutes: 0,
+            utc_offset_hours: 0,
+        }
     }
 
     /// Associates a stable opaque scope handle with the configured provider credential.
@@ -764,6 +893,7 @@ impl ModelRouteConfig {
             provider_limits: ProviderLimits::default(),
             daily_token_quota: None,
             quota_reset_utc_midnight: false,
+            limit_reset_schedule: LimitResetSchedule::default(),
         }
     }
 
@@ -816,6 +946,7 @@ impl ModelGatewayConfig {
                 provider_limits: ProviderLimits::default(),
                 daily_token_quota: None,
                 quota_reset_utc_midnight: false,
+                limit_reset_schedule: LimitResetSchedule::default(),
             },
             ProviderKind::OpenAICompatible => {
                 let openai = LiteRouterConfig::openai_compatible_from_env();
@@ -1121,6 +1252,23 @@ impl ModelGatewayConfig {
         self.apply_named_hive_route_override("hive", profile, model);
     }
 
+    /// Applies durable request, token caps, and reset schedule to the isolated Hive routes.
+    pub fn apply_hive_route_limits_with_schedule(
+        &mut self,
+        route_key: &str,
+        limits: ProviderLimits,
+        token_quota: u64,
+        schedule: LimitResetSchedule,
+    ) {
+        if let Some(route) = self.routes.get_mut(route_key) {
+            let token_quota = (token_quota > 0).then_some(token_quota);
+            *route = route
+                .clone()
+                .with_route_wide_limits_with_schedule(limits, token_quota, schedule)
+                .with_daily_token_quota_schedule(token_quota, schedule);
+        }
+    }
+
     /// Applies durable request and token caps to the isolated Hive routes.
     pub fn apply_hive_route_limits(
         &mut self,
@@ -1129,13 +1277,16 @@ impl ModelGatewayConfig {
         token_quota: u64,
         quota_reset_utc_midnight: bool,
     ) {
-        if let Some(route) = self.routes.get_mut(route_key) {
-            let token_quota = (token_quota > 0).then_some(token_quota);
-            *route = route
-                .clone()
-                .with_route_wide_limits(limits, token_quota, quota_reset_utc_midnight)
-                .with_daily_token_quota(token_quota, quota_reset_utc_midnight);
-        }
+        self.apply_hive_route_limits_with_schedule(
+            route_key,
+            limits,
+            token_quota,
+            LimitResetSchedule {
+                enabled: quota_reset_utc_midnight,
+                time_minutes: 0,
+                utc_offset_hours: 0,
+            },
+        );
     }
 
     /// Rebuilds the isolated `"hive_fallback"` route (when `HIVE_FALLBACK_API_KEY`
@@ -1181,6 +1332,8 @@ fn validate_model_rate_limits(
                 || [limit.rpm, limit.rph, limit.rp4h, limit.rpd]
                     .iter()
                     .any(|value| *value > 10_000)
+                || limit.reset_time_minutes >= 1_440
+                || !(-12..=14).contains(&limit.reset_utc_offset_hours)
                 || limit
                     .daily_token_quota
                     .is_some_and(|quota| quota > MAX_DAILY_TOKEN_QUOTA)
@@ -1320,14 +1473,16 @@ fn parse_routes_json(
             .filter(|limit| limit.enabled)
             .and_then(|limit| limit.daily_token_quota)
             .filter(|quota| *quota > 0);
-        let route_wide_quota_reset = model_rate_limits
+        let route_wide_reset = model_rate_limits
             .get("*")
-            .is_some_and(|limit| limit.enabled && limit.quota_reset_utc_midnight);
+            .filter(|limit| limit.enabled)
+            .map(ModelRateLimitConfig::reset_schedule)
+            .unwrap_or_default();
         route_config = route_config
             .with_credential_binding(route.provider_credential_binding)
             .with_request_pacing(request_pacing)
             .with_model_rate_limits(model_rate_limits)
-            .with_daily_token_quota(route_wide_quota, route_wide_quota_reset);
+            .with_daily_token_quota_schedule(route_wide_quota, route_wide_reset);
         validate_model_rate_limits(&route_config.model_rate_limits)?;
         route_config.validate_provider_profile()?;
         parsed_routes.insert(name, route_config);
@@ -1682,6 +1837,9 @@ mod tests {
                 rpd: 1_000,
                 daily_token_quota: None,
                 quota_reset_utc_midnight: false,
+                reset_schedule_enabled: false,
+                reset_time_minutes: 0,
+                reset_utc_offset_hours: 0,
                 pricing: None,
             },
         )]));
@@ -1732,6 +1890,9 @@ mod tests {
             rpd: 0,
             daily_token_quota: Some(quota),
             quota_reset_utc_midnight: reset,
+            reset_schedule_enabled: reset,
+            reset_time_minutes: 0,
+            reset_utc_offset_hours: 0,
             pricing: None,
         };
         route
@@ -1780,6 +1941,9 @@ mod tests {
             rpd: 0,
             daily_token_quota: None,
             quota_reset_utc_midnight: false,
+            reset_schedule_enabled: false,
+            reset_time_minutes: 0,
+            reset_utc_offset_hours: 0,
             pricing: None,
         };
         route.model_rate_limits.insert("*".into(), limits(true, 10));

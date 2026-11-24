@@ -1,5 +1,96 @@
 import { translate } from './i18n'
 
+/** Fixed integer UTC hour offsets from UTC -12 to UTC +14. */
+export const UTC_OFFSET_HOURS: readonly number[] = Array.from({ length: 27 }, (_, index) => index - 12)
+
+/** Formats a UTC hour offset as `UTC +2`, `UTC -3`, or `UTC +0`. */
+export function formatUtcOffset(hours: number): string {
+  return hours >= 0 ? `UTC +${hours}` : `UTC ${hours}`
+}
+
+/** Converts minute-of-day (`0..1439`) to `HH:MM`. */
+export function formatResetTime(minutes: number): string {
+  const clamped = Math.max(0, Math.min(1_439, Math.trunc(minutes)))
+  const hh = String(Math.floor(clamped / 60)).padStart(2, '0')
+  const mm = String(clamped % 60).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+/** Parses `HH:MM` into minute-of-day (`0..1439`), returning `null` if invalid. */
+export function parseResetTime(value: string): number | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim())
+  if (!match) return null
+  const hh = Number(match[1])
+  const mm = Number(match[2])
+  if (!Number.isInteger(hh) || !Number.isInteger(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) return null
+  return hh * 60 + mm
+}
+
+export interface LimitResetScheduleFieldsProps {
+  readonly idPrefix: string
+  readonly enabled: boolean
+  readonly resetTime: string
+  readonly utcOffsetHours: number
+  readonly disabled: boolean
+  readonly onEnabledChange: (enabled: boolean) => void
+  readonly onResetTimeChange: (value: string) => void
+  readonly onUtcOffsetChange: (hours: number) => void
+}
+
+/** Shared reset schedule controls (rolling 24h vs daily HH:MM in provider UTC offset). */
+export function LimitResetScheduleFields({
+  idPrefix,
+  enabled,
+  resetTime,
+  utcOffsetHours,
+  disabled,
+  onEnabledChange,
+  onResetTimeChange,
+  onUtcOffsetChange
+}: LimitResetScheduleFieldsProps): React.JSX.Element {
+  return (
+    <div className="provider-form__grid">
+      <label htmlFor={`${idPrefix}-reset-mode`}>
+        {translate('Сброс лимитов')}
+        <select
+          id={`${idPrefix}-reset-mode`}
+          value={enabled ? 'scheduled' : 'rolling'}
+          onChange={(event) => onEnabledChange(event.target.value === 'scheduled')}
+          disabled={disabled}
+        >
+          <option value="rolling">{translate('Скользящее окно (24 ч)')}</option>
+          <option value="scheduled">{translate('По расписанию')}</option>
+        </select>
+      </label>
+      <label htmlFor={`${idPrefix}-reset-time`}>
+        {translate('Время сброса')}
+        <input
+          id={`${idPrefix}-reset-time`}
+          type="time"
+          value={resetTime}
+          onChange={(event) => onResetTimeChange(event.target.value)}
+          disabled={disabled || !enabled}
+        />
+      </label>
+      <label htmlFor={`${idPrefix}-reset-tz`}>
+        {translate('Часовой пояс')}
+        <select
+          id={`${idPrefix}-reset-tz`}
+          value={String(utcOffsetHours)}
+          onChange={(event) => onUtcOffsetChange(Number(event.target.value))}
+          disabled={disabled || !enabled}
+        >
+          {UTC_OFFSET_HOURS.map((offset) => (
+            <option key={offset} value={String(offset)}>
+              {formatUtcOffset(offset)}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  )
+}
+
 export interface ModelLimitDraft {
   readonly key: string
   readonly modelId: string
@@ -9,7 +100,9 @@ export interface ModelLimitDraft {
   readonly rp4h: string
   readonly rpd: string
   readonly dailyTokenQuota: string
-  readonly quotaResetUtcMidnight: boolean
+  readonly resetScheduleEnabled: boolean
+  readonly resetTime: string
+  readonly resetUtcOffsetHours: number
   readonly pricingEnabled: boolean
   readonly inputUsdPer1M: string
   readonly cachedInputUsdPer1M: string
@@ -201,15 +294,16 @@ export function ModelSettingsBlock({
                       disabled={busy || !entry.enabled}
                     />
                   </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={entry.quotaResetUtcMidnight}
-                      onChange={(event) => onUpdateEntry(entry.key, { quotaResetUtcMidnight: event.target.checked })}
-                      disabled={busy || !entry.enabled || !entry.dailyTokenQuota}
-                    />
-                    {translate('Сброс в полночь UTC')}
-                  </label>
+                  <LimitResetScheduleFields
+                    idPrefix={`provider-limit-${entry.key}`}
+                    enabled={entry.resetScheduleEnabled}
+                    resetTime={entry.resetTime}
+                    utcOffsetHours={entry.resetUtcOffsetHours}
+                    disabled={busy || !entry.enabled}
+                    onEnabledChange={(enabled) => onUpdateEntry(entry.key, { resetScheduleEnabled: enabled })}
+                    onResetTimeChange={(resetTime) => onUpdateEntry(entry.key, { resetTime })}
+                    onUtcOffsetChange={(resetUtcOffsetHours) => onUpdateEntry(entry.key, { resetUtcOffsetHours })}
+                  />
                 </>
               ) : null}
 

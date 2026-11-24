@@ -1578,7 +1578,11 @@ describe('hive dashboard', () => {
     const quota = within(primary).getByLabelText('Дневная квота токенов (0 — без лимита)') as HTMLInputElement
     await userEvent.clear(quota)
     await userEvent.type(quota, '500000')
-    await userEvent.click(within(primary).getByLabelText('Сброс в полночь UTC'))
+    await userEvent.selectOptions(within(primary).getByLabelText('Сброс лимитов'), 'scheduled')
+    const resetTime = within(primary).getByLabelText('Время сброса') as HTMLInputElement
+    await userEvent.clear(resetTime)
+    await userEvent.type(resetTime, '03:30')
+    await userEvent.selectOptions(within(primary).getByLabelText('Часовой пояс'), '2')
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить лимиты Улья' }))
 
@@ -1593,7 +1597,9 @@ describe('hive dashboard', () => {
         primary_token_quota: 500_000,
         fallback_token_quota: 0,
         primary_quota_reset_utc_midnight: true,
-        fallback_quota_reset_utc_midnight: false
+        fallback_quota_reset_utc_midnight: false,
+        primary_reset_schedule: { enabled: true, time_minutes: 210, utc_offset_hours: 2 },
+        fallback_reset_schedule: { enabled: false, time_minutes: 0, utc_offset_hours: 0 }
       })
     })
   })

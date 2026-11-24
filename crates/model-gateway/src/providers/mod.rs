@@ -557,6 +557,68 @@ pub trait ModelProvider: Send + Sync {
 pub type ImageOutputFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Vec<ProviderImageOutput>, ProviderError>> + Send + 'a>>;
 
+pub(crate) fn current_unix_ms() -> i64 {
+    i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+    )
+    .unwrap_or(i64::MAX)
+}
+
+pub(crate) fn compute_request_limit_delay(
+    timestamps: &mut std::collections::VecDeque<(std::time::Instant, i64)>,
+    limits: &crate::config::ModelRateLimitConfig,
+    reset_schedule: crate::config::LimitResetSchedule,
+    now_instant: std::time::Instant,
+    now_ms: i64,
+) -> Option<std::time::Duration> {
+    while timestamps.front().is_some_and(|(started, _)| {
+        now_instant.duration_since(*started) >= std::time::Duration::from_secs(86_400)
+    }) {
+        timestamps.pop_front();
+    }
+    if reset_schedule.enabled {
+        let reset_start_ms = reset_schedule.window_start_ms(now_ms);
+        while timestamps
+            .front()
+            .is_some_and(|(_, recorded_ms)| *recorded_ms < reset_start_ms)
+        {
+            timestamps.pop_front();
+        }
+    }
+    let mut delay: Option<std::time::Duration> = None;
+    for (cap, window) in limits.request_windows() {
+        if cap == 0 {
+            continue;
+        }
+        let count = timestamps
+            .iter()
+            .filter(|(started, _)| now_instant.duration_since(*started) < window)
+            .count();
+        if count >= cap as usize {
+            if let Some(wait) = timestamps
+                .iter()
+                .filter(|(started, _)| now_instant.duration_since(*started) < window)
+                .nth(count - cap as usize)
+                .map(|(started, _)| window.saturating_sub(now_instant.duration_since(*started)))
+            {
+                delay = Some(delay.map_or(wait, |current| current.max(wait)));
+            }
+        }
+    }
+    if reset_schedule.enabled {
+        if let Some(current_wait) = delay {
+            let until_reset_ms = reset_schedule.next_reset_ms(now_ms).saturating_sub(now_ms);
+            let until_reset =
+                std::time::Duration::from_millis(u64::try_from(until_reset_ms.max(0)).unwrap_or(0));
+            delay = Some(current_wait.min(until_reset));
+        }
+    }
+    delay
+}
+
 #[cfg(test)]
 mod failure_code_tests {
     use super::{ProviderError, ProviderErrorDiagnostic};

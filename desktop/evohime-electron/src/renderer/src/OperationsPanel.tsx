@@ -2,7 +2,8 @@ import { translate } from './i18n'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { HIVE_SYSTEM_CHAT_ID } from '@shared/api'
-import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, ConversationEventProjection, CoreEvent, ModelTier, ProviderLimits, ProviderSummary, RepairStatus } from '@shared/api'
+import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, ConversationEventProjection, CoreEvent, LimitResetSchedule, ModelTier, ProviderLimits, ProviderSummary, RepairStatus } from '@shared/api'
+import { LimitResetScheduleFields, formatResetTime, parseResetTime } from './ModelSettingsBlock'
 
 import { useShellApi } from './shell-api'
 import { useProviderState } from './provider-state'
@@ -342,6 +343,8 @@ interface HiveStateView {
   readonly hiveFallbackTokenQuotaConfigured: boolean
   readonly hiveQuotaResetUtcMidnight: boolean
   readonly hiveFallbackQuotaResetUtcMidnight: boolean
+  readonly hiveResetSchedule: LimitResetSchedule
+  readonly hiveFallbackResetSchedule: LimitResetSchedule
   readonly proactiveEvolutionEnabled: boolean
   readonly observationStatus: string
   readonly nextWakeAtMs: number | null
@@ -609,6 +612,22 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
     hiveFallbackTokenQuotaConfigured: root['hive_fallback_token_quota_configured'] === true,
     hiveQuotaResetUtcMidnight: root['hive_quota_reset_utc_midnight'] === true,
     hiveFallbackQuotaResetUtcMidnight: root['hive_fallback_quota_reset_utc_midnight'] === true,
+    hiveResetSchedule: {
+      enabled: record(root['hive_reset_schedule'])['enabled'] === true || root['hive_quota_reset_utc_midnight'] === true,
+      time_minutes: count(record(root['hive_reset_schedule'])['time_minutes'], 1_439),
+      utc_offset_hours: typeof record(root['hive_reset_schedule'])['utc_offset_hours'] === 'number'
+        && Number.isInteger(record(root['hive_reset_schedule'])['utc_offset_hours'])
+        ? Math.max(-12, Math.min(14, record(root['hive_reset_schedule'])['utc_offset_hours'] as number))
+        : 0
+    },
+    hiveFallbackResetSchedule: {
+      enabled: record(root['hive_fallback_reset_schedule'])['enabled'] === true || root['hive_fallback_quota_reset_utc_midnight'] === true,
+      time_minutes: count(record(root['hive_fallback_reset_schedule'])['time_minutes'], 1_439),
+      utc_offset_hours: typeof record(root['hive_fallback_reset_schedule'])['utc_offset_hours'] === 'number'
+        && Number.isInteger(record(root['hive_fallback_reset_schedule'])['utc_offset_hours'])
+        ? Math.max(-12, Math.min(14, record(root['hive_fallback_reset_schedule'])['utc_offset_hours'] as number))
+        : 0
+    },
     proactiveEvolutionEnabled: root['proactive_evolution_enabled'] === true,
     observationStatus: text(root['observation_status'] ?? root['pulse_status'], 32),
     nextWakeAtMs: typeof root['next_wake_at_ms'] === 'number' && Number.isSafeInteger(root['next_wake_at_ms'])
@@ -679,26 +698,40 @@ function hiveLimitsDraftFromStored(limits: ProviderLimits): HiveRequestLimitsDra
   }
 }
 
+type HiveResetScheduleDraft = {
+  readonly enabled: boolean
+  readonly resetTime: string
+  readonly utcOffsetHours: number
+}
+
+function hiveResetDraftFromStored(schedule: LimitResetSchedule): HiveResetScheduleDraft {
+  return {
+    enabled: schedule.enabled,
+    resetTime: formatResetTime(schedule.time_minutes),
+    utcOffsetHours: schedule.utc_offset_hours
+  }
+}
+
 function HiveRequestLimitsEditor({
   title,
   prefix,
   limits,
   quota,
-  resetAtUtcMidnight,
+  resetSchedule,
   disabled,
   onLimitsChange,
   onQuotaChange,
-  onResetChange
+  onResetScheduleChange
 }: {
   readonly title: string
   readonly prefix: 'hive-primary' | 'hive-fallback'
   readonly limits: HiveRequestLimitsDraft
   readonly quota: string
-  readonly resetAtUtcMidnight: boolean
+  readonly resetSchedule: HiveResetScheduleDraft
   readonly disabled: boolean
   readonly onLimitsChange: (limits: HiveRequestLimitsDraft) => void
   readonly onQuotaChange: (quota: string) => void
-  readonly onResetChange: (reset: boolean) => void
+  readonly onResetScheduleChange: (schedule: HiveResetScheduleDraft) => void
 }): React.JSX.Element {
   return (
     <fieldset className="provider-form__tier" aria-label={translate(title)}>
@@ -738,10 +771,16 @@ function HiveRequestLimitsEditor({
           onChange={(event) => onQuotaChange(event.target.value)}
         />
       </label>
-      <label>
-        <input type="checkbox" checked={resetAtUtcMidnight} disabled={disabled || !quota || quota === '0'} onChange={(event) => onResetChange(event.target.checked)} />
-        {translate('Сброс в полночь UTC')}
-      </label>
+      <LimitResetScheduleFields
+        idPrefix={prefix}
+        enabled={resetSchedule.enabled}
+        resetTime={resetSchedule.resetTime}
+        utcOffsetHours={resetSchedule.utcOffsetHours}
+        disabled={disabled}
+        onEnabledChange={(enabled) => onResetScheduleChange({ ...resetSchedule, enabled })}
+        onResetTimeChange={(resetTime) => onResetScheduleChange({ ...resetSchedule, resetTime })}
+        onUtcOffsetChange={(utcOffsetHours) => onResetScheduleChange({ ...resetSchedule, utcOffsetHours })}
+      />
     </fieldset>
   )
 }
@@ -1654,8 +1693,8 @@ export function HiveDashboard({
   const [hiveFallbackLimitsDraft, setHiveFallbackLimitsDraft] = useState<HiveRequestLimitsDraft>({ rpm: 0, rph: null, rp4h: null, rpd: null })
   const [hivePrimaryQuotaDraft, setHivePrimaryQuotaDraft] = useState('0')
   const [hiveFallbackQuotaDraft, setHiveFallbackQuotaDraft] = useState('0')
-  const [hivePrimaryQuotaResetDraft, setHivePrimaryQuotaResetDraft] = useState(false)
-  const [hiveFallbackQuotaResetDraft, setHiveFallbackQuotaResetDraft] = useState(false)
+  const [hivePrimaryResetDraft, setHivePrimaryResetDraft] = useState<HiveResetScheduleDraft>({ enabled: false, resetTime: '00:00', utcOffsetHours: 0 })
+  const [hiveFallbackResetDraft, setHiveFallbackResetDraft] = useState<HiveResetScheduleDraft>({ enabled: false, resetTime: '00:00', utcOffsetHours: 0 })
   const [hiveLimitsBusy, setHiveLimitsBusy] = useState(false)
   const [hiveLimitsError, setHiveLimitsError] = useState<string | null>(null)
   const [hiveLimitsSaved, setHiveLimitsSaved] = useState(false)
@@ -1891,9 +1930,9 @@ export function HiveDashboard({
     setHiveFallbackLimitsDraft(hiveLimitsDraftFromStored(hive.hiveFallbackProviderLimits))
     setHivePrimaryQuotaDraft(String(hive.hiveTokenQuotaConfigured ? hive.hiveDailyTokenQuota : 0))
     setHiveFallbackQuotaDraft(String(hive.hiveFallbackTokenQuotaConfigured ? hive.hiveFallbackDailyTokenQuota : 0))
-    setHivePrimaryQuotaResetDraft(hive.hiveQuotaResetUtcMidnight)
-    setHiveFallbackQuotaResetDraft(hive.hiveFallbackQuotaResetUtcMidnight)
-  }, [hive?.hiveProviderLimits.rpm, hive?.hiveProviderLimits.rph, hive?.hiveProviderLimits.rpd, hive?.hiveFallbackProviderLimits.rpm, hive?.hiveFallbackProviderLimits.rph, hive?.hiveFallbackProviderLimits.rpd, hive?.hiveDailyTokenQuota, hive?.hiveFallbackDailyTokenQuota, hive?.hiveTokenQuotaConfigured, hive?.hiveFallbackTokenQuotaConfigured, hive?.hiveQuotaResetUtcMidnight, hive?.hiveFallbackQuotaResetUtcMidnight])
+    setHivePrimaryResetDraft(hiveResetDraftFromStored(hive.hiveResetSchedule))
+    setHiveFallbackResetDraft(hiveResetDraftFromStored(hive.hiveFallbackResetSchedule))
+  }, [hive?.hiveProviderLimits.rpm, hive?.hiveProviderLimits.rph, hive?.hiveProviderLimits.rp4h, hive?.hiveProviderLimits.rpd, hive?.hiveFallbackProviderLimits.rpm, hive?.hiveFallbackProviderLimits.rph, hive?.hiveFallbackProviderLimits.rp4h, hive?.hiveFallbackProviderLimits.rpd, hive?.hiveDailyTokenQuota, hive?.hiveFallbackDailyTokenQuota, hive?.hiveTokenQuotaConfigured, hive?.hiveFallbackTokenQuotaConfigured, hive?.hiveQuotaResetUtcMidnight, hive?.hiveFallbackQuotaResetUtcMidnight, hive?.hiveResetSchedule.enabled, hive?.hiveResetSchedule.time_minutes, hive?.hiveResetSchedule.utc_offset_hours, hive?.hiveFallbackResetSchedule.enabled, hive?.hiveFallbackResetSchedule.time_minutes, hive?.hiveFallbackResetSchedule.utc_offset_hours])
   useEffect(() => {
     if (!hive) return
     setProactiveEvolutionEnabled(hive.proactiveEvolutionEnabled)
@@ -2497,17 +2536,35 @@ export function HiveDashboard({
       setHiveLimitsError('Лимиты запросов должны быть целыми числами от 0 до 4294967295, квота токенов — целым числом от 0 до 1000000000000.')
       return
     }
+    const primaryResetTime = hivePrimaryResetDraft.enabled ? parseResetTime(hivePrimaryResetDraft.resetTime) : 0
+    const fallbackResetTime = hiveFallbackResetDraft.enabled ? parseResetTime(hiveFallbackResetDraft.resetTime) : 0
+    if (primaryResetTime === null || fallbackResetTime === null) {
+      setHiveLimitsError('Укажи корректное время сброса лимитов в формате ЧЧ:ММ.')
+      return
+    }
     setHiveLimitsBusy(true)
     setHiveLimitsError(null)
     setHiveLimitsSaved(false)
     try {
+      const primaryResetSchedule: LimitResetSchedule = {
+        enabled: hivePrimaryResetDraft.enabled,
+        time_minutes: primaryResetTime,
+        utc_offset_hours: hivePrimaryResetDraft.utcOffsetHours
+      }
+      const fallbackResetSchedule: LimitResetSchedule = {
+        enabled: hiveFallbackResetDraft.enabled,
+        time_minutes: fallbackResetTime,
+        utc_offset_hours: hiveFallbackResetDraft.utcOffsetHours
+      }
       const value = JSON.stringify({
         primary_limits: primaryLimits,
         fallback_limits: fallbackLimits,
         primary_token_quota: primaryQuota,
         fallback_token_quota: fallbackQuota,
-        primary_quota_reset_utc_midnight: hivePrimaryQuotaResetDraft,
-        fallback_quota_reset_utc_midnight: hiveFallbackQuotaResetDraft
+        primary_quota_reset_utc_midnight: primaryResetSchedule.enabled,
+        fallback_quota_reset_utc_midnight: fallbackResetSchedule.enabled,
+        primary_reset_schedule: primaryResetSchedule,
+        fallback_reset_schedule: fallbackResetSchedule
       })
       const outcome = await api.invoke('core.setHiveSetting', { key: 'hive_request_limits', value })
       if (!outcome.ok) {
@@ -2520,7 +2577,7 @@ export function HiveDashboard({
       setHiveLimitsError('Не удалось сохранить лимиты Улья: Core не ответил.')
       setHiveLimitsBusy(false)
     }
-  }, [api, hiveFallbackLimitsDraft, hiveFallbackQuotaDraft, hiveFallbackQuotaResetDraft, hivePrimaryLimitsDraft, hivePrimaryQuotaDraft, hivePrimaryQuotaResetDraft, requestSnapshot])
+  }, [api, hiveFallbackLimitsDraft, hiveFallbackQuotaDraft, hiveFallbackResetDraft, hivePrimaryLimitsDraft, hivePrimaryQuotaDraft, hivePrimaryResetDraft, requestSnapshot])
 
   const toggleProactiveEvolution = useCallback(async (nextEnabled: boolean): Promise<void> => {
     if (!api) return
@@ -4024,22 +4081,22 @@ export function HiveDashboard({
                   prefix="hive-primary"
                   limits={hivePrimaryLimitsDraft}
                   quota={hivePrimaryQuotaDraft}
-                  resetAtUtcMidnight={hivePrimaryQuotaResetDraft}
+                  resetSchedule={hivePrimaryResetDraft}
                   disabled={!connected || hiveLimitsBusy}
                   onLimitsChange={setHivePrimaryLimitsDraft}
                   onQuotaChange={setHivePrimaryQuotaDraft}
-                  onResetChange={setHivePrimaryQuotaResetDraft}
+                  onResetScheduleChange={setHivePrimaryResetDraft}
                 />
                 <HiveRequestLimitsEditor
                   title="Лимиты резервного маршрута Улья"
                   prefix="hive-fallback"
                   limits={hiveFallbackLimitsDraft}
                   quota={hiveFallbackQuotaDraft}
-                  resetAtUtcMidnight={hiveFallbackQuotaResetDraft}
+                  resetSchedule={hiveFallbackResetDraft}
                   disabled={!connected || hiveLimitsBusy}
                   onLimitsChange={setHiveFallbackLimitsDraft}
                   onQuotaChange={setHiveFallbackQuotaDraft}
-                  onResetChange={setHiveFallbackQuotaResetDraft}
+                  onResetScheduleChange={setHiveFallbackResetDraft}
                 />
                 <button type="button" disabled={!connected || hiveLimitsBusy} onClick={() => void saveHiveRequestLimits()}>
                   {translate(hiveLimitsBusy ? 'Сохранение…' : 'Сохранить лимиты Улья')}

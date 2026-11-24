@@ -170,8 +170,19 @@ describe('provider form', () => {
       modelRateLimits: {
         // The wildcard card is always present so provider-wide limits and the
         // daily token quota stay reachable even with a single model.
-        '*': { enabled: false, rpm: 0, rph: 0, rpd: 0, dailyTokenQuota: null, quotaResetUtcMidnight: false },
-        'deepseek:free': { enabled: false, rpm: 0, rph: 0, rpd: 0 }
+        '*': {
+          enabled: false,
+          rpm: 0,
+          rph: 0,
+          rp4h: 0,
+          rpd: 0,
+          dailyTokenQuota: null,
+          quotaResetUtcMidnight: false,
+          resetScheduleEnabled: false,
+          resetTimeMinutes: 0,
+          resetUtcOffsetHours: 0
+        },
+        'deepseek:free': { enabled: false, rpm: 0, rph: 0, rp4h: 0, rpd: 0 }
       }
     })
     await waitFor(() => expect(screen.getByText(/Core перезапущен/)).toBeTruthy())
@@ -225,58 +236,10 @@ describe('provider form', () => {
     expect(model.value).toBe('qwen:free')
   })
 
-  it('loads and saves per-provider request pacing', async () => {
-    providerGetSummary = {
-      provider: 'literouter',
-      model: 'deepseek:free',
-      baseUrl: '',
-      tier: 'free',
-      configured: true,
-      profiles: {
-        literouter: {
-          model: 'deepseek:free', baseUrl: '', tier: 'free', configured: true,
-          requestPacing: { enabled: true, intervalMs: 1234, freeIntervalMs: 4321 }
-        },
-        openai_compatible: { model: '', baseUrl: '', tier: 'free', configured: false },
-        openai_responses: { model: '', baseUrl: '', tier: 'free', configured: false },
-        ollama: { model: '', baseUrl: 'http://127.0.0.1:11434/v1', tier: 'free', configured: true }
-      }
-    }
+  it('hides manual request pacing controls because pacing is derived from limits', async () => {
     renderProviderForm()
-
-    const interval = await screen.findByLabelText('Интервал для платных моделей, мс') as HTMLInputElement
-    const freeInterval = screen.getByLabelText('Интервал для моделей :free, мс') as HTMLInputElement
-    await waitFor(() => expect(interval.value).toBe('1234'))
-    expect(freeInterval.value).toBe('4321')
-
-    await userEvent.clear(interval)
-    await userEvent.type(interval, '2500')
-    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
-
-    expect(calls).toContainEqual({
-      command: 'provider.save',
-      payload: expect.objectContaining({
-        provider: 'literouter',
-        requestPacing: { enabled: true, intervalMs: 2500, freeIntervalMs: 4321 }
-      })
-    })
-  })
-
-  it('disables saving when a pacing interval is not a bounded integer', async () => {
-    renderProviderForm()
-
-    await userEvent.type(await screen.findByLabelText('Ключ API'), 'sk-test')
-    const save = screen.getByRole('button', { name: 'Сохранить ключ и применить' }) as HTMLButtonElement
-    expect(save.disabled).toBe(false)
-
-    // Pacing is off by default, so its interval fields appear only after the
-    // user enables it for this provider.
-    await userEvent.click(screen.getByLabelText(/Выдерживать минимальную паузу/))
-    const interval = screen.getByLabelText('Интервал для платных моделей, мс') as HTMLInputElement
-    await userEvent.clear(interval)
-    await userEvent.type(interval, '3600001')
-
-    expect(save.disabled).toBe(true)
+    expect(await screen.findByLabelText('Провайдер')).toBeTruthy()
+    expect(screen.queryByText('Пауза между запросами')).toBeNull()
   })
 
   it('keeps the provider settings block free of a separate coding-engine switch', async () => {
@@ -573,8 +536,7 @@ describe('provider form', () => {
     renderProviderForm()
 
     const provider = await screen.findByLabelText('Провайдер')
-    // LiteRouter owns the tier window but has no pricing authority for probes.
-    expect(screen.getByText('Пауза между запросами')).toBeTruthy()
+    expect(screen.queryByText('Пауза между запросами')).toBeNull()
     expect(screen.queryByText('Проверка бесплатного доступа')).toBeNull()
     expect(screen.queryByText('Маршрутизация по evidence')).toBeNull()
 
@@ -603,7 +565,7 @@ describe('provider form', () => {
     expect((screen.getByLabelText('Режим') as HTMLSelectElement).value).toBe('free_only')
   })
 
-  it('keeps an explicitly enabled pause visible for a non-LiteRouter provider', async () => {
+  it('keeps manual pause controls hidden even when stored pacing is enabled', async () => {
     providerGetSummary = {
       provider: 'openai_compatible',
       model: 'deepseek-chat',
@@ -621,10 +583,9 @@ describe('provider form', () => {
     }
     renderProviderForm()
 
-    const interval = await screen.findByLabelText('Интервал для платных моделей, мс') as HTMLInputElement
-    await waitFor(() => expect(interval.value).toBe('4321'))
-    // The tier-window explanation belongs to LiteRouter only.
-    expect(screen.queryByText(/LiteRouter ограничивает/)).toBeNull()
+    await screen.findByLabelText('Провайдер')
+    expect(screen.queryByLabelText('Интервал для платных моделей, мс')).toBeNull()
+    expect(screen.queryByText('Пауза между запросами')).toBeNull()
   })
 
   it('provider_form_uses_schema', async () => {
@@ -684,7 +645,18 @@ describe('provider form', () => {
 
     const save = calls.find((call) => call.command === 'provider.save')
     expect((save?.payload as { modelRateLimits: Record<string, unknown> }).modelRateLimits).toEqual({
-      '*': { enabled: false, rpm: 0, rph: 0, rp4h: 0, rpd: 0, dailyTokenQuota: null, quotaResetUtcMidnight: false },
+      '*': {
+        enabled: false,
+        rpm: 0,
+        rph: 0,
+        rp4h: 0,
+        rpd: 0,
+        dailyTokenQuota: null,
+        quotaResetUtcMidnight: false,
+        resetScheduleEnabled: false,
+        resetTimeMinutes: 0,
+        resetUtcOffsetHours: 0
+      },
       'deepseek:free': { enabled: true, rpm: 10, rph: 0, rp4h: 0, rpd: 0 },
       'qwen:free': { enabled: true, rpm: 25, rph: 0, rp4h: 600, rpd: 500 }
     })

@@ -95,7 +95,7 @@ const LITEROUTER_SCHEMA: ProviderUISchema = {
   editableBaseUrl: true,
   requiresAccountId: false,
   showTierSelector: true,
-  supportsRequestPacing: true,
+  supportsRequestPacing: false,
   supportsFreeAccessProbe: false,
   supportsModelLimits: true,
   supportsEvidenceRouting: false,

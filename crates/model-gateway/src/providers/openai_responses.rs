@@ -36,7 +36,7 @@ pub struct OpenAIResponsesProvider {
 #[derive(Debug, Default)]
 struct ResponsesRequestGate {
     last_request: Option<Instant>,
-    model_requests: HashMap<String, VecDeque<Instant>>,
+    model_requests: HashMap<String, VecDeque<(Instant, i64)>>,
 }
 
 impl OpenAIResponsesProvider {
@@ -88,6 +88,17 @@ impl OpenAIResponsesProvider {
 
     async fn wait_for_request_slot(&self, model: &str) {
         let mut previous = self.request_gate.lock().await;
+        let reset_schedule = self
+            .model_rate_limits
+            .get("*")
+            .filter(|limits| limits.enabled)
+            .or_else(|| {
+                self.model_rate_limits
+                    .get(model)
+                    .filter(|limits| limits.enabled)
+            })
+            .map(ModelRateLimitConfig::reset_schedule)
+            .unwrap_or_default();
         loop {
             let mut delay = self.pacing.interval_for_model(model).and_then(|interval| {
                 previous.last_request.and_then(|started| {
@@ -105,7 +116,8 @@ impl OpenAIResponsesProvider {
                         .filter(|limits| limits.has_request_caps())
                 })
             {
-                let now = Instant::now();
+                let now_instant = Instant::now();
+                let now_ms = super::current_unix_ms();
                 let key = if self
                     .model_rate_limits
                     .get(model)
@@ -116,29 +128,14 @@ impl OpenAIResponsesProvider {
                     "*"
                 };
                 let timestamps = previous.model_requests.entry(key.to_owned()).or_default();
-                while timestamps.front().is_some_and(|started| {
-                    now.duration_since(*started) >= Duration::from_secs(86_400)
-                }) {
-                    timestamps.pop_front();
-                }
-                for (cap, window) in limits.request_windows() {
-                    if cap == 0 {
-                        continue;
-                    }
-                    let count = timestamps
-                        .iter()
-                        .filter(|started| now.duration_since(**started) < window)
-                        .count();
-                    if count >= cap as usize {
-                        if let Some(wait) = timestamps
-                            .iter()
-                            .filter(|started| now.duration_since(**started) < window)
-                            .nth(count - cap as usize)
-                            .map(|started| window.saturating_sub(now.duration_since(*started)))
-                        {
-                            delay = Some(delay.map_or(wait, |current| current.max(wait)));
-                        }
-                    }
+                if let Some(wait) = super::compute_request_limit_delay(
+                    timestamps,
+                    limits,
+                    reset_schedule,
+                    now_instant,
+                    now_ms,
+                ) {
+                    delay = Some(delay.map_or(wait, |current| current.max(wait)));
                 }
             }
             if let Some(delay) = delay {
@@ -148,6 +145,7 @@ impl OpenAIResponsesProvider {
                 continue;
             }
             let now = Instant::now();
+            let now_ms = super::current_unix_ms();
             previous.last_request = Some(now);
             if self
                 .model_rate_limits
@@ -175,7 +173,7 @@ impl OpenAIResponsesProvider {
                         .to_owned(),
                     )
                     .or_default()
-                    .push_back(now);
+                    .push_back((now, now_ms));
             }
             return;
         }

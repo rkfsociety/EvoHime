@@ -1,8 +1,9 @@
 //! Automatic Git worktree isolation for Hive tasks.
 //!
 //! Ordinary chats and the Hive can target the same repository at the same time.
-//! To prevent concurrent edits and Git index lock contention, each Hive task
-//! runs in its own detached worktree under `.evohime/worktrees/` whenever the
+//! To prevent concurrent edits and Git index lock contention without polluting
+//! the target repository, each Hive task runs in its own detached worktree
+//! under the EvoHime service data directory (`hive-worktrees/`) whenever the
 //! target directory is a Git repository with an existing `HEAD` commit.
 
 use std::path::{Path, PathBuf};
@@ -36,6 +37,33 @@ fn sanitize_worktree_id(task_id: &str) -> String {
     }
 }
 
+fn workspace_scope_id(base_root: &Path) -> String {
+    let canonical = base_root
+        .canonicalize()
+        .unwrap_or_else(|_| base_root.to_path_buf());
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in canonical.to_string_lossy().as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn default_hive_worktree_base_dir(base_root: &Path) -> PathBuf {
+    let data_dir = std::env::var_os("EVOHIME_DATA_DIR")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("LOCALAPPDATA")
+                .filter(|value| !value.is_empty())
+                .map(|value| PathBuf::from(value).join("EvoHime"))
+        })
+        .unwrap_or_else(|| std::env::temp_dir().join("EvoHime"));
+    data_dir
+        .join("hive-worktrees")
+        .join(workspace_scope_id(base_root))
+}
+
 async fn run_git(root: &Path, args: &[&str]) -> Option<std::process::Output> {
     Command::new("git")
         .arg("-C")
@@ -60,6 +88,15 @@ pub async fn prepare_for_task(
     task_id: &str,
     base_root: &Path,
 ) -> Option<HiveWorktreeLease> {
+    prepare_for_task_in(journal, task_id, base_root, None).await
+}
+
+async fn prepare_for_task_in(
+    journal: Option<&dyn HiveJournalProvider>,
+    task_id: &str,
+    base_root: &Path,
+    worktree_base_dir: Option<&Path>,
+) -> Option<HiveWorktreeLease> {
     let head_output = run_git(base_root, &["rev-parse", "--verify", "HEAD"]).await?;
     if !head_output.status.success() {
         return None;
@@ -72,10 +109,10 @@ pub async fn prepare_for_task(
     }
 
     let worktree_id = sanitize_worktree_id(task_id);
-    let worktree_root = base_root
-        .join(".evohime")
-        .join("worktrees")
-        .join(&worktree_id);
+    let service_parent = worktree_base_dir
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| default_hive_worktree_base_dir(base_root));
+    let worktree_root = service_parent.join(&worktree_id);
 
     if !worktree_root.exists() {
         if let Some(parent) = worktree_root.parent() {
@@ -106,7 +143,7 @@ pub async fn prepare_for_task(
                 task_id: task_id.to_owned(),
                 base_root: base_root.to_string_lossy().into_owned(),
                 branch: "detached".into(),
-                root_ref: format!(".evohime/worktrees/{worktree_id}"),
+                root_ref: worktree_root.to_string_lossy().into_owned(),
                 base_commit,
             })
             .await;
@@ -180,5 +217,64 @@ mod tests {
             "hive-hive-123abcxyz"
         );
         assert!(sanitize_worktree_id("///").starts_with("hive-"));
+    }
+
+    #[tokio::test]
+    async fn prepare_for_task_isolates_worktree_outside_repo_and_cleans_up() {
+        let repo = tempfile::tempdir().expect("create repo tempdir");
+        let service_dir = tempfile::tempdir().expect("create service tempdir");
+
+        let init = std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git init");
+        assert!(init.status.success());
+
+        let email = std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git config email");
+        assert!(email.status.success());
+
+        let name = std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git config name");
+        assert!(name.status.success());
+
+        std::fs::write(repo.path().join("README.md"), "# test\n").expect("write readme");
+        let add = std::process::Command::new("git")
+            .args(["add", "README.md"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git add");
+        assert!(add.status.success());
+
+        let commit = std::process::Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git commit");
+        assert!(commit.status.success());
+
+        let lease = prepare_for_task_in(
+            None,
+            "eva-pulse-test-1",
+            repo.path(),
+            Some(service_dir.path()),
+        )
+        .await
+        .expect("worktree lease should be created");
+
+        assert!(lease.worktree_root.starts_with(service_dir.path()));
+        assert!(!lease.worktree_root.starts_with(repo.path()));
+        assert!(!repo.path().join(".evohime").exists());
+        assert!(lease.worktree_root.join("README.md").is_file());
+
+        cleanup_if_clean(None, &lease, "eva-pulse-test-1").await;
+        assert!(!lease.worktree_root.exists());
     }
 }

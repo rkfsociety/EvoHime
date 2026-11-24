@@ -9,6 +9,10 @@ struct HiveRequestLimitsUpdate {
     fallback_token_quota: u64,
     primary_quota_reset_utc_midnight: bool,
     fallback_quota_reset_utc_midnight: bool,
+    #[serde(default)]
+    primary_reset_schedule: Option<evohime_model_gateway::config::LimitResetSchedule>,
+    #[serde(default)]
+    fallback_reset_schedule: Option<evohime_model_gateway::config::LimitResetSchedule>,
 }
 
 impl IpcBridge {
@@ -359,6 +363,26 @@ impl IpcBridge {
         settings.hive_fallback_daily_token_quota = update.fallback_token_quota;
         settings.hive_quota_reset_utc_midnight = update.primary_quota_reset_utc_midnight;
         settings.hive_fallback_quota_reset_utc_midnight = update.fallback_quota_reset_utc_midnight;
+        settings.hive_reset_schedule = update.primary_reset_schedule.unwrap_or(
+            evohime_model_gateway::config::LimitResetSchedule {
+                enabled: update.primary_quota_reset_utc_midnight,
+                time_minutes: 0,
+                utc_offset_hours: 0,
+            },
+        );
+        settings.hive_fallback_reset_schedule = update.fallback_reset_schedule.unwrap_or(
+            evohime_model_gateway::config::LimitResetSchedule {
+                enabled: update.fallback_quota_reset_utc_midnight,
+                time_minutes: 0,
+                utc_offset_hours: 0,
+            },
+        );
+        if settings.hive_reset_schedule.enabled {
+            settings.hive_quota_reset_utc_midnight = true;
+        }
+        if settings.hive_fallback_reset_schedule.enabled {
+            settings.hive_fallback_quota_reset_utc_midnight = true;
+        }
         // Zero means "no quota": a configured flag must never claim a limit
         // that nothing enforces.
         settings.hive_token_quota_configured = settings.hive_daily_token_quota > 0;
@@ -572,17 +596,17 @@ impl IpcBridge {
                 settings.hive_fallback_provider_profile.as_deref(),
                 settings.hive_fallback_model.as_deref(),
             );
-            config.apply_hive_route_limits(
+            config.apply_hive_route_limits_with_schedule(
                 "hive",
                 settings.hive_provider_limits,
                 settings.hive_daily_token_quota,
-                settings.hive_quota_reset_utc_midnight,
+                settings.primary_reset_schedule(),
             );
-            config.apply_hive_route_limits(
+            config.apply_hive_route_limits_with_schedule(
                 "hive_fallback",
                 settings.hive_fallback_provider_limits,
                 settings.hive_fallback_daily_token_quota,
-                settings.hive_fallback_quota_reset_utc_midnight,
+                settings.fallback_reset_schedule(),
             );
         }
         let mut observation = crate::hive_observation::build_hive_observation_for_hive(

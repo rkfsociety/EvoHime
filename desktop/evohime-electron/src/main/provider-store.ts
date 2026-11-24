@@ -234,11 +234,26 @@ function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
     (typeof dailyTokenQuota !== 'number' || !Number.isSafeInteger(dailyTokenQuota) || dailyTokenQuota < 0 || dailyTokenQuota > 1_000_000_000_000)) return null
   const quotaResetUtcMidnight = value['quotaResetUtcMidnight'] ?? value['quota_reset_utc_midnight']
   if (quotaResetUtcMidnight !== undefined && typeof quotaResetUtcMidnight !== 'boolean') return null
+  const resetScheduleEnabled = value['resetScheduleEnabled'] ?? value['reset_schedule_enabled']
+  if (resetScheduleEnabled !== undefined && typeof resetScheduleEnabled !== 'boolean') return null
+  const resetTimeMinutes = value['resetTimeMinutes'] ?? value['reset_time_minutes']
+  if (
+    resetTimeMinutes !== undefined
+    && (typeof resetTimeMinutes !== 'number' || !Number.isInteger(resetTimeMinutes) || resetTimeMinutes < 0 || resetTimeMinutes >= 1_440)
+  ) return null
+  const resetUtcOffsetHours = value['resetUtcOffsetHours'] ?? value['reset_utc_offset_hours']
+  if (
+    resetUtcOffsetHours !== undefined
+    && (typeof resetUtcOffsetHours !== 'number' || !Number.isInteger(resetUtcOffsetHours) || resetUtcOffsetHours < -12 || resetUtcOffsetHours > 14)
+  ) return null
   return {
     ...result,
     ...(pricing !== undefined ? { pricing } : {}),
     ...(dailyTokenQuota !== undefined ? { dailyTokenQuota: dailyTokenQuota as number | null } : {}),
-    ...(quotaResetUtcMidnight !== undefined ? { quotaResetUtcMidnight } : {})
+    ...(quotaResetUtcMidnight !== undefined ? { quotaResetUtcMidnight } : {}),
+    ...(resetScheduleEnabled !== undefined ? { resetScheduleEnabled } : {}),
+    ...(resetTimeMinutes !== undefined ? { resetTimeMinutes } : {}),
+    ...(resetUtcOffsetHours !== undefined ? { resetUtcOffsetHours } : {})
   }
 }
 export function normalizeModelRateLimits(value: unknown): ProviderModelRateLimits | null {

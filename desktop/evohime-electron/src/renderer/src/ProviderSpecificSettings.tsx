@@ -70,11 +70,11 @@ export function ProviderSpecificSettings({
   onPacingIntervalChange,
   pacingFreeInterval,
   onPacingFreeIntervalChange,
-  pacingIsDefault
+  pacingIsDefault: _pacingIsDefault
 }: ProviderSpecificSettingsProps): React.JSX.Element {
   const showProbe = schema.supportsFreeAccessProbe || probePolicy !== 'disabled'
   const showRouting = schema.supportsEvidenceRouting || routingMode !== 'any'
-  const showPacing = schema.supportsRequestPacing || !pacingIsDefault
+  const showPacing = false
 
   return (
     <>

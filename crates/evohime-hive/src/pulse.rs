@@ -1400,17 +1400,17 @@ impl ObservationProbe for JournalObservationProbe {
                     settings.hive_fallback_provider_profile.as_deref(),
                     settings.hive_fallback_model.as_deref(),
                 );
-                config.apply_hive_route_limits(
+                config.apply_hive_route_limits_with_schedule(
                     "hive",
                     settings.hive_provider_limits,
                     settings.hive_daily_token_quota,
-                    settings.hive_quota_reset_utc_midnight,
+                    settings.primary_reset_schedule(),
                 );
-                config.apply_hive_route_limits(
+                config.apply_hive_route_limits_with_schedule(
                     "hive_fallback",
                     settings.hive_fallback_provider_limits,
                     settings.hive_fallback_daily_token_quota,
-                    settings.hive_fallback_quota_reset_utc_midnight,
+                    settings.fallback_reset_schedule(),
                 );
             }
             let observation = observation::build_hive_observation_for_hive(

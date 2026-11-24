@@ -227,7 +227,7 @@ pub async fn build_hive_observation_for_hive(
         observation.quota_reset_utc_midnight = route.quota_reset_utc_midnight;
         if let Ok(used) = journal
             .route_tokens_since(
-                quota_window_start_ms(observation.now_ms, route.quota_reset_utc_midnight),
+                route.effective_reset_schedule().window_start_ms(observation.now_ms),
                 &route_name,
             )
             .await
@@ -281,10 +281,9 @@ pub async fn build_hive_observation_for_hive(
                     fallback_route.quota_reset_utc_midnight;
                 let used = journal
                     .route_tokens_since(
-                        quota_window_start_ms(
-                            observation.now_ms,
-                            fallback_route.quota_reset_utc_midnight,
-                        ),
+                        fallback_route
+                            .effective_reset_schedule()
+                            .window_start_ms(observation.now_ms),
                         "hive_fallback",
                     )
                     .await

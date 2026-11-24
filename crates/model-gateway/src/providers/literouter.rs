@@ -32,7 +32,7 @@ struct RequestGate {
     /// Interval learned from a provider rate-limit reply.
     min_interval: Option<Duration>,
     /// Rolling request timestamps keyed by exact model id.
-    model_requests: HashMap<String, VecDeque<Instant>>,
+    model_requests: HashMap<String, VecDeque<(Instant, i64)>>,
 }
 
 /// LiteRouter — OpenAI-compatible provider.
@@ -411,6 +411,19 @@ impl LiteRouterProvider {
         }
     }
 
+    fn reset_schedule_for(&self, model: &str) -> crate::config::LimitResetSchedule {
+        self.model_rate_limits
+            .get("*")
+            .filter(|limits| limits.enabled)
+            .or_else(|| {
+                self.model_rate_limits
+                    .get(model)
+                    .filter(|limits| limits.enabled)
+            })
+            .map(ModelRateLimitConfig::reset_schedule)
+            .unwrap_or_default()
+    }
+
     async fn wait_for_request_slot(&self, model: &str) {
         let mut gate = self.request_gate.lock().await;
         if !self.tracks_model_limits(model) {
@@ -419,6 +432,7 @@ impl LiteRouterProvider {
             // stale rolling history behind.
             gate.model_requests.remove(model);
         }
+        let reset_schedule = self.reset_schedule_for(model);
         loop {
             let mut delay = self.pacing.interval_for_model(model).and_then(|base| {
                 let interval = gate.min_interval.map_or(base, |learned| learned.max(base));
@@ -429,34 +443,20 @@ impl LiteRouterProvider {
                 .model_limits_for(model)
                 .filter(|limits| limits.has_request_caps())
             {
-                let now = Instant::now();
+                let now_instant = Instant::now();
+                let now_ms = super::current_unix_ms();
                 let timestamps = gate
                     .model_requests
                     .entry(self.request_limit_key(model).to_owned())
                     .or_default();
-                while timestamps.front().is_some_and(|started| {
-                    now.duration_since(*started) >= Duration::from_secs(86_400)
-                }) {
-                    timestamps.pop_front();
-                }
-                for (cap, window) in limits.request_windows() {
-                    if cap == 0 {
-                        continue;
-                    }
-                    let count = timestamps
-                        .iter()
-                        .filter(|started| now.duration_since(**started) < window)
-                        .count();
-                    if count >= cap as usize {
-                        let wait = timestamps
-                            .iter()
-                            .filter(|started| now.duration_since(**started) < window)
-                            .nth(count - cap as usize)
-                            .map(|started| window.saturating_sub(now.duration_since(*started)));
-                        if let Some(wait) = wait {
-                            delay = Some(delay.map_or(wait, |current| current.max(wait)));
-                        }
-                    }
+                if let Some(wait) = super::compute_request_limit_delay(
+                    timestamps,
+                    limits,
+                    reset_schedule,
+                    now_instant,
+                    now_ms,
+                ) {
+                    delay = Some(delay.map_or(wait, |current| current.max(wait)));
                 }
             }
             if let Some(delay) = delay {
@@ -466,12 +466,13 @@ impl LiteRouterProvider {
                 continue;
             }
             let now = Instant::now();
+            let now_ms = crate::providers::current_unix_ms();
             gate.last_request = Some(now);
             if self.tracks_model_limits(model) {
                 gate.model_requests
                     .entry(self.request_limit_key(model).to_owned())
                     .or_default()
-                    .push_back(now);
+                    .push_back((now, now_ms));
             }
             return;
         }
@@ -1076,7 +1077,7 @@ mod tests {
                 rpd: 0,
                 daily_token_quota: None,
                 quota_reset_utc_midnight: false,
-                pricing: None,
+                ..ModelRateLimitConfig::default()
             },
         );
         let provider = LiteRouterProvider::with_pacing_and_model_limits(
@@ -1093,14 +1094,15 @@ mod tests {
         {
             let mut gate = provider.request_gate.lock().await;
             let now = Instant::now();
+            let now_ms = crate::providers::current_unix_ms();
             gate.model_requests
                 .entry("model-a".into())
                 .or_default()
-                .push_back(now);
+                .push_back((now, now_ms));
             gate.model_requests
                 .entry("model-b".into())
                 .or_default()
-                .push_back(now);
+                .push_back((now, now_ms));
         }
         provider.wait_for_request_slot("model-b").await;
         let gate = provider.request_gate.lock().await;
@@ -1122,7 +1124,7 @@ mod tests {
                 rpd: 0,
                 daily_token_quota: None,
                 quota_reset_utc_midnight: false,
-                pricing: None,
+                ..ModelRateLimitConfig::default()
             },
         );
         assert!(limits["model-4h"].has_request_caps());
@@ -1153,6 +1155,40 @@ mod tests {
             blocked.is_err(),
             "second request inside 4h window must wait until rp4h cap expires"
         );
+    }
+
+    #[test]
+    fn scheduled_reset_clears_all_limits_before_boundary() {
+        let mut limits = ModelRateLimitConfig::default();
+        limits.enabled = true;
+        limits.rpm = 1;
+        limits.rph = 1;
+        limits.rp4h = 1;
+        limits.rpd = 1;
+        limits.reset_schedule_enabled = true;
+        limits.reset_time_minutes = 3 * 60; // 03:00 in provider timezone
+        limits.reset_utc_offset_hours = 2; // UTC +2 -> 01:00 UTC
+
+        let schedule = limits.reset_schedule();
+        // 2026-11-24 00:30:00 UTC (before 01:00 UTC) and 01:15:00 UTC (after 01:00 UTC).
+        let boundary_ms = 1_795_482_000_000i64; // 01:00:00 UTC boundary check via window_start_ms
+        let after_reset_ms = schedule.window_start_ms(boundary_ms) + 60_000;
+        let before_reset_ms = schedule.window_start_ms(boundary_ms) - 60_000;
+
+        let now_inst = Instant::now();
+        let mut timestamps = VecDeque::from([(now_inst, before_reset_ms)]);
+        let delay = super::super::compute_request_limit_delay(
+            &mut timestamps,
+            &limits,
+            schedule,
+            now_inst,
+            after_reset_ms,
+        );
+        assert!(
+            delay.is_none(),
+            "request recorded before scheduled reset must be cleared"
+        );
+        assert!(timestamps.is_empty());
     }
 
     #[test]
