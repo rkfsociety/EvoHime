@@ -396,16 +396,16 @@ pub fn classify_text(input: &str) -> Result<ClassificationSummary, GuardrailErro
     if !find_matches(input, Detector::PrivateKey).is_empty() {
         add(SensitiveEntityKind::PrivateKey, FindingConfidence::High);
     }
-    if has_phone(input) {
+    if !find_matches(input, Detector::Phone).is_empty() {
         add(SensitiveEntityKind::Phone, FindingConfidence::High);
     }
-    if has_payment_card(input) {
+    if !find_matches(input, Detector::PaymentCard).is_empty() {
         add(SensitiveEntityKind::PaymentCard, FindingConfidence::High);
     }
-    if has_iban(input) {
+    if !find_matches(input, Detector::Iban).is_empty() {
         add(SensitiveEntityKind::Iban, FindingConfidence::High);
     }
-    if has_contextual_tax_id(input) {
+    if !find_matches(input, Detector::NationalTaxId).is_empty() {
         add(
             SensitiveEntityKind::NationalTaxId,
             FindingConfidence::Medium,
@@ -533,61 +533,112 @@ fn digits(value: &str) -> String {
     value.chars().filter(char::is_ascii_digit).collect()
 }
 
-fn has_phone(input: &str) -> bool {
-    let lower = input.to_ascii_lowercase();
-    let labelled = lower.contains("phone") || lower.contains("телефон") || lower.contains("mobile");
+fn phone_context_before(input: &str, start: usize) -> bool {
+    let prefix = &input[..start];
+    let lower = prefix.to_ascii_lowercase();
+    lower
+        .chars()
+        .rev()
+        .take(32)
+        .collect::<String>()
+        .contains("enohp")
+        || lower
+            .chars()
+            .rev()
+            .take(64)
+            .collect::<String>()
+            .contains("нофелет")
+        || lower.ends_with("mobile")
+        || prefix
+            .chars()
+            .rev()
+            .take(32)
+            .collect::<String>()
+            .to_lowercase()
+            .contains("elibom")
+}
+
+fn find_phone_matches(input: &str) -> Vec<(usize, usize)> {
+    let mut matches = Vec::new();
+    let mut skip_until = 0;
     for (start, character) in input.char_indices() {
+        if start < skip_until {
+            continue;
+        }
         if character != '+' && !character.is_ascii_digit() {
             continue;
         }
+        if start > 0 {
+            if let Some(prev) = input[..start].chars().next_back() {
+                if prev.is_ascii_digit() || prev == '+' {
+                    continue;
+                }
+            }
+        }
         let tail = &input[start..];
-        let candidate: String = tail
-            .chars()
-            .take_while(|value| {
-                value.is_ascii_digit() || matches!(value, '+' | '-' | '(' | ')' | '.' | ' ' | '\t')
-            })
-            .collect();
-        let number = digits(&candidate);
+        let mut raw_len = 0;
+        for (offset, value) in tail.char_indices() {
+            let valid = value.is_ascii_digit()
+                || (offset == 0 && value == '+')
+                || matches!(value, '-' | '(' | ')' | '.' | ' ' | '\t');
+            if !valid {
+                break;
+            }
+            raw_len = offset + value.len_utf8();
+        }
+        let trimmed = tail[..raw_len].trim_end_matches(|c: char| !c.is_ascii_digit());
+        if trimmed.is_empty() {
+            continue;
+        }
+        let number = digits(trimmed);
         if (10..=15).contains(&number.len())
-            && (candidate.starts_with('+')
-                || (labelled
-                    && lower[..start]
-                        .chars()
-                        .rev()
-                        .take(32)
-                        .collect::<String>()
-                        .contains("enohp"))
-                || (labelled
-                    && lower[..start]
-                        .chars()
-                        .rev()
-                        .take(64)
-                        .collect::<String>()
-                        .contains("нофелет")))
+            && (trimmed.starts_with('+') || phone_context_before(input, start))
         {
-            return true;
+            let end = start + trimmed.len();
+            matches.push((start, end));
+            skip_until = end;
         }
     }
-    false
+    matches
 }
 
-fn has_payment_card(input: &str) -> bool {
+fn find_payment_card_matches(input: &str) -> Vec<(usize, usize)> {
+    let mut matches = Vec::new();
+    let mut skip_until = 0;
     for (start, character) in input.char_indices() {
+        if start < skip_until {
+            continue;
+        }
         if !character.is_ascii_digit() {
             continue;
         }
-        let candidate: String = input[start..]
-            .chars()
-            .take_while(|value| {
-                value.is_ascii_digit() || matches!(value, '-' | ' ' | '\t' | '(' | ')')
-            })
-            .collect();
-        let number = digits(&candidate);
+        if start > 0 {
+            if let Some(prev) = input[..start].chars().next_back() {
+                if prev.is_ascii_digit() {
+                    continue;
+                }
+            }
+        }
+        let tail = &input[start..];
+        let mut raw_len = 0;
+        for (offset, value) in tail.char_indices() {
+            if !(value.is_ascii_digit() || matches!(value, '-' | ' ' | '\t' | '(' | ')')) {
+                break;
+            }
+            raw_len = offset + value.len_utf8();
+        }
+        let trimmed = tail[..raw_len].trim_end_matches(|c: char| !c.is_ascii_digit());
+        if trimmed.is_empty() {
+            continue;
+        }
+        let number = digits(trimmed);
         if (13..=19).contains(&number.len()) && luhn_valid(&number) {
-            return true;
+            let end = start + trimmed.len();
+            matches.push((start, end));
+            skip_until = end;
         }
     }
-    false
+    matches
 }
 
 fn luhn_valid(value: &str) -> bool {
@@ -610,26 +661,39 @@ fn luhn_valid(value: &str) -> bool {
     value.len() >= 13 && sum.is_multiple_of(10)
 }
 
-fn has_iban(input: &str) -> bool {
-    input
-        .split(|character: char| {
-            character.is_whitespace() || matches!(character, ',' | ';' | '(' | ')')
-        })
-        .any(|part| {
-            let compact: String = part
-                .chars()
-                .filter(|character| character.is_ascii_alphanumeric())
-                .collect();
-            (15..=34).contains(&compact.len())
-                && compact.len() >= 4
-                && compact[..2]
+fn find_iban_matches(input: &str) -> Vec<(usize, usize)> {
+    let mut matches = Vec::new();
+    let mut start = None;
+    for (index, character) in input
+        .char_indices()
+        .chain(std::iter::once((input.len(), ' ')))
+    {
+        let sep = character.is_whitespace() || matches!(character, ',' | ';' | '(' | ')');
+        if !sep && start.is_none() {
+            start = Some(index);
+        } else if sep {
+            if let Some(part_start) = start.take() {
+                let part = &input[part_start..index];
+                let compact: String = part
                     .chars()
-                    .all(|character| character.is_ascii_uppercase())
-                && compact[2..4]
-                    .chars()
-                    .all(|character| character.is_ascii_digit())
-                && iban_mod97(&compact) == 1
-        })
+                    .filter(|character| character.is_ascii_alphanumeric())
+                    .collect();
+                if (15..=34).contains(&compact.len())
+                    && compact.len() >= 4
+                    && compact[..2]
+                        .chars()
+                        .all(|character| character.is_ascii_uppercase())
+                    && compact[2..4]
+                        .chars()
+                        .all(|character| character.is_ascii_digit())
+                    && iban_mod97(&compact) == 1
+                {
+                    matches.push((part_start, index));
+                }
+            }
+        }
+    }
+    matches
 }
 
 fn iban_mod97(value: &str) -> u32 {
@@ -644,31 +708,51 @@ fn iban_mod97(value: &str) -> u32 {
     })
 }
 
-fn has_contextual_tax_id(input: &str) -> bool {
+fn line_has_tax_label(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    lower
+        .split(|character: char| !character.is_alphanumeric())
+        .any(|word| match word {
+            "tax" | "vat" | "inn" | "tin" | "налог" | "инн" => true,
+            word => {
+                word.starts_with("tax")
+                    && word["tax".len()..]
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit())
+            }
+        })
+}
+
+fn find_tax_id_matches(input: &str) -> Vec<(usize, usize)> {
     // Метка налогового идентификатора должна быть отдельным словом на той же
     // строке, что и длинный цифровой run. Глобальная подстрока по всему вводу
-    // («tin» внутри «tiny», «settings», «listener») превращала любой
-    // технический документ в ложное «налоговое» совпадение и поднимала
-    // требование приватности до Sensitive, отчего все облачные маршруты
-    // отбраковывались как privacy_violation (all_routes_excluded).
-    input.lines().any(|line| {
-        let lower = line.to_lowercase();
-        let labelled = lower
-            .split(|character: char| !character.is_alphanumeric())
-            .any(|word| match word {
-                "tax" | "vat" | "inn" | "tin" | "налог" | "инн" => true,
-                word => {
-                    word.starts_with("tax")
-                        && word["tax".len()..]
-                            .bytes()
-                            .all(|byte| byte.is_ascii_digit())
+    // («tin» внутри «tiny», «settings», «listener») и не-цифровые токены
+    // превращали любой технический документ в ложное совпадение и маскировали
+    // обычные слова (например, Electron -> El****on).
+    let mut matches = Vec::new();
+    let mut line_start = 0;
+    for raw_line in input.split_inclusive('\n') {
+        let line = raw_line.trim_end_matches(['\r', '\n']);
+        if line_has_tax_label(line) {
+            let mut run_start = None;
+            for (offset, ch) in line
+                .char_indices()
+                .chain(std::iter::once((line.len(), ' ')))
+            {
+                if ch.is_ascii_digit() && run_start.is_none() {
+                    run_start = Some(offset);
+                } else if !ch.is_ascii_digit() {
+                    if let Some(start) = run_start.take() {
+                        if (8..=14).contains(&(offset - start)) {
+                            matches.push((line_start + start, line_start + offset));
+                        }
+                    }
                 }
-            });
-        labelled
-            && line
-                .split(|character: char| !character.is_ascii_digit())
-                .any(|part| (8..=14).contains(&part.len()))
-    })
+            }
+        }
+        line_start += raw_line.len();
+    }
+    matches
 }
 
 /// Validates a policy and computes its versioned integrity digest.
@@ -1095,68 +1179,11 @@ fn find_matches(input: &str, detector: Detector) -> Vec<(usize, usize)> {
                 }
             })
             .collect(),
-        Detector::Phone => token_matches(input, |token| {
-            let number = digits(token);
-            number.len() >= 10
-                && number.len() <= 15
-                && (token.starts_with('+') || input_context_has_phone_label(input, token))
-        }),
-        Detector::PaymentCard => token_matches(input, |token| {
-            (13..=19).contains(&token.len()) && luhn_valid(token)
-        }),
-        Detector::Iban => token_matches(input, |token| {
-            (15..=34).contains(&token.len())
-                && token.len() >= 4
-                && token[..2]
-                    .chars()
-                    .all(|character| character.is_ascii_uppercase())
-                && token[2..4]
-                    .chars()
-                    .all(|character| character.is_ascii_digit())
-                && iban_mod97(token) == 1
-        }),
-        Detector::NationalTaxId => token_matches(input, |token| {
-            (8..=14).contains(&token.len()) && input_context_has_tax_label(input, token)
-        }),
+        Detector::Phone => find_phone_matches(input),
+        Detector::PaymentCard => find_payment_card_matches(input),
+        Detector::Iban => find_iban_matches(input),
+        Detector::NationalTaxId => find_tax_id_matches(input),
     }
-}
-
-fn token_matches<F>(input: &str, predicate: F) -> Vec<(usize, usize)>
-where
-    F: Fn(&str) -> bool,
-{
-    let mut result = Vec::new();
-    let mut start = None;
-    for (index, character) in input
-        .char_indices()
-        .chain(std::iter::once((input.len(), ' ')))
-    {
-        let allowed = character.is_ascii_alphanumeric() || character == '+';
-        if allowed && start.is_none() {
-            start = Some(index);
-        } else if !allowed {
-            if let Some(start) = start.take() {
-                if predicate(&input[start..index]) {
-                    result.push((start, index));
-                }
-            }
-        }
-    }
-    result
-}
-
-fn input_context_has_phone_label(input: &str, token: &str) -> bool {
-    let lower = input.to_ascii_lowercase();
-    let _ = token;
-    lower.contains("phone") || lower.contains("телефон") || lower.contains("mobile")
-}
-
-fn input_context_has_tax_label(input: &str, token: &str) -> bool {
-    let lower = input.to_ascii_lowercase();
-    let _ = token;
-    ["tax", "vat", "inn", "tin", "налог", "инн"]
-        .iter()
-        .any(|label| lower.contains(label))
 }
 
 #[cfg(test)]
@@ -1332,6 +1359,21 @@ mod tests {
         .unwrap();
         assert_eq!(blocked.disposition, EgressDisposition::Blocked);
     }
+    #[test]
+    fn redaction_clears_formatted_pii_and_preserves_plain_words() {
+        let policy = default_policy("model");
+        let docs = "pwsh .\\scripts\\build-listener-runtime.ps1 -Rungs tiny\nElectron supervisor workspace";
+        let docs_redacted = redact_text(&policy, docs).unwrap();
+        assert_eq!(docs_redacted.output, docs);
+
+        let pii = "phone +1 (415) 555-2671 card 4111 1111 1111 1111 tax 123456789";
+        let pii_redacted = redact_text(&policy, pii).unwrap();
+        assert_ne!(pii_redacted.output, pii);
+        let after = classify_text(&pii_redacted.output).unwrap();
+        assert_eq!(after.required_privacy, "public");
+        assert!(after.findings.is_empty());
+    }
+
     #[test]
     fn restart_is_ephemeral() {
         let first = StreamingRedactor::new(default_policy("one"));
