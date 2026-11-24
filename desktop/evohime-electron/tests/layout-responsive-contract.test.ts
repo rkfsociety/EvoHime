@@ -54,6 +54,18 @@ describe('responsive shell layout contract', () => {
     expect(stylesheet).toContain('.hive-dock {')
   })
 
+  it('keeps the hive stage scroll-free and overlays HUD above the scene down to minimum desktop width', () => {
+    const compactHiveBlock = stylesheet.slice(
+      stylesheet.indexOf('@container (max-width: 1180px)'),
+      stylesheet.indexOf('@container (max-width: 760px)')
+    )
+    expect(compactHiveBlock).toContain('display: grid;')
+    expect(compactHiveBlock).toContain('overflow: hidden;')
+    expect(compactHiveBlock).not.toContain('overflow-y: auto;')
+    expect(compactHiveBlock).not.toContain('flex-direction: column;')
+    expect(compactHiveBlock).not.toContain('height: 580px;')
+  })
+
   it('reduces sidebar pressure at the supported minimum window width', () => {
     expect(stylesheet).toContain('@media (max-width: 1080px) {\n  :root {\n    --sidebar-width: 200px;')
   })

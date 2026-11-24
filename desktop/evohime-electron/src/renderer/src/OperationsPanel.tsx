@@ -1752,9 +1752,12 @@ export function HiveDashboard({
     const hudTop = hudTopRef.current
     if (!stage || !hudTop || typeof ResizeObserver === 'undefined') return undefined
     const publish = (): void => {
-      const overlaysScene = getComputedStyle(hudTop).position === 'absolute'
+      const overlaysScene = getComputedStyle(hudTop).position !== 'static'
       const height = overlaysScene ? Math.ceil(hudTop.getBoundingClientRect().height) : 0
+      const brandEl = hudTop.querySelector<HTMLElement>('.hive-hud-top__brand')
+      const brandHeight = overlaysScene && brandEl ? Math.ceil(brandEl.getBoundingClientRect().height) : 0
       stage.style.setProperty('--hive-hud-top-height', `${height}px`)
+      stage.style.setProperty('--hive-hud-brand-height', `${brandHeight}px`)
     }
     publish()
     const observer = new ResizeObserver(publish)
@@ -1762,6 +1765,7 @@ export function HiveDashboard({
     return () => {
       observer.disconnect()
       stage.style.removeProperty('--hive-hud-top-height')
+      stage.style.removeProperty('--hive-hud-brand-height')
     }
   }, [])
   const connected = CONNECTED_STATES.includes(connection)

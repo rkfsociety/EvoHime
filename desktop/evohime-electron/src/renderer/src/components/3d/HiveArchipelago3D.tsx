@@ -1340,15 +1340,32 @@ const QueenTower3D = memo(function QueenTower3D({ view, skin, paused }: { view: 
 /** Fixed top-down rig: pans the look target and lerps ortho zoom without resetting on selection. */
 function CameraRig({
   overviewZoom,
+  worldDiameter,
   paused
 }: {
   overviewZoom: number
+  worldDiameter: number
   paused: boolean
 }) {
-  const { camera, gl, invalidate } = useThree()
-  const look = useRef(new THREE.Vector3(0, 0, 0))
-  const desired = useRef(new THREE.Vector3(0, 0, 0))
-  const desiredZoom = useRef(overviewZoom)
+  const { camera, gl, invalidate, size } = useThree()
+  const compact = size.width <= 1180
+  const leftReserve = compact ? 248 : 276
+  const rightReserve = compact ? 320 : 352
+  const topReserve = compact ? 28 : 34
+  const bottomReserve = compact ? 168 : 196
+  const availWidth = Math.max(240, size.width - leftReserve - rightReserve)
+  const availHeight = Math.max(200, size.height - topReserve - bottomReserve)
+  const fitZoom = Math.min(availWidth / worldDiameter, availHeight / worldDiameter)
+  const responsiveZoom = Math.max(MIN_ZOOM, Math.min(overviewZoom, fitZoom))
+  const defaultCenterX = size.width < 1350 && availWidth < worldDiameter * overviewZoom
+    ? (rightReserve - leftReserve) / (2 * responsiveZoom)
+    : 0
+  const defaultCenterZ = (bottomReserve - topReserve) / (2 * responsiveZoom)
+
+  const look = useRef(new THREE.Vector3(defaultCenterX, 0, defaultCenterZ))
+  const desired = useRef(new THREE.Vector3(defaultCenterX, 0, defaultCenterZ))
+  const desiredZoom = useRef(responsiveZoom)
+  const userInteracted = useRef(false)
   const panRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
     active: false,
     lastX: 0,
@@ -1356,10 +1373,18 @@ function CameraRig({
   })
 
   useEffect(() => {
+    if (userInteracted.current) return
+    desiredZoom.current = responsiveZoom
+    desired.current.set(defaultCenterX, 0, defaultCenterZ)
+    invalidate()
+  }, [responsiveZoom, defaultCenterX, defaultCenterZ, invalidate])
+
+  useEffect(() => {
     const dom = gl.domElement
     const host = dom.parentElement ?? dom
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault()
+      userInteracted.current = true
       const scale = event.deltaY < 0 ? 1.12 : 1 / 1.12
       desiredZoom.current = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, desiredZoom.current * scale))
       invalidate()
@@ -1377,6 +1402,7 @@ function CameraRig({
       if (event.button !== 1) return
       event.preventDefault()
       event.stopPropagation()
+      userInteracted.current = true
       panRef.current = { active: true, lastX: event.clientX, lastY: event.clientY }
       dom.style.cursor = 'grabbing'
       try {
@@ -1631,6 +1657,9 @@ export const HiveArchipelago3D = memo(function HiveArchipelago3D({
   const visibleSatellites = satellites.slice(0, CITY_MAP_MAX_SATELLITES)
   const soloZoom = Math.max(8, Math.min(24, (16.5 / Math.max(10, capital.radius)) * OVERVIEW_ZOOM_SOLO))
   const overviewZoom = visibleSatellites.length > 0 ? OVERVIEW_ZOOM_ARCHIPELAGO : soloZoom
+  const worldDiameter = visibleSatellites.length > 0
+    ? Math.max(48, capital.radius * 3.6)
+    : Math.max(22, capital.radius * 2.15)
 
   const glRef = useRef<THREE.WebGLRenderer | null>(null)
   const handleContextLost = useMemo(() => {
@@ -1683,7 +1712,7 @@ export const HiveArchipelago3D = memo(function HiveArchipelago3D({
         <directionalLight position={[26, 40, 18]} intensity={1.25} color="#eef3ff" />
         <directionalLight position={[-22, 18, -20]} intensity={0.45} color="#78a2ff" />
         <pointLight position={[0, 12, 0]} intensity={55} distance={60} decay={1.5} color="#ffd98a" />
-        <CameraRig overviewZoom={overviewZoom} paused={paused} />
+        <CameraRig overviewZoom={overviewZoom} worldDiameter={worldDiameter} paused={paused} />
         <Starfield />
 
         <CitySkinProvider>

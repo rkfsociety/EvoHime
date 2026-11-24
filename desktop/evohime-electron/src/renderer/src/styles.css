@@ -7805,8 +7805,8 @@ body {
 
 .hive-city-scene__queen-anchor {
   position: absolute;
-  left: 18px;
-  top: clamp(132px, 20%, 190px);
+  left: 14px;
+  top: max(124px, calc(var(--hive-hud-brand-height, 108px) + 22px));
   z-index: 4;
   pointer-events: none;
 }
@@ -9645,68 +9645,89 @@ body {
  * container width as the breakpoint for the desktop shell as well.
  */
 @container (max-width: 1180px) {
-  .main__scroll:has(> .hive-console) {
-    overflow-y: auto;
-  }
-
-  .hive-console {
-    height: auto;
-  }
-
   .hive-stage {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
     min-height: 0;
     overflow: hidden;
   }
 
-  .hive-stage__departments {
-    position: relative;
-    height: 580px;
-    flex: none;
+  .hive-hud-top {
+    margin: 10px 12px 0;
+    gap: 10px;
+  }
+
+  .hive-hud-top__brand {
+    padding: 5px 9px 7px;
+  }
+
+  .hive-hud-top__brand h1 {
+    font-size: 18px;
+  }
+
+  .hive-hud-top__right {
+    width: min(306px, 38%);
+    gap: 6px;
+  }
+
+  .hive-hud-status {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .hive-city-scene__queen-anchor {
+    left: 12px;
+    top: max(112px, calc(var(--hive-hud-brand-height, 98px) + 18px));
+  }
+
+  .hive-queen-card {
+    width: 228px;
+    padding: 8px 10px;
+    gap: 6px;
   }
 
   .hive-hud-alerts {
-    right: 14px;
-    top: 120px;
+    margin: 116px 0 0 12px;
   }
 
   .hive-dock {
-    position: static;
-    padding: 10px 12px 12px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    background: #070812;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(156px, 0.72fr);
+    gap: 8px;
+    margin: 0 10px 10px;
   }
 
   .hive-dock__card {
-    max-height: none;
+    min-height: 128px;
+    max-height: min(190px, 24vh);
+    padding: 8px 10px;
+    gap: 5px;
   }
 
   .hive-dock__card--logs-expanded {
     margin-top: 0;
   }
-
-  /* В узкой раскладке нижний док статичен и лежит за пределами сцены,
-     поэтому чипы островов возвращаются к нижнему краю сцены. */
-  .hive-archipelago__island-chips {
-    bottom: 12px;
-  }
 }
 
-@container (max-width: 860px) {
+@container (max-width: 760px) {
   .hive-stage {
     display: flex;
     flex-direction: column;
     gap: 10px;
     padding: 12px;
     min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+
+  .hive-stage::-webkit-scrollbar {
+    display: none;
   }
 
   .hive-stage__departments {
     position: relative;
     order: 2;
     height: auto;
-    min-height: 430px;
+    min-height: 380px;
     border-radius: 12px;
     overflow: hidden;
   }
@@ -9767,6 +9788,7 @@ body {
     position: static;
     order: 1;
     flex-direction: column;
+    margin: 0;
   }
 
   .hive-hud-top__right,
@@ -9778,11 +9800,14 @@ body {
   .hive-hud-alerts {
     position: static;
     order: 3;
+    margin: 0;
   }
 
   .hive-dock {
     position: static;
     order: 4;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0;
   }
 }
 
@@ -9797,67 +9822,29 @@ body {
   }
 }
 
-@container (max-width: 1100px) {
+@container (max-height: 740px) and (min-width: 761px) {
   .hive-stage {
-    overflow-y: auto;
-    grid-template-rows: auto auto;
-    align-content: start;
-    scrollbar-width: thin;
-  }
-
-  .hive-stage__departments {
-    position: relative;
-    grid-row: 2;
-    grid-column: 1;
-    min-height: 420px;
+    overflow: hidden;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
   .hive-hud-top {
-    grid-row: 1;
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-
-  .hive-hud-top__right {
-    width: min(334px, 100%);
-    justify-items: stretch;
-    margin-left: auto;
-  }
-
-  .hive-hud-alerts {
-    grid-row: 2;
-    margin: 8px 14px 0;
+    margin: 8px 10px 0;
   }
 
   .hive-dock {
-    grid-row: 3;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    margin-top: 8px;
+    margin: 0 10px 8px;
+    gap: 8px;
   }
 
   .hive-dock__card {
-    max-height: 280px;
-  }
-}
-
-@container (max-height: 720px) and (min-width: 1101px) {
-  .hive-stage {
-    overflow-y: auto;
-    grid-template-rows: minmax(180px, 1fr) auto;
-    scrollbar-width: thin;
-  }
-
-  .hive-dock {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    margin-top: 8px;
-  }
-
-  .hive-dock__card {
-    max-height: 260px;
+    min-height: 116px;
+    max-height: min(168px, 23vh);
+    padding: 8px 10px;
   }
 
   .hive-hud-alerts {
-    margin-top: 132px;
+    margin: 108px 0 0 10px;
   }
 }
 
