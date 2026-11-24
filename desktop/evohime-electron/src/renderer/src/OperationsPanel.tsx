@@ -3165,7 +3165,10 @@ export function HiveDashboard({
         subtitle: translate(department.subtitle),
         icon: department.icon,
         activeCount: department.activeCount,
-        maxCapacity: department.maxCapacity
+        // Core присылает общий потолок max_capacity (напр. 16) только активным ролям;
+        // если отдать его как количество лотов сцене, один активный департамент
+        // захватит 2/3 города и сожмёт остальные сектора.
+        maxCapacity: Math.max(1, department.activeCount)
       })),
     [departments]
   )
