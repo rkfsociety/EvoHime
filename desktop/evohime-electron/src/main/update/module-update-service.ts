@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { join, win32 } from 'node:path'
 
 import { disabledUpdateStatus, initialUpdateSteps, type UpdateStatus } from '@shared/update'
+import { parsePercent } from '@shared/updater'
 
 export interface ModuleUpdaterStatus {
   readonly schema?: string
@@ -306,10 +307,12 @@ export class ModuleUpdateService {
       ...Object.fromEntries(available.map((item) => [item.module, item.installed]))
     }
     const phase = toUpdatePhase(parsed.phase, available.length > 0)
+    const message = parsed.message ?? 'Состояние модульных обновлений обновлено.'
+    const parsedPercent = phase === 'applying' ? parsePercent(message) : null
     const next: UpdateStatus = {
       phase,
       blocking: false,
-      message: parsed.message ?? 'Состояние модульных обновлений обновлено.',
+      message,
       detail: '',
       steps: initialUpdateSteps().map((step) => ({ ...step, state: 'skipped' as const })),
       installedCommit: null,
@@ -318,7 +321,7 @@ export class ModuleUpdateService {
       branch: this.options.branch,
       error: phase === 'failed' ? parsed.error ?? parsed.message ?? 'Проверка модулей не удалась.' : null,
       checkedAtMs: Date.now(),
-      downloadProgress: null,
+      downloadProgress: parsedPercent === null ? null : parsedPercent / 100,
       selectedComponents: [],
       availableModules: available.map((item) => item.module),
       availableModuleVersions: Object.fromEntries(available.map((item) => [item.module, item.available])),

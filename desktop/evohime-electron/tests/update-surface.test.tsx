@@ -64,6 +64,9 @@ describe('update progress', () => {
       index === 0 ? { ...step, state: 'done' as const } : step
     )
     expect(updateProgress(status({ steps: active }))).toBeCloseTo(1 / steps.length)
+
+    const allSkipped = steps.map((step) => ({ ...step, state: 'skipped' as const }))
+    expect(updateProgress(status({ steps: allSkipped }))).toBeNull()
   })
 })
 
@@ -86,6 +89,23 @@ describe('sidebar update indicator', () => {
 
     expect(screen.getByText('30%')).toBeTruthy()
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('does not show 100% when steps are skipped and downloadProgress is unknown', () => {
+    installApi()
+    render(
+      <UpdateIndicator
+        status={status({
+          phase: 'applying',
+          message: 'Проверяю модули…',
+          downloadProgress: null,
+          steps: initialUpdateSteps().map((step) => ({ ...step, state: 'skipped' as const }))
+        })}
+      />
+    )
+
+    expect(screen.getByText('…')).toBeTruthy()
+    expect(screen.queryByText('100%')).toBeNull()
   })
 
   it('opens the module version details after the update is ready', () => {

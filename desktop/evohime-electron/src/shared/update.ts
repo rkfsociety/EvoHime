@@ -166,9 +166,10 @@ export function shortCommit(commit: string | null): string {
 
 /** Fraction of the run that is done, or `null` while nothing started. */
 export function updateProgress(status: UpdateStatus): number | null {
+  const hasProgress = status.steps.some((step) => step.state === 'done' || step.state === 'active')
+  if (!hasProgress) return null
   const done = status.steps.filter((step) => step.state === 'done' || step.state === 'skipped').length
   const active = status.steps.some((step) => step.state === 'active')
-  if (done === 0 && !active) return null
   return Math.min(1, (done + (active ? 0.5 : 0)) / status.steps.length)
 }
 

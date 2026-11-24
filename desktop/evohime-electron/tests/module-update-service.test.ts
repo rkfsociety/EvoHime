@@ -276,6 +276,7 @@ describe('ModuleUpdateService', () => {
       }))
       ;(service as unknown as { refresh(): void }).refresh()
       expect(service.status.message).toBe('Скачивание updater — 58%')
+      expect(service.status.downloadProgress).toBeCloseTo(0.58)
       expect(quitCount).toBe(0)
 
       writeFileSync(join(state, 'updater.json'), JSON.stringify({

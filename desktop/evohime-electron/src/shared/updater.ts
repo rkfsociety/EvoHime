@@ -125,7 +125,7 @@ function phaseBadge(phase: UpdaterUiPhase): string {
 
 const PERCENT_SUFFIX = /\s*(?:—|-)\s*(\d{1,3})%\s*$/
 
-function parsePercent(message: string): number | null {
+export function parsePercent(message: string): number | null {
   const match = message.match(PERCENT_SUFFIX)
   if (!match?.[1]) return null
   return Math.min(100, Number(match[1]))
