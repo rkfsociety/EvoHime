@@ -878,8 +878,14 @@ impl ToolAgent {
         // full access the write tools are allowed without approval, so the model
         // must get them and keep mutation delivery regardless of prompt wording.
         let mut preflight = Vec::new();
-        let self_development_intent =
-            prompt.contains("eva_workspace_") || prompt.contains("eva_self_development");
+        let eva_workspace_isolated = context.eva_workspace_root.as_deref().is_some_and(|path| {
+            evohime_tool_runtime::self_development::workspace_roots_canonically_isolated(
+                &context.workspace_root,
+                path,
+            )
+        });
+        let self_development_intent = eva_workspace_isolated
+            && (prompt.contains("eva_workspace_") || prompt.contains("eva_self_development"));
         for tool in self.tools.list() {
             if read_only_subagent && !subagent_tool_allowed(tool.name) {
                 // A subagent may not widen its own surface with workflow,
@@ -895,7 +901,7 @@ impl ToolAgent {
             if tool
                 .name
                 .starts_with(evohime_tool_runtime::self_development::TOOL_PREFIX)
-                && context.eva_workspace_root.is_none()
+                && !eva_workspace_isolated
             {
                 preflight.push((
                     tool.name,
@@ -922,8 +928,7 @@ impl ToolAgent {
         let mutation_intent = router_mutation_intent || mutation_authorized;
         let mut delivery_requirements = DeliveryRequirements::from_prompt(&prompt);
         if self_development_intent
-            || (context.workspace_root.as_os_str().is_empty()
-                && context.eva_workspace_root.is_some())
+            || (context.workspace_root.as_os_str().is_empty() && eva_workspace_isolated)
         {
             // Self-development tools own a separate successful-test gate. Do
             // not require the unrelated task-workspace `shell_execute` and
@@ -939,7 +944,7 @@ impl ToolAgent {
             reconcile_delivery_requirements(&mut delivery_requirements, mutation_intent);
         let mut authorized_manifests = Vec::new();
         for (name, decision) in &preflight {
-            let self_development_tool_is_requested = context.eva_workspace_root.is_some()
+            let self_development_tool_is_requested = eva_workspace_isolated
                 && name.starts_with(evohime_tool_runtime::self_development::TOOL_PREFIX);
             if tool_preflight_can_be_offered(
                 decision,
@@ -987,7 +992,7 @@ impl ToolAgent {
         if mutation_authorized {
             required_ids.extend_from_slice(FULL_ACCESS_WORKING_SET);
         }
-        if context.eva_workspace_root.is_some() {
+        if eva_workspace_isolated {
             // This is a task-scoped request, not a new grant: manifests still
             // pass the same permission preflight, and approval-required tools
             // remain gated by the existing approval flow.
