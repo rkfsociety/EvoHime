@@ -26,6 +26,9 @@ use std::{
 mod artifacts;
 use artifacts::*;
 
+type DownloadProgress<'a> = (&'a str, u64, u64);
+type ProgressCallback<'a> = &'a dyn Fn(&str, u8, Option<DownloadProgress<'_>>);
+
 fn main() -> ExitCode {
     let args = env::args().collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--self-test") {
@@ -1137,7 +1140,7 @@ fn apply_updates(
     wait_pid: Option<u32>,
     relaunch: Option<&Path>,
     health_file: Option<&Path>,
-    progress: &dyn Fn(&str, u8, Option<(&str, u64, u64)>),
+    progress: ProgressCallback<'_>,
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
     let result = apply_updates_inner(
@@ -1159,7 +1162,7 @@ fn apply_updates_inner(
     wait_pid: Option<u32>,
     relaunch: Option<&Path>,
     health_file: Option<&Path>,
-    progress: &dyn Fn(&str, u8, Option<(&str, u64, u64)>),
+    progress: ProgressCallback<'_>,
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
     let state = data_dir.join("update-state");

@@ -10,7 +10,7 @@ pub(super) fn apply_listener_runtime_if_needed(
     client: &UpdaterHttpClient,
     update: Option<&UpdateCandidate>,
     data_dir: &Path,
-    progress: &dyn Fn(&str, u8, Option<(&str, u64, u64)>),
+    progress: ProgressCallback<'_>,
 ) -> Result<(), String> {
     if let Some(update) = update {
         apply_listener_runtime(client, update, data_dir, progress)?;
@@ -384,7 +384,7 @@ pub(super) fn apply_listener_runtime(
     client: &UpdaterHttpClient,
     update: &UpdateCandidate,
     data_dir: &Path,
-    progress: &dyn Fn(&str, u8, Option<(&str, u64, u64)>),
+    progress: ProgressCallback<'_>,
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging").join("listener-runtime");
     let result = apply_listener_runtime_inner(client, update, data_dir, progress);
@@ -395,7 +395,7 @@ pub(super) fn apply_listener_runtime_inner(
     client: &UpdaterHttpClient,
     update: &UpdateCandidate,
     data_dir: &Path,
-    progress: &dyn Fn(&str, u8, Option<(&str, u64, u64)>),
+    progress: ProgressCallback<'_>,
 ) -> Result<(), String> {
     let runtime: RuntimeReleaseManifest =
         get_json(client, &update.download_url, "manifest listener-runtime")?;
