@@ -1,0 +1,109 @@
+name: cache cleanup
+
+on:
+  workflow_run:
+    workflows:
+      - module router
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      max_age_hours:
+        description: 'Удалять кэши, не использовавшиеся дольше указанного числа часов'
+        required: false
+        default: '24'
+        type: string
+
+concurrency:
+  group: evohime-cache-cleanup
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    name: Удалить неиспользуемые кэши старше суток
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Проверить и удалить устаревшие кэши
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          MAX_AGE_HOURS: ${{ inputs.max_age_hours }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $maxAgeHours = 24.0
+          if (-not [string]::IsNullOrWhiteSpace($env:MAX_AGE_HOURS)) {
+            if (-not [double]::TryParse($env:MAX_AGE_HOURS, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$maxAgeHours) -or $maxAgeHours -le 0) {
+              throw "Некорректное значение max_age_hours: $($env:MAX_AGE_HOURS)"
+            }
+          }
+
+          $nowUtc = [DateTimeOffset]::UtcNow
+          $cutoff = $nowUtc.AddHours(-$maxAgeHours)
+          Write-Host ("Проверка кэшей репозитория {0}: порог неиспользования > {1} ч (до {2:u})" -f $env:REPOSITORY, $maxAgeHours, $cutoff.UtcDateTime)
+
+          $lines = @(gh api --paginate "repos/$env:REPOSITORY/actions/caches?per_page=100" --jq '.actions_caches[] | @json')
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Не удалось получить список кэшей GitHub Actions.'
+          }
+
+          $caches = @(foreach ($line in $lines) {
+            if (-not [string]::IsNullOrWhiteSpace($line)) {
+              $line | ConvertFrom-Json
+            }
+          })
+
+          if ($caches.Count -eq 0) {
+            Write-Host 'Кэши отсутствуют, удалять нечего.'
+            exit 0
+          }
+
+          $totalBytes = [int64]0
+          $deletedCount = 0
+          $deletedBytes = [int64]0
+          $keptCount = 0
+
+          foreach ($cache in $caches) {
+            $size = [int64]$cache.size_in_bytes
+            $totalBytes += $size
+
+            $stampRaw = if (-not [string]::IsNullOrWhiteSpace([string]$cache.last_accessed_at)) {
+              [string]$cache.last_accessed_at
+            } else {
+              [string]$cache.created_at
+            }
+            $lastUsed = [DateTimeOffset]::Parse($stampRaw, [System.Globalization.CultureInfo]::InvariantCulture).ToUniversalTime()
+
+            if ($lastUsed -lt $cutoff) {
+              $ageHours = [Math]::Round(($nowUtc - $lastUsed).TotalHours, 1)
+              $sizeMb = [Math]::Round($size / 1MB, 2)
+              Write-Host ("Удаление кэша id={0}, key='{1}', ref='{2}', не использовался {3} ч ({4} MB)" -f $cache.id, $cache.key, $cache.ref, $ageHours, $sizeMb)
+
+              $delOut = @(gh api -X DELETE "repos/$env:REPOSITORY/actions/caches/$($cache.id)" 2>&1)
+              if ($LASTEXITCODE -ne 0) {
+                $delText = $delOut -join "`n"
+                if ($delText -match '(?i)(HTTP/?[0-9.]*\s*404|404 Not Found)') {
+                  Write-Warning "Кэш id=$($cache.id) уже отсутствует (404)."
+                  $global:LASTEXITCODE = 0
+                } else {
+                  throw "Не удалось удалить кэш id=$($cache.id): $delText"
+                }
+              } else {
+                $deletedCount++
+                $deletedBytes += $size
+              }
+            } else {
+              $keptCount++
+            }
+          }
+
+          $totalMb = [Math]::Round($totalBytes / 1MB, 2)
+          $deletedMb = [Math]::Round($deletedBytes / 1MB, 2)
+          $remainingMb = [Math]::Round(($totalBytes - $deletedBytes) / 1MB, 2)
+          Write-Host ("Итого: всего было {0} ({1} MB), удалено {2} ({3} MB), оставлено {4} ({5} MB)." -f $caches.Count, $totalMb, $deletedCount, $deletedMb, $keptCount, $remainingMb)
