@@ -25,11 +25,13 @@ async fn observation_daemon_reports_status_and_wakes_on_settings_change_via_ipc(
     let server_pipe = pipe_name.clone();
     let notify_count = Arc::new(AtomicUsize::new(0));
     let notify_counter = Arc::clone(&notify_count);
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel::<()>();
     let mut next_server = ServerOptions::new()
         .first_pipe_instance(true)
         .create(&server_pipe)
         .expect("create test named pipe");
     let server_task = tokio::spawn(async move {
+        let mut kept_servers = Vec::with_capacity(3);
         for idx in 0..3 {
             let mut server = next_server;
             server.connect().await.expect("accept client");
@@ -38,8 +40,6 @@ async fn observation_daemon_reports_status_and_wakes_on_settings_change_via_ipc(
                     .create(&server_pipe)
                     .expect("create next test named pipe");
             } else {
-                // Keep the pipe name open until the last response is written,
-                // avoiding any transient window on Windows named pipe teardown.
                 next_server = ServerOptions::new()
                     .create(&server_pipe)
                     .expect("create trailing test named pipe");
@@ -78,7 +78,12 @@ async fn observation_daemon_reports_status_and_wakes_on_settings_change_via_ipc(
             evohime_desktop_ipc::transport::write_frame(&mut server, &resp_bytes)
                 .await
                 .expect("write response");
+            let _ = tokio::io::AsyncWriteExt::flush(&mut server).await;
+            kept_servers.push(server);
         }
+        let _ = done_rx.await;
+        drop(kept_servers);
+        drop(next_server);
     });
 
     tokio::time::sleep(Duration::from_millis(20)).await;
@@ -122,6 +127,7 @@ async fn observation_daemon_reports_status_and_wakes_on_settings_change_via_ipc(
         snapshot.observation_status == HIVE_OBSERVATION_WAITING_FOR_TASKS
             || snapshot.observation_status == HIVE_OBSERVATION_OBSERVING
     );
+    let _ = done_tx.send(());
     let _ = tokio::time::timeout(Duration::from_secs(2), server_task).await;
 }
 

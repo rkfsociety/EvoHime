@@ -1226,10 +1226,6 @@ const OBSERVATION_CONTROL_READ_TIMEOUT: Duration = Duration::from_millis(1000);
 /// Write timeout for one observation control connection response.
 const OBSERVATION_CONTROL_WRITE_TIMEOUT: Duration = Duration::from_millis(1500);
 
-/// Fallback idle delay between city-map maintenance passes when the daemon
-/// carries no real observation settings yet.
-const CITY_MAP_FALLBACK_POLL: Duration = Duration::from_secs(5);
-
 /// One queued city-map recompute job: immutable settings projection plus the
 /// wall-clock instant it was requested at.
 struct CityMapJob {
