@@ -130,24 +130,59 @@ export function getFlatHexVertices(cx: number, cy: number, radius: number): read
 /** @deprecated Используй `getFlatHexVertices`. */
 export const getPointyHexVertices = getFlatHexVertices
 
+function normalizeAngle(angle: number): number {
+  const twoPi = Math.PI * 2
+  return ((angle % twoPi) + twoPi) % twoPi
+}
+
+function shortestAngleDiff(a: number, b: number): number {
+  const diff = Math.abs(normalizeAngle(a) - normalizeAngle(b))
+  return diff > Math.PI ? Math.PI * 2 - diff : diff
+}
+
+/**
+ * Отводит угол соты от заблокированных осей (радиальных лучей и межгородских трасс),
+ * чтобы дороги никогда не проходили сквозь соты агентов и модули.
+ */
+function nudgeAngleAwayFromRays(
+  angle: number,
+  blockedAngles: readonly number[],
+  minGapRad: number
+): number {
+  let candidate = normalizeAngle(angle)
+  for (let pass = 0; pass < 3; pass += 1) {
+    for (const ray of blockedAngles) {
+      const diff = normalizeAngle(candidate - ray)
+      const signed = diff > Math.PI ? diff - Math.PI * 2 : diff
+      if (Math.abs(signed) < minGapRad) {
+        candidate = normalizeAngle(ray + (signed >= 0 ? minGapRad : -minGapRad))
+      }
+    }
+  }
+  return candidate
+}
+
 /**
  * Переводит гекс-координаты `(q, r)` и индекс на кольце в плавную 2D-позицию
- * вокруг центра города.
+ * вокруг центра города, обходя углы радиальных дорог.
  */
 export function resolveCellPositionOnRing(
   city: HoneycombCity,
   ring: number,
   coord: HoneycombHexCoord,
   indexInRing: number,
-  totalInRing: number
+  totalInRing: number,
+  blockedAngles: readonly number[] = []
 ): Point2D {
   const radius = getRingCellRadius(ring)
   const count = Math.max(1, totalInRing)
-  // Детерминированный угол с небольшим сдвигом от axial-координат, чтобы при
-  // перестройке сохранялась логика раскладки без наложений.
   const baseAngle = ((indexInRing + 0.5) / count) * Math.PI * 2
   const axialBias = ((coord.q * 7 + coord.r * 13) % 11) * 0.004
-  const angle = baseAngle + axialBias
+  const minGapRad = Math.min(0.28, (CELL_HEX_RADIUS + 16) / Math.max(1, radius))
+  const angle =
+    blockedAngles.length > 0
+      ? nudgeAngleAwayFromRays(baseAngle + axialBias, blockedAngles, minGapRad)
+      : baseAngle + axialBias
   return {
     x: city.worldCenterX + Math.cos(angle) * radius,
     y: city.worldCenterY + Math.sin(angle) * radius
@@ -410,10 +445,12 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
           exitAngles: []
         })
 
-        // 3 соты-дома агентов внутри сектора (каждая со своим подъездом к 1-му кольцу).
+        // 3 соты-дома агентов внутри сектора (каждая со своим подъездом к 1-му кольцу, вдали от радиальных лучей).
         const subSpan = (endAngle - startAngle) / 3
+        const minGapFromRay = 0.20
         for (let slot = 0; slot < 3; slot += 1) {
-          const slotAngle = startAngle + (slot + 0.5) * subSpan
+          const rawSlotAngle = startAngle + (slot + 0.5) * subSpan
+          const slotAngle = nudgeAngleAwayFromRays(rawSlotAngle, exitAngles, minGapFromRay)
           const ax = city.worldCenterX + Math.cos(slotAngle) * ring1CellR
           const ay = city.worldCenterY + Math.sin(slotAngle) * ring1CellR
           const agent = sector.agents[slot]
@@ -440,6 +477,18 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
       })
     }
 
+    const intercityDirections = world.intercityLinks
+      .filter((l) => l.fromCityId === city.id || l.toCityId === city.id)
+      .map((l) => {
+        const otherId = l.fromCityId === city.id ? l.toCityId : l.fromCityId
+        const other = world.cities.find((c) => c.id === otherId)
+        return other
+          ? Math.atan2(other.worldCenterY - city.worldCenterY, other.worldCenterX - city.worldCenterX)
+          : null
+      })
+      .filter((a): a is number => a !== null)
+    const moduleBlockedAngles = [...exitAngles, ...intercityDirections]
+
     const modulesByRing = new Map<number, typeof city.modules[number][]>()
     for (const mod of city.modules) {
       const list = modulesByRing.get(mod.ring) ?? []
@@ -448,7 +497,7 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
     }
     for (const [ring, list] of modulesByRing.entries()) {
       list.forEach((mod, index) => {
-        const pos = resolveCellPositionOnRing(city, ring, mod.coord, index, list.length)
+        const pos = resolveCellPositionOnRing(city, ring, mod.coord, index, list.length, moduleBlockedAngles)
         placements.set(mod.id, {
           id: mod.id,
           cityId: city.id,
@@ -514,6 +563,8 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
     roadGraph: { nodes, edges, adjacency }
   }
 }
+
+export { shortestAngleDiff }
 
 /** Кратчайший путь (Dijkstra) между двумя узлами дорожной сети. */
 export function findRoadPath(graph: RoadGraph, fromId: string, toId: string): readonly string[] {

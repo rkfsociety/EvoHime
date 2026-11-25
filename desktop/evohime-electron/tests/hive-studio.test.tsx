@@ -137,7 +137,24 @@ describe('honeycomb geometry & traffic', () => {
       exitsOverride: 4,
       remodelSeed: 0
     })
-    const { roadGraph } = buildWorldRoadGraphAndPlacements(world)
+    const { placements, roadGraph } = buildWorldRoadGraphAndPlacements(world)
+    const radialEdges = roadGraph.edges.filter((e) => e.kind === 'radial')
+    for (const placement of placements.values()) {
+      if (placement.kind !== 'agent_home') continue
+      for (const edge of radialEdges) {
+        if (!edge.id.startsWith(`${placement.cityId}:`)) continue
+        const a = roadGraph.nodes.get(edge.fromId)!
+        const b = roadGraph.nodes.get(edge.toId)!
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const lenSq = dx * dx + dy * dy
+        if (lenSq < 1e-3) continue
+        const t = Math.max(0, Math.min(1, ((placement.x - a.x) * dx + (placement.y - a.y) * dy) / lenSq))
+        const dist = Math.hypot(placement.x - (a.x + dx * t), placement.y - (a.y + dy * t))
+        expect(dist).toBeGreaterThan(placement.radius)
+      }
+    }
+
     const path = findRoadPath(roadGraph, 'city-primary:citadel', 'city-primary:sector:0')
     expect(path.length).toBeGreaterThanOrEqual(3)
 
