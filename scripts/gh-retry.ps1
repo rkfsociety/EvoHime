@@ -3,11 +3,16 @@
         [Parameter(Mandatory)] [scriptblock]$Command,
         [Parameter(Mandatory)] [string]$FailureMessage,
         [int]$MaxAttempts = 5,
-        [int]$InitialDelaySeconds = 5
+        [int]$InitialDelaySeconds = 5,
+        [switch]$Gh,
+        [switch]$AllowNotFound
     )
 
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         try {
+            if ($Gh) {
+                return (Invoke-GhRaw -Command $Command -AllowNotFound:$AllowNotFound)
+            }
             return (& $Command)
         }
         catch {
@@ -77,7 +82,5 @@ function Invoke-GhWithRetry {
         [switch]$AllowNotFound
     )
 
-    return Invoke-WithRetry -FailureMessage $FailureMessage -MaxAttempts $MaxAttempts -InitialDelaySeconds $InitialDelaySeconds -Command {
-        Invoke-GhRaw -Command $Command -AllowNotFound:$AllowNotFound
-    }
+    return Invoke-WithRetry -Command $Command -FailureMessage $FailureMessage -MaxAttempts $MaxAttempts -InitialDelaySeconds $InitialDelaySeconds -Gh -AllowNotFound:$AllowNotFound
 }
