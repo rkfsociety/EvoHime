@@ -403,75 +403,116 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
       }
     }
 
-    // Размещаем кольцевые сектора (1-е кольцо как деление окружности) и 3 соты-агентов внутри каждого сектора.
+    // Размещаем кольцевые сектора (1-е кольцо) строго в дугах между радиальными дорогами,
+    // чтобы ни одна радиальная дорога никогда не пересекала сектор.
     const sectorCount = city.sectors.length
     if (sectorCount > 0) {
       const ring1CellR = getRingCellRadius(1)
       const ring1RoadR = getRingRoadRadius(1)
-      const arcInnerR = ring1RoadR + 12
+      const arcInnerR = ring1RoadR + 14
       const arcOuterR = ring1CellR + 36
-      const span = (Math.PI * 2) / sectorCount
-      const gapAngle = sectorCount > 1 ? 0.04 : 0
 
-      city.sectors.forEach((sector, sIdx) => {
-        const startAngle = sIdx * span + gapAngle / 2
-        const endAngle = (sIdx + 1) * span - gapAngle / 2
-        const midAngle = (startAngle + endAngle) / 2
+      const sortedRays = [...exitAngles].map(normalizeAngle).sort((a, b) => a - b)
+      const pockets: { start: number; span: number }[] = []
+      if (sortedRays.length === 0) {
+        pockets.push({ start: 0, span: Math.PI * 2 })
+      } else {
+        for (let i = 0; i < sortedRays.length; i += 1) {
+          const a = sortedRays[i]!
+          const b = sortedRays[(i + 1) % sortedRays.length]!
+          const span = b > a ? b - a : Math.PI * 2 - a + b
+          pockets.push({ start: a, span })
+        }
+      }
 
-        sectorArcs.push({
-          id: sector.id,
-          cityId: city.id,
-          role: sector.role,
-          label: sector.label,
-          centerX: city.worldCenterX,
-          centerY: city.worldCenterY,
-          innerRadius: arcInnerR,
-          outerRadius: arcOuterR,
-          startAngle,
-          endAngle
-        })
+      // Распределяем `sectorCount` секторов пропорционально ширине дуг между дорогами.
+      const countsPerPocket = new Array<number>(pockets.length).fill(0)
+      for (let s = 0; s < sectorCount; s += 1) {
+        let bestIdx = 0
+        let bestScore = -1
+        for (let p = 0; p < pockets.length; p += 1) {
+          const score = pockets[p]!.span / (countsPerPocket[p]! + 1)
+          if (score > bestScore) {
+            bestScore = score
+            bestIdx = p
+          }
+        }
+        countsPerPocket[bestIdx] = countsPerPocket[bestIdx]! + 1
+      }
 
-        // Центральный узел сектора для маршрутизации и совместимости.
-        const sectorEntryX = city.worldCenterX + Math.cos(midAngle) * ring1CellR
-        const sectorEntryY = city.worldCenterY + Math.sin(midAngle) * ring1CellR
-        placements.set(sector.id, {
-          id: sector.id,
-          cityId: city.id,
-          kind: 'sector',
-          ring: 1,
-          x: sectorEntryX,
-          y: sectorEntryY,
-          radius: 18,
-          exitAngles: []
-        })
+      const rayClearanceRad = 22 / Math.max(1, ring1CellR)
+      const betweenSectorsRad = 0.035
+      let sectorIdx = 0
 
-        // 3 соты-дома агентов внутри сектора (каждая со своим подъездом к 1-му кольцу, вдали от радиальных лучей).
-        const subSpan = (endAngle - startAngle) / 3
-        const minGapFromRay = 0.20
-        for (let slot = 0; slot < 3; slot += 1) {
-          const rawSlotAngle = startAngle + (slot + 0.5) * subSpan
-          const slotAngle = nudgeAngleAwayFromRays(rawSlotAngle, exitAngles, minGapFromRay)
-          const ax = city.worldCenterX + Math.cos(slotAngle) * ring1CellR
-          const ay = city.worldCenterY + Math.sin(slotAngle) * ring1CellR
-          const agent = sector.agents[slot]
-          const cellId = agent ? `${sector.id}:slot:${slot}` : `${sector.id}:empty:${slot}`
-          placements.set(cellId, {
-            id: cellId,
+      pockets.forEach((pocket, pIdx) => {
+        const count = countsPerPocket[pIdx]!
+        if (count <= 0) return
+        const usableStart = pocket.start + rayClearanceRad
+        const usableSpan = Math.max(0.1, pocket.span - rayClearanceRad * 2)
+        const sliceSpan = usableSpan / count
+
+        for (let localIdx = 0; localIdx < count; localIdx += 1) {
+          const sector = city.sectors[sectorIdx]
+          if (!sector) break
+          sectorIdx += 1
+
+          const padLeft = localIdx === 0 ? 0 : betweenSectorsRad / 2
+          const padRight = localIdx === count - 1 ? 0 : betweenSectorsRad / 2
+          const startAngle = usableStart + localIdx * sliceSpan + padLeft
+          const endAngle = usableStart + (localIdx + 1) * sliceSpan - padRight
+          const midAngle = (startAngle + endAngle) / 2
+
+          sectorArcs.push({
+            id: sector.id,
             cityId: city.id,
-            kind: 'agent_home',
-            ring: 1,
-            x: ax,
-            y: ay,
-            radius: 19,
-            exitAngles: [],
-            sectorId: sector.id,
-            agentSlot: slot
+            role: sector.role,
+            label: sector.label,
+            centerX: city.worldCenterX,
+            centerY: city.worldCenterY,
+            innerRadius: arcInnerR,
+            outerRadius: arcOuterR,
+            startAngle,
+            endAngle
           })
-          if (slot === 1) {
-            // Средний слот также служит точкой въезда сектора в графе дорог.
-            connectCellToRingSegment(sector.id, ax, ay, 1)
-          } else {
-            connectCellToRingSegment(cellId, ax, ay, 1)
+
+          const sectorEntryX = city.worldCenterX + Math.cos(midAngle) * ring1CellR
+          const sectorEntryY = city.worldCenterY + Math.sin(midAngle) * ring1CellR
+          placements.set(sector.id, {
+            id: sector.id,
+            cityId: city.id,
+            kind: 'sector',
+            ring: 1,
+            x: sectorEntryX,
+            y: sectorEntryY,
+            radius: 18,
+            exitAngles: []
+          })
+
+          // 3 соты-дома агентов внутри дуги сектора (симметрично, без пересечения дорог).
+          const subSpan = (endAngle - startAngle) / 3
+          for (let slot = 0; slot < 3; slot += 1) {
+            const slotAngle = startAngle + (slot + 0.5) * subSpan
+            const ax = city.worldCenterX + Math.cos(slotAngle) * ring1CellR
+            const ay = city.worldCenterY + Math.sin(slotAngle) * ring1CellR
+            const agent = sector.agents[slot]
+            const cellId = agent ? `${sector.id}:slot:${slot}` : `${sector.id}:empty:${slot}`
+            placements.set(cellId, {
+              id: cellId,
+              cityId: city.id,
+              kind: 'agent_home',
+              ring: 1,
+              x: ax,
+              y: ay,
+              radius: 19,
+              exitAngles: [],
+              sectorId: sector.id,
+              agentSlot: slot
+            })
+            if (slot === 1) {
+              connectCellToRingSegment(sector.id, ax, ay, 1)
+            } else {
+              connectCellToRingSegment(cellId, ax, ay, 1)
+            }
           }
         }
       })
