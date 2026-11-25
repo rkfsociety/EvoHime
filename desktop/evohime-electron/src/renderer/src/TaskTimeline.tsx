@@ -1158,15 +1158,20 @@ export function TaskTimeline({
               </div>
               {workspace !== null && chatId !== HIVE_SYSTEM_CHAT_ID ? (
                 <div className="composer__control-group">
-                  <select
-                    aria-label={translate("Изоляция файлов")}
-                    value={chatIsolationMode}
-                    disabled={busy || !connected}
-                    onChange={(event) => handleChatIsolationChange(event.target.value as ChatIsolationMode)}
-                  >
-                    <option value="shared_workspace">{translate("Общая папка")}</option>
-                    <option value="isolated_worktree">{translate("Изолированный worktree")}</option>
-                  </select>
+                  <ComposerIcon name="git-branch" className="composer__control-icon" />
+                  <label className="composer__isolation">
+                    <span className="sr-only">{translate("Изоляция файлов")}</span>
+                    <select
+                      aria-label={translate("Изоляция файлов")}
+                      value={chatIsolationMode}
+                      disabled={busy || !connected}
+                      onChange={(event) => handleChatIsolationChange(event.target.value as ChatIsolationMode)}
+                    >
+                      <option value="shared_workspace">{translate("Общая папка")}</option>
+                      <option value="isolated_worktree">{translate("Изолированный worktree")}</option>
+                    </select>
+                    <span className="composer__select-chevron" aria-hidden="true"><UiIcon name="chevron-down" size={12} /></span>
+                  </label>
                 </div>
               ) : null}
               {!connected ? <p className="shell__reason">{translate("Core недоступен: запуск и управление задачей приостановлены.")}</p> : null}
@@ -1209,7 +1214,7 @@ function relativeWorkspacePath(workspace: string, filePath: string): string | nu
   return relative.length > 0 && !relative.split('/').includes('..') ? relative : null
 }
 
-type ComposerIconName = 'box' | 'folder' | 'globe' | 'link' | 'lock' | 'plus' | 'send' | 'target'
+type ComposerIconName = 'box' | 'folder' | 'git-branch' | 'globe' | 'link' | 'lock' | 'plus' | 'send' | 'target'
 
 function ComposerIcon({ name, className = '' }: { readonly name: ComposerIconName; readonly className?: string }): React.JSX.Element {
   return <UiIcon name={name} size={16} className={`composer__icon${className.length > 0 ? ` ${className}` : ''}`} />

@@ -6079,7 +6079,7 @@ body {
   width: 100%;
   max-width: var(--chat-column-max);
   margin: 0 auto;
-  padding: 9px 10px 8px;
+  padding: 9px 10px;
   border: 1px solid var(--border-strong);
   border-radius: 16px;
   background: color-mix(in srgb, var(--bg-raised) 88%, transparent);
@@ -6179,14 +6179,16 @@ body {
   height: 100%;
 }
 
-.composer__control-group .composer__provider {
+.composer__control-group .composer__provider,
+.composer__control-group .composer__isolation {
   position: relative;
   display: inline-flex;
   align-items: center;
   height: 100%;
 }
 
-.composer__control-group .composer__provider select {
+.composer__control-group .composer__provider select,
+.composer__control-group .composer__isolation select {
   height: 100%;
   min-height: 0;
   min-width: 72px;
@@ -6198,8 +6200,21 @@ body {
   color: var(--fg);
   font-size: 11.5px;
   font-weight: 500;
+  box-shadow: none;
   appearance: none;
   cursor: pointer;
+}
+
+.composer__control-group .composer__isolation select {
+  min-width: 0;
+  max-width: 190px;
+}
+
+.composer__control-group .composer__provider select:disabled,
+.composer__control-group .composer__isolation select:disabled {
+  color: var(--fg-faint);
+  opacity: 0.62;
+  cursor: default;
 }
 
 .composer__select-chevron {
@@ -6231,7 +6246,8 @@ body {
 
 .composer__control-group .permission-picker__button:hover,
 .composer__control-group .model-picker__button:hover:not(:disabled),
-.composer__control-group .composer__provider select:focus {
+.composer__control-group .composer__provider select:focus,
+.composer__control-group .composer__isolation select:focus {
   border-color: transparent;
   box-shadow: none;
 }
@@ -6248,7 +6264,7 @@ body {
 
 .composer__control-group .permission-picker__button {
   justify-content: center;
-  padding: 0 6px;
+  padding: 0 6px 0 1px;
 }
 
 .composer__control-group .permission-picker__button--full {
@@ -6336,6 +6352,14 @@ body {
   transform: translateY(-1px);
 }
 
+.composer__send:disabled {
+  background: var(--bg-active);
+  color: var(--fg-faint);
+  box-shadow: none;
+  opacity: 0.72;
+  cursor: default;
+}
+
 .composer__send--stop {
   background: #c94b76;
   box-shadow: 0 4px 12px rgb(201 75 118 / 28%);
@@ -6371,7 +6395,7 @@ body {
 }
 
 .composer__footer {
-  padding: 7px 2px 0;
+  padding: 8px 0 0;
   color: var(--fg-faint);
 }
 
