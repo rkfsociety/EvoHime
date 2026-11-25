@@ -131,27 +131,81 @@ $changes | ForEach-Object { $notes.Add($_) }
 if ($runUrl) { $notes.Add('') ; $notes.Add("Публикация выполнена отдельным workflow после успешных тестов и сборки: [$runUrl]($runUrl)") }
 $notes | Set-Content -LiteralPath $generatedNotesPath -Encoding utf8NoBOM
 
-gh release view $tag --repo $repo 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    gh release create $tag --repo $repo --title $Module --notes-file $generatedNotesPath --latest=false
-} else {
-    gh release edit $tag --repo $repo --title $Module --notes-file $generatedNotesPath --latest=false
+function Invoke-GhWithRetry {
+    param(
+        [Parameter(Mandatory)] [scriptblock]$Command,
+        [Parameter(Mandatory)] [string]$FailureMessage,
+        [int]$MaxAttempts = 5,
+        [int]$InitialDelaySeconds = 5,
+        [switch]$AllowNotFound
+    )
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $global:LASTEXITCODE = 0
+        $output = @(& $Command 2>&1)
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0) {
+            return $output
+        }
+        $details = ($output | ForEach-Object { "$_" }) -join "`n"
+        if ($AllowNotFound -and $details -match '(?i)(release not found|HTTP/?[0-9.]*\s*404|404 Not Found)') {
+            $global:LASTEXITCODE = 1
+            return $null
+        }
+        if ($attempt -lt $MaxAttempts) {
+            $delay = $InitialDelaySeconds * $attempt
+            Write-Warning "$FailureMessage (attempt $attempt/$MaxAttempts, exit $exitCode): $details. Retrying in ${delay}s..."
+            Start-Sleep -Seconds $delay
+        } else {
+            throw "$FailureMessage (after $MaxAttempts attempts, exit $exitCode): $details"
+        }
+    }
 }
-gh release upload $tag --repo $repo $artifactPath --clobber
-if ($LASTEXITCODE -ne 0) { throw "Failed to publish $artifactName." }
-gh release upload $tag --repo $repo $manifestPath --clobber
-if ($LASTEXITCODE -ne 0) { throw "Failed to publish module manifest." }
+
+$releaseExists = $true
+$null = Invoke-GhWithRetry -FailureMessage "Failed to check release $tag" -AllowNotFound -Command {
+    gh release view $tag --repo $repo
+}
+if ($LASTEXITCODE -ne 0) {
+    $releaseExists = $false
+}
+
+if (-not $releaseExists) {
+    Invoke-GhWithRetry -FailureMessage "Failed to create release $tag" -Command {
+        $out = @(gh release create $tag --repo $repo --title $Module --notes-file $generatedNotesPath --latest=false 2>&1)
+        if ($LASTEXITCODE -ne 0 -and (($out -join "`n") -match '(?i)already exists')) {
+            gh release edit $tag --repo $repo --title $Module --notes-file $generatedNotesPath --latest=false
+            return
+        }
+        $out
+    } | Out-Null
+} else {
+    Invoke-GhWithRetry -FailureMessage "Failed to update release $tag" -Command {
+        gh release edit $tag --repo $repo --title $Module --notes-file $generatedNotesPath --latest=false
+    } | Out-Null
+}
+
+Invoke-GhWithRetry -FailureMessage "Failed to publish $artifactName." -Command {
+    gh release upload $tag --repo $repo $artifactPath --clobber
+} | Out-Null
+
+Invoke-GhWithRetry -FailureMessage "Failed to publish module manifest." -Command {
+    gh release upload $tag --repo $repo $manifestPath --clobber
+} | Out-Null
 
 # Удаляем старые версии только после успешной публикации нового релиза.
-$releaseRows = @(gh api --paginate "repos/$repo/releases?per_page=100" --jq '.[] | [.tag_name, (.id|tostring)] | @tsv')
+$releaseRows = @(Invoke-GhWithRetry -FailureMessage "Failed to list releases for cleanup" -Command {
+    gh api --paginate "repos/$repo/releases?per_page=100" --jq '.[] | [.tag_name, (.id|tostring)] | @tsv'
+})
 foreach ($row in $releaseRows) {
     $parts = $row -split "`t", 2
     $oldTag = $parts[0]
     $oldId = $parts[1]
     if ($oldTag -notlike "module-$Module-v*" -and $oldTag -ne "module-$Module") { continue }
     if ($oldTag -eq $tag) { continue }
-    gh api --method DELETE "repos/$repo/releases/$oldId"
-    if ($LASTEXITCODE -ne 0) { throw "Failed to remove old release $oldTag." }
+    Invoke-GhWithRetry -FailureMessage "Failed to remove old release $oldTag." -Command {
+        gh api --method DELETE "repos/$repo/releases/$oldId"
+    } | Out-Null
     gh api --method DELETE "repos/$repo/git/refs/tags/$oldTag" 2>$null
     Write-Host "Removed old release $oldTag"
 }

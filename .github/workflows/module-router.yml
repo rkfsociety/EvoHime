@@ -55,8 +55,28 @@ jobs:
             [void]$manualSet.Add($module)
           }
           $env:GH_TOKEN = $env:GH_TOKEN
-          $releaseTags = @(gh api --paginate "repos/$env:REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
-          if ($LASTEXITCODE -ne 0) { throw 'Не удалось получить список опубликованных релизов модулей.' }
+          function Invoke-GhRetry {
+            param(
+              [Parameter(Mandatory)] [scriptblock]$Command,
+              [Parameter(Mandatory)] [string]$ErrorMessage,
+              [int]$MaxAttempts = 5,
+              [int]$InitialDelaySeconds = 5
+            )
+            for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+              $global:LASTEXITCODE = 0
+              $output = @(& $Command)
+              if ($LASTEXITCODE -eq 0) { return $output }
+              if ($attempt -lt $MaxAttempts) {
+                $delay = $InitialDelaySeconds * $attempt
+                Write-Warning "$ErrorMessage (попытка $attempt/$MaxAttempts, код $LASTEXITCODE). Повтор через ${delay}с..."
+                Start-Sleep -Seconds $delay
+              }
+            }
+            throw $ErrorMessage
+          }
+          $releaseTags = @(Invoke-GhRetry -ErrorMessage 'Не удалось получить список опубликованных релизов модулей.' -Command {
+            gh api --paginate "repos/$env:REPOSITORY/releases?per_page=100" --jq '.[].tag_name'
+          })
           function Parse-Version([string]$value) {
             if ($value -notmatch '^\d+\.\d+\.\d+$') { return $null }
             return [Version]::Parse($value)
@@ -100,17 +120,31 @@ jobs:
           # Только подтверждённый 404 означает, что fixed installer release
           # ещё не создан; любой другой отказ должен остановить router.
           $installerTag = 'installer'
-          $probeOutput = @(gh api "repos/$env:REPOSITORY/releases/tags/$installerTag" 2>&1)
-          $probeExit = $LASTEXITCODE
-          $probeText = $probeOutput -join "`n"
-          $releaseAbsent = $probeExit -ne 0 -and $probeText -match '(?i)(HTTP/?[0-9.]*\s*404|HTTP 404|\(HTTP 404\)|404 Not Found)'
+          $probeOutput = @()
+          $probeExit = 0
+          $probeText = ''
+          $releaseAbsent = $false
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            $global:LASTEXITCODE = 0
+            $probeOutput = @(gh api "repos/$env:REPOSITORY/releases/tags/$installerTag" 2>&1)
+            $probeExit = $LASTEXITCODE
+            $probeText = $probeOutput -join "`n"
+            $releaseAbsent = $probeExit -ne 0 -and $probeText -match '(?i)(HTTP/?[0-9.]*\s*404|HTTP 404|\(HTTP 404\)|404 Not Found)'
+            if ($probeExit -eq 0 -or $releaseAbsent) { break }
+            if ($attempt -lt 5) {
+              $delay = 5 * $attempt
+              Write-Warning "Не удалось проверить installer release (попытка $attempt/5): $probeText. Повтор через ${delay}с..."
+              Start-Sleep -Seconds $delay
+            }
+          }
           if ($probeExit -ne 0 -and -not $releaseAbsent) {
             throw "Не удалось проверить installer release: $probeText"
           }
           if ($releaseAbsent) { $global:LASTEXITCODE = 0 }
           if (-not $releaseAbsent) {
-            gh release download $installerTag --repo $env:REPOSITORY --pattern EvoHime-Setup.json --dir $env:RUNNER_TEMP --clobber 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'Installer release существует, но его manifest не удалось получить.' }
+            Invoke-GhRetry -ErrorMessage 'Installer release существует, но его manifest не удалось получить.' -Command {
+              gh release download $installerTag --repo $env:REPOSITORY --pattern EvoHime-Setup.json --dir $env:RUNNER_TEMP --clobber 2>&1 | Out-Null
+            } | Out-Null
           }
           if (-not $releaseAbsent -and (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
             $published = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
@@ -163,21 +197,42 @@ jobs:
           $workflowFiles = @{
             'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'; 'updater' = 'update-agent.yml'; 'hive' = 'hive.yml'; 'installer' = 'installer.yml'
           }
+          function Invoke-GhRetry {
+            param(
+              [Parameter(Mandatory)] [scriptblock]$Command,
+              [Parameter(Mandatory)] [string]$ErrorMessage,
+              [int]$MaxAttempts = 5,
+              [int]$InitialDelaySeconds = 5
+            )
+            for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+              $global:LASTEXITCODE = 0
+              $output = @(& $Command)
+              if ($LASTEXITCODE -eq 0) { return $output }
+              if ($attempt -lt $MaxAttempts) {
+                $delay = $InitialDelaySeconds * $attempt
+                Write-Warning "$ErrorMessage (попытка $attempt/$MaxAttempts, код $LASTEXITCODE). Повтор через ${delay}с..."
+                Start-Sleep -Seconds $delay
+              }
+            }
+            throw $ErrorMessage
+          }
           $dispatchStarted = [DateTime]::UtcNow
           $dispatched = [System.Collections.Generic.List[object]]::new()
           foreach ($module in $selected.Keys) {
             if ($module -eq 'installer' -or $selected[$module] -ne 'true') { continue }
             $workflow = $workflowFiles[$module]
-            gh workflow run $workflow --repo $env:REPOSITORY --ref $env:REF
-            if ($LASTEXITCODE -ne 0) { throw "Не удалось запустить workflow модуля $module." }
+            Invoke-GhRetry -ErrorMessage "Не удалось запустить workflow модуля $module." -Command {
+              gh workflow run $workflow --repo $env:REPOSITORY --ref $env:REF
+            } | Out-Null
             Write-Host "Запущен отдельный workflow: $module"
             [void]$dispatched.Add([PSCustomObject]@{ Module = $module; Workflow = $workflow })
           }
 
           function Resolve-DispatchedRun([PSCustomObject]$item) {
             for ($attempt = 1; $attempt -le 30; $attempt++) {
-              $json = gh api "repos/$env:REPOSITORY/actions/workflows/$($item.Workflow)/runs?event=workflow_dispatch&branch=$env:REF&per_page=20"
-              if ($LASTEXITCODE -ne 0) { throw "Не удалось найти запуск workflow $($item.Workflow)." }
+              $json = Invoke-GhRetry -ErrorMessage "Не удалось найти запуск workflow $($item.Workflow)." -Command {
+                gh api "repos/$env:REPOSITORY/actions/workflows/$($item.Workflow)/runs?event=workflow_dispatch&branch=$env:REF&per_page=20"
+              }
               $runs = @((($json | ConvertFrom-Json).workflow_runs) | Where-Object {
                 $_.head_sha -eq $env:SHA -and
                 [DateTime]::Parse($_.created_at).ToUniversalTime() -ge $dispatchStarted.AddSeconds(-10)
@@ -199,8 +254,9 @@ jobs:
           foreach ($run in $runs) {
             Write-Host "Ожидание workflow $($run.Module), run $($run.RunId)"
             do {
-              $stateJson = gh run view $run.RunId --repo $env:REPOSITORY --json status,conclusion
-              if ($LASTEXITCODE -ne 0) { throw "Не удалось прочитать состояние workflow $($run.Module), run $($run.RunId)." }
+              $stateJson = Invoke-GhRetry -ErrorMessage "Не удалось прочитать состояние workflow $($run.Module), run $($run.RunId)." -Command {
+                gh run view $run.RunId --repo $env:REPOSITORY --json status,conclusion
+              }
               $state = $stateJson | ConvertFrom-Json
               if ($state.status -ne 'completed') { Start-Sleep -Seconds 15 }
             } while ($state.status -ne 'completed')
@@ -218,13 +274,15 @@ jobs:
           if ($selected['installer'] -eq 'true' -and $workflowFailures.Count -eq 0) {
             $workflow = $workflowFiles['installer']
             $dispatchStarted = [DateTime]::UtcNow
-            gh workflow run $workflow --repo $env:REPOSITORY --ref $env:REF
-            if ($LASTEXITCODE -ne 0) { throw 'Не удалось запустить web installer workflow.' }
+            Invoke-GhRetry -ErrorMessage 'Не удалось запустить web installer workflow.' -Command {
+              gh workflow run $workflow --repo $env:REPOSITORY --ref $env:REF
+            } | Out-Null
             $installerItem = [PSCustomObject]@{ Module = 'installer'; Workflow = $workflow }
             $installerRun = Resolve-DispatchedRun $installerItem
             do {
-              $stateJson = gh run view $installerRun.RunId --repo $env:REPOSITORY --json status,conclusion
-              if ($LASTEXITCODE -ne 0) { throw "Не удалось прочитать состояние workflow installer, run $($installerRun.RunId)." }
+              $stateJson = Invoke-GhRetry -ErrorMessage "Не удалось прочитать состояние workflow installer, run $($installerRun.RunId)." -Command {
+                gh run view $installerRun.RunId --repo $env:REPOSITORY --json status,conclusion
+              }
               $state = $stateJson | ConvertFrom-Json
               if ($state.status -ne 'completed') { Start-Sleep -Seconds 15 }
             } while ($state.status -ne 'completed')
@@ -240,13 +298,15 @@ jobs:
           }
 
           $dispatchStarted = [DateTime]::UtcNow
-          gh workflow run compatible-manifest.yml --repo $env:REPOSITORY --ref $env:REF
-          if ($LASTEXITCODE -ne 0) { throw 'Не удалось запустить публикацию compatibility-манифеста.' }
+          Invoke-GhRetry -ErrorMessage 'Не удалось запустить публикацию compatibility-манифеста.' -Command {
+            gh workflow run compatible-manifest.yml --repo $env:REPOSITORY --ref $env:REF
+          } | Out-Null
           Write-Host 'Запущена финальная публикация compatibility-манифеста после проверки всех модулей.'
           $manifestRun = Resolve-DispatchedRun ([PSCustomObject]@{ Module = 'compatible-manifest'; Workflow = 'compatible-manifest.yml' })
           do {
-            $stateJson = gh run view $manifestRun.RunId --repo $env:REPOSITORY --json status,conclusion
-            if ($LASTEXITCODE -ne 0) { throw "Не удалось прочитать состояние compatibility workflow, run $($manifestRun.RunId)." }
+            $stateJson = Invoke-GhRetry -ErrorMessage "Не удалось прочитать состояние compatibility workflow, run $($manifestRun.RunId)." -Command {
+              gh run view $manifestRun.RunId --repo $env:REPOSITORY --json status,conclusion
+            }
             $state = $stateJson | ConvertFrom-Json
             if ($state.status -ne 'completed') { Start-Sleep -Seconds 15 }
           } while ($state.status -ne 'completed')
