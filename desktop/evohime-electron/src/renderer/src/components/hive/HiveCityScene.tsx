@@ -615,24 +615,13 @@ export function HiveCityScene({
           }
         }
 
-        // Подпись строго внутри границ соты (никогда не выходит на дороги).
-        if (cam.zoom >= 0.42) {
+        // Подпись внутри соты только для Цитадели Королевы; названия модулей показываются в инспекторе при выделении.
+        if (placement.kind === 'citadel' && cam.zoom >= 0.42) {
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
-          const city = currentWorld.cities.find((c) => c.id === placement.cityId)
-          if (placement.kind === 'citadel') {
-            ctx.font = '600 9px sans-serif'
-            ctx.fillStyle = '#fef08a'
-            ctx.fillText('EVA', pose.x, pose.y)
-          } else if (placement.kind === 'module' && cam.zoom >= 0.72) {
-            const rawName = city?.modules.find((m) => m.id === id)?.name ?? ''
-            const shortName = rawName.length > 9 ? `${rawName.slice(0, 8)}…` : rawName
-            if (shortName) {
-              ctx.font = '500 8.5px sans-serif'
-              ctx.fillStyle = '#cbd5e1'
-              ctx.fillText(shortName, pose.x, pose.y)
-            }
-          }
+          ctx.font = '600 9px sans-serif'
+          ctx.fillStyle = '#fef08a'
+          ctx.fillText('EVA', pose.x, pose.y)
         }
       }
 
