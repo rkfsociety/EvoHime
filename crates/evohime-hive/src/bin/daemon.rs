@@ -2487,8 +2487,10 @@ mod tests {
 
     #[test]
     fn snapshot_to_settings_excludes_eva_workspace_from_watched_repositories() {
-        let mut settings = HiveSettings::default();
-        settings.eva_workspace_path = Some(r"C:\github\EvoHime".to_string());
+        let settings = HiveSettings {
+            eva_workspace_path: Some(r"C:\github\EvoHime".to_string()),
+            ..Default::default()
+        };
         let snapshot = HiveStateSnapshot::empty(&settings);
         assert_eq!(snapshot.watched_repositories.len(), 1);
 
