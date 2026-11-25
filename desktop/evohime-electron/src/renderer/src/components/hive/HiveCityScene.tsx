@@ -449,9 +449,12 @@ export function HiveCityScene({
       }
       ctx.setLineDash([])
 
-      // 3. Локальные светофоры на каждом перекрёстке (отдельная фаза для кольца и радиала).
+      // 3. Локальные светофоры на каждом перекрёстке: 4 светофора (по одному на каждый въезд на перекрёсток).
       for (const node of currentGraph.nodes.values()) {
         if (node.kind !== 'intersection' || node.rayIndex === undefined) continue
+        const city = currentWorld.cities.find((c) => c.id === node.cityId)
+        if (!city) continue
+
         const localPhase = getTrafficLightPhase(simTimeSec, node.id)
         const ringLightColor =
           localPhase === 'ring_green' || localPhase === 'ring_green_blink'
@@ -466,21 +469,46 @@ export function HiveCityScene({
               ? '#f59e0b'
               : '#ef4444'
 
-        // Корпус светофорного узла + 2 индикатора (кольцо / радиал).
-        ctx.beginPath()
-        ctx.arc(node.x, node.y, 5.4, 0, Math.PI * 2)
-        ctx.fillStyle = '#090d16'
-        ctx.fill()
+        const rayAngle = Math.atan2(node.y - city.worldCenterY, node.x - city.worldCenterX)
+        const rx = Math.cos(rayAngle)
+        const ry = Math.sin(rayAngle)
+        const tx = -ry
+        const ty = rx
 
-        ctx.beginPath()
-        ctx.arc(node.x - 1.9, node.y, 1.8, 0, Math.PI * 2)
-        ctx.fillStyle = ringLightColor
-        ctx.fill()
+        const stopDist = 13
+        const sideOffset = 8.5
 
-        ctx.beginPath()
-        ctx.arc(node.x + 1.9, node.y, 1.8, 0, Math.PI * 2)
-        ctx.fillStyle = radialLightColor
-        ctx.fill()
+        // 4 въезда: [dx от перекрёстка, dy, вправо-x, вправо-y, цвет сигнала]
+        const approaches: readonly [number, number, number, number, string][] = [
+          [-rx, -ry, -ry, rx, radialLightColor],
+          [rx, ry, ry, -rx, radialLightColor],
+          [-tx, -ty, rx, ry, ringLightColor],
+          [tx, ty, -rx, -ry, ringLightColor]
+        ]
+
+        for (const [ax, ay, rightX, rightY, color] of approaches) {
+          // Стоп-линия на правой полосе перед въездом на перекрёсток.
+          const lineX = node.x + ax * (stopDist - 1.5)
+          const lineY = node.y + ay * (stopDist - 1.5)
+          ctx.beginPath()
+          ctx.moveTo(lineX + rightX * 1.0, lineY + rightY * 1.0)
+          ctx.lineTo(lineX + rightX * 6.5, lineY + rightY * 6.5)
+          ctx.strokeStyle = 'rgba(248, 250, 252, 0.55)'
+          ctx.lineWidth = 1.4
+          ctx.stroke()
+
+          // Корпус светофора на обочине справа по ходу движения.
+          const lx = node.x + ax * stopDist + rightX * sideOffset
+          const ly = node.y + ay * stopDist + rightY * sideOffset
+          ctx.beginPath()
+          ctx.arc(lx, ly, 3.2, 0, Math.PI * 2)
+          ctx.fillStyle = '#090d16'
+          ctx.fill()
+          ctx.beginPath()
+          ctx.arc(lx, ly, 2.0, 0, Math.PI * 2)
+          ctx.fillStyle = color
+          ctx.fill()
+        }
       }
 
       // 4. Связи зависимостей модулей подсвечиваются только при выборе узла, чтобы не зашумлять карту.
