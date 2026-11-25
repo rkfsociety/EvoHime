@@ -190,7 +190,7 @@ impl IpcBridge {
                                 client_message_id: None,
                                 persistence_class: &draft.persistence_class,
                                 sensitivity: &draft.sensitivity,
-                                timestamp_ms: now_ms() as i64,
+                                timestamp_ms: now_ms(),
                             },
                         ) {
                             if let Ok(renderer) =
