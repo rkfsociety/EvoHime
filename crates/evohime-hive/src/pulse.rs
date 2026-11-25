@@ -984,6 +984,9 @@ impl Inner {
 /// daily ceiling, then a configured provider window, and only then may a
 /// Level 2 LLM dispatch task be created.
 pub(crate) fn decide(report: &ObservationCycleReport, now_ms: i64) -> ObservationDecision {
+    if !report.proactive_evolution_enabled {
+        return ObservationDecision::AllGood;
+    }
     if let Some(until) = report.rate_limited_until_ms {
         return ObservationDecision::WaitingForLimits {
             wake_at_ms: Some(until),
@@ -2670,6 +2673,7 @@ mod tests {
     #[tokio::test]
     async fn pulse_respects_budget_exhaustion() {
         let mut report = healthy_report();
+        report.proactive_evolution_enabled = true;
         report.daily_budget_nano_usd = 0;
         report.failed_workers = vec!["child-failed".into()];
         let sink = Arc::new(CountingSink::default());
@@ -2691,8 +2695,24 @@ mod tests {
     }
 
     #[test]
+    fn disabled_hive_skips_recovery_and_evolution() {
+        let mut report = healthy_report();
+        report.proactive_evolution_enabled = false;
+        report.failed_workers = vec!["child-failed".into()];
+        report.eva_workspace_path = Some("/workspace".to_owned());
+        report.roadmap_items = vec![RoadmapItem {
+            file_path: "docs/plans/test.md".to_owned(),
+            line: 1,
+            text: "Task".to_owned(),
+        }];
+
+        assert_eq!(decide(&report, 1_700_000_000_000), ObservationDecision::AllGood);
+    }
+
+    #[test]
     fn decide_ignores_zero_usd_budget_when_provider_has_no_monetary_billing() {
         let mut report = healthy_report();
+        report.proactive_evolution_enabled = true;
         report.daily_cost_nano_usd = None;
         report.daily_budget_nano_usd = 0;
         report.failed_workers = vec!["child-failed".into()];
@@ -2707,6 +2727,7 @@ mod tests {
     #[tokio::test]
     async fn background_task_does_not_use_fallback_provider() {
         let mut report = healthy_report();
+        report.proactive_evolution_enabled = true;
         report.failed_workers = vec!["child-failed".into()];
         report.rate_limited_until_ms = Some(now_millis() + 60_000);
         let sink = Arc::new(CountingSink::default());
@@ -2798,6 +2819,7 @@ mod tests {
     #[test]
     fn decision_order_blocks_budget_before_work() {
         let mut report = healthy_report();
+        report.proactive_evolution_enabled = true;
         report.failed_workers = vec!["child-1".into()];
         report.daily_cost_nano_usd = Some(2_000_000);
         report.daily_budget_nano_usd = 1_000_000;
@@ -2990,7 +3012,8 @@ mod tests {
         );
 
         // Cycle 2 (during cooldown): incident is NOT lost; daemon sleeps until wake_at_ms.
-        let report_2 = probe.observe().await.expect("observe 2");
+        let mut report_2 = probe.observe().await.expect("observe 2");
+        report_2.proactive_evolution_enabled = true;
         assert_eq!(report_2.failed_workers, vec!["worker-429-1".to_owned()]);
         assert!(report_2.rate_limited_until_ms.is_some());
         let decision_2 = decide(&report_2, now_millis());
@@ -3004,7 +3027,8 @@ mod tests {
 
         // Cycle 3 (after cooldown expires): incident is retried.
         evohime_model_gateway::clear_rate_limit(model);
-        let report_3 = probe.observe().await.expect("observe 3");
+        let mut report_3 = probe.observe().await.expect("observe 3");
+        report_3.proactive_evolution_enabled = true;
         assert_eq!(
             decide(&report_3, now_millis()),
             ObservationDecision::Recover {
@@ -3453,7 +3477,8 @@ mod tests {
             }),
         );
 
-        let report_3 = probe.observe().await.expect("observe 3");
+        let mut report_3 = probe.observe().await.expect("observe 3");
+        report_3.proactive_evolution_enabled = true;
         assert!(report_3.roadmap_items.is_empty());
     }
 
@@ -3503,6 +3528,7 @@ mod tests {
     #[tokio::test]
     async fn eva_pulse_uses_literouter_first() {
         let mut report = healthy_report();
+        report.proactive_evolution_enabled = true;
         report.selected_provider = Some("literouter".to_owned());
         report.fallback_provider =
             Some(evohime_model_gateway::providers::ProviderKind::OpenAICompatible);
@@ -3534,6 +3560,7 @@ mod tests {
     #[tokio::test]
     async fn eva_pulse_falls_back_to_rout_when_literouter_exhausted() {
         let mut report = healthy_report();
+        report.proactive_evolution_enabled = true;
         report.selected_provider = Some("literouter".to_owned());
         report.fallback_provider =
             Some(evohime_model_gateway::providers::ProviderKind::OpenAICompatible);
@@ -3576,6 +3603,7 @@ mod tests {
     async fn eva_pulse_sleeps_when_routmy_quota_exhausted() {
         let now_ms = 1_700_000_000_000_i64;
         let mut report = healthy_report();
+        report.proactive_evolution_enabled = true;
         report.selected_provider = Some("rout".to_owned());
         report.routmy_tokens_remaining = Some(500);
         report.allow_paid_fallback = false;
@@ -3591,6 +3619,7 @@ mod tests {
 
         // Also when LiteRouter is exhausted and fallback rout.my has < 1000 tokens.
         let mut fallback_exhausted = healthy_report();
+        fallback_exhausted.proactive_evolution_enabled = true;
         fallback_exhausted.selected_provider = Some("literouter".to_owned());
         fallback_exhausted.fallback_provider =
             Some(evohime_model_gateway::providers::ProviderKind::OpenAICompatible);

@@ -1659,7 +1659,7 @@ async fn main() -> ExitCode {
     let workspace_provider: Arc<dyn WorkspaceProvider> =
         Arc::new(IpcWorkspaceProvider::new(Arc::clone(&client)));
 
-    let settings = match journal.load_hive_settings_json().await {
+    let mut settings = match journal.load_hive_settings_json().await {
         Ok(Some(value)) => match serde_json::from_value::<HiveSettings>(value) {
             Ok(settings) => settings,
             Err(error) => {
@@ -1673,6 +1673,14 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if settings.proactive_evolution_enabled {
+        settings.proactive_evolution_enabled = false;
+        if let Ok(value) = serde_json::to_value(&settings) {
+            if let Err(error) = journal.save_hive_settings_json(&value).await {
+                tracing::warn!(error = %error, "failed to reset proactive_evolution_enabled on startup");
+            }
+        }
+    }
 
     tracing::info!(
         eva_workspace_path = ?settings.eva_workspace_path,
@@ -1918,8 +1926,8 @@ impl HoneycombRuntime {
 }
 
 /// Resolves `(hive_active, waiting_for_limits, queen_working)` for the Honeycomb engine.
-/// When proactive autonomy is disabled and there are no active tasks/agents, the Hive
-/// stays paused with zero vehicles on the roads.
+/// When the Hive is turned off (`!proactive_evolution_enabled`), it stays paused with zero
+/// vehicles on the roads regardless of leftover/background agent projections.
 fn resolve_honeycomb_mode(state: &HiveStateSnapshot) -> (bool, bool, bool) {
     let obs_status = state.observation_status.as_str();
     let waiting_for_limits = obs_status == evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_LIMITS;
@@ -1929,7 +1937,7 @@ fn resolve_honeycomb_mode(state: &HiveStateSnapshot) -> (bool, bool, bool) {
         || !state.active_agents.is_empty();
     let hive_active = observation_alive
         && !waiting_for_limits
-        && (state.proactive_evolution_enabled || has_active_work);
+        && state.proactive_evolution_enabled;
     let queen_working = hive_active && has_active_work;
     (hive_active, waiting_for_limits, queen_working)
 }
@@ -2482,14 +2490,20 @@ mod tests {
         };
 
         runtime.sync_maintenance(&state, &settings, 2_000);
+        let disabled_world = runtime.snapshot_world(false).expect("disabled world");
+        assert!(disabled_world.paused);
+        assert!(!disabled_world.queen_working);
+        assert!(disabled_world.active_dispatches.is_empty());
+
+        state.proactive_evolution_enabled = true;
+        runtime.sync_maintenance(&state, &settings, 3_000);
         let active_world = runtime.snapshot_world(false).expect("active world");
         assert!(!active_world.paused);
         assert!(active_world.queen_working);
         assert_eq!(active_world.active_dispatches.len(), 1);
 
-        state.queen.status = evohime_hive::state::HIVE_QUEEN_IDLE.to_string();
-        state.active_agents.clear();
-        runtime.sync_maintenance(&state, &settings, 3_000);
+        state.proactive_evolution_enabled = false;
+        runtime.sync_maintenance(&state, &settings, 4_000);
         let idle_world = runtime.snapshot_world(false).expect("idle world");
         assert!(idle_world.paused);
         assert!(!idle_world.queen_working);
