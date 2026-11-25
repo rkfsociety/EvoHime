@@ -1460,6 +1460,32 @@ fn stage_updates_into_cache(
     updates: &[UpdateCandidate],
     progress: ProgressCallback<'_>,
 ) -> Result<(), String> {
+    let mut client = None;
+    stage_updates_into_cache_with(
+        data_dir,
+        updates,
+        progress,
+        &mut |update, destination, on_progress| {
+            let http = match client.as_ref() {
+                Some(existing) => existing,
+                None => {
+                    let created = updater_http_client(resolve_github_token(&read_update_config(
+                        &data_dir.join("update.json"),
+                    )?))?;
+                    client.insert(created)
+                }
+            };
+            download_verified_file(http, update, destination, on_progress)
+        },
+    )
+}
+
+fn stage_updates_into_cache_with(
+    data_dir: &Path,
+    updates: &[UpdateCandidate],
+    progress: ProgressCallback<'_>,
+    download: &mut dyn FnMut(&UpdateCandidate, &Path, &dyn Fn(u64)) -> Result<(), String>,
+) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
     fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
     let cache = read_staged_cache_manifest(&staging);
@@ -1502,116 +1528,67 @@ fn stage_updates_into_cache(
     }
     fs::create_dir_all(&work).map_err(|error| error.to_string())?;
     let stage_result = (|| -> Result<(), String> {
-        let client = updater_http_client(resolve_github_token(&read_update_config(
-            &data_dir.join("update.json"),
-        )?))?;
-        let native_missing = missing
-            .iter()
-            .copied()
-            .filter(|update| {
-                update.module != "updater"
-                    && update.module != "ui-bundle"
-                    && update.module != "shell-host"
-                    && update.module != "listener-runtime"
-            })
-            .collect::<Vec<_>>();
-        let total_bytes = native_missing.iter().map(|update| update.size).sum::<u64>();
-        let mut completed_bytes = 0u64;
-        for update in native_missing {
-            if update.artifact.contains('/')
-                || update.artifact.contains('\\')
-                || update.artifact.is_empty()
-            {
-                return Err(format!(
-                    "updater: небезопасный artifact для {}",
-                    update.module
-                ));
+        for update in &missing {
+            if update.module == "listener-runtime" {
+                continue;
+            }
+            let destination = match update.module.as_str() {
+                "shell-host" => work.join("shell-host.zip"),
+                "ui-bundle" => work.join("ui-bundle.zip"),
+                "updater" => work.join("updater.zip"),
+                _ => {
+                    if update.artifact.contains('/')
+                        || update.artifact.contains('\\')
+                        || update.artifact.is_empty()
+                    {
+                        return Err(format!(
+                            "updater: небезопасный artifact для {}",
+                            update.module
+                        ));
+                    }
+                    work.join(&update.artifact)
+                }
+            };
+            let download_message = format!("Скачивание {}", update.module);
+            progress(&download_message, 0, Some((&update.module, 0, update.size)));
+            let on_progress = |downloaded: u64| {
+                progress(
+                    &download_message,
+                    progress_percent(downloaded, update.size),
+                    Some((&update.module, downloaded, update.size)),
+                );
+            };
+            download(update, &destination, &on_progress)?;
+            match update.module.as_str() {
+                "shell-host" => {
+                    extract_shell_host(&destination, &work.join("shell-host"))?;
+                }
+                "ui-bundle" => {
+                    extract_ui_bundle(&destination, &work.join("ui-bundle"))?;
+                }
+                "updater" => {
+                    extract_updater_package(&destination, &work.join("updater-package"))?;
+                    fs::copy(
+                        work.join("updater-package").join("evohime-updater.exe"),
+                        work.join("evohime-updater.exe.next"),
+                    )
+                    .map_err(|error| error.to_string())?;
+                    validate_pe_image(&work.join("evohime-updater.exe.next"))
+                        .map_err(|error| format!("updater: staged worker PE validation failed: {error}"))?;
+                    fs::rename(
+                        work.join("updater-package").join("updater"),
+                        work.join("updater"),
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let _ = fs::remove_dir_all(work.join("updater-package"));
+                }
+                _ => {}
             }
             progress(
-                &format!("Скачивание {}", update.module),
-                progress_percent(completed_bytes, total_bytes),
-                Some((&update.module, completed_bytes, total_bytes)),
-            );
-            download_verified_file(
-                &client,
-                update,
-                &work.join(&update.artifact),
-                |downloaded| {
-                    progress(
-                        &format!("Скачивание {}", update.module),
-                        progress_percent(completed_bytes + downloaded, total_bytes),
-                        Some((&update.module, completed_bytes + downloaded, total_bytes)),
-                    )
-                },
-            )?;
-            completed_bytes += update.size;
-            progress(
-                &format!("Скачан {}", update.module),
-                progress_percent(completed_bytes, total_bytes),
+                &format!("Загрузка {} завершена", update.module),
+                100,
                 None,
             );
-        }
-        if let Some(update) = missing.iter().copied().find(|u| u.module == "shell-host") {
-            progress(
-                "Скачивание shell-host",
-                0,
-                Some(("shell-host", 0, update.size)),
-            );
-            download_verified_file(
-                &client,
-                update,
-                &work.join("shell-host.zip"),
-                |downloaded| {
-                    progress(
-                        "Скачивание shell-host",
-                        progress_percent(downloaded, update.size),
-                        Some(("shell-host", downloaded, update.size)),
-                    )
-                },
-            )?;
-            extract_shell_host(&work.join("shell-host.zip"), &work.join("shell-host"))?;
-            progress("shell-host подготовлен", 100, None);
-        }
-        if let Some(update) = missing.iter().copied().find(|u| u.module == "ui-bundle") {
-            progress(
-                "Скачивание ui-bundle",
-                0,
-                Some(("ui-bundle", 0, update.size)),
-            );
-            download_verified_file(&client, update, &work.join("ui-bundle.zip"), |downloaded| {
-                progress(
-                    "Скачивание ui-bundle",
-                    progress_percent(downloaded, update.size),
-                    Some(("ui-bundle", downloaded, update.size)),
-                )
-            })?;
-            extract_ui_bundle(&work.join("ui-bundle.zip"), &work.join("ui-bundle"))?;
-            progress("ui-bundle подготовлен", 100, None);
-        }
-        if let Some(update) = missing.iter().copied().find(|u| u.module == "updater") {
-            progress("Скачивание updater", 0, Some(("updater", 0, update.size)));
-            download_verified_file(&client, update, &work.join("updater.zip"), |downloaded| {
-                progress(
-                    "Скачивание updater",
-                    progress_percent(downloaded, update.size),
-                    Some(("updater", downloaded, update.size)),
-                )
-            })?;
-            extract_updater_package(&work.join("updater.zip"), &work.join("updater-package"))?;
-            fs::copy(
-                work.join("updater-package").join("evohime-updater.exe"),
-                work.join("evohime-updater.exe.next"),
-            )
-            .map_err(|error| error.to_string())?;
-            validate_pe_image(&work.join("evohime-updater.exe.next"))
-                .map_err(|error| format!("updater: staged worker PE validation failed: {error}"))?;
-            fs::rename(
-                work.join("updater-package").join("updater"),
-                work.join("updater"),
-            )
-            .map_err(|error| error.to_string())?;
-            let _ = fs::remove_dir_all(work.join("updater-package"));
-            progress("updater подготовлен", 100, None);
         }
 
         // Promote verified artifacts from isolated temp dir into staging.

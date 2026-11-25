@@ -1171,3 +1171,105 @@ fn prune_stale_staged_entries_keeps_active_artifacts_and_removes_old_ones() {
     assert!(!staging.join("obsolete.exe").exists());
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn stage_updates_downloads_modules_in_candidate_order() {
+    let root = test_temp_dir("stage-order");
+    let data_dir = root.join("data");
+    fs::create_dir_all(&data_dir).expect("data dir");
+
+    let build_zip = |entries: &[(&str, &[u8])]| -> Vec<u8> {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut buf);
+            let options = zip::write::SimpleFileOptions::default();
+            for (name, data) in entries {
+                writer.start_file(*name, options).expect("start zip entry");
+                writer.write_all(data).expect("write zip entry");
+            }
+            writer.finish().expect("finish zip");
+        }
+        buf.into_inner()
+    };
+
+    let shell_zip = build_zip(&[
+        ("EvoHime.exe", b"mz"),
+        ("resources/app.asar", b"asar"),
+    ]);
+    let ui_zip = build_zip(&[("index.html", b"<!doctype html>")]);
+
+    let make_candidate = |module: &str, artifact: &str, bytes: &[u8]| UpdateCandidate {
+        module: module.to_owned(),
+        installed: "0.1.0".to_owned(),
+        available: "0.2.0".to_owned(),
+        artifact: artifact.to_owned(),
+        download_url: format!("https://github.com/rkfsociety/EvoHime/releases/download/v0.2.0/{artifact}"),
+        sha256: hex::encode(sha2::Sha256::digest(bytes)),
+        size: bytes.len() as u64,
+        summary: String::new(),
+        changes: Vec::new(),
+        dependencies: Vec::new(),
+        restart: "restart".to_owned(),
+    };
+
+    let payloads: std::collections::HashMap<&str, Vec<u8>> = [
+        ("shell-host", shell_zip),
+        ("ui-bundle", ui_zip),
+        ("core", b"core-bin".to_vec()),
+        ("supervisor", b"sup-bin".to_vec()),
+        ("hive", b"hive-bin".to_vec()),
+    ]
+    .into_iter()
+    .collect();
+
+    let updates = vec![
+        make_candidate("shell-host", "shell-host.zip", &payloads["shell-host"]),
+        make_candidate("ui-bundle", "ui-bundle.zip", &payloads["ui-bundle"]),
+        make_candidate("core", "evohime-core.exe", &payloads["core"]),
+        make_candidate("supervisor", "evohime-supervisor.exe", &payloads["supervisor"]),
+        make_candidate("hive", "evohime-hive.exe", &payloads["hive"]),
+    ];
+
+    let mut download_order = Vec::new();
+    let active_order = std::cell::RefCell::new(Vec::new());
+    let telemetry_state = std::cell::RefCell::new(super::DownloadTelemetryState::default());
+
+    super::stage_updates_into_cache_with(
+        &data_dir,
+        &updates,
+        &|message, percent, download| {
+            if let Some((module, _, _)) = download {
+                let mut order = active_order.borrow_mut();
+                if order.last().map(String::as_str) != Some(module) {
+                    order.push(module.to_owned());
+                }
+            }
+            let _ = (message, percent);
+            let _ = telemetry_state.borrow_mut().record(
+                std::time::Instant::now(),
+                percent,
+                download,
+            );
+        },
+        &mut |update, destination, on_progress| {
+            download_order.push(update.module.clone());
+            let bytes = payloads
+                .get(update.module.as_str())
+                .expect("payload exists");
+            fs::write(destination, bytes).map_err(|error| error.to_string())?;
+            on_progress(bytes.len() as u64);
+            Ok(())
+        },
+    )
+    .expect("staging succeeds");
+
+    let expected = vec!["shell-host", "ui-bundle", "core", "supervisor", "hive"];
+    assert_eq!(download_order, expected);
+    assert_eq!(*active_order.borrow(), expected);
+    assert_eq!(
+        telemetry_state.borrow().completed_modules,
+        expected
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
