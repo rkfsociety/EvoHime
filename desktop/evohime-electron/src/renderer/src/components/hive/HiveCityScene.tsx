@@ -142,7 +142,7 @@ export function HiveCityScene({
     [worldProp, normalizedStatus, queenWorking]
   )
 
-  const { placements, roadGraph } = useMemo(
+  const { placements, sectorArcs, roadGraph } = useMemo(
     () => buildWorldRoadGraphAndPlacements(world),
     [world]
   )
@@ -159,11 +159,13 @@ export function HiveCityScene({
   const trafficRef = useRef(createTrafficSimulationState())
   const worldRef = useRef(world)
   const placementsRef = useRef(placements)
+  const sectorArcsRef = useRef(sectorArcs)
   const roadGraphRef = useRef(roadGraph)
   const timeScaleRef = useRef(timeScale)
 
   worldRef.current = world
   placementsRef.current = placements
+  sectorArcsRef.current = sectorArcs
   roadGraphRef.current = roadGraph
   timeScaleRef.current = timeScale
 
@@ -230,6 +232,7 @@ export function HiveCityScene({
       lastTs = now
       const currentWorld = worldRef.current
       const currentPlacements = placementsRef.current
+      const currentSectorArcs = sectorArcsRef.current
       const currentGraph = roadGraphRef.current
       const currentScale = timeScaleRef.current
 
@@ -330,6 +333,17 @@ export function HiveCityScene({
           : 'rgba(56, 189, 248, 0.35)'
         ctx.stroke()
 
+        // Угловые узлы-башенки на 6 вершинах внешнего забора города.
+        const fenceVertices = getPointyHexVertices(city.worldCenterX, city.worldCenterY, cityHexRadius)
+        for (const v of fenceVertices) {
+          traceHexPath(ctx, v.x, v.y, 7.5)
+          ctx.fillStyle = '#0b1120'
+          ctx.fill()
+          ctx.lineWidth = 1.8
+          ctx.strokeStyle = city.hasQueenCitadel ? '#f59e0b' : '#38bdf8'
+          ctx.stroke()
+        }
+
         // Название города — строго снаружи за забором (над верхней вершиной), чтобы не перекрывать дороги.
         ctx.font = '600 13px sans-serif'
         ctx.textAlign = 'center'
@@ -346,6 +360,24 @@ export function HiveCityScene({
         ctx.stroke()
         ctx.fillStyle = city.hasQueenCitadel ? '#fef08a' : '#bae6fd'
         ctx.fillText(cityTitle, city.worldCenterX, titleY)
+        ctx.restore()
+      }
+
+      // 1.7. Кольцевые сектора 1-го кольца (деление окружности: боковые линии с одной и другой стороны).
+      for (const arc of currentSectorArcs) {
+        const roleColor = ROLE_COLORS[arc.role]
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(arc.centerX, arc.centerY, arc.outerRadius, arc.startAngle, arc.endAngle, false)
+        ctx.arc(arc.centerX, arc.centerY, arc.innerRadius, arc.endAngle, arc.startAngle, true)
+        ctx.closePath()
+        ctx.fillStyle = `${roleColor}18`
+        ctx.fill()
+
+        // Чёткие боковые радиальные стенки-разделители сектора и дуги.
+        ctx.lineWidth = selectedId === arc.id ? 2.6 : 1.7
+        ctx.strokeStyle = selectedId === arc.id ? '#fde047' : `${roleColor}99`
+        ctx.stroke()
         ctx.restore()
       }
 
@@ -445,13 +477,63 @@ export function HiveCityScene({
         }
       }
 
-      // 5. Соты: Цитадель Королевы, базовые узлы, сектора (по 3 агента), модули проекта.
+      // 5. Соты: Цитадель Королевы, базовые узлы, соты-дома агентов внутри секторов, модули проекта.
       for (const [id, placement] of currentPlacements.entries()) {
+        // Невидимый центр сектора используется только для маршрутизации и выбора сектора.
+        if (placement.kind === 'sector') continue
+
         const pose = poses.get(id) ?? { x: placement.x, y: placement.y, scale: 1 }
         const r = placement.radius * pose.scale
         if (r < 1) continue
 
-        const isSelected = selectedId === id
+        const isSelected = selectedId === id || (placement.sectorId !== undefined && selectedId === placement.sectorId)
+
+        if (placement.kind === 'agent_home' && placement.sectorId !== undefined && placement.agentSlot !== undefined) {
+          const city = currentWorld.cities.find((c) => c.id === placement.cityId)
+          const sector = city?.sectors.find((s) => s.id === placement.sectorId)
+          const agent = sector?.agents[placement.agentSlot]
+
+          ctx.save()
+          if (agent) {
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.55)'
+            ctx.shadowBlur = 10
+            ctx.shadowOffsetY = 3
+            traceHexPath(ctx, pose.x, pose.y, r)
+            ctx.fillStyle = '#132036'
+            ctx.fill()
+            ctx.restore()
+
+            traceHexPath(ctx, pose.x, pose.y, r)
+            ctx.lineWidth = isSelected ? 2.6 : 2.0
+            ctx.strokeStyle = isSelected ? '#fde047' : ROLE_COLORS[agent.role]
+            ctx.stroke()
+
+            // Внутренняя сота-ядро агента.
+            traceHexPath(ctx, pose.x, pose.y, r * 0.54)
+            ctx.fillStyle = ROLE_COLORS[agent.role]
+            ctx.fill()
+
+            // Если Улей на паузе или агент не в рейсе — машина припаркована в его соте.
+            if (currentWorld.paused || !agent.activeTripId) {
+              ctx.beginPath()
+              ctx.arc(pose.x, pose.y, 3.0 * pose.scale, 0, Math.PI * 2)
+              ctx.fillStyle = '#f8fafc'
+              ctx.fill()
+            }
+          } else {
+            // Свободное место (фундамент соты под будущего агента).
+            ctx.setLineDash([4, 3])
+            traceHexPath(ctx, pose.x, pose.y, r * 0.9)
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.35)'
+            ctx.fill()
+            ctx.lineWidth = 1.1
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.32)'
+            ctx.stroke()
+            ctx.setLineDash([])
+            ctx.restore()
+          }
+          continue
+        }
 
         // Мягкая тень (имитация глубины при виде сверху 90°).
         ctx.save()
@@ -463,23 +545,15 @@ export function HiveCityScene({
           ctx.fillStyle = '#1e1b2e'
         } else if (placement.kind === 'project_hub') {
           ctx.fillStyle = '#172554'
-        } else if (placement.kind === 'sector') {
-          ctx.fillStyle = '#132238'
         } else {
           ctx.fillStyle = '#162032'
         }
         ctx.fill()
         ctx.restore()
 
-        // Внешняя фаска и контур соты (сектор окрашивается в цвет своей роли).
-        const sectorRole =
-          placement.kind === 'sector'
-            ? currentWorld.cities
-                .find((c) => c.id === placement.cityId)
-                ?.sectors.find((s) => s.id === id)?.role
-            : undefined
+        // Внешняя фаска и контур соты.
         traceHexPath(ctx, pose.x, pose.y, r)
-        ctx.lineWidth = isSelected ? 2.8 : placement.kind === 'citadel' ? 2.4 : 1.7
+        ctx.lineWidth = isSelected ? 2.8 : placement.kind === 'citadel' ? 2.4 : 1.8
         ctx.strokeStyle = isSelected
           ? '#fde047'
           : placement.kind === 'citadel'
@@ -488,27 +562,27 @@ export function HiveCityScene({
               : '#a16207'
             : placement.kind === 'project_hub'
               ? '#38bdf8'
-              : placement.kind === 'sector'
-                ? sectorRole
-                  ? ROLE_COLORS[sectorRole]
-                  : '#3b82f6'
-                : '#475569'
+              : '#64748b'
         ctx.stroke()
 
-        // Внутренняя фаска и ядро Цитадели.
-        traceHexPath(ctx, pose.x, pose.y, r * 0.82)
+        // Внутренняя фаска и ядро Цитадели / крыша модуля.
+        traceHexPath(ctx, pose.x, pose.y, r * 0.78)
         ctx.lineWidth = 1.1
         ctx.strokeStyle =
-          placement.kind === 'citadel' ? 'rgba(251, 191, 36, 0.28)' : 'rgba(255, 255, 255, 0.09)'
+          placement.kind === 'citadel' ? 'rgba(251, 191, 36, 0.32)' : 'rgba(148, 163, 184, 0.2)'
         ctx.stroke()
 
         if (placement.kind === 'citadel') {
-          traceHexPath(ctx, pose.x, pose.y, r * 0.42)
-          ctx.fillStyle = currentWorld.queenWorking ? 'rgba(251, 191, 36, 0.28)' : 'rgba(161, 98, 7, 0.2)'
+          traceHexPath(ctx, pose.x, pose.y, r * 0.44)
+          ctx.fillStyle = currentWorld.queenWorking ? 'rgba(251, 191, 36, 0.32)' : 'rgba(161, 98, 7, 0.22)'
           ctx.fill()
-          ctx.lineWidth = 1.5
+          ctx.lineWidth = 1.6
           ctx.strokeStyle = '#fbbf24'
           ctx.stroke()
+        } else if (placement.kind === 'module') {
+          traceHexPath(ctx, pose.x, pose.y, r * 0.45)
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.14)'
+          ctx.fill()
         }
 
         // Метки выходов Цитадели (перпендикулярно граням).
@@ -521,36 +595,6 @@ export function HiveCityScene({
             ctx.arc(gx, gy, 3.8, 0, Math.PI * 2)
             ctx.fillStyle = placement.kind === 'citadel' ? '#fbbf24' : '#38bdf8'
             ctx.fill()
-          }
-        }
-
-        // Отображение 3 шестиугольных гнёзд агентов внутри сектора 1-го кольца.
-        if (placement.kind === 'sector') {
-          const city = currentWorld.cities.find((c) => c.id === placement.cityId)
-          const sector = city?.sectors.find((s) => s.id === id)
-          if (sector) {
-            for (let slot = 0; slot < HONEYCOMB_SECTOR_CAPACITY; slot += 1) {
-              const slotAngle = -Math.PI / 2 + (slot * Math.PI * 2) / 3
-              const sx = pose.x + Math.cos(slotAngle) * (r * 0.44)
-              const sy = pose.y + Math.sin(slotAngle) * (r * 0.44)
-              const agent = sector.agents[slot]
-              traceHexPath(ctx, sx, sy, 6.2 * pose.scale)
-              if (agent) {
-                ctx.fillStyle = ROLE_COLORS[agent.role]
-                ctx.fill()
-                if (currentWorld.paused || !agent.activeTripId) {
-                  ctx.strokeStyle = '#f8fafc'
-                  ctx.lineWidth = 1.4
-                  ctx.stroke()
-                }
-              } else {
-                ctx.fillStyle = 'rgba(148, 163, 184, 0.16)'
-                ctx.fill()
-                ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)'
-                ctx.lineWidth = 0.8
-                ctx.stroke()
-              }
-            }
           }
         }
 
@@ -650,7 +694,7 @@ export function HiveCityScene({
             hit = placement
           }
         }
-        setSelectedId(hit ? hit.id : null)
+        setSelectedId(hit ? (hit.sectorId ?? hit.id) : null)
       }
     },
     []

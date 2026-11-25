@@ -52,12 +52,27 @@ export interface RoadGraph {
 export interface HexCellPlacement {
   readonly id: string
   readonly cityId: string
-  readonly kind: 'citadel' | 'project_hub' | 'sector' | 'module'
+  readonly kind: 'citadel' | 'project_hub' | 'sector' | 'agent_home' | 'module'
   readonly ring: number
   readonly x: number
   readonly y: number
   readonly radius: number
   readonly exitAngles: readonly number[]
+  readonly sectorId?: string | undefined
+  readonly agentSlot?: number | undefined
+}
+
+export interface SectorArcPlacement {
+  readonly id: string
+  readonly cityId: string
+  readonly role: import('@shared/hive-city-map').HoneycombAgentRole
+  readonly label: string
+  readonly centerX: number
+  readonly centerY: number
+  readonly innerRadius: number
+  readonly outerRadius: number
+  readonly startAngle: number
+  readonly endAngle: number
 }
 
 /** Вычисляет радиус кольцевой магистрали для заданного кольца `ring >= 1`. */
@@ -136,12 +151,14 @@ export function resolveCellPositionOnRing(
   }
 }
 
-/** Строит 2D-размещение всех сот города и граф дорожной сети с ПДД-узлами. */
+/** Строит 2D-размещение всех сот города, кольцевых секторов и граф дорожной сети с ПДД-узлами. */
 export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
   readonly placements: ReadonlyMap<string, HexCellPlacement>
+  readonly sectorArcs: readonly SectorArcPlacement[]
   readonly roadGraph: RoadGraph
 } {
   const placements = new Map<string, HexCellPlacement>()
+  const sectorArcs: SectorArcPlacement[] = []
   const nodes = new Map<string, RoadNode>()
   const edges: RoadEdge[] = []
   const adjacency = new Map<string, { toId: string; edge: RoadEdge }[]>()
@@ -348,20 +365,77 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
       }
     }
 
-    city.sectors.forEach((sector, index) => {
-      const pos = resolveCellPositionOnRing(city, 1, sector.coord, index, city.sectors.length)
-      placements.set(sector.id, {
-        id: sector.id,
-        cityId: city.id,
-        kind: 'sector',
-        ring: 1,
-        x: pos.x,
-        y: pos.y,
-        radius: CELL_HEX_RADIUS,
-        exitAngles: []
+    // Размещаем кольцевые сектора (1-е кольцо как деление окружности) и 3 соты-агентов внутри каждого сектора.
+    const sectorCount = city.sectors.length
+    if (sectorCount > 0) {
+      const ring1CellR = getRingCellRadius(1)
+      const ring1RoadR = getRingRoadRadius(1)
+      const arcInnerR = ring1RoadR + 12
+      const arcOuterR = ring1CellR + 36
+      const span = (Math.PI * 2) / sectorCount
+      const gapAngle = sectorCount > 1 ? 0.04 : 0
+
+      city.sectors.forEach((sector, sIdx) => {
+        const startAngle = sIdx * span + gapAngle / 2
+        const endAngle = (sIdx + 1) * span - gapAngle / 2
+        const midAngle = (startAngle + endAngle) / 2
+
+        sectorArcs.push({
+          id: sector.id,
+          cityId: city.id,
+          role: sector.role,
+          label: sector.label,
+          centerX: city.worldCenterX,
+          centerY: city.worldCenterY,
+          innerRadius: arcInnerR,
+          outerRadius: arcOuterR,
+          startAngle,
+          endAngle
+        })
+
+        // Центральный узел сектора для маршрутизации и совместимости.
+        const sectorEntryX = city.worldCenterX + Math.cos(midAngle) * ring1CellR
+        const sectorEntryY = city.worldCenterY + Math.sin(midAngle) * ring1CellR
+        placements.set(sector.id, {
+          id: sector.id,
+          cityId: city.id,
+          kind: 'sector',
+          ring: 1,
+          x: sectorEntryX,
+          y: sectorEntryY,
+          radius: 18,
+          exitAngles: []
+        })
+
+        // 3 соты-дома агентов внутри сектора (каждая со своим подъездом к 1-му кольцу).
+        const subSpan = (endAngle - startAngle) / 3
+        for (let slot = 0; slot < 3; slot += 1) {
+          const slotAngle = startAngle + (slot + 0.5) * subSpan
+          const ax = city.worldCenterX + Math.cos(slotAngle) * ring1CellR
+          const ay = city.worldCenterY + Math.sin(slotAngle) * ring1CellR
+          const agent = sector.agents[slot]
+          const cellId = agent ? `${sector.id}:slot:${slot}` : `${sector.id}:empty:${slot}`
+          placements.set(cellId, {
+            id: cellId,
+            cityId: city.id,
+            kind: 'agent_home',
+            ring: 1,
+            x: ax,
+            y: ay,
+            radius: 19,
+            exitAngles: [],
+            sectorId: sector.id,
+            agentSlot: slot
+          })
+          if (slot === 1) {
+            // Средний слот также служит точкой въезда сектора в графе дорог.
+            connectCellToRingSegment(sector.id, ax, ay, 1)
+          } else {
+            connectCellToRingSegment(cellId, ax, ay, 1)
+          }
+        }
       })
-      connectCellToRingSegment(sector.id, pos.x, pos.y, 1)
-    })
+    }
 
     const modulesByRing = new Map<number, typeof city.modules[number][]>()
     for (const mod of city.modules) {
@@ -433,6 +507,7 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
 
   return {
     placements,
+    sectorArcs,
     roadGraph: { nodes, edges, adjacency }
   }
 }
