@@ -10,6 +10,8 @@ export {
 export {
   buildWorldRoadGraphAndPlacements,
   findRoadPath,
+  getCityOuterHexRadius,
+  getCityRingExpansion,
   getFlatHexVertices,
   getHexVerticesByNormal,
   getPointyHexVertices,

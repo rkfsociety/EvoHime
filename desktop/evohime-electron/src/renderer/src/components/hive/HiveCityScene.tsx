@@ -12,6 +12,7 @@ import type { UiIconName } from '../../UiIcon'
 import {
   buildWorldRoadGraphAndPlacements,
   getCityOuterHexRadius,
+  getCityRingExpansion,
   getFlatHexVertices,
   getHexVerticesByNormal,
   type HexCellPlacement
@@ -312,7 +313,7 @@ export function HiveCityScene({
           city.sectors.length > 0 ? 1 : 0,
           ...city.modules.map((m) => m.ring)
         )
-        const cityHexRadius = getCityOuterHexRadius(maxRing)
+        const cityHexRadius = getCityOuterHexRadius(maxRing, getCityRingExpansion(city))
 
         ctx.save()
         // Подложка территории города внутри забора.

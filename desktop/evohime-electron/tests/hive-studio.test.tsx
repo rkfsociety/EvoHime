@@ -10,6 +10,7 @@ import {
   buildWorldRoadGraphAndPlacements,
   findRoadPath,
   getCityOuterHexRadius,
+  getCityRingExpansion,
   HEX_FACE_NORMAL_ANGLES,
   selectCitadelExitFaceIndices
 } from '../src/renderer/src/components/hive/honeycomb-geometry'
@@ -74,8 +75,32 @@ describe('buildHoneycombStudioWorld', () => {
         const a = world.cities[i]!
         const b = world.cities[j]!
         const dist = Math.hypot(b.worldCenterX - a.worldCenterX, b.worldCenterY - a.worldCenterY)
-        const minRequired = getCityOuterHexRadius(a.maxRing) + getCityOuterHexRadius(b.maxRing)
+        const minRequired =
+          getCityOuterHexRadius(a.maxRing, getCityRingExpansion(a)) +
+          getCityOuterHexRadius(b.maxRing, getCityRingExpansion(b))
         expect(dist).toBeGreaterThan(minRequired)
+      }
+    }
+
+    // При большом количестве агентов (15) и секторов соты агентов не пересекаются друг с другом.
+    const crowded = buildHoneycombStudioWorld({
+      stage: 'pipeline',
+      paused: false,
+      evaSourceConfigured: true,
+      projectCount: 1,
+      agentCount: 15,
+      exitsOverride: 'auto',
+      remodelSeed: 0
+    })
+    const crowdedHomes = Array.from(buildWorldRoadGraphAndPlacements(crowded).placements.values()).filter(
+      (p) => p.kind === 'agent_home'
+    )
+    for (let i = 0; i < crowdedHomes.length; i += 1) {
+      for (let j = i + 1; j < crowdedHomes.length; j += 1) {
+        const a = crowdedHomes[i]!
+        const b = crowdedHomes[j]!
+        const dist = Math.hypot(b.x - a.x, b.y - a.y)
+        expect(dist).toBeGreaterThan(a.radius + b.radius)
       }
     }
   })

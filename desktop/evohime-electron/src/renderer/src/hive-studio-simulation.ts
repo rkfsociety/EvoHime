@@ -22,7 +22,7 @@ import {
   type HoneycombVehicleDispatch,
   type HoneycombWorldState
 } from '@shared/hive-city-map'
-import { getCityOuterHexRadius } from './components/hive/honeycomb-geometry'
+import { getCityOuterHexRadius, getCityRingExpansion } from './components/hive/honeycomb-geometry'
 
 export type StudioGrowthStage = 'zero' | 'scouting' | 'pipeline' | 'remodeled'
 
@@ -208,28 +208,28 @@ export function buildHoneycombStudioWorld(options: HoneycombStudioOptions): Hone
     primaryLayout.maxRing
   )
 
-  const cities: HoneycombCity[] = [
-    {
-      id: primaryCityId,
-      projectName: primaryProjectName,
-      isPrimary: true,
-      hasQueenCitadel: true,
-      citadelExitsCount,
-      worldCenterX: 0,
-      worldCenterY: 0,
-      maxRing: primaryMaxRing,
-      sectors,
-      modules: primaryLayout.modules,
-      edges: primaryLayout.edges
-    }
-  ]
+  const primaryCityDraft: HoneycombCity = {
+    id: primaryCityId,
+    projectName: primaryProjectName,
+    isPrimary: true,
+    hasQueenCitadel: true,
+    citadelExitsCount,
+    worldCenterX: 0,
+    worldCenterY: 0,
+    maxRing: primaryMaxRing,
+    sectors,
+    modules: primaryLayout.modules,
+    edges: primaryLayout.edges
+  }
+
+  const cities: HoneycombCity[] = [primaryCityDraft]
 
   const intercityLinks: HoneycombIntercityLink[] = []
   const secondaryNames = options.evaSourceConfigured
     ? EXTRA_PROJECT_NAMES
     : EXTRA_PROJECT_NAMES.slice(1)
 
-  const primaryOuterR = getCityOuterHexRadius(primaryMaxRing)
+  const primaryOuterR = getCityOuterHexRadius(primaryMaxRing, getCityRingExpansion(primaryCityDraft))
   const extLayouts = Array.from({ length: Math.max(0, projectCount - 1) }, (_, i) => {
     const cityId = `city-ext-${i + 1}`
     const extLayout = buildModulesForProject(cityId, options.stage, options.remodelSeed + i + 1, false)

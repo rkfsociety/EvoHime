@@ -77,20 +77,63 @@ export interface SectorArcPlacement {
   readonly endAngle: number
 }
 
+/** Вычисляет дополнительное расширение радиуса колец города при большом числе секторов. */
+export function getCityRingExpansion(city: HoneycombCity): number {
+  const sectorCount = city.sectors.length
+  if (sectorCount === 0) return 0
+  const exits = city.hasQueenCitadel ? Math.max(1, Math.min(6, city.citadelExitsCount)) : 2
+  const exitFaces = selectCitadelExitFaceIndices(exits)
+  const rays = exitFaces.map((idx) => normalizeAngle(HEX_FACE_NORMAL_ANGLES[idx] ?? 0)).sort((a, b) => a - b)
+
+  const spans: number[] = []
+  if (rays.length === 0) {
+    spans.push(Math.PI * 2)
+  } else {
+    for (let i = 0; i < rays.length; i += 1) {
+      const a = rays[i]!
+      const b = rays[(i + 1) % rays.length]!
+      spans.push(b > a ? b - a : Math.PI * 2 - a + b)
+    }
+  }
+
+  const counts = new Array<number>(spans.length).fill(0)
+  for (let s = 0; s < sectorCount; s += 1) {
+    let bestIdx = 0
+    let bestScore = -1
+    for (let p = 0; p < spans.length; p += 1) {
+      const score = spans[p]! / (counts[p]! + 1)
+      if (score > bestScore) {
+        bestScore = score
+        bestIdx = p
+      }
+    }
+    counts[bestIdx] = counts[bestIdx]! + 1
+  }
+
+  let requiredRadius = 0
+  for (let p = 0; p < spans.length; p += 1) {
+    const count = counts[p]!
+    if (count <= 0) continue
+    const minArcLen = count * 176 + 56
+    requiredRadius = Math.max(requiredRadius, minArcLen / Math.max(0.2, spans[p]!))
+  }
+  return Math.max(0, requiredRadius - (RING_BASE_RADIUS + RING_STEP))
+}
+
 /** Вычисляет радиус кольцевой магистрали для заданного кольца `ring >= 1`. */
-export function getRingRoadRadius(ring: number): number {
-  return RING_BASE_RADIUS + ring * RING_STEP - RING_STEP * 0.42
+export function getRingRoadRadius(ring: number, expansion = 0): number {
+  return RING_BASE_RADIUS + ring * RING_STEP - RING_STEP * 0.42 + expansion
 }
 
 /** Вычисляет радиус центров сот на заданном кольце `ring >= 1`. */
-export function getRingCellRadius(ring: number): number {
-  return RING_BASE_RADIUS + ring * RING_STEP
+export function getRingCellRadius(ring: number, expansion = 0): number {
+  return RING_BASE_RADIUS + ring * RING_STEP + expansion
 }
 
 /** Вычисляет радиус внешней гексагональной соты-забора города (единый источник истины). */
-export function getCityOuterHexRadius(maxRing: number): number {
+export function getCityOuterHexRadius(maxRing: number, expansion = 0): number {
   const contentRadius =
-    maxRing <= 0 ? CITADEL_HEX_RADIUS + 28 : getRingCellRadius(maxRing) + CELL_HEX_RADIUS + 20
+    maxRing <= 0 ? CITADEL_HEX_RADIUS + 28 : getRingCellRadius(maxRing, expansion) + CELL_HEX_RADIUS + 20
   return contentRadius / Math.cos(Math.PI / 6)
 }
 
@@ -187,9 +230,10 @@ export function resolveCellPositionOnRing(
   coord: HoneycombHexCoord,
   indexInRing: number,
   totalInRing: number,
-  blockedAngles: readonly number[] = []
+  blockedAngles: readonly number[] = [],
+  expansion = 0
 ): Point2D {
-  const radius = getRingCellRadius(ring)
+  const radius = getRingCellRadius(ring, expansion)
   const count = Math.max(1, totalInRing)
   const baseAngle = ((indexInRing + 0.5) / count) * Math.PI * 2
   const axialBias = ((coord.q * 7 + coord.r * 13) % 11) * 0.004
@@ -293,11 +337,13 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
       addBidirectionalEdge(`${city.id}:hub-gate:${faceIdx}`, hubId, gateId, 'radial', 4)
     }
 
+    const expansion = getCityRingExpansion(city)
+
     // Круглые кольцевые магистрали внутри города (24 сегмента по окружности для плавного круга).
     const ringSegments: { ring: number; aId: string; bId: string }[] = []
     const RING_STEPS = 24
     for (let ring = 1; ring <= maxRing; ring += 1) {
-      const roadRadius = getRingRoadRadius(ring)
+      const roadRadius = getRingRoadRadius(ring, expansion)
       const ringAngles = new Map<number, number | undefined>()
       for (let step = 0; step < RING_STEPS; step += 1) {
         const angle = (step / RING_STEPS) * Math.PI * 2
@@ -435,8 +481,8 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
     // чтобы ни одна радиальная дорога никогда не пересекала сектор.
     const sectorCount = city.sectors.length
     if (sectorCount > 0) {
-      const ring1CellR = getRingCellRadius(1)
-      const ring1RoadR = getRingRoadRadius(1)
+      const ring1CellR = getRingCellRadius(1, expansion)
+      const ring1RoadR = getRingRoadRadius(1, expansion)
       const arcInnerR = ring1RoadR + 14
       const arcOuterR = ring1CellR + 40
 
@@ -568,7 +614,7 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
     }
     for (const [ring, list] of modulesByRing.entries()) {
       list.forEach((mod, index) => {
-        const pos = resolveCellPositionOnRing(city, ring, mod.coord, index, list.length, moduleBlockedAngles)
+        const pos = resolveCellPositionOnRing(city, ring, mod.coord, index, list.length, moduleBlockedAngles, expansion)
         const modRadius = CELL_HEX_RADIUS * 0.92
         const approachAngle = connectCellToRingSegment(mod.id, pos.x, pos.y, ring, modRadius)
         placements.set(mod.id, {
