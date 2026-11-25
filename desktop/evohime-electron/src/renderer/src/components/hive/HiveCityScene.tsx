@@ -416,9 +416,15 @@ export function HiveCityScene({
         ctx.fill()
         ctx.restore()
 
-        // Внешняя фаска и контур соты.
+        // Внешняя фаска и контур соты (сектор окрашивается в цвет своей роли).
+        const sectorRole =
+          placement.kind === 'sector'
+            ? currentWorld.cities
+                .find((c) => c.id === placement.cityId)
+                ?.sectors.find((s) => s.id === id)?.role
+            : undefined
         traceHexPath(ctx, pose.x, pose.y, r)
-        ctx.lineWidth = isSelected ? 2.8 : placement.kind === 'citadel' ? 2.4 : 1.5
+        ctx.lineWidth = isSelected ? 2.8 : placement.kind === 'citadel' ? 2.4 : 1.7
         ctx.strokeStyle = isSelected
           ? '#fde047'
           : placement.kind === 'citadel'
@@ -428,7 +434,9 @@ export function HiveCityScene({
             : placement.kind === 'project_hub'
               ? '#38bdf8'
               : placement.kind === 'sector'
-                ? '#3b82f6'
+                ? sectorRole
+                  ? ROLE_COLORS[sectorRole]
+                  : '#3b82f6'
                 : '#475569'
         ctx.stroke()
 

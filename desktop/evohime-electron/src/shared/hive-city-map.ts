@@ -840,6 +840,8 @@ export interface HoneycombSector {
   readonly coord: HoneycombHexCoord
   readonly ring: 1
   readonly label: string
+  /** Специализация сектора: в одном секторе живут только агенты одинаковой роли. */
+  readonly role: HoneycombAgentRole
   readonly capacity: typeof HONEYCOMB_SECTOR_CAPACITY
   readonly agents: readonly HoneycombAgent[]
 }

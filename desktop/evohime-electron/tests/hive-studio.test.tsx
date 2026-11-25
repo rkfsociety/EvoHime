@@ -37,7 +37,7 @@ describe('buildHoneycombStudioWorld', () => {
     expect(world.activeDispatches).toHaveLength(0)
   })
 
-  it('enforces 3 agents per sector on ring 1 and connects multiple cities via outer rings', () => {
+  it('enforces 3 homogeneous-role agents per sector on ring 1 and connects multiple cities via outer rings', () => {
     const world = buildHoneycombStudioWorld({
       stage: 'pipeline',
       paused: false,
@@ -49,10 +49,14 @@ describe('buildHoneycombStudioWorld', () => {
     })
 
     const primary = world.cities[0]!
-    expect(primary.sectors).toHaveLength(3)
-    expect(primary.sectors[0]?.agents).toHaveLength(HONEYCOMB_SECTOR_CAPACITY)
-    expect(primary.sectors[1]?.agents).toHaveLength(HONEYCOMB_SECTOR_CAPACITY)
-    expect(primary.sectors[2]?.agents).toHaveLength(1)
+    expect(primary.sectors.length).toBe(4)
+    for (const sector of primary.sectors) {
+      expect(sector.agents.length).toBeGreaterThan(0)
+      expect(sector.agents.length).toBeLessThanOrEqual(HONEYCOMB_SECTOR_CAPACITY)
+      for (const agent of sector.agents) {
+        expect(agent.role).toBe(sector.role)
+      }
+    }
 
     expect(world.cities).toHaveLength(3)
     expect(world.cities.filter((c) => c.hasQueenCitadel)).toHaveLength(1)
@@ -148,13 +152,13 @@ describe('Hive Studio app (2D)', () => {
     const scene = screen.getByTestId('hive-city-scene')
     expect(scene.getAttribute('data-mode')).toBe('2d-canvas')
     expect(screen.getByTestId('hive-city-canvas')).toBeTruthy()
-    expect(screen.getByTestId('studio-agent-summary').textContent).toContain('агентов: 5 · секторов: 2')
+    expect(screen.getByTestId('studio-agent-summary').textContent).toContain('агентов: 5 · секторов: 4')
 
     await user.click(screen.getByRole('button', { name: 'Добавить агента' }))
     await user.click(screen.getByRole('button', { name: 'Добавить агента' }))
-    expect(screen.getByTestId('studio-agent-summary').textContent).toContain('агентов: 7 · секторов: 3')
+    expect(screen.getByTestId('studio-agent-summary').textContent).toContain('агентов: 7 · секторов: 4')
 
     await user.click(screen.getByRole('button', { name: 'Убрать агента' }))
-    expect(screen.getByTestId('studio-agent-summary').textContent).toContain('агентов: 6 · секторов: 2')
+    expect(screen.getByTestId('studio-agent-summary').textContent).toContain('агентов: 6 · секторов: 4')
   })
 })
