@@ -1875,8 +1875,7 @@ impl HoneycombRuntime {
 /// stays paused with zero vehicles on the roads.
 fn resolve_honeycomb_mode(state: &HiveStateSnapshot) -> (bool, bool, bool) {
     let obs_status = state.observation_status.as_str();
-    let waiting_for_limits =
-        obs_status == evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_LIMITS;
+    let waiting_for_limits = obs_status == evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_LIMITS;
     let observation_alive = obs_status != evohime_hive::state::HIVE_OBSERVATION_DISABLED
         && obs_status != evohime_hive::state::HIVE_OBSERVATION_SLEEPING;
     let has_active_work = state.queen.status == evohime_hive::state::HIVE_QUEEN_ACTIVE
@@ -2342,7 +2341,8 @@ mod tests {
     fn honeycomb_stays_paused_without_vehicles_when_autonomy_is_disabled_and_idle() {
         let settings = HiveSettings::default();
         let mut state = HiveStateSnapshot::empty(&settings);
-        state.observation_status = evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_TASKS.to_string();
+        state.observation_status =
+            evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_TASKS.to_string();
         state.proactive_evolution_enabled = false;
 
         let dir = tempfile::tempdir().expect("tempdir");
@@ -2370,18 +2370,21 @@ mod tests {
     fn honeycomb_parks_vehicles_when_manual_task_finishes_with_autonomy_disabled() {
         let settings = HiveSettings::default();
         let mut state = HiveStateSnapshot::empty(&settings);
-        state.observation_status = evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_TASKS.to_string();
+        state.observation_status =
+            evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_TASKS.to_string();
         state.proactive_evolution_enabled = false;
         state.queen.status = evohime_hive::state::HIVE_QUEEN_ACTIVE.to_string();
-        state.active_agents.push(evohime_hive::state::HiveActiveAgent {
-            id: "agent-1".to_string(),
-            display_name: Some("Исполнитель #1".to_string()),
-            role: "executor".to_string(),
-            current_action: "проверка кода".to_string(),
-            depth: 1,
-            spawned_subagents: 0,
-            ceiling: 4,
-        });
+        state
+            .active_agents
+            .push(evohime_hive::state::HiveActiveAgent {
+                id: "agent-1".to_string(),
+                display_name: Some("Исполнитель #1".to_string()),
+                role: "executor".to_string(),
+                current_action: "проверка кода".to_string(),
+                depth: 1,
+                spawned_subagents: 0,
+                ceiling: 4,
+            });
 
         let dir = tempfile::tempdir().expect("tempdir");
         let db = evohime_hive::honeycomb_db::HiveDatabase::open(&dir.path().join("hive.db"))
