@@ -324,15 +324,34 @@ pub async fn replay_hive_projections(
         .replay_events(after, HIVE_REPLAY_WINDOW as usize)
         .await
         .unwrap_or_default();
-    let mut by_child = BTreeMap::new();
+    let mut by_child: BTreeMap<String, MinimalChildWorkflowPayload> = BTreeMap::new();
     for record in records {
-        if record.event_type != "child.workflow" {
+        if record.event_type == "child.workflow" {
+            if let Ok(projection) =
+                serde_json::from_slice::<MinimalChildWorkflowPayload>(&record.payload)
+            {
+                by_child.insert(projection.child_task_id.clone(), projection);
+            }
             continue;
         }
-        if let Ok(projection) =
-            serde_json::from_slice::<MinimalChildWorkflowPayload>(&record.payload)
-        {
-            by_child.insert(projection.child_task_id.clone(), projection);
+        if let Some(terminal_state) = terminal_child_state_for_event(&record.event_type) {
+            let terminal_task_id = resolve_event_task_id(&record.task_id, &record.payload);
+            if let Some(terminal_task_id) = terminal_task_id {
+                let parents: BTreeMap<String, String> = by_child
+                    .values()
+                    .map(|p| (p.child_task_id.clone(), p.parent_task_id.clone()))
+                    .collect();
+                for projection in by_child.values_mut() {
+                    if !is_terminal_child_state(projection.state)
+                        && (projection.child_task_id == terminal_task_id
+                            || projection.parent_task_id == terminal_task_id
+                            || projection_root_task(&projection.child_task_id, &parents)
+                                == terminal_task_id)
+                    {
+                        projection.state = terminal_state;
+                    }
+                }
+            }
         }
     }
     let parents: BTreeMap<String, String> = by_child
@@ -361,8 +380,56 @@ pub async fn replay_hive_projections(
         .collect()
 }
 
+/// Maps terminal task lifecycle events to the corresponding `HiveChildState`.
+pub(crate) fn terminal_child_state_for_event(event_type: &str) -> Option<HiveChildState> {
+    match event_type {
+        "task.completed" => Some(HiveChildState::Accepted),
+        "task.failed" => Some(HiveChildState::Failed),
+        "task.stopped" => Some(HiveChildState::Cancelled),
+        _ => None,
+    }
+}
+
+/// Returns true when a child projection is already in a terminal state.
+pub(crate) fn is_terminal_child_state(state: HiveChildState) -> bool {
+    matches!(
+        state,
+        HiveChildState::Accepted
+            | HiveChildState::Rejected
+            | HiveChildState::Failed
+            | HiveChildState::Cancelled
+            | HiveChildState::TimedOut
+            | HiveChildState::Aborted
+    )
+}
+
+/// Extracts a task ID from the record header or falls back to the JSON payload.
+pub(crate) fn resolve_event_task_id(record_task_id: &str, payload: &[u8]) -> Option<String> {
+    let trimmed = record_task_id.trim();
+    if !trimmed.is_empty() {
+        return Some(trimmed.to_owned());
+    }
+    let value = serde_json::from_slice::<serde_json::Value>(payload).ok()?;
+    if let Some(id) = value.get("task_id").and_then(|v| v.as_str()) {
+        return Some(id.to_owned());
+    }
+    for variant in ["TaskCompleted", "TaskFailed", "TaskStopped", "ToolStarted"] {
+        if let Some(id) = value
+            .get(variant)
+            .and_then(|inner| inner.get("task_id"))
+            .and_then(|v| v.as_str())
+        {
+            return Some(id.to_owned());
+        }
+    }
+    None
+}
+
 /// Resolves the task that started the whole child subtree.
-fn projection_root_task(child_task_id: &str, parents: &BTreeMap<String, String>) -> String {
+pub(crate) fn projection_root_task(
+    child_task_id: &str,
+    parents: &BTreeMap<String, String>,
+) -> String {
     let mut current = child_task_id;
     for _ in 0..8 {
         let Some(parent) = parents.get(current) else {
@@ -538,6 +605,39 @@ mod tests {
         assert_eq!(projections.len(), 1);
         assert_eq!(projections[0].child_task_id, "child-1");
         assert_eq!(projections[0].state, HiveChildState::Running);
+    }
+
+    #[tokio::test]
+    async fn replay_hive_projections_marks_active_children_failed_when_root_fails() {
+        let hive_payload = serde_json::json!({
+            "child_task_id": "child-1",
+            "parent_task_id": "eva-pulse-root-1",
+            "role": "plan_verifier",
+            "state": "running"
+        });
+        let journal = MockJournal {
+            events: vec![
+                HiveEventRecord {
+                    sequence_id: 1,
+                    task_id: "child-1".into(),
+                    event_type: "child.workflow".into(),
+                    payload: serde_json::to_vec(&hive_payload).expect("json"),
+                    created_at_ms: 1000,
+                },
+                HiveEventRecord {
+                    sequence_id: 2,
+                    task_id: "eva-pulse-root-1".into(),
+                    event_type: "task.failed".into(),
+                    payload: br#"{"task_id":"eva-pulse-root-1","error":"bad_key"}"#.to_vec(),
+                    created_at_ms: 1001,
+                },
+            ],
+            hive_roots: vec!["eva-pulse-root-1".into()],
+        };
+
+        let projections = replay_hive_projections(&journal).await;
+        assert_eq!(projections.len(), 1);
+        assert_eq!(projections[0].state, HiveChildState::Failed);
     }
 
     #[test]

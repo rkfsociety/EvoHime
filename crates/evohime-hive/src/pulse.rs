@@ -1615,15 +1615,39 @@ impl ObservationProbe for JournalObservationProbe {
 }
 
 fn replay_projections_from_records(records: &[HiveEventRecord]) -> Vec<ObservationChildProjection> {
-    let mut by_child = std::collections::BTreeMap::new();
+    let mut by_child: std::collections::BTreeMap<String, ObservationChildProjection> =
+        std::collections::BTreeMap::new();
     for record in records {
-        if record.event_type != "child.workflow" {
+        if record.event_type == "child.workflow" {
+            if let Ok(projection) =
+                serde_json::from_slice::<ObservationChildProjection>(&record.payload)
+            {
+                by_child.insert(projection.child_task_id.clone(), projection);
+            }
             continue;
         }
-        if let Ok(projection) =
-            serde_json::from_slice::<ObservationChildProjection>(&record.payload)
+        if let Some(terminal_state) = observation::terminal_child_state_for_event(&record.event_type)
         {
-            by_child.insert(projection.child_task_id.clone(), projection);
+            if let Some(terminal_task_id) =
+                observation::resolve_event_task_id(&record.task_id, &record.payload)
+            {
+                let parents: std::collections::BTreeMap<String, String> = by_child
+                    .values()
+                    .map(|p| (p.child_task_id.clone(), p.parent_task_id.clone()))
+                    .collect();
+                for projection in by_child.values_mut() {
+                    if !observation::is_terminal_child_state(projection.state)
+                        && (projection.child_task_id == terminal_task_id
+                            || projection.parent_task_id == terminal_task_id
+                            || observation::projection_root_task(
+                                &projection.child_task_id,
+                                &parents,
+                            ) == terminal_task_id)
+                    {
+                        projection.state = terminal_state;
+                    }
+                }
+            }
         }
     }
     by_child.into_values().collect()
