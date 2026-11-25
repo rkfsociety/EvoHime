@@ -332,9 +332,10 @@ export function stepTrafficSimulation(
 
     if (!blockedBySignal && !blockedByAhead) {
       let crossedSegment = false
+      let curSegLen = segLen
       vehicle.segmentProgressPx += stepPx
-      while (vehicle.segmentProgressPx >= segLen) {
-        vehicle.segmentProgressPx -= segLen
+      while (vehicle.segmentProgressPx >= curSegLen) {
+        vehicle.segmentProgressPx -= curSegLen
         vehicle.segmentIndex += 1
         crossedSegment = true
         if (vehicle.segmentIndex >= vehicle.waypoints.length - 1) {
@@ -348,9 +349,13 @@ export function stepTrafficSimulation(
           vehicle.segmentProgressPx = 0
           break
         }
-        const nFrom = graph.nodes.get(vehicle.waypoints[vehicle.segmentIndex] ?? '')
-        const nTo = graph.nodes.get(vehicle.waypoints[vehicle.segmentIndex + 1] ?? '')
+        const nFromId = vehicle.waypoints[vehicle.segmentIndex] ?? ''
+        const nToId = vehicle.waypoints[vehicle.segmentIndex + 1] ?? ''
+        const nFrom = graph.nodes.get(nFromId)
+        const nTo = graph.nodes.get(nToId)
         if (!nFrom || !nTo) break
+        const nEdge = graph.adjacency.get(nFromId)?.find((item) => item.toId === nToId)?.edge
+        curSegLen = Math.max(1, nEdge?.length ?? Math.hypot(nTo.x - nFrom.x, nTo.y - nFrom.y))
       }
 
       if (crossedSegment) {
