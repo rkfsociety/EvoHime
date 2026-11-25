@@ -65,6 +65,7 @@ export interface HiveCitySceneProps {
   readonly suppressLegacyPanorama?: boolean | undefined
   readonly activeAgents?: readonly HiveCityAgentHint[] | undefined
   readonly queenOptimized?: boolean | undefined
+  readonly onDispatchArrived?: ((dispatchId: string) => void) | undefined
 }
 
 interface AnimatedCellPose {
@@ -142,7 +143,8 @@ export function HiveCityScene({
   world: worldProp,
   queenWorking = false,
   queenOverlay,
-  timeScale = 1
+  timeScale = 1,
+  onDispatchArrived
 }: HiveCitySceneProps): React.JSX.Element {
   const normalizedStatus = status.trim() || 'idle'
   const world = useMemo(
@@ -170,12 +172,14 @@ export function HiveCityScene({
   const sectorArcsRef = useRef(sectorArcs)
   const roadGraphRef = useRef(roadGraph)
   const timeScaleRef = useRef(timeScale)
+  const onDispatchArrivedRef = useRef(onDispatchArrived)
 
   worldRef.current = world
   placementsRef.current = placements
   sectorArcsRef.current = sectorArcs
   roadGraphRef.current = roadGraph
   timeScaleRef.current = timeScale
+  onDispatchArrivedRef.current = onDispatchArrived
 
   const [zoomUi, setZoomUi] = useState(0.45)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -273,7 +277,8 @@ export function HiveCityScene({
         currentGraph,
         dtSec,
         simTimeSec,
-        currentScale
+        currentScale,
+        onDispatchArrivedRef.current
       )
 
       const dpr = window.devicePixelRatio || 1

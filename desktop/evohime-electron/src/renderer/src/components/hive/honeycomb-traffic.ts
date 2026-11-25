@@ -183,7 +183,8 @@ export function stepTrafficSimulation(
   graph: RoadGraph,
   dtSec: number,
   timeSec: number,
-  timeScale: number
+  timeScale: number,
+  onDispatchArrived?: (dispatchId: string) => void
 ): void {
   if (world.paused || world.activeDispatches.length === 0) {
     state.vehicles.clear()
@@ -215,8 +216,9 @@ export function stepTrafficSimulation(
       spawnIndex += 1
       continue
     }
-    // Сдвигаем стартовый сегмент по маршруту, чтобы машины не скапливались в одной точке на выходе.
-    const initialSegment = (spawnIndex * 2) % (waypoints.length - 1)
+    // При одноразовых реальных поездках машина выезжает строго от старта (Цитадели);
+    // в режиме бесконечной симуляции сдвигаем старт, чтобы машины не скапливались.
+    const initialSegment = onDispatchArrived ? 0 : (spawnIndex * 2) % (waypoints.length - 1)
     const startNode = graph.nodes.get(waypoints[initialSegment] ?? '')
     const nextNode = graph.nodes.get(waypoints[initialSegment + 1] ?? '')
     if (!startNode || !nextNode) {
@@ -224,7 +226,7 @@ export function stepTrafficSimulation(
       continue
     }
     const initialSegLen = Math.max(1, Math.hypot(nextNode.x - startNode.x, nextNode.y - startNode.y))
-    const initialProgress = Math.min(initialSegLen * 0.45, ((spawnIndex % 3) + 1) * 18)
+    const initialProgress = onDispatchArrived ? 0 : Math.min(initialSegLen * 0.45, ((spawnIndex % 3) + 1) * 18)
     const initEdge = graph.adjacency.get(waypoints[initialSegment] ?? '')?.find((e) => e.toId === waypoints[initialSegment + 1])?.edge
     const initPose = computeLanePose(
       startNode.x,
@@ -256,6 +258,7 @@ export function stepTrafficSimulation(
   }
 
   const stepPx = VEHICLE_SPEED_PX_PER_SEC * Math.min(0.1, dtSec) * Math.min(20, Math.max(1, timeScale))
+  const arrivedDispatchIds: string[] = []
 
   for (const vehicle of state.vehicles.values()) {
     const fromId = vehicle.waypoints[vehicle.segmentIndex]
@@ -335,6 +338,10 @@ export function stepTrafficSimulation(
         vehicle.segmentIndex += 1
         crossedSegment = true
         if (vehicle.segmentIndex >= vehicle.waypoints.length - 1) {
+          if (onDispatchArrived) {
+            arrivedDispatchIds.push(vehicle.dispatchId)
+            break
+          }
           // Вместо телепорта на старт машина плавно разворачивается и едет обратно по маршруту.
           vehicle.waypoints = [...vehicle.waypoints].reverse()
           vehicle.segmentIndex = 0
@@ -416,6 +423,13 @@ export function stepTrafficSimulation(
         }
         vehicle.opacity = opacity
       }
+    }
+  }
+
+  if (onDispatchArrived && arrivedDispatchIds.length > 0) {
+    for (const dispatchId of arrivedDispatchIds) {
+      state.vehicles.delete(dispatchId)
+      onDispatchArrived(dispatchId)
     }
   }
 }

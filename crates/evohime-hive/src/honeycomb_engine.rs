@@ -127,13 +127,14 @@ impl HoneycombEngine {
     ) -> Result<(), HiveDbError> {
         let paused = !autonomy_enabled || waiting_for_limits;
         let next_queen_working = !paused && queen_working;
+        let should_park = paused || !next_queen_working;
         let changed = self.world.paused != paused
             || self.world.queen_working != next_queen_working
-            || (paused && !self.world.active_dispatches.is_empty());
+            || (should_park && !self.world.active_dispatches.is_empty());
 
         self.world.paused = paused;
         self.world.queen_working = next_queen_working;
-        if paused {
+        if should_park {
             self.world.active_dispatches.clear();
             for city in &mut self.world.cities {
                 for sector in &mut city.sectors {

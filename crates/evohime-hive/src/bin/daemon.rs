@@ -1889,21 +1889,7 @@ impl HoneycombRuntime {
                 let _ = guard.remodel_city_from_checkout(&city_id, &path, now_ms);
             }
 
-            // Стартовый триггер разведки запускается только при явно включённой автономке.
-            let primary_has_sectors = guard
-                .world()
-                .cities
-                .first()
-                .map(|c| !c.sectors.is_empty())
-                .unwrap_or(false);
-            if state.proactive_evolution_enabled && !primary_has_sectors {
-                let _ = guard.dispatch_relay_step(
-                    evohime_hive::honeycomb_engine::RelayStage::Execution,
-                    "разведка проекта",
-                    None,
-                    now_ms,
-                );
-            } else if !state.active_agents.is_empty() {
+            if !state.active_agents.is_empty() {
                 for agent in state.active_agents.iter().take(4) {
                     let stage = if agent.role.contains("аналит") || agent.role.contains("analyst")
                     {
