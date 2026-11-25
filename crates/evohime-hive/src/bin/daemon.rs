@@ -667,6 +667,8 @@ fn snapshot_to_settings(snapshot: &HiveStateSnapshot) -> HiveSettings {
         hive_quota_reset_utc_midnight: snapshot.hive_quota_reset_utc_midnight,
         hive_fallback_quota_reset_utc_midnight: snapshot.hive_fallback_quota_reset_utc_midnight,
         proactive_evolution_enabled: snapshot.proactive_evolution_enabled,
+        hive_provider_configs: snapshot.hive_provider_configs.clone(),
+        hive_fallback_provider_configs: snapshot.hive_fallback_provider_configs.clone(),
         ..HiveSettings::default()
     }
 }

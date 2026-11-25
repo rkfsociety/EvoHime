@@ -436,6 +436,14 @@ pub struct HiveStateSnapshot {
     /// Whether the fallback route token quota resets at UTC midnight.
     #[serde(default)]
     pub hive_fallback_quota_reset_utc_midnight: bool,
+    /// Per-provider saved settings for the primary Hive route.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub hive_provider_configs:
+        std::collections::BTreeMap<String, crate::settings::HiveProviderRouteSettings>,
+    /// Per-provider saved settings for the fallback Hive route.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub hive_fallback_provider_configs:
+        std::collections::BTreeMap<String, crate::settings::HiveProviderRouteSettings>,
     /// Whether proactive evolution via the autonomous observation cycle is enabled.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
@@ -613,6 +621,8 @@ impl HiveStateSnapshot {
             hive_fallback_token_quota_configured: settings.hive_fallback_token_quota_configured,
             hive_quota_reset_utc_midnight: settings.hive_quota_reset_utc_midnight,
             hive_fallback_quota_reset_utc_midnight: settings.hive_fallback_quota_reset_utc_midnight,
+            hive_provider_configs: settings.effective_provider_configs(false),
+            hive_fallback_provider_configs: settings.effective_provider_configs(true),
             proactive_evolution_enabled: settings.proactive_evolution_enabled,
             local_observation_interval_secs: settings.local_observation_interval_secs,
             llm_dispatch_interval_secs: settings.llm_dispatch_interval_secs,

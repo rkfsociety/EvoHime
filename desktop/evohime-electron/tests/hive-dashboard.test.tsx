@@ -1529,6 +1529,66 @@ describe('hive dashboard', () => {
     expect(within(dialog).getByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeTruthy()
   })
 
+  it('ui_switches_saved_model_and_limits_per_provider', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event(
+            'hive_state.snapshot',
+            snapshot({
+              hive_provider_profile: 'literouter',
+              hive_model: 'glm-5.3-flash-cheap:free',
+              hive_provider_limits: { rpm: 10, rph: 0, rp4h: 0, rpd: 720 },
+              hive_provider_configs: {
+                literouter: {
+                  model: 'glm-5.3-flash-cheap:free',
+                  limits: { rpm: 10, rph: 0, rp4h: 0, rpd: 720 },
+                  daily_token_quota: 50000,
+                  quota_reset_utc_midnight: false,
+                  reset_schedule: { enabled: false, time_minutes: 0, utc_offset_hours: 0 },
+                  token_quota_configured: true
+                },
+                deepseek: {
+                  model: 'deepseek-chat',
+                  limits: { rpm: 60, rph: 0, rp4h: 0, rpd: 0 },
+                  daily_token_quota: 0,
+                  quota_reset_utc_midnight: false,
+                  reset_schedule: { enabled: false, time_minutes: 0, utc_offset_hours: 0 },
+                  token_quota_configured: false
+                }
+              }
+            })
+          )
+        ]}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+
+    const providerSelect = within(dialog).getByLabelText('Провайдер Улья') as HTMLSelectElement
+    const modelSelect = within(dialog).getByLabelText('Модель Улья') as HTMLSelectElement
+    const primaryLimitsGroup = within(dialog).getByRole('group', { name: 'Лимиты основного маршрута Улья' })
+    const primaryRpmInput = within(primaryLimitsGroup).getByLabelText('Лимиты основного маршрута Улья RPM') as HTMLInputElement
+
+    expect(providerSelect.value).toBe('literouter')
+    expect(modelSelect.value).toBe('glm-5.3-flash-cheap:free')
+    expect(primaryRpmInput.value).toBe('10')
+
+    await userEvent.selectOptions(providerSelect, 'deepseek')
+    expect(modelSelect.value).toBe('deepseek-chat')
+    expect(primaryRpmInput.value).toBe('60')
+
+    await userEvent.selectOptions(providerSelect, 'openai_responses')
+    expect(modelSelect.value).toBe('')
+    expect(primaryRpmInput.value).toBe('0')
+
+    await userEvent.selectOptions(providerSelect, 'literouter')
+    expect(modelSelect.value).toBe('glm-5.3-flash-cheap:free')
+    expect(primaryRpmInput.value).toBe('10')
+  })
+
   it('ui_shows_api_key_input_when_editing', async () => {
     providerOverrides = { hiveApiKeyConfigured: true, hiveApiKeysConfigured: { rout: true } }
     render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
@@ -1665,6 +1725,8 @@ describe('hive dashboard', () => {
         && (call.payload as { key?: string }).key === 'hive_request_limits')
       expect(save).toBeTruthy()
       expect(JSON.parse((save?.payload as { value: string }).value)).toEqual({
+        primary_profile: 'rout',
+        fallback_profile: null,
         primary_limits: { rpm: 12, rph: 720, rp4h: 2880, rpd: 17280 },
         fallback_limits: { rpm: 0, rph: 0, rp4h: 0, rpd: 0 },
         primary_token_quota: 500_000,

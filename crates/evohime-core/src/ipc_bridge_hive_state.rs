@@ -3,6 +3,10 @@ use super::*;
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HiveRequestLimitsUpdate {
+    #[serde(default)]
+    primary_profile: Option<String>,
+    #[serde(default)]
+    fallback_profile: Option<String>,
     primary_limits: evohime_model_gateway::ProviderLimits,
     fallback_limits: evohime_model_gateway::ProviderLimits,
     primary_token_quota: u64,
@@ -139,17 +143,32 @@ impl IpcBridge {
     /// Validates and persists the isolated provider profile used by Hive.
     pub(crate) async fn save_hive_provider_profile(&self, value: &str) -> Result<Vec<u8>, String> {
         let mut settings = self.journal.hive_settings().await?;
+        let previous_key = crate::hive_settings::HiveSettings::normalize_provider_config_key(
+            settings.hive_provider_profile.as_deref(),
+            false,
+        );
+        settings.sync_active_to_provider_config(false);
         let trimmed = value.trim();
         settings.hive_provider_profile = if trimmed.is_empty() {
             None
         } else {
             Some(trimmed.to_owned())
         };
+        let next_key = crate::hive_settings::HiveSettings::normalize_provider_config_key(
+            settings.hive_provider_profile.as_deref(),
+            false,
+        );
+        if next_key != previous_key {
+            if let Some(key) = next_key.as_deref() {
+                settings.apply_provider_config_to_active(key, false);
+            }
+        }
         if let Err(error) = settings.validate() {
             return serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
                 "setting_key": "hive_provider_profile",
                 "hive_provider_profile": settings.hive_provider_profile,
+                "hive_model": settings.hive_model,
                 "error_code": error.to_string(),
             }))
             .map_err(|serialization_error| serialization_error.to_string());
@@ -159,6 +178,7 @@ impl IpcBridge {
             "accepted": true,
             "setting_key": "hive_provider_profile",
             "hive_provider_profile": settings.hive_provider_profile,
+            "hive_model": settings.hive_model,
             "error_code": "",
         }))
         .map_err(|error| error.to_string())
@@ -173,6 +193,7 @@ impl IpcBridge {
         } else {
             Some(trimmed.to_owned())
         };
+        settings.sync_active_to_provider_config(false);
         if let Err(error) = settings.validate() {
             return serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
@@ -198,17 +219,36 @@ impl IpcBridge {
         value: &str,
     ) -> Result<Vec<u8>, String> {
         let mut settings = self.journal.hive_settings().await?;
+        let previous_key = crate::hive_settings::HiveSettings::normalize_provider_config_key(
+            settings.hive_fallback_provider_profile.as_deref(),
+            true,
+        );
+        settings.sync_active_to_provider_config(true);
         let trimmed = value.trim();
         settings.hive_fallback_provider_profile = if trimmed.is_empty() {
             None
         } else {
             Some(trimmed.to_owned())
         };
+        let next_key = crate::hive_settings::HiveSettings::normalize_provider_config_key(
+            settings.hive_fallback_provider_profile.as_deref(),
+            true,
+        );
+        if next_key != previous_key {
+            match next_key.as_deref() {
+                Some(key) => settings.apply_provider_config_to_active(key, true),
+                None => settings.set_active_provider_config(
+                    crate::hive_settings::HiveProviderRouteSettings::default(),
+                    true,
+                ),
+            }
+        }
         if let Err(error) = settings.validate() {
             return serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
                 "setting_key": "hive_fallback_provider_profile",
                 "hive_fallback_provider_profile": settings.hive_fallback_provider_profile,
+                "hive_fallback_model": settings.hive_fallback_model,
                 "error_code": error.to_string(),
             }))
             .map_err(|serialization_error| serialization_error.to_string());
@@ -218,6 +258,7 @@ impl IpcBridge {
             "accepted": true,
             "setting_key": "hive_fallback_provider_profile",
             "hive_fallback_provider_profile": settings.hive_fallback_provider_profile,
+            "hive_fallback_model": settings.hive_fallback_model,
             "error_code": "",
         }))
         .map_err(|error| error.to_string())
@@ -232,6 +273,7 @@ impl IpcBridge {
         } else {
             Some(trimmed.to_owned())
         };
+        settings.sync_active_to_provider_config(true);
         if let Err(error) = settings.validate() {
             return serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
@@ -357,37 +399,101 @@ impl IpcBridge {
             return self.hive_limit_rejected(key, "invalid request limits payload");
         };
         let mut settings = self.journal.hive_settings().await?;
-        settings.hive_provider_limits = update.primary_limits;
-        settings.hive_fallback_provider_limits = update.fallback_limits;
-        settings.hive_daily_token_quota = update.primary_token_quota;
-        settings.hive_fallback_daily_token_quota = update.fallback_token_quota;
-        settings.hive_quota_reset_utc_midnight = update.primary_quota_reset_utc_midnight;
-        settings.hive_fallback_quota_reset_utc_midnight = update.fallback_quota_reset_utc_midnight;
-        settings.hive_reset_schedule = update.primary_reset_schedule.unwrap_or(
+        let active_primary_key = crate::hive_settings::HiveSettings::normalize_provider_config_key(
+            settings.hive_provider_profile.as_deref(),
+            false,
+        )
+        .unwrap_or_else(|| "rout".to_owned());
+        let target_primary_key = crate::hive_settings::HiveSettings::normalize_provider_config_key(
+            update.primary_profile.as_deref(),
+            false,
+        )
+        .unwrap_or_else(|| active_primary_key.clone());
+        let primary_reset_schedule = update.primary_reset_schedule.unwrap_or(
             evohime_model_gateway::config::LimitResetSchedule {
                 enabled: update.primary_quota_reset_utc_midnight,
                 time_minutes: 0,
                 utc_offset_hours: 0,
             },
         );
-        settings.hive_fallback_reset_schedule = update.fallback_reset_schedule.unwrap_or(
+        let primary_quota_reset_utc_midnight =
+            update.primary_quota_reset_utc_midnight || primary_reset_schedule.enabled;
+        let primary_token_quota_configured = update.primary_token_quota > 0;
+
+        let mut primary_entry = settings
+            .hive_provider_configs
+            .get(&target_primary_key)
+            .cloned()
+            .unwrap_or_else(|| {
+                if target_primary_key == active_primary_key {
+                    settings.active_provider_config(false)
+                } else {
+                    crate::hive_settings::HiveProviderRouteSettings::default()
+                }
+            });
+        primary_entry.limits = update.primary_limits;
+        primary_entry.daily_token_quota = update.primary_token_quota;
+        primary_entry.quota_reset_utc_midnight = primary_quota_reset_utc_midnight;
+        primary_entry.reset_schedule = primary_reset_schedule;
+        primary_entry.token_quota_configured = primary_token_quota_configured;
+        settings
+            .hive_provider_configs
+            .insert(target_primary_key.clone(), primary_entry.clone());
+        if update.primary_profile.is_none() || target_primary_key == active_primary_key {
+            settings.hive_provider_limits = primary_entry.limits;
+            settings.hive_daily_token_quota = primary_entry.daily_token_quota;
+            settings.hive_quota_reset_utc_midnight = primary_entry.quota_reset_utc_midnight;
+            settings.hive_reset_schedule = primary_entry.reset_schedule;
+            settings.hive_token_quota_configured = primary_entry.token_quota_configured;
+        }
+
+        let active_fallback_key = crate::hive_settings::HiveSettings::normalize_provider_config_key(
+            settings.hive_fallback_provider_profile.as_deref(),
+            true,
+        );
+        let target_fallback_key = update
+            .fallback_profile
+            .as_deref()
+            .and_then(|p| crate::hive_settings::HiveSettings::normalize_provider_config_key(Some(p), true))
+            .or_else(|| active_fallback_key.clone());
+        let fallback_reset_schedule = update.fallback_reset_schedule.unwrap_or(
             evohime_model_gateway::config::LimitResetSchedule {
                 enabled: update.fallback_quota_reset_utc_midnight,
                 time_minutes: 0,
                 utc_offset_hours: 0,
             },
         );
-        if settings.hive_reset_schedule.enabled {
-            settings.hive_quota_reset_utc_midnight = true;
+        let fallback_quota_reset_utc_midnight =
+            update.fallback_quota_reset_utc_midnight || fallback_reset_schedule.enabled;
+        let fallback_token_quota_configured = update.fallback_token_quota > 0;
+        if let Some(ref fb_key) = target_fallback_key {
+            let mut fb_entry = settings
+                .hive_fallback_provider_configs
+                .get(fb_key)
+                .cloned()
+                .unwrap_or_else(|| {
+                    if Some(fb_key) == active_fallback_key.as_ref() {
+                        settings.active_provider_config(true)
+                    } else {
+                        crate::hive_settings::HiveProviderRouteSettings::default()
+                    }
+                });
+            fb_entry.limits = update.fallback_limits;
+            fb_entry.daily_token_quota = update.fallback_token_quota;
+            fb_entry.quota_reset_utc_midnight = fallback_quota_reset_utc_midnight;
+            fb_entry.reset_schedule = fallback_reset_schedule;
+            fb_entry.token_quota_configured = fallback_token_quota_configured;
+            settings
+                .hive_fallback_provider_configs
+                .insert(fb_key.clone(), fb_entry);
         }
-        if settings.hive_fallback_reset_schedule.enabled {
-            settings.hive_fallback_quota_reset_utc_midnight = true;
+        if update.fallback_profile.is_none() || target_fallback_key == active_fallback_key {
+            settings.hive_fallback_provider_limits = update.fallback_limits;
+            settings.hive_fallback_daily_token_quota = update.fallback_token_quota;
+            settings.hive_fallback_quota_reset_utc_midnight = fallback_quota_reset_utc_midnight;
+            settings.hive_fallback_reset_schedule = fallback_reset_schedule;
+            settings.hive_fallback_token_quota_configured = fallback_token_quota_configured;
         }
-        // Zero means "no quota": a configured flag must never claim a limit
-        // that nothing enforces.
-        settings.hive_token_quota_configured = settings.hive_daily_token_quota > 0;
-        settings.hive_fallback_token_quota_configured =
-            settings.hive_fallback_daily_token_quota > 0;
         if let Err(error) = settings.validate() {
             return self.hive_limit_rejected(key, &error.to_string());
         }
@@ -407,9 +513,11 @@ impl IpcBridge {
         };
         let (setting_key, output_key) = if key == "hive_provider_limits" {
             settings.hive_provider_limits = limits;
+            settings.sync_active_to_provider_config(false);
             (key, "hive_provider_limits")
         } else {
             settings.hive_fallback_provider_limits = limits;
+            settings.sync_active_to_provider_config(true);
             (key, "hive_fallback_provider_limits")
         };
         self.journal.save_hive_settings(&settings).await?;

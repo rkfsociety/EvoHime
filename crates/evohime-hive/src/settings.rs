@@ -75,6 +75,29 @@ pub struct DelegationComplexity {
     pub independent_areas: u32,
 }
 
+/// Per-provider route settings stored for a specific primary or fallback Hive provider.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct HiveProviderRouteSettings {
+    /// Optional model override for this provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// User-defined request caps for this provider.
+    #[serde(default)]
+    pub limits: ProviderLimits,
+    /// Optional daily token quota for this provider (`0` means unlimited).
+    #[serde(default)]
+    pub daily_token_quota: u64,
+    /// Whether the token quota resets at UTC midnight.
+    #[serde(default)]
+    pub quota_reset_utc_midnight: bool,
+    /// Daily reset schedule for this provider.
+    #[serde(default)]
+    pub reset_schedule: evohime_model_gateway::config::LimitResetSchedule,
+    /// Whether a token quota was explicitly configured.
+    #[serde(default)]
+    pub token_quota_configured: bool,
+}
+
 /// Safety ceiling for queen-driven sub-agent fan-out.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -155,6 +178,12 @@ pub struct HiveSettings {
     /// Whether the autonomous observation cycle may proactively pick uncompleted roadmap items when idle.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
+    /// Per-provider saved settings for the primary Hive route, keyed by normalized provider profile.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub hive_provider_configs: std::collections::BTreeMap<String, HiveProviderRouteSettings>,
+    /// Per-provider saved settings for the fallback Hive route, keyed by normalized provider profile.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub hive_fallback_provider_configs: std::collections::BTreeMap<String, HiveProviderRouteSettings>,
 }
 
 fn default_schema_version() -> u32 {
@@ -206,6 +235,8 @@ impl Default for HiveSettings {
             hive_token_quota_configured: false,
             hive_fallback_token_quota_configured: false,
             proactive_evolution_enabled: false,
+            hive_provider_configs: std::collections::BTreeMap::new(),
+            hive_fallback_provider_configs: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -227,6 +258,128 @@ impl HiveSettings {
             schedule.enabled = true;
         }
         schedule
+    }
+
+    /// Normalizes a Hive provider profile name into the canonical map key.
+    ///
+    /// For the primary route (`is_fallback = false`), an empty or omitted profile
+    /// resolves to `"rout"`. For the fallback route (`is_fallback = true`), an
+    /// empty or omitted profile returns `None` (disabled).
+    pub fn normalize_provider_config_key(profile: Option<&str>, is_fallback: bool) -> Option<String> {
+        let normalized = profile
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_ascii_lowercase);
+        if is_fallback {
+            normalized
+        } else {
+            Some(normalized.unwrap_or_else(|| "rout".to_owned()))
+        }
+    }
+
+    /// Captures the currently active primary or fallback route settings as a
+    /// `HiveProviderRouteSettings` snapshot.
+    pub fn active_provider_config(&self, is_fallback: bool) -> HiveProviderRouteSettings {
+        if is_fallback {
+            HiveProviderRouteSettings {
+                model: self.hive_fallback_model.clone(),
+                limits: self.hive_fallback_provider_limits,
+                daily_token_quota: self.hive_fallback_daily_token_quota,
+                quota_reset_utc_midnight: self.hive_fallback_quota_reset_utc_midnight,
+                reset_schedule: self.hive_fallback_reset_schedule,
+                token_quota_configured: self.hive_fallback_token_quota_configured,
+            }
+        } else {
+            HiveProviderRouteSettings {
+                model: self.hive_model.clone(),
+                limits: self.hive_provider_limits,
+                daily_token_quota: self.hive_daily_token_quota,
+                quota_reset_utc_midnight: self.hive_quota_reset_utc_midnight,
+                reset_schedule: self.hive_reset_schedule,
+                token_quota_configured: self.hive_token_quota_configured,
+            }
+        }
+    }
+
+    /// Applies a `HiveProviderRouteSettings` entry to the active primary or fallback fields.
+    pub fn set_active_provider_config(
+        &mut self,
+        config: HiveProviderRouteSettings,
+        is_fallback: bool,
+    ) {
+        if is_fallback {
+            self.hive_fallback_model = config.model;
+            self.hive_fallback_provider_limits = config.limits;
+            self.hive_fallback_daily_token_quota = config.daily_token_quota;
+            self.hive_fallback_quota_reset_utc_midnight = config.quota_reset_utc_midnight;
+            self.hive_fallback_reset_schedule = config.reset_schedule;
+            self.hive_fallback_token_quota_configured = config.token_quota_configured;
+        } else {
+            self.hive_model = config.model;
+            self.hive_provider_limits = config.limits;
+            self.hive_daily_token_quota = config.daily_token_quota;
+            self.hive_quota_reset_utc_midnight = config.quota_reset_utc_midnight;
+            self.hive_reset_schedule = config.reset_schedule;
+            self.hive_token_quota_configured = config.token_quota_configured;
+        }
+    }
+
+    /// Saves the currently active primary or fallback route settings under its
+    /// normalized provider profile key.
+    pub fn sync_active_to_provider_config(&mut self, is_fallback: bool) {
+        let profile = if is_fallback {
+            self.hive_fallback_provider_profile.as_deref()
+        } else {
+            self.hive_provider_profile.as_deref()
+        };
+        let Some(key) = Self::normalize_provider_config_key(profile, is_fallback) else {
+            return;
+        };
+        let active = self.active_provider_config(is_fallback);
+        if is_fallback {
+            self.hive_fallback_provider_configs.insert(key, active);
+        } else {
+            self.hive_provider_configs.insert(key, active);
+        }
+    }
+
+    /// Loads saved per-provider settings for `key` into the active primary or
+    /// fallback fields, falling back to defaults when none are stored yet.
+    pub fn apply_provider_config_to_active(&mut self, key: &str, is_fallback: bool) {
+        let config = if is_fallback {
+            self.hive_fallback_provider_configs
+                .get(key)
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            self.hive_provider_configs
+                .get(key)
+                .cloned()
+                .unwrap_or_default()
+        };
+        self.set_active_provider_config(config, is_fallback);
+    }
+
+    /// Returns the per-provider config map enriched with the currently active
+    /// route's settings if that provider does not yet have an explicit entry.
+    pub fn effective_provider_configs(
+        &self,
+        is_fallback: bool,
+    ) -> std::collections::BTreeMap<String, HiveProviderRouteSettings> {
+        let mut map = if is_fallback {
+            self.hive_fallback_provider_configs.clone()
+        } else {
+            self.hive_provider_configs.clone()
+        };
+        let profile = if is_fallback {
+            self.hive_fallback_provider_profile.as_deref()
+        } else {
+            self.hive_provider_profile.as_deref()
+        };
+        if let Some(key) = Self::normalize_provider_config_key(profile, is_fallback) {
+            map.insert(key, self.active_provider_config(is_fallback));
+        }
+        map
     }
 
     /// Validates persisted or freshly submitted settings.
@@ -300,6 +453,15 @@ impl HiveSettings {
         }
         if !self.hive_reset_schedule.is_valid() || !self.hive_fallback_reset_schedule.is_valid() {
             return Err(HiveSettingsError::InvalidProviderLimit);
+        }
+        for entry in self
+            .hive_provider_configs
+            .values()
+            .chain(self.hive_fallback_provider_configs.values())
+        {
+            if entry.daily_token_quota > 1_000_000_000_000 || !entry.reset_schedule.is_valid() {
+                return Err(HiveSettingsError::InvalidProviderLimit);
+            }
         }
         if let Some(eva_path) = self.eva_workspace_path() {
             validate_eva_workspace_path(eva_path)?;
