@@ -34,7 +34,7 @@ import {
 export const MAX_KEY_CHARS = 512
 export const MAX_MODEL_CHARS = 128
 export const MAX_URL_CHARS = 512
-const STORE_VERSION = 8
+const STORE_VERSION = 9
 const MAX_STORED_SECRET_CHARS = 8_192
 const MAX_REVOKED_CREDENTIAL_BINDINGS = 128
 
@@ -81,8 +81,8 @@ interface StoredDocument {
   readonly profiles: Readonly<Partial<Record<ProviderKind, StoredProfile>>>
   readonly compatibleProfiles: Readonly<Partial<Record<ProviderProfileId, StoredProfile>>>
   readonly codexModel: string
-  readonly hiveApiKeySecret: string
-  readonly hiveFallbackApiKeySecret: string
+  readonly hiveApiKeys: Readonly<Partial<Record<string, string>>>
+  readonly hiveFallbackApiKeys: Readonly<Partial<Record<string, string>>>
   readonly freeAccessRoutingMode: FreeAccessRoutingMode
   readonly allowPaidFallback: boolean
   readonly revokedCredentialBindings: readonly string[]
@@ -93,8 +93,8 @@ const EMPTY: StoredDocument = {
   profiles: {},
   compatibleProfiles: {},
   codexModel: '',
-  hiveApiKeySecret: '',
-  hiveFallbackApiKeySecret: '',
+  hiveApiKeys: {},
+  hiveFallbackApiKeys: {},
   freeAccessRoutingMode: 'any',
   allowPaidFallback: false,
   revokedCredentialBindings: []
@@ -287,6 +287,8 @@ export class ProviderStore {
 
   private summaryFor(document: StoredDocument): ProviderSummary {
     const active = profileFor(document, document.provider)
+    const hiveApiKeysConfigured = configuredHiveKeysMap(document.hiveApiKeys)
+    const hiveFallbackApiKeysConfigured = configuredHiveKeysMap(document.hiveFallbackApiKeys)
     return {
       provider: document.provider,
       model: active.model,
@@ -297,8 +299,10 @@ export class ProviderStore {
       ...(active.accountId ? { accountId: active.accountId } : {}),
       freeAccessRoutingMode: document.freeAccessRoutingMode,
       allowPaidFallback: document.allowPaidFallback,
-      hiveApiKeyConfigured: document.hiveApiKeySecret.trim().length > 0,
-      hiveFallbackApiKeyConfigured: document.hiveFallbackApiKeySecret.trim().length > 0,
+      hiveApiKeyConfigured: Object.keys(hiveApiKeysConfigured).length > 0,
+      hiveFallbackApiKeyConfigured: Object.keys(hiveFallbackApiKeysConfigured).length > 0,
+      hiveApiKeysConfigured,
+      hiveFallbackApiKeysConfigured,
       requestPacing: active.requestPacing,
       modelRateLimits: active.modelRateLimits,
       profiles: Object.fromEntries(PROVIDER_KINDS.map((kind) => (
@@ -412,8 +416,8 @@ export class ProviderStore {
           }
         : current.compatibleProfiles,
       codexModel: current.codexModel,
-      hiveApiKeySecret: current.hiveApiKeySecret,
-      hiveFallbackApiKeySecret: current.hiveFallbackApiKeySecret,
+      hiveApiKeys: current.hiveApiKeys,
+      hiveFallbackApiKeys: current.hiveFallbackApiKeys,
       freeAccessRoutingMode: isFreeAccessRoutingMode(update.freeAccessRoutingMode)
         ? update.freeAccessRoutingMode
         : current.freeAccessRoutingMode,
@@ -520,44 +524,52 @@ export class ProviderStore {
   }
 
   /**
-   * Persists or clears the isolated API key for Hive encrypted via OS cipher.
-   * Returns false when the key is invalid or OS encryption is unavailable.
+   * Persists or clears the isolated API key for a specific Hive provider encrypted via OS cipher.
+   * Returns false when the provider/key is invalid or OS encryption is unavailable.
    */
-  saveHiveApiKey(apiKey: string): boolean {
+  saveHiveApiKey(apiKey: string, provider?: string): boolean {
+    const providerKey = normalizeHiveProviderKey(provider)
+    if (providerKey === null) return false
     const normalized = normalizeApiKey(apiKey)
     if (normalized === null) return false
     const current = this.readDocument()
+    const nextKeys = { ...current.hiveApiKeys }
     if (normalized.length === 0) {
-      if (current.hiveApiKeySecret.length === 0) return true
-      this.write({ ...current, hiveApiKeySecret: '' })
+      if (!(providerKey in nextKeys)) return true
+      delete nextKeys[providerKey]
+      this.write({ ...current, hiveApiKeys: nextKeys })
       return true
     }
     if (!this.cipher.isAvailable()) {
       return false
     }
-    const hiveApiKeySecret = this.cipher.encrypt(normalized).toString('base64')
-    this.write({ ...current, hiveApiKeySecret })
+    nextKeys[providerKey] = this.cipher.encrypt(normalized).toString('base64')
+    this.write({ ...current, hiveApiKeys: nextKeys })
     return true
   }
 
   /**
-   * Persists or clears the isolated fallback API key for Hive encrypted via OS cipher.
-   * Returns false when the key is invalid or OS encryption is unavailable.
+   * Persists or clears the isolated fallback API key for a specific Hive provider encrypted via OS cipher.
+   * Returns false when the provider/key is invalid or OS encryption is unavailable.
    */
-  saveHiveFallbackApiKey(apiKey: string): boolean {
+  saveHiveFallbackApiKey(apiKey: string, provider?: string): boolean {
+    const providerKey = normalizeHiveProviderKey(provider)
+    if (providerKey === null) return false
     const normalized = normalizeApiKey(apiKey)
     if (normalized === null) return false
     const current = this.readDocument()
+    const nextKeys = { ...current.hiveFallbackApiKeys }
     if (normalized.length === 0) {
-      if (current.hiveFallbackApiKeySecret.length === 0) return true
-      this.write({ ...current, hiveFallbackApiKeySecret: '' })
+      if (!(providerKey in nextKeys)) return true
+      delete nextKeys[providerKey]
+      this.write({ ...current, hiveFallbackApiKeys: nextKeys })
       return true
     }
     if (!this.cipher.isAvailable()) {
       return false
     }
-    const hiveFallbackApiKeySecret = this.cipher.encrypt(normalized).toString('base64')
-    this.write({ ...current, hiveFallbackApiKeySecret })
+    nextKeys[providerKey] = this.cipher.encrypt(normalized).toString('base64')
+    this.write({ ...current, hiveFallbackApiKeys: nextKeys })
     return true
   }
 
@@ -583,10 +595,20 @@ export class ProviderStore {
     }
     environment['MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON'] = JSON.stringify(profile.modelRateLimits)
     if (document.codexModel) environment['CODEX_MODEL'] = document.codexModel
-    const hiveKey = this.decryptSecret(document.hiveApiKeySecret)
-    if (hiveKey) environment['HIVE_API_KEY'] = hiveKey
-    const hiveFallbackKey = this.decryptSecret(document.hiveFallbackApiKeySecret)
-    if (hiveFallbackKey) environment['HIVE_FALLBACK_API_KEY'] = hiveFallbackKey
+    const decryptedHiveKeys = this.decryptHiveKeys(document.hiveApiKeys)
+    if (Object.keys(decryptedHiveKeys).length > 0) {
+      environment['HIVE_API_KEYS_JSON'] = JSON.stringify(decryptedHiveKeys)
+      if (decryptedHiveKeys['rout']) {
+        environment['HIVE_API_KEY'] = decryptedHiveKeys['rout']
+      }
+    }
+    const decryptedFallbackKeys = this.decryptHiveKeys(document.hiveFallbackApiKeys)
+    if (Object.keys(decryptedFallbackKeys).length > 0) {
+      environment['HIVE_FALLBACK_API_KEYS_JSON'] = JSON.stringify(decryptedFallbackKeys)
+      if (decryptedFallbackKeys['rout']) {
+        environment['HIVE_FALLBACK_API_KEY'] = decryptedFallbackKeys['rout']
+      }
+    }
     const additionalRoutes = this.collectAdditionalRoutes(document)
     if (Object.keys(additionalRoutes).length > 0) {
       environment['MODEL_ADDITIONAL_ROUTES_JSON'] = JSON.stringify(additionalRoutes)
@@ -687,6 +709,18 @@ export class ProviderStore {
     }
 
     return routes
+  }
+
+  private decryptHiveKeys(secrets: Readonly<Partial<Record<string, string>>>): Record<string, string> {
+    const result: Record<string, string> = {}
+    for (const [provider, secret] of Object.entries(secrets)) {
+      if (typeof secret !== 'string' || secret.length === 0) continue
+      const key = this.decryptSecret(secret)
+      if (key) {
+        result[provider] = key
+      }
+    }
+    return result
   }
 
   private decryptSecret(secret: string): string {
@@ -896,8 +930,14 @@ export class ProviderStore {
       }
     }
     const codexModel = normalizeModel(record['codexModel']) ?? ''
-    const hiveApiKeySecret = normalizeStoredSecret(record['hiveApiKeySecret'])
-    const hiveFallbackApiKeySecret = normalizeStoredSecret(record['hiveFallbackApiKeySecret'])
+    const hiveApiKeys = normalizeStoredHiveKeys(record['hiveApiKeys'])
+    const hiveFallbackApiKeys = normalizeStoredHiveKeys(record['hiveFallbackApiKeys'])
+    if (
+      normalizeStoredSecret(record['hiveApiKeySecret']).length > 0 ||
+      normalizeStoredSecret(record['hiveFallbackApiKeySecret']).length > 0
+    ) {
+      needsMigration = true
+    }
     const freeAccessRoutingMode = isFreeAccessRoutingMode(record['freeAccessRoutingMode'])
       ? record['freeAccessRoutingMode']
       : 'any'
@@ -912,7 +952,7 @@ export class ProviderStore {
       JSON.stringify(revokedCredentialBindings) !== JSON.stringify(record['revokedCredentialBindings'] ?? [])) {
       needsMigration = true
     }
-    const document = { provider, profiles, compatibleProfiles, codexModel, hiveApiKeySecret, hiveFallbackApiKeySecret, freeAccessRoutingMode, allowPaidFallback, revokedCredentialBindings }
+    const document = { provider, profiles, compatibleProfiles, codexModel, hiveApiKeys, hiveFallbackApiKeys, freeAccessRoutingMode, allowPaidFallback, revokedCredentialBindings }
     if (needsMigration) this.write(document)
     return document
   }
@@ -935,6 +975,39 @@ export class ProviderStore {
       throw error
     }
   }
+}
+
+function normalizeHiveProviderKey(provider?: string): string | null {
+  if (provider === undefined) return 'rout'
+  if (typeof provider !== 'string') return null
+  const trimmed = provider.trim().toLowerCase()
+  if (trimmed.length === 0) return 'rout'
+  return /^[a-z0-9_-]{1,64}$/.test(trimmed) ? trimmed : null
+}
+
+function normalizeStoredHiveKeys(raw: unknown): Readonly<Partial<Record<string, string>>> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const result: Record<string, string> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const providerKey = normalizeHiveProviderKey(key)
+    const secret = normalizeStoredSecret(value)
+    if (providerKey && secret.length > 0) {
+      result[providerKey] = secret
+    }
+  }
+  return result
+}
+
+function configuredHiveKeysMap(
+  keys: Readonly<Partial<Record<string, string>>>
+): Readonly<Partial<Record<string, boolean>>> {
+  const result: Record<string, boolean> = {}
+  for (const [provider, secret] of Object.entries(keys)) {
+    if (typeof secret === 'string' && secret.trim().length > 0) {
+      result[provider] = true
+    }
+  }
+  return result
 }
 
 function profileFor(document: StoredDocument, provider: ProviderKind): StoredProfile {

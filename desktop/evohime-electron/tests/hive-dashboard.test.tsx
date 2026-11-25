@@ -1474,7 +1474,8 @@ describe('hive dashboard', () => {
         command: 'core.setHiveSetting',
         payload: {
           key: 'hive_api_key',
-          value: 'sk-hive-secret-123'
+          value: 'sk-hive-secret-123',
+          provider: 'rout'
         }
       })
       expect(screen.getByText(/API-ключ Улья сохранён/)).toBeTruthy()
@@ -1482,7 +1483,7 @@ describe('hive dashboard', () => {
   })
 
   it('ui_hides_api_key_when_configured', async () => {
-    providerOverrides = { hiveApiKeyConfigured: true }
+    providerOverrides = { hiveApiKeyConfigured: true, hiveApiKeysConfigured: { rout: true } }
     render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
@@ -1493,8 +1494,43 @@ describe('hive dashboard', () => {
     expect(within(dialog).getByRole('button', { name: 'Изменить' })).toBeTruthy()
   })
 
+  it('ui_shows_hive_api_key_per_provider', async () => {
+    providerOverrides = { hiveApiKeyConfigured: true, hiveApiKeysConfigured: { literouter: true } }
+    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot({ hive_provider_profile: 'literouter' }))]} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+
+    expect(within(dialog).getByText('API-ключ сохранен ✓')).toBeTruthy()
+    expect(within(dialog).queryByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeNull()
+
+    const providerSelect = within(dialog).getByLabelText('Провайдер Улья')
+    await userEvent.selectOptions(providerSelect, 'deepseek')
+
+    expect(within(dialog).queryByText('API-ключ сохранен ✓')).toBeNull()
+    const keyInput = within(dialog).getByLabelText('API-ключ Улья (обязателен для работы Улья)') as HTMLInputElement
+    await userEvent.type(keyInput, 'sk-deepseek-key')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить ключ' }))
+
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'core.setHiveSetting',
+        payload: {
+          key: 'hive_api_key',
+          value: 'sk-deepseek-key',
+          provider: 'deepseek'
+        }
+      })
+      expect(within(dialog).getByText('API-ключ сохранен ✓')).toBeTruthy()
+    })
+
+    await userEvent.selectOptions(providerSelect, 'openai_responses')
+    expect(within(dialog).queryByText('API-ключ сохранен ✓')).toBeNull()
+    expect(within(dialog).getByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeTruthy()
+  })
+
   it('ui_shows_api_key_input_when_editing', async () => {
-    providerOverrides = { hiveApiKeyConfigured: true }
+    providerOverrides = { hiveApiKeyConfigured: true, hiveApiKeysConfigured: { rout: true } }
     render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
@@ -1546,7 +1582,8 @@ describe('hive dashboard', () => {
         command: 'core.setHiveSetting',
         payload: {
           key: 'hive_fallback_api_key',
-          value: 'sk-hive-fallback-456'
+          value: 'sk-hive-fallback-456',
+          provider: 'rout'
         }
       })
       expect(within(dialog).getByText(/Резервный API-ключ Улья сохранён/)).toBeTruthy()
@@ -1963,7 +2000,7 @@ describe('hive dashboard', () => {
     expect(within(dialog).getByText('Загрузка настроек API-ключа…')).toBeTruthy()
 
     await act(async () => {
-      resolveProviderGet(ok(providerSummary({ hiveApiKeyConfigured: true })) as CommandOutcome<'provider.get'>)
+      resolveProviderGet(ok(providerSummary({ hiveApiKeyConfigured: true, hiveApiKeysConfigured: { rout: true } })) as CommandOutcome<'provider.get'>)
     })
 
     await waitFor(() => {
@@ -1987,7 +2024,7 @@ describe('hive dashboard', () => {
               if (attempt === 1) {
                 return { ok: false, code: 'core_unavailable', message: 'Ошибка загрузки настроек провайдера' }
               }
-              return ok(providerSummary({ hiveApiKeyConfigured: true }))
+              return ok(providerSummary({ hiveApiKeyConfigured: true, hiveApiKeysConfigured: { rout: true } }))
             }
             if (command === 'chat.open') return ok(null)
             return ok({ accepted: true })
@@ -2012,7 +2049,7 @@ describe('hive dashboard', () => {
   })
 
   it('ui_resets_editing_state_on_cancel', async () => {
-    providerOverrides = { hiveApiKeyConfigured: true }
+    providerOverrides = { hiveApiKeyConfigured: true, hiveApiKeysConfigured: { rout: true } }
     render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))

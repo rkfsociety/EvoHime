@@ -1061,17 +1061,27 @@ impl ModelGatewayConfig {
             }
         }
 
-        let hive_key = env::var("HIVE_API_KEY")
+        let hive_keys_map = parse_hive_provider_keys_from_env("HIVE_API_KEYS_JSON");
+        let hive_profile_raw = env::var("HIVE_PROVIDER_PROFILE")
             .ok()
+            .or_else(|| env::var("hive_provider_profile").ok())
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        let hive_key = if let Some(ref keys) = hive_keys_map {
+            let effective_profile = hive_profile_raw
+                .as_deref()
+                .map(|p| p.trim().to_ascii_lowercase())
+                .filter(|p| !p.is_empty())
+                .unwrap_or_else(|| "rout".to_string());
+            keys.get(&effective_profile).cloned()
+        } else {
+            env::var("HIVE_API_KEY")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        };
         if let Some(hive_key) = hive_key {
             if !routes.contains_key("hive") {
-                let hive_profile_raw = env::var("HIVE_PROVIDER_PROFILE")
-                    .ok()
-                    .or_else(|| env::var("hive_provider_profile").ok())
-                    .map(|value| value.trim().to_string())
-                    .filter(|value| !value.is_empty());
                 let hive_base = env::var("HIVE_BASE_URL")
                     .ok()
                     .map(|value| value.trim().to_string())
@@ -1093,17 +1103,26 @@ impl ModelGatewayConfig {
             }
         }
 
-        let hive_fallback_key = env::var("HIVE_FALLBACK_API_KEY")
+        let hive_fallback_keys_map = parse_hive_provider_keys_from_env("HIVE_FALLBACK_API_KEYS_JSON");
+        let fallback_profile_raw = env::var("HIVE_FALLBACK_PROVIDER_PROFILE")
             .ok()
+            .or_else(|| env::var("hive_fallback_provider_profile").ok())
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        let hive_fallback_key = if let Some(ref keys) = hive_fallback_keys_map {
+            fallback_profile_raw
+                .as_deref()
+                .map(|p| p.trim().to_ascii_lowercase())
+                .filter(|p| !p.is_empty())
+                .and_then(|profile| keys.get(&profile).cloned())
+        } else {
+            env::var("HIVE_FALLBACK_API_KEY")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        };
         if let Some(hive_fallback_key) = hive_fallback_key {
             if !routes.contains_key("hive_fallback") {
-                let fallback_profile_raw = env::var("HIVE_FALLBACK_PROVIDER_PROFILE")
-                    .ok()
-                    .or_else(|| env::var("hive_fallback_provider_profile").ok())
-                    .map(|value| value.trim().to_string())
-                    .filter(|value| !value.is_empty());
                 let fallback_base = env::var("HIVE_FALLBACK_BASE_URL")
                     .ok()
                     .map(|value| value.trim().to_string())
@@ -1191,6 +1210,76 @@ impl ModelGatewayConfig {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_owned);
+        let keys_env_var = if route_key == "hive_fallback" {
+            "HIVE_FALLBACK_API_KEYS_JSON"
+        } else {
+            "HIVE_API_KEYS_JSON"
+        };
+        if let Some(keys) = parse_hive_provider_keys_from_env(keys_env_var) {
+            let Some(target_profile) = (if route_key == "hive_fallback" {
+                normalized_profile
+            } else {
+                Some(normalized_profile.unwrap_or("rout"))
+            }) else {
+                self.routes.remove(route_key);
+                return;
+            };
+            let existing = self.routes.get(route_key).cloned();
+            let profile_changed = existing.as_ref().is_none_or(|route| {
+                !(route
+                    .provider_profile_id
+                    .is_some_and(|id| id.as_str().eq_ignore_ascii_case(target_profile))
+                    || route
+                        .provider
+                        .as_str()
+                        .eq_ignore_ascii_case(target_profile))
+            });
+            let normalized_model = explicit_model.unwrap_or_else(|| {
+                if !profile_changed {
+                    existing
+                        .as_ref()
+                        .map(|route| route.literouter.model.clone())
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                }
+            });
+            if target_profile.eq_ignore_ascii_case("ollama") {
+                if let Some(ref route) = existing {
+                    if !profile_changed && normalized_model == route.literouter.model {
+                        return;
+                    }
+                }
+                let ollama_route = Self::build_hive_route(
+                    String::new(),
+                    Some("ollama"),
+                    None,
+                    normalized_model,
+                );
+                if ollama_route.validate_provider_profile().is_ok() {
+                    self.routes.insert(route_key.to_string(), ollama_route);
+                }
+                return;
+            }
+            let Some(hive_key) = keys.get(&target_profile.to_ascii_lowercase()).cloned() else {
+                self.routes.remove(route_key);
+                return;
+            };
+            if let Some(ref route) = existing {
+                if !profile_changed
+                    && route.literouter.api_key == hive_key
+                    && normalized_model == route.literouter.model
+                {
+                    return;
+                }
+            }
+            let rebuilt =
+                Self::build_hive_route(hive_key, Some(target_profile), None, normalized_model);
+            if rebuilt.validate_provider_profile().is_ok() {
+                self.routes.insert(route_key.to_string(), rebuilt);
+            }
+            return;
+        }
         let Some(existing) = self.routes.get(route_key).cloned() else {
             if normalized_profile.is_some_and(|p| p.eq_ignore_ascii_case("ollama")) {
                 let ollama_route = Self::build_hive_route(
@@ -1298,6 +1387,24 @@ impl ModelGatewayConfig {
     ) {
         self.apply_named_hive_route_override("hive_fallback", profile, model);
     }
+}
+
+fn parse_hive_provider_keys_from_env(var_name: &str) -> Option<HashMap<String, String>> {
+    let raw = env::var(var_name).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let parsed: HashMap<String, String> = serde_json::from_str(trimmed).ok()?;
+    let normalized: HashMap<String, String> = parsed
+        .into_iter()
+        .filter_map(|(provider, key)| {
+            let provider = provider.trim().to_ascii_lowercase();
+            let key = key.trim().to_string();
+            (!provider.is_empty() && !key.is_empty()).then_some((provider, key))
+        })
+        .collect();
+    Some(normalized)
 }
 
 fn model_rate_limits_from_env() -> Result<HashMap<String, ModelRateLimitConfig>, ProviderError> {
@@ -2138,5 +2245,43 @@ mod tests {
         assert_eq!(fallback.provider_profile_id, Some(ProviderProfileId::Rout));
         assert_eq!(fallback.literouter.api_key, "sk-hive-fallback-isolated");
         assert_eq!(fallback.literouter.model, "openai/gpt-6-luna");
+    }
+
+    #[test]
+    fn apply_hive_route_overrides_uses_per_provider_keys_and_drops_unconfigured_provider() {
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_keys = env::var("HIVE_API_KEYS_JSON").ok();
+
+        env::set_var(
+            "HIVE_API_KEYS_JSON",
+            r#"{"literouter":"sk-hive-literouter","deepseek":"sk-hive-deepseek"}"#,
+        );
+
+        let mut config = ModelGatewayConfig {
+            default_route: "default".to_string(),
+            routes: HashMap::new(),
+        };
+
+        config.apply_hive_route_overrides(Some("literouter"), Some("glm-5.3-flash-cheap:free"));
+        let hive = config.routes.get("hive").expect("literouter route built");
+        assert_eq!(hive.provider, ProviderKind::LiteRouter);
+        assert_eq!(hive.literouter.api_key, "sk-hive-literouter");
+
+        // Switching to a provider without a stored key must drop the route instead of reusing LiteRouter's key.
+        config.apply_hive_route_overrides(Some("openai_responses"), None);
+        assert!(!config.routes.contains_key("hive"));
+
+        // Switching to DeepSeek picks up DeepSeek's own stored key.
+        config.apply_hive_route_overrides(Some("deepseek"), Some("deepseek-chat"));
+        let hive = config.routes.get("hive").expect("deepseek route built");
+        assert_eq!(hive.provider, ProviderKind::OpenAICompatible);
+        assert_eq!(hive.provider_profile_id, Some(ProviderProfileId::DeepSeek));
+        assert_eq!(hive.literouter.api_key, "sk-hive-deepseek");
+
+        match prev_keys {
+            Some(v) => env::set_var("HIVE_API_KEYS_JSON", v),
+            None => env::remove_var("HIVE_API_KEYS_JSON"),
+        }
     }
 }

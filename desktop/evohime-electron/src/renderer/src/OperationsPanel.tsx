@@ -1729,7 +1729,6 @@ export function HiveDashboard({
     refresh: refreshProviderSummary,
     apply: applyProviderSummary
   } = useProviderState()
-  const hiveApiKeyConfigured = providerSummary?.hiveApiKeyConfigured === true
   const [resolvingApprovalIds, setResolvingApprovalIds] = useState<ReadonlySet<string>>(() => new Set())
   const [resolvedLocally, setResolvedLocally] = useState<readonly string[]>([])
   const [commandError, setCommandError] = useState<string | null>(null)
@@ -1775,6 +1774,11 @@ export function HiveDashboard({
   const [hiveProviderSaved, setHiveProviderSaved] = useState(false)
   const [hiveApiKeySaved, setHiveApiKeySaved] = useState(false)
   const [dailyBudgetSaved, setDailyBudgetSaved] = useState(false)
+  const effectiveHiveProvider = hiveProviderProfile.trim().toLowerCase() || 'rout'
+  const hiveApiKeyConfigured = providerSummary?.hiveApiKeysConfigured?.[effectiveHiveProvider] === true
+  const effectiveHiveFallbackProvider = hiveFallbackProviderProfile.trim().toLowerCase()
+  const hiveFallbackApiKeyConfigured = effectiveHiveFallbackProvider.length > 0
+    && providerSummary?.hiveFallbackApiKeysConfigured?.[effectiveHiveFallbackProvider] === true
   const [hivePrimaryLimitsDraft, setHivePrimaryLimitsDraft] = useState<HiveRequestLimitsDraft>({ rpm: 0, rph: null, rp4h: null, rpd: null })
   const [hiveFallbackLimitsDraft, setHiveFallbackLimitsDraft] = useState<HiveRequestLimitsDraft>({ rpm: 0, rph: null, rp4h: null, rpd: null })
   const [hivePrimaryQuotaDraft, setHivePrimaryQuotaDraft] = useState('0')
@@ -2845,7 +2849,8 @@ export function HiveDashboard({
     try {
       const outcome = await api.invoke('core.setHiveSetting', {
         key: 'hive_api_key',
-        value: trimmedKey
+        value: trimmedKey,
+        provider: effectiveHiveProvider
       })
       if (!outcome.ok) {
         setHiveApiKeyError(outcome.message)
@@ -2855,7 +2860,17 @@ export function HiveDashboard({
       setIsEditingMainKey(false)
       setHiveApiKeySaved(true)
       if (providerSummary) {
-        applyProviderSummary({ ...providerSummary, hiveApiKeyConfigured: trimmedKey.length > 0 })
+        const nextHiveKeys = { ...(providerSummary.hiveApiKeysConfigured ?? {}) }
+        if (trimmedKey.length > 0) {
+          nextHiveKeys[effectiveHiveProvider] = true
+        } else {
+          delete nextHiveKeys[effectiveHiveProvider]
+        }
+        applyProviderSummary({
+          ...providerSummary,
+          hiveApiKeyConfigured: Object.values(nextHiveKeys).some(Boolean),
+          hiveApiKeysConfigured: nextHiveKeys
+        })
       } else {
         void refreshProviderSummary()
       }
@@ -2865,7 +2880,7 @@ export function HiveDashboard({
     } finally {
       setHiveApiKeyBusy(false)
     }
-  }, [api, applyProviderSummary, hiveApiKeyDraft, providerSummary, refreshProviderSummary, requestSnapshot])
+  }, [api, applyProviderSummary, effectiveHiveProvider, hiveApiKeyDraft, providerSummary, refreshProviderSummary, requestSnapshot])
 
   const saveHiveFallbackProviderSettings = useCallback(async (): Promise<void> => {
     if (!api) return
@@ -2900,6 +2915,10 @@ export function HiveDashboard({
 
   const saveHiveFallbackApiKey = useCallback(async (): Promise<void> => {
     if (!api) return
+    if (effectiveHiveFallbackProvider.length === 0) {
+      setHiveFallbackApiKeyError('Сначала выберите резервный провайдер Улья.')
+      return
+    }
     const trimmedKey = hiveFallbackApiKeyDraft.trim()
     setHiveFallbackApiKeyBusy(true)
     setHiveFallbackApiKeyError(null)
@@ -2908,7 +2927,8 @@ export function HiveDashboard({
     try {
       const outcome = await api.invoke('core.setHiveSetting', {
         key: 'hive_fallback_api_key',
-        value: trimmedKey
+        value: trimmedKey,
+        provider: effectiveHiveFallbackProvider
       })
       if (!outcome.ok) {
         setHiveFallbackApiKeyError(outcome.message)
@@ -2919,12 +2939,22 @@ export function HiveDashboard({
       setHiveFallbackApiKeySaved(true)
       setHiveFallbackCatalogError(null)
       if (providerSummary) {
-        applyProviderSummary({ ...providerSummary, hiveFallbackApiKeyConfigured: trimmedKey.length > 0 })
+        const nextFallbackKeys = { ...(providerSummary.hiveFallbackApiKeysConfigured ?? {}) }
+        if (trimmedKey.length > 0) {
+          nextFallbackKeys[effectiveHiveFallbackProvider] = true
+        } else {
+          delete nextFallbackKeys[effectiveHiveFallbackProvider]
+        }
+        applyProviderSummary({
+          ...providerSummary,
+          hiveFallbackApiKeyConfigured: Object.values(nextFallbackKeys).some(Boolean),
+          hiveFallbackApiKeysConfigured: nextFallbackKeys
+        })
       } else {
         void refreshProviderSummary()
       }
       requestSnapshot()
-      if (trimmedKey.length > 0 && hiveFallbackProviderProfile.trim().length > 0) {
+      if (trimmedKey.length > 0 && effectiveHiveFallbackProvider.length > 0) {
         void loadHiveFallbackCatalog()
       }
     } catch {
@@ -2932,7 +2962,7 @@ export function HiveDashboard({
     } finally {
       setHiveFallbackApiKeyBusy(false)
     }
-  }, [api, applyProviderSummary, hiveFallbackApiKeyDraft, hiveFallbackProviderProfile, loadHiveFallbackCatalog, providerSummary, refreshProviderSummary, requestSnapshot])
+  }, [api, applyProviderSummary, effectiveHiveFallbackProvider, hiveFallbackApiKeyDraft, loadHiveFallbackCatalog, providerSummary, refreshProviderSummary, requestSnapshot])
 
   const openHiveChat = useCallback(async (): Promise<void> => {
     if (!api) return
@@ -4023,6 +4053,10 @@ export function HiveDashboard({
                         setHiveProviderProfile(changeEvent.target.value)
                         setHiveProviderError(null)
                         setHiveProviderSaved(false)
+                        setIsEditingMainKey(false)
+                        setHiveApiKeyDraft('')
+                        setHiveApiKeyError(null)
+                        setHiveApiKeySaved(false)
                       }}
                     >
                       <option value="">{translate('По умолчанию (Rout.my)')}</option>
@@ -4169,6 +4203,10 @@ export function HiveDashboard({
                         setHiveFallbackProviderProfile(changeEvent.target.value)
                         setHiveFallbackProviderError(null)
                         setHiveFallbackProviderSaved(false)
+                        setIsEditingFallbackKey(false)
+                        setHiveFallbackApiKeyDraft('')
+                        setHiveFallbackApiKeyError(null)
+                        setHiveFallbackApiKeySaved(false)
                       }}
                     >
                       <option value="">{translate('Отключён')}</option>
@@ -4248,7 +4286,7 @@ export function HiveDashboard({
                 ) : hiveFallbackProviderSaved ? (
                   <small role="status" className="hive-settings-hint">✓ {translate('Резервный провайдер и модель Улья сохранены')}</small>
                 ) : null}
-                {providerSummary?.hiveFallbackApiKeyConfigured && !isEditingFallbackKey ? (
+                {hiveFallbackApiKeyConfigured && !isEditingFallbackKey ? (
                   <div className="hive-provider">
                     <span>{translate('Резервный API-ключ Улья')}</span>
                     <div className="hive-settings-modal__row">
@@ -4265,7 +4303,7 @@ export function HiveDashboard({
                         type="password"
                         aria-label={translate('Резервный API-ключ Улья')}
                         value={hiveFallbackApiKeyDraft}
-                        disabled={!connected || hiveFallbackApiKeyBusy}
+                        disabled={!connected || hiveFallbackApiKeyBusy || effectiveHiveFallbackProvider.length === 0}
                         onChange={(changeEvent) => {
                           setHiveFallbackApiKeyDraft(changeEvent.target.value)
                           setHiveFallbackApiKeyError(null)
@@ -4273,7 +4311,7 @@ export function HiveDashboard({
                         }}
                         placeholder="sk-..."
                       />
-                      <button type="button" disabled={!connected || hiveFallbackApiKeyBusy} onClick={() => void saveHiveFallbackApiKey()}>
+                      <button type="button" disabled={!connected || hiveFallbackApiKeyBusy || effectiveHiveFallbackProvider.length === 0} onClick={() => void saveHiveFallbackApiKey()}>
                         {translate(hiveFallbackApiKeyBusy ? 'Сохранение…' : 'Сохранить резервный ключ')}
                       </button>
                       {isEditingFallbackKey ? <button type="button" disabled={hiveFallbackApiKeyBusy} onClick={() => { setHiveFallbackApiKeyDraft(''); setIsEditingFallbackKey(false) }}>{translate('Отмена')}</button> : null}

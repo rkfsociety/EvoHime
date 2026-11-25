@@ -1603,10 +1603,16 @@ async fn main() -> ExitCode {
 
     let has_hive_key = std::env::var("HIVE_API_KEY")
         .map(|value| !value.trim().is_empty())
-        .unwrap_or(false);
+        .unwrap_or(false)
+        || std::env::var("HIVE_API_KEYS_JSON")
+            .map(|value| !value.trim().is_empty() && value.trim() != "{}")
+            .unwrap_or(false);
     let has_fallback_key = std::env::var("HIVE_FALLBACK_API_KEY")
         .map(|value| !value.trim().is_empty())
-        .unwrap_or(false);
+        .unwrap_or(false)
+        || std::env::var("HIVE_FALLBACK_API_KEYS_JSON")
+            .map(|value| !value.trim().is_empty() && value.trim() != "{}")
+            .unwrap_or(false);
     if !has_hive_key {
         tracing::info!(
             "HIVE_API_KEY is not set; continuing in case a local Hive provider (e.g. ollama) is configured"

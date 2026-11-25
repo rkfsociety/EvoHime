@@ -1172,7 +1172,13 @@ async fn run_hive_supervision(
         command
             .kill_on_drop(true)
             .env("EVOHIME_LAUNCH_CONTEXT", &context_path);
-        for var in ["EVOHIME_DATA_DIR", "HIVE_API_KEY", "HIVE_FALLBACK_API_KEY"] {
+        for var in [
+            "EVOHIME_DATA_DIR",
+            "HIVE_API_KEY",
+            "HIVE_FALLBACK_API_KEY",
+            "HIVE_API_KEYS_JSON",
+            "HIVE_FALLBACK_API_KEYS_JSON",
+        ] {
             if let Some(value) = std::env::var_os(var) {
                 command.env(var, value);
             }

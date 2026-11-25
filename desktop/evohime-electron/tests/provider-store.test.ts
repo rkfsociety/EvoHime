@@ -268,7 +268,7 @@ describe('provider store', () => {
     expect(store.summary().compatibleProfiles?.groq).toMatchObject({ configured: true, model: 'llama-groq' })
     expect(store.environment()).toMatchObject({ OPENAI_API_KEY: 'sk-groq', MODEL_PROVIDER_PROFILE_ID: 'groq' })
     expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({
-      version: 8,
+      version: 9,
       profiles: { openai_compatible: { profileId: 'groq', model: 'llama-groq' } },
       compatibleProfiles: { groq: { secret: Buffer.from('enc:sk-groq').toString('base64') } }
     })
@@ -602,7 +602,7 @@ describe('provider store', () => {
       freeIntervalMs: 0
     })
     expect(readFileSync(path, 'utf8')).not.toContain('sk-legacy')
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ version: 8 })
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ version: 9 })
   })
 
   it('binds automatic probe consent to the saved OpenRouter credential and clears it on removal', () => {
@@ -834,5 +834,32 @@ describe('provider input bounds', () => {
 
     expect(store.saveHiveFallbackApiKey('')).toBe(true)
     expect(store.environment()['HIVE_FALLBACK_API_KEY']).toBeUndefined()
+  })
+
+  it('stores hive api keys per provider and exports HIVE_API_KEYS_JSON without leaking across providers', () => {
+    const path = storePath()
+    const store = new ProviderStore(path, reversibleCipher())
+
+    expect(store.saveHiveApiKey('sk-hive-literouter', 'literouter')).toBe(true)
+    expect(store.saveHiveApiKey('sk-hive-deepseek', 'deepseek')).toBe(true)
+    expect(store.saveHiveFallbackApiKey('sk-fb-openai', 'openai_responses')).toBe(true)
+
+    const summary = store.summary()
+    expect(summary.hiveApiKeysConfigured).toEqual({ literouter: true, deepseek: true })
+    expect(summary.hiveFallbackApiKeysConfigured).toEqual({ openai_responses: true })
+
+    const env = store.environment()
+    expect(env['HIVE_API_KEY']).toBeUndefined()
+    expect(JSON.parse(env['HIVE_API_KEYS_JSON'] ?? '{}')).toEqual({
+      literouter: 'sk-hive-literouter',
+      deepseek: 'sk-hive-deepseek'
+    })
+    expect(env['HIVE_FALLBACK_API_KEY']).toBeUndefined()
+    expect(JSON.parse(env['HIVE_FALLBACK_API_KEYS_JSON'] ?? '{}')).toEqual({
+      openai_responses: 'sk-fb-openai'
+    })
+
+    expect(store.saveHiveApiKey('', 'literouter')).toBe(true)
+    expect(store.summary().hiveApiKeysConfigured).toEqual({ deepseek: true })
   })
 })

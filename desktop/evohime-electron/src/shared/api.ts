@@ -821,6 +821,10 @@ export interface ProviderSummary {
   readonly hiveApiKeyConfigured: boolean
   /** Whether the isolated fallback Hive API key is stored in provider.json. */
   readonly hiveFallbackApiKeyConfigured: boolean
+  /** Per-provider configured status for the isolated primary Hive API keys. */
+  readonly hiveApiKeysConfigured?: Readonly<Partial<Record<string, boolean>>>
+  /** Per-provider configured status for the isolated fallback Hive API keys. */
+  readonly hiveFallbackApiKeysConfigured?: Readonly<Partial<Record<string, boolean>>>
   readonly requestPacing?: RequestPacingSettings
   readonly modelRateLimits?: ProviderModelRateLimits
 }
@@ -1983,7 +1987,7 @@ export interface CommandPayloads {
   'core.getHiveObservationStatus': Record<string, never>
   'core.setEvaWorkspacePath': { path: string }
   'core.validateEvaWorkspacePath': { path: string }
-  'core.setHiveSetting': { key: string; value: string }
+  'core.setHiveSetting': { key: string; value: string; provider?: string }
   'core.stopTask': { taskId: string }
   'core.resolveApproval': { approvalId: string; granted: boolean; idempotencyKey?: string; rejectionReason?: string; cancel?: boolean }
   'core.resolveRoutingDecision': { traceId: string; approve: boolean }

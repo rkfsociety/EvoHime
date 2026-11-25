@@ -1130,19 +1130,26 @@ function dispatch(
         return failure('invalid-payload', 'Некорректный параметр настройки улья.')
       }
       if (key === 'hive_api_key' || key === 'hive_fallback_api_key') {
+        const providerRaw = record['provider']
+        if (providerRaw !== undefined && (typeof providerRaw !== 'string' || providerRaw.trim().length > 64 || (providerRaw.trim().length > 0 && !/^[a-zA-Z0-9_-]+$/.test(providerRaw.trim())))) {
+          return failure('invalid-payload', 'Некорректный провайдер Улья.')
+        }
         const normalized = normalizeApiKey(value)
         if (normalized === null) {
           return failure('invalid-payload', 'Некорректный API-ключ Улья.')
         }
         const saved = key === 'hive_fallback_api_key'
-          ? providers.saveHiveFallbackApiKey(normalized)
-          : providers.saveHiveApiKey(normalized)
+          ? providers.saveHiveFallbackApiKey(normalized, providerRaw)
+          : providers.saveHiveApiKey(normalized, providerRaw)
         if (!saved) {
           log('error', 'shell.hive_provider_encryption_unavailable', {})
           return failure('protocol-error', 'Windows не даёт зашифровать ключ — он не сохранён.')
         }
         // Never log the key value, only whether a credential is configured.
-        log('info', key === 'hive_fallback_api_key' ? 'shell.hive_fallback_api_key_saved' : 'shell.hive_api_key_saved', { configured: normalized.length > 0 })
+        log('info', key === 'hive_fallback_api_key' ? 'shell.hive_fallback_api_key_saved' : 'shell.hive_api_key_saved', {
+          configured: normalized.length > 0,
+          provider: typeof providerRaw === 'string' && providerRaw.trim().length > 0 ? providerRaw.trim().toLowerCase() : 'rout'
+        })
         return restartCore().then((restarted) => ({ ok: true, value: { accepted: restarted } }))
       }
       log('info', 'shell.command_forwarded', { command })
