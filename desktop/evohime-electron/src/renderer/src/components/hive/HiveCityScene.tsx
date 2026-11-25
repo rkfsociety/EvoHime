@@ -151,7 +151,7 @@ export function HiveCityScene({
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const cameraRef = useRef({ x: 140, y: 0, zoom: 0.68 })
+  const cameraRef = useRef({ x: 110, y: 0, zoom: 0.58 })
   const panDragRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
     active: false,
     lastX: 0,
@@ -169,7 +169,7 @@ export function HiveCityScene({
   roadGraphRef.current = roadGraph
   timeScaleRef.current = timeScale
 
-  const [zoomUi, setZoomUi] = useState(0.68)
+  const [zoomUi, setZoomUi] = useState(0.58)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [mmbPanning, setMmbPanning] = useState(false)
 
@@ -213,8 +213,8 @@ export function HiveCityScene({
   )
 
   const resetCamera = useCallback((): void => {
-    cameraRef.current = { x: 140, y: 0, zoom: 0.68 }
-    setZoomUi(0.68)
+    cameraRef.current = { x: 110, y: 0, zoom: 0.58 }
+    setZoomUi(0.58)
   }, [])
 
   useEffect(() => {
@@ -297,7 +297,7 @@ export function HiveCityScene({
       ctx.scale(cam.zoom, cam.zoom)
       ctx.translate(-cam.x, -cam.y)
 
-      // 1.5. Внешняя гексагональная сота-окантовка каждого города (определение границ города).
+      // 1.5. Внешняя гексагональная сота-забор каждого города (определение границ города).
       for (const city of currentWorld.cities) {
         const maxRing = Math.max(
           city.maxRing,
@@ -305,19 +305,33 @@ export function HiveCityScene({
           ...city.modules.map((m) => m.ring)
         )
         const contentRadius =
-          maxRing === 0 ? CITADEL_HEX_RADIUS + 34 : getRingCellRadius(maxRing) + CELL_HEX_RADIUS + 32
+          maxRing === 0 ? CITADEL_HEX_RADIUS + 28 : getRingCellRadius(maxRing) + CELL_HEX_RADIUS + 20
         const cityHexRadius = contentRadius / Math.cos(Math.PI / 6)
 
         ctx.save()
+        // Подложка территории города внутри забора.
         traceHexPath(ctx, city.worldCenterX, city.worldCenterY, cityHexRadius)
         ctx.fillStyle = city.hasQueenCitadel
-          ? 'rgba(30, 41, 59, 0.22)'
-          : 'rgba(15, 23, 42, 0.28)'
+          ? 'rgba(30, 41, 59, 0.34)'
+          : 'rgba(15, 30, 52, 0.34)'
         ctx.fill()
-        ctx.lineWidth = city.hasQueenCitadel ? 2.4 : 1.8
+
+        // Тёмное основание стены-забора.
+        ctx.lineWidth = 7
+        ctx.strokeStyle = '#090e1a'
+        ctx.stroke()
+
+        // Яркий внешний контур забора города.
+        ctx.lineWidth = city.hasQueenCitadel ? 3.2 : 2.6
+        ctx.strokeStyle = city.hasQueenCitadel ? '#f59e0b' : '#38bdf8'
+        ctx.stroke()
+
+        // Внутренняя тонкая кайма забора.
+        traceHexPath(ctx, city.worldCenterX, city.worldCenterY, cityHexRadius - 7)
+        ctx.lineWidth = 1.1
         ctx.strokeStyle = city.hasQueenCitadel
-          ? 'rgba(251, 191, 36, 0.36)'
-          : 'rgba(56, 189, 248, 0.30)'
+          ? 'rgba(251, 191, 36, 0.35)'
+          : 'rgba(56, 189, 248, 0.35)'
         ctx.stroke()
         ctx.restore()
       }
