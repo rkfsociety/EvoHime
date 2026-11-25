@@ -52,7 +52,7 @@ pub enum HiveChildState {
 
 /// Minimal local projection deserialized from `HiveEventRecord.payload`
 /// without depending on Core's `ChildProjection` type.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MinimalChildWorkflowPayload {
     /// Identifier of the delegated child task.
     pub child_task_id: String,
@@ -380,6 +380,73 @@ pub async fn replay_hive_projections(
         .collect()
 }
 
+/// Marks any non-terminal `child.workflow` projections left in the replay window
+/// from a previous Core process as `Aborted` on startup.
+///
+/// Must run once during Core startup before new child tasks are spawned so that
+/// orphaned `Running`/`Queued` records from a crash or update cannot appear as
+/// active agents in a fresh session.
+pub async fn reconcile_stale_hive_children_on_startup(journal: &dyn HiveJournalProvider) -> usize {
+    let latest = journal.latest_sequence().await;
+    let after = latest.saturating_sub(i64::from(HIVE_REPLAY_WINDOW) - 1);
+    let records = journal
+        .replay_events(after, HIVE_REPLAY_WINDOW as usize)
+        .await
+        .unwrap_or_default();
+    let mut by_child: BTreeMap<String, MinimalChildWorkflowPayload> = BTreeMap::new();
+    for record in records {
+        if record.event_type == "child.workflow" {
+            if let Ok(projection) =
+                serde_json::from_slice::<MinimalChildWorkflowPayload>(&record.payload)
+            {
+                by_child.insert(projection.child_task_id.clone(), projection);
+            }
+            continue;
+        }
+        if let Some(terminal_state) = terminal_child_state_for_event(&record.event_type) {
+            if let Some(terminal_task_id) = resolve_event_task_id(&record.task_id, &record.payload)
+            {
+                let parents: BTreeMap<String, String> = by_child
+                    .values()
+                    .map(|p| (p.child_task_id.clone(), p.parent_task_id.clone()))
+                    .collect();
+                for projection in by_child.values_mut() {
+                    if !is_terminal_child_state(projection.state)
+                        && (projection.child_task_id == terminal_task_id
+                            || projection.parent_task_id == terminal_task_id
+                            || projection_root_task(&projection.child_task_id, &parents)
+                                == terminal_task_id)
+                    {
+                        projection.state = terminal_state;
+                    }
+                }
+            }
+        }
+    }
+    let mut reconciled = 0usize;
+    for mut projection in by_child.into_values() {
+        if is_terminal_child_state(projection.state) {
+            continue;
+        }
+        projection.state = HiveChildState::Aborted;
+        if let Ok(bytes) = serde_json::to_vec(&projection) {
+            let audit_task_id = if projection.parent_task_id.trim().is_empty() {
+                projection.child_task_id.as_str()
+            } else {
+                projection.parent_task_id.as_str()
+            };
+            if journal
+                .record_audit(audit_task_id, "child.workflow", &bytes)
+                .await
+                .is_ok()
+            {
+                reconciled += 1;
+            }
+        }
+    }
+    reconciled
+}
+
 /// Maps terminal task lifecycle events to the corresponding `HiveChildState`.
 pub(crate) fn terminal_child_state_for_event(event_type: &str) -> Option<HiveChildState> {
     match event_type {
@@ -674,5 +741,115 @@ mod tests {
             hive_route_name(Some(&config), None).as_deref(),
             Some("hive")
         );
+    }
+
+    #[tokio::test]
+    async fn reconcile_stale_hive_children_marks_orphaned_running_child_aborted() {
+        let journal = MockJournal {
+            events: vec![HiveEventRecord {
+                sequence_id: 1,
+                task_id: "eva-pulse-root-1".into(),
+                event_type: "child.workflow".into(),
+                payload: br#"{"child_task_id":"child-stale","parent_task_id":"eva-pulse-root-1","role":"plan_reviewer","state":"running"}"#.to_vec(),
+                timestamp_ms: 1_000,
+            }],
+            hive_roots: vec!["eva-pulse-root-1".into()],
+        };
+        // MockJournal::record_audit is a no-op, so test with an interior-mutable journal:
+        struct RecordingJournal {
+            events: std::sync::Mutex<Vec<HiveEventRecord>>,
+            hive_roots: Vec<String>,
+        }
+        impl HiveJournalProvider for RecordingJournal {
+            fn latest_sequence(&self) -> BoxFuture<'_, i64> {
+                Box::pin(async move {
+                    self.events
+                        .lock()
+                        .expect("events lock")
+                        .last()
+                        .map_or(0, |e| e.sequence_id)
+                })
+            }
+            fn replay_events(
+                &self,
+                _after_sequence: i64,
+                _limit: usize,
+            ) -> BoxFuture<'_, Result<Vec<HiveEventRecord>, HiveContractError>> {
+                Box::pin(async move { Ok(self.events.lock().expect("events lock").clone()) })
+            }
+            fn record_audit<'a>(
+                &'a self,
+                task_id: &'a str,
+                event_type: &'a str,
+                payload: &'a [u8],
+            ) -> BoxFuture<'a, Result<(), HiveContractError>> {
+                let task_id = task_id.to_owned();
+                let event_type = event_type.to_owned();
+                let payload = payload.to_vec();
+                Box::pin(async move {
+                    let mut events = self.events.lock().expect("events lock");
+                    let seq = events.last().map_or(1, |e| e.sequence_id + 1);
+                    events.push(HiveEventRecord {
+                        sequence_id: seq,
+                        task_id,
+                        event_type,
+                        payload,
+                        timestamp_ms: 2_000,
+                    });
+                    Ok(())
+                })
+            }
+            fn prune_signal_records<'a>(
+                &'a self,
+                _event_types: &'a [&'a str],
+                _keep_limit: usize,
+            ) -> BoxFuture<'a, ()> {
+                Box::pin(async {})
+            }
+            fn load_hive_settings_json(
+                &self,
+            ) -> BoxFuture<'_, Result<Option<serde_json::Value>, HiveContractError>> {
+                Box::pin(async { Ok(None) })
+            }
+            fn save_hive_settings_json<'a>(
+                &'a self,
+                _value: &'a serde_json::Value,
+            ) -> BoxFuture<'a, Result<(), HiveContractError>> {
+                Box::pin(async { Ok(()) })
+            }
+            fn filter_hive_root_tasks(
+                &self,
+                task_ids: Vec<String>,
+            ) -> BoxFuture<'_, Vec<String>> {
+                Box::pin(async move {
+                    task_ids
+                        .into_iter()
+                        .filter(|id| self.hive_roots.contains(id))
+                        .collect()
+                })
+            }
+            fn persistent_agent_roles(&self) -> BoxFuture<'_, Vec<String>> {
+                Box::pin(async { Vec::new() })
+            }
+        }
+
+        let _ = journal;
+        let recording = RecordingJournal {
+            events: std::sync::Mutex::new(vec![HiveEventRecord {
+                sequence_id: 1,
+                task_id: "eva-pulse-root-1".into(),
+                event_type: "child.workflow".into(),
+                payload: br#"{"child_task_id":"child-stale","parent_task_id":"eva-pulse-root-1","role":"plan_reviewer","state":"running"}"#.to_vec(),
+                timestamp_ms: 1_000,
+            }]),
+            hive_roots: vec!["eva-pulse-root-1".into()],
+        };
+
+        let reconciled = reconcile_stale_hive_children_on_startup(&recording).await;
+        assert_eq!(reconciled, 1);
+
+        let projections = replay_hive_projections(&recording).await;
+        assert_eq!(projections.len(), 1);
+        assert_eq!(projections[0].state, HiveChildState::Aborted);
     }
 }

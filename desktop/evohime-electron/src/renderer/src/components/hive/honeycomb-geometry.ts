@@ -339,9 +339,9 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
 
     const expansion = getCityRingExpansion(city)
 
-    // Круглые кольцевые магистрали внутри города (24 сегмента по окружности для плавного круга).
+    // Круглые кольцевые магистрали внутри города (72 сегмента по окружности для плавного круга).
     const ringSegments: { ring: number; aId: string; bId: string }[] = []
-    const RING_STEPS = 24
+    const RING_STEPS = 72
     for (let ring = 1; ring <= maxRing; ring += 1) {
       const roadRadius = getRingRoadRadius(ring, expansion)
       const ringAngles = new Map<number, number | undefined>()
@@ -352,9 +352,10 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
       // Гарантируем точные узлы на нормалях активных радиальных лучей Цитадели.
       for (const faceIdx of exitFaces) {
         const rayAngle = HEX_FACE_NORMAL_ANGLES[faceIdx] ?? 0
-        // Удаляем ближайший шаг сетки, если он слишком близко (< 0.08 рад), чтобы не плодить микросегменты.
+        // Удаляем ближайший шаг сетки, если он слишком близко (< 0.03 рад), чтобы не плодить микросегменты.
         for (const existingAngle of Array.from(ringAngles.keys())) {
-          if (Math.abs(existingAngle - rayAngle) < 0.08) {
+          const angularDiff = Math.abs(Math.atan2(Math.sin(existingAngle - rayAngle), Math.cos(existingAngle - rayAngle)))
+          if (angularDiff < 0.03) {
             ringAngles.delete(existingAngle)
           }
         }
@@ -445,7 +446,12 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
         }
       })
 
-      const approachAngle = bestSegIdx >= 0 ? Math.atan2(bestProjY - cellY, bestProjX - cellX) : Math.PI / 2
+      const roadRadius = getRingRoadRadius(ring, expansion)
+      const projAngle = Math.atan2(bestProjY - city.worldCenterY, bestProjX - city.worldCenterX)
+      const ringTapX = bestSegIdx >= 0 ? city.worldCenterX + Math.cos(projAngle) * roadRadius : bestProjX
+      const ringTapY = bestSegIdx >= 0 ? city.worldCenterY + Math.sin(projAngle) * roadRadius : bestProjY
+
+      const approachAngle = bestSegIdx >= 0 ? Math.atan2(ringTapY - cellY, ringTapX - cellX) : Math.PI / 2
       const apothem = cellRadius * Math.cos(Math.PI / 6)
       const entryX = cellX + Math.cos(approachAngle) * apothem
       const entryY = cellY + Math.sin(approachAngle) * apothem
@@ -464,8 +470,8 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
         addNode({
           id: tapId,
           cityId: city.id,
-          x: bestProjX,
-          y: bestProjY,
+          x: ringTapX,
+          y: ringTapY,
           kind: 'intersection',
           ring
         })

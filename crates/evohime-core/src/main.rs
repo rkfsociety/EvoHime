@@ -503,6 +503,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Err(error) = bridge.journal().reconcile_ledger_on_startup().await {
         tracing::error!("evohime-core ledger reconciliation failed: {error}");
     }
+    let reconciled_hive_children =
+        crate::hive_observation::reconcile_stale_hive_children_on_startup(&bridge.journal()).await;
+    if reconciled_hive_children > 0 {
+        tracing::info!(
+            reconciled = reconciled_hive_children,
+            "reconciled stale hive child projections on startup"
+        );
+    }
     #[cfg(windows)]
     let pipe_config = pipe_config.ok_or("pipe configuration missing for a server launch")?;
     #[cfg(windows)]
