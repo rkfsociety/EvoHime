@@ -62,10 +62,10 @@ const CARGO_BY_ROLE: Record<HoneycombAgentRole, HoneycombCargoType> = {
 const EXTRA_PROJECT_NAMES: readonly string[] = ['CodexGUI', 'MemPulse', 'PCPulse']
 
 const SECTOR_LABEL_BY_ROLE: Record<HoneycombAgentRole, string> = {
-  executor: 'Сектор Исполнителей',
-  analyst: 'Сектор Аналитиков',
-  strategist: 'Сектор Стратегов',
-  decision_coordinator: 'Сектор Решений'
+  executor: 'Исполнители',
+  analyst: 'Аналитики',
+  strategist: 'Стратеги',
+  decision_coordinator: 'Координаторы'
 }
 
 function buildModulesForProject(
