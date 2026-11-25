@@ -1103,7 +1103,8 @@ impl ModelGatewayConfig {
             }
         }
 
-        let hive_fallback_keys_map = parse_hive_provider_keys_from_env("HIVE_FALLBACK_API_KEYS_JSON");
+        let hive_fallback_keys_map =
+            parse_hive_provider_keys_from_env("HIVE_FALLBACK_API_KEYS_JSON");
         let fallback_profile_raw = env::var("HIVE_FALLBACK_PROVIDER_PROFILE")
             .ok()
             .or_else(|| env::var("hive_fallback_provider_profile").ok())
@@ -1229,10 +1230,7 @@ impl ModelGatewayConfig {
                 !(route
                     .provider_profile_id
                     .is_some_and(|id| id.as_str().eq_ignore_ascii_case(target_profile))
-                    || route
-                        .provider
-                        .as_str()
-                        .eq_ignore_ascii_case(target_profile))
+                    || route.provider.as_str().eq_ignore_ascii_case(target_profile))
             });
             let normalized_model = explicit_model.unwrap_or_else(|| {
                 if !profile_changed {
@@ -1250,12 +1248,8 @@ impl ModelGatewayConfig {
                         return;
                     }
                 }
-                let ollama_route = Self::build_hive_route(
-                    String::new(),
-                    Some("ollama"),
-                    None,
-                    normalized_model,
-                );
+                let ollama_route =
+                    Self::build_hive_route(String::new(), Some("ollama"), None, normalized_model);
                 if ollama_route.validate_provider_profile().is_ok() {
                     self.routes.insert(route_key.to_string(), ollama_route);
                 }

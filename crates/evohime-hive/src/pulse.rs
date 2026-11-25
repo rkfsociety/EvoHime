@@ -1626,7 +1626,8 @@ fn replay_projections_from_records(records: &[HiveEventRecord]) -> Vec<Observati
             }
             continue;
         }
-        if let Some(terminal_state) = observation::terminal_child_state_for_event(&record.event_type)
+        if let Some(terminal_state) =
+            observation::terminal_child_state_for_event(&record.event_type)
         {
             if let Some(terminal_task_id) =
                 observation::resolve_event_task_id(&record.task_id, &record.payload)

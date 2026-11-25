@@ -183,7 +183,8 @@ pub struct HiveSettings {
     pub hive_provider_configs: std::collections::BTreeMap<String, HiveProviderRouteSettings>,
     /// Per-provider saved settings for the fallback Hive route, keyed by normalized provider profile.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub hive_fallback_provider_configs: std::collections::BTreeMap<String, HiveProviderRouteSettings>,
+    pub hive_fallback_provider_configs:
+        std::collections::BTreeMap<String, HiveProviderRouteSettings>,
 }
 
 fn default_schema_version() -> u32 {
@@ -265,7 +266,10 @@ impl HiveSettings {
     /// For the primary route (`is_fallback = false`), an empty or omitted profile
     /// resolves to `"rout"`. For the fallback route (`is_fallback = true`), an
     /// empty or omitted profile returns `None` (disabled).
-    pub fn normalize_provider_config_key(profile: Option<&str>, is_fallback: bool) -> Option<String> {
+    pub fn normalize_provider_config_key(
+        profile: Option<&str>,
+        is_fallback: bool,
+    ) -> Option<String> {
         let normalized = profile
             .map(str::trim)
             .filter(|value| !value.is_empty())

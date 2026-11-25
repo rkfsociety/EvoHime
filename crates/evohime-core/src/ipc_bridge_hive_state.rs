@@ -454,7 +454,9 @@ impl IpcBridge {
         let target_fallback_key = update
             .fallback_profile
             .as_deref()
-            .and_then(|p| crate::hive_settings::HiveSettings::normalize_provider_config_key(Some(p), true))
+            .and_then(|p| {
+                crate::hive_settings::HiveSettings::normalize_provider_config_key(Some(p), true)
+            })
             .or_else(|| active_fallback_key.clone());
         let fallback_reset_schedule = update.fallback_reset_schedule.unwrap_or(
             evohime_model_gateway::config::LimitResetSchedule {
