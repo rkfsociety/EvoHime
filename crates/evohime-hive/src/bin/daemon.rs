@@ -1671,8 +1671,15 @@ async fn main() -> ExitCode {
     let control_daemon = daemon.clone();
     let city_map_runtime = CityMapRuntime::new();
     let control_city_map = city_map_runtime.clone();
+    let honeycomb_runtime = HoneycombRuntime::open_default(
+        settings.eva_workspace_path.as_deref(),
+        &settings.watched_repositories,
+    );
+    let control_honeycomb = honeycomb_runtime.clone();
     let control_task = tokio::spawn(async move {
-        if let Err(error) = run_observation_control_server(control_daemon, control_city_map).await {
+        if let Err(error) =
+            run_observation_control_server(control_daemon, control_city_map, control_honeycomb).await
+        {
             tracing::error!(error = %error, "observation control IPC server stopped");
         }
     });
@@ -1711,10 +1718,86 @@ async fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[derive(Clone)]
+struct HoneycombRuntime {
+    engine: Arc<std::sync::Mutex<evohime_hive::honeycomb_engine::HoneycombEngine>>,
+}
+
+impl Default for HoneycombRuntime {
+    fn default() -> Self {
+        Self::in_memory(None, &[])
+    }
+}
+
+impl HoneycombRuntime {
+    fn open_default(eva_workspace_path: Option<&str>, watched_repositories: &[String]) -> Self {
+        let base_dir = std::env::var_os("EVOHIME_DATA_DIR")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("LOCALAPPDATA")
+                    .filter(|v| !v.is_empty())
+                    .map(|root| PathBuf::from(root).join("EvoHime"))
+            });
+        if let Some(dir) = base_dir {
+            let db_path = dir.join("hive.db");
+            if let Ok(db) = evohime_hive::honeycomb_db::HiveDatabase::open(&db_path) {
+                if let Ok(engine) = evohime_hive::honeycomb_engine::HoneycombEngine::open(
+                    db,
+                    eva_workspace_path,
+                    watched_repositories,
+                ) {
+                    return Self {
+                        engine: Arc::new(std::sync::Mutex::new(engine)),
+                    };
+                }
+            }
+        }
+        Self::in_memory(eva_workspace_path, watched_repositories)
+    }
+
+    fn in_memory(eva_workspace_path: Option<&str>, watched_repositories: &[String]) -> Self {
+        let db = match evohime_hive::honeycomb_db::HiveDatabase::open_in_memory() {
+            Ok(db) => db,
+            Err(_) => {
+                let fallback = std::env::temp_dir().join("evohime-hive-fallback.db");
+                #[allow(clippy::expect_used)]
+                evohime_hive::honeycomb_db::HiveDatabase::open(&fallback)
+                    .expect("temp hive db")
+            }
+        };
+        #[allow(clippy::expect_used)]
+        let engine = evohime_hive::honeycomb_engine::HoneycombEngine::open(
+            db,
+            eva_workspace_path,
+            watched_repositories,
+        )
+        .expect("in-memory honeycomb engine");
+        Self {
+            engine: Arc::new(std::sync::Mutex::new(engine)),
+        }
+    }
+
+    fn snapshot_world(&self, paused: bool, queen_working: bool) -> Option<evohime_hive_contract::honeycomb::HoneycombWorldState> {
+        let mut guard = self.engine.lock().ok()?;
+        let _ = guard.set_active_mode(!paused, false, queen_working);
+        Some(guard.world().clone())
+    }
+
+    fn delta_since(
+        &self,
+        from_revision: u64,
+    ) -> Option<evohime_hive_contract::honeycomb::HoneycombWorldDelta> {
+        let guard = self.engine.lock().ok()?;
+        guard.database().read_delta_since(from_revision, 256).ok()
+    }
+}
+
 async fn handle_observation_control_connection<S>(
     mut stream: S,
     daemon: HiveObservationDaemon,
     city_map: CityMapRuntime,
+    honeycomb: HoneycombRuntime,
 ) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -1776,6 +1859,46 @@ async fn handle_observation_control_connection<S>(
                 tracing::debug!("observation control IPC city-map write failed or timed out");
             }
         }
+        HiveObservationControlRequest::GetHoneycombWorld => {
+            let status = daemon.status();
+            let paused = !status.enabled
+                || status.status == evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_LIMITS
+                || status.status == evohime_hive::state::HIVE_OBSERVATION_DISABLED
+                || status.status == evohime_hive::state::HIVE_OBSERVATION_SLEEPING;
+            let queen_working = status.status == "active" || status.status == "observing";
+            let Some(world) = honeycomb.snapshot_world(paused, queen_working) else {
+                return;
+            };
+            let response_bytes = match serde_json::to_vec(&world) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    tracing::error!(error = %error, "failed to serialize HoneycombWorldState");
+                    return;
+                }
+            };
+            let _ = tokio::time::timeout(
+                OBSERVATION_CONTROL_WRITE_TIMEOUT,
+                transport::write_frame(&mut stream, &response_bytes),
+            )
+            .await;
+        }
+        HiveObservationControlRequest::GetHoneycombDelta { from_revision } => {
+            let Some(delta) = honeycomb.delta_since(from_revision) else {
+                return;
+            };
+            let response_bytes = match serde_json::to_vec(&delta) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    tracing::error!(error = %error, "failed to serialize HoneycombWorldDelta");
+                    return;
+                }
+            };
+            let _ = tokio::time::timeout(
+                OBSERVATION_CONTROL_WRITE_TIMEOUT,
+                transport::write_frame(&mut stream, &response_bytes),
+            )
+            .await;
+        }
         HiveObservationControlRequest::NotifySettingsChanged => {
             let controller = HiveObservationController::new(daemon);
             controller.notify_settings_changed();
@@ -1827,6 +1950,7 @@ async fn handle_observation_control_connection<S>(
 async fn run_observation_control_server(
     daemon: HiveObservationDaemon,
     city_map: CityMapRuntime,
+    honeycomb: HoneycombRuntime,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::net::windows::named_pipe::ServerOptions;
 
@@ -1845,8 +1969,9 @@ async fn run_observation_control_server(
         server.connect().await?;
         let daemon = daemon.clone();
         let city_map = city_map.clone();
+        let honeycomb = honeycomb.clone();
         tokio::spawn(async move {
-            handle_observation_control_connection(server, daemon, city_map).await;
+            handle_observation_control_connection(server, daemon, city_map, honeycomb).await;
         });
     }
 }
@@ -1855,6 +1980,7 @@ async fn run_observation_control_server(
 async fn run_observation_control_server(
     daemon: HiveObservationDaemon,
     city_map: CityMapRuntime,
+    honeycomb: HoneycombRuntime,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let socket_path = match std::env::var_os(HIVE_OBSERVATION_CONTROL_SOCKET_ENV) {
         Some(value) if !value.is_empty() => PathBuf::from(value),
@@ -1873,8 +1999,9 @@ async fn run_observation_control_server(
         let (stream, _) = listener.accept().await?;
         let daemon = daemon.clone();
         let city_map = city_map.clone();
+        let honeycomb = honeycomb.clone();
         tokio::spawn(async move {
-            handle_observation_control_connection(stream, daemon, city_map).await;
+            handle_observation_control_connection(stream, daemon, city_map, honeycomb).await;
         });
     }
 }
@@ -1995,6 +2122,7 @@ mod tests {
             server,
             noop_daemon(),
             CityMapRuntime::default(),
+            HoneycombRuntime::default(),
         ));
         transport::write_frame(&mut client, request).await?;
         let response =

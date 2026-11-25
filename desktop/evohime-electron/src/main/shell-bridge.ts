@@ -1077,6 +1077,17 @@ function dispatch(
         .catch(() => ({ ok: true, value: { available: false, snapshot: null } as const }))
     }
 
+    case 'hive.getHoneycombWorld': {
+      const hiveDaemon = options.hiveDaemon
+      if (!hiveDaemon || !hiveDaemon.getHoneycombWorld) {
+        return failure('protocol-error', 'Клиент демона Улья недоступен в этой сборке.')
+      }
+      return hiveDaemon
+        .getHoneycombWorld()
+        .then((outcome) => ({ ok: true, value: outcome }))
+        .catch(() => ({ ok: true, value: { available: false, world: null } as const }))
+    }
+
     case 'core.getHiveObservationStatus': {
       return accepted(client.send({ hiveObservationStatus: { schemaVersion: 1, requestId: '' } }))
     }

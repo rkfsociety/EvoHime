@@ -17,6 +17,8 @@ use std::pin::Pin;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod honeycomb;
+
 /// Boxed `Send` future used for object-safe async contract traits.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 

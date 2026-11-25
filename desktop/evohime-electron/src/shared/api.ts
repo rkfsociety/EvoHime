@@ -8,7 +8,7 @@
 import type { ListenerRuntimeStatus } from './listener-runtime'
 import type { OllamaRuntimeStatus } from './ollama-runtime'
 import type { UpdateStatus } from './update'
-import type { HiveCityMapOutcome } from './hive-city-map'
+import type { HiveCityMapOutcome, HoneycombWorldOutcome } from './hive-city-map'
 
 export type {
   CityBuilding,
@@ -1794,7 +1794,8 @@ export const RENDERER_COMMANDS = [
   'automation.listEvents',
   'automation.cancel',
   'automation.setScheduleEnabled',
-  'hive.getCityMap'
+  'hive.getCityMap',
+  'hive.getHoneycombWorld'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -2435,6 +2436,7 @@ export interface CommandPayloads {
   'automation.cancel': { runId: string }
   'automation.setScheduleEnabled': { scheduleId: string; enabled: boolean }
   'hive.getCityMap': Record<string, never>
+  'hive.getHoneycombWorld': Record<string, never>
 }
 
 export interface CommandResults {
@@ -2820,6 +2822,7 @@ export interface CommandResults {
   /** Живая карта-архипелаг напрямую от `evohime-hive-daemon`; `available: false`
    * при недоступном демоне, таймауте или старом протоколе. */
   'hive.getCityMap': HiveCityMapOutcome
+  'hive.getHoneycombWorld': HoneycombWorldOutcome
 }
 
 export type CommandFailureCode =

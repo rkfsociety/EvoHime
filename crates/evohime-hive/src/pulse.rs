@@ -291,6 +291,13 @@ pub enum HiveObservationControlRequest {
     /// capital); an old daemon answers the canonical `invalid_request` error
     /// frame, which the client maps to `unavailable`.
     GetCityMap,
+    /// Requests the current 2D Honeycomb world state (Plan 200).
+    GetHoneycombWorld,
+    /// Requests incremental Honeycomb mutation events since `from_revision`.
+    GetHoneycombDelta {
+        /// Last revision already applied by the client.
+        from_revision: u64,
+    },
 }
 
 /// Test seam for the observation and dispatch intervals.

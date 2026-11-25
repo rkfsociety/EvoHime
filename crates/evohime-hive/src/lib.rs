@@ -18,3 +18,9 @@ pub mod worktree;
 /// Read-only architecture scanner and versioned city-map contract
 /// (plan 199.1).
 pub mod city_map;
+
+/// Dedicated Single-Writer SQLite persistence for the Honeycomb Hive (Plan 200).
+pub mod honeycomb_db;
+
+/// Queen's Honeycomb relay pipeline, sector lifecycle, and remodeling engine (Plan 200).
+pub mod honeycomb_engine;

@@ -933,3 +933,21 @@ export interface HoneycombWorldState {
   readonly activeDispatches: readonly HoneycombVehicleDispatch[]
   readonly revision: number
 }
+
+export type HoneycombWorldOutcome =
+  | { readonly available: true; readonly world: HoneycombWorldState }
+  | { readonly available: false; readonly world: null }
+
+export function parseHoneycombWorldState(raw: unknown): HoneycombWorldState | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const obj = raw as Record<string, unknown>
+  if (obj['schemaVersion'] !== 2) return null
+  if (typeof obj['paused'] !== 'boolean') return null
+  if (typeof obj['queenWorking'] !== 'boolean') return null
+  if (typeof obj['primaryCityId'] !== 'string') return null
+  if (!Array.isArray(obj['cities'])) return null
+  if (!Array.isArray(obj['intercityLinks'])) return null
+  if (!Array.isArray(obj['activeDispatches'])) return null
+  if (typeof obj['revision'] !== 'number' || !Number.isFinite(obj['revision'])) return null
+  return raw as HoneycombWorldState
+}

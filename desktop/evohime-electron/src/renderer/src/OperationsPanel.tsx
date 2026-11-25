@@ -2217,10 +2217,16 @@ export function HiveDashboard({
   // Карта-архипелаг читается напрямую у evohime-hive-daemon (план 199.3):
   // демонирующий клиент сам деградирует любой сбой до available:false.
   const [cityMap, setCityMap] = useState<HiveCityMapPayload | null>(() => lastKnownCityMap)
+  const [honeycombWorld, setHoneycombWorld] = useState<import('@shared/hive-city-map').HoneycombWorldState | null>(null)
   const cityMapRef = useRef<HiveCityMapPayload | null>(lastKnownCityMap)
   const cityMapRevisionRef = useRef<string | null>(null)
   const requestCityMap = useCallback((): void => {
     if (!api) return
+    void api.invoke('hive.getHoneycombWorld', {}).then((outcome) => {
+      if (outcome.ok && outcome.value.available) {
+        setHoneycombWorld(outcome.value.world)
+      }
+    }).catch(() => undefined)
     void api.invoke('hive.getCityMap', {}).then((outcome) => {
       if (!outcome.ok) return
       const value = outcome.value
@@ -3317,6 +3323,7 @@ export function HiveDashboard({
         <section className="hive-stage__departments" aria-label={translate('Департаменты улья')}>
           <HiveCityScene
             status={observationStatus}
+            world={honeycombWorld ?? undefined}
             departments={departmentPins}
             selectedDepartment={selectedDepartment}
             onSelectDepartment={toggleDepartmentFilter}

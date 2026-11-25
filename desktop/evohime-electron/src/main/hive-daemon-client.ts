@@ -1,10 +1,14 @@
 import { connect as netConnect, type Socket } from 'node:net'
 
-import type { HiveCityMapOutcome } from '@shared/hive-city-map'
+import type { HiveCityMapOutcome, HoneycombWorldOutcome } from '@shared/hive-city-map'
 // Значения импортируются по относительному пути (в отличие от остального
 // src/main): модуль также грузит dev-конфигурация Hive Studio
 // (`vite.studio.config.ts`), которую bundler Vite собирает до алиасов.
-import { MAX_CITY_MAP_FRAME_BYTES, parseHiveCityMapSnapshot } from '../shared/hive-city-map'
+import {
+  MAX_CITY_MAP_FRAME_BYTES,
+  parseHiveCityMapSnapshot,
+  parseHoneycombWorldState
+} from '../shared/hive-city-map'
 
 /**
  * Direct main-process client to `evohime-hive-daemon` over the observation
@@ -71,6 +75,10 @@ const GET_CITY_MAP_REQUEST = encodeHiveFrame(
   JSON.stringify({ command: 'get_city_map' })
 )
 
+const GET_HONEYCOMB_WORLD_REQUEST = encodeHiveFrame(
+  JSON.stringify({ command: 'get_honeycomb_world' })
+)
+
 export interface HiveDaemonClientOptions {
   /** Endpoint override; defaults to `hiveControlEndpoint()`. */
   readonly endpoint?: string
@@ -112,6 +120,36 @@ function defaultConnect(endpoint: string, timeoutMs: number): Promise<Socket> {
 export async function fetchHiveCityMap(
   options: HiveDaemonClientOptions = {}
 ): Promise<HiveCityMapOutcome> {
+  const bytes = await fetchControlPayload(GET_CITY_MAP_REQUEST, options)
+  if (bytes === null) return { available: false, snapshot: null }
+  return decodeCityMapFrame(bytes)
+}
+
+/**
+ * Sends `get_honeycomb_world` over one fresh connection and validates the answer.
+ * Always resolves; never throws.
+ */
+export async function fetchHoneycombWorld(
+  options: HiveDaemonClientOptions = {}
+): Promise<HoneycombWorldOutcome> {
+  const bytes = await fetchControlPayload(GET_HONEYCOMB_WORLD_REQUEST, options)
+  if (bytes === null) return { available: false, world: null }
+  try {
+    const value = JSON.parse(bytes.toString('utf8')) as unknown
+    if (value && typeof value === 'object' && !Array.isArray(value) && 'error' in value) {
+      return { available: false, world: null }
+    }
+    const world = parseHoneycombWorldState(value)
+    return world === null ? { available: false, world: null } : { available: true, world }
+  } catch {
+    return { available: false, world: null }
+  }
+}
+
+async function fetchControlPayload(
+  requestFrame: Buffer,
+  options: HiveDaemonClientOptions = {}
+): Promise<Buffer | null> {
   const timeoutMs = options.timeoutMs ?? HIVE_CITY_MAP_TIMEOUT_MS
   const connect = options.connect ?? defaultConnect
   const endpoint = options.endpoint ?? hiveControlEndpoint(options.env, options.platform)
@@ -120,19 +158,21 @@ export async function fetchHiveCityMap(
   try {
     socket = await connect(endpoint, timeoutMs)
   } catch {
-    return { available: false, snapshot: null }
+    return null
   }
 
   try {
-    const bytes = await readResponse(socket, timeoutMs)
-    if (bytes === null) return { available: false, snapshot: null }
-    return decodeCityMapFrame(bytes)
+    return await readResponse(socket, requestFrame, timeoutMs)
   } finally {
     socket.destroy()
   }
 }
 
-async function readResponse(socket: Socket, timeoutMs: number): Promise<Buffer | null> {
+async function readResponse(
+  socket: Socket,
+  requestFrame: Buffer,
+  timeoutMs: number
+): Promise<Buffer | null> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = []
     let received = 0
@@ -179,7 +219,7 @@ async function readResponse(socket: Socket, timeoutMs: number): Promise<Buffer |
     socket.once('error', onError)
     socket.once('close', onClose)
 
-    socket.write(GET_CITY_MAP_REQUEST, (error) => {
+    socket.write(requestFrame, (error) => {
       if (error) finish(null)
     })
   })
@@ -210,6 +250,7 @@ export function decodeCityMapFrame(payload: Buffer): HiveCityMapOutcome {
 
 export interface HiveCityMapClient {
   readonly getCityMap: () => Promise<HiveCityMapOutcome>
+  readonly getHoneycombWorld?: () => Promise<HoneycombWorldOutcome>
 }
 
 /** Builds the long-lived client used by the shell bridge. */
@@ -217,6 +258,7 @@ export function createHiveDaemonClient(
   options: HiveDaemonClientOptions = {}
 ): HiveCityMapClient {
   return {
-    getCityMap: () => fetchHiveCityMap(options)
+    getCityMap: () => fetchHiveCityMap(options),
+    getHoneycombWorld: () => fetchHoneycombWorld(options)
   }
 }

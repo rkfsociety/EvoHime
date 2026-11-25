@@ -15,6 +15,7 @@ evohime-permissions = { path = "../permissions" }
 evohime-tool-runtime = { path = "../tool-runtime" }
 
 prost = "0.14"
+rusqlite = { version = "0.43", features = ["backup", "bundled", "fallible_uint"] }
 tokio = { workspace = true, features = ["fs", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 serde = { workspace = true }
