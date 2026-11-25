@@ -9,14 +9,14 @@ export const CELL_HEX_RADIUS = 30
 export const RING_BASE_RADIUS = 84
 export const RING_STEP = 112
 
-/** Углы нормалей к 6 граням pointy-top гексагона (строго перпендикулярно граням). */
+/** Углы нормалей к 6 граням flat-top гексагона (строго перпендикулярно граням, верхняя/нижняя грани горизонтальны). */
 export const HEX_FACE_NORMAL_ANGLES: readonly number[] = [
-  0,
-  Math.PI / 3,
-  (2 * Math.PI) / 3,
-  Math.PI,
-  (4 * Math.PI) / 3,
-  (5 * Math.PI) / 3
+  Math.PI / 6,
+  Math.PI / 2,
+  (5 * Math.PI) / 6,
+  (7 * Math.PI) / 6,
+  (3 * Math.PI) / 2,
+  (11 * Math.PI) / 6
 ]
 
 export interface Point2D {
@@ -114,11 +114,11 @@ export function selectCitadelExitFaceIndices(exitsCount: number): readonly numbe
   }
 }
 
-/** Возвращает 6 вершин pointy-top гексагона с центром `(cx, cy)` и радиусом `radius`. */
-export function getPointyHexVertices(cx: number, cy: number, radius: number): readonly Point2D[] {
+/** Возвращает 6 вершин flat-top гексагона (верхняя и нижняя грани горизонтальны). */
+export function getFlatHexVertices(cx: number, cy: number, radius: number): readonly Point2D[] {
   const vertices: Point2D[] = []
   for (let i = 0; i < 6; i += 1) {
-    const angle = (Math.PI / 6) + (i * Math.PI) / 3
+    const angle = (i * Math.PI) / 3
     vertices.push({
       x: cx + Math.cos(angle) * radius,
       y: cy + Math.sin(angle) * radius
@@ -126,6 +126,9 @@ export function getPointyHexVertices(cx: number, cy: number, radius: number): re
   }
   return vertices
 }
+
+/** @deprecated Используй `getFlatHexVertices`. */
+export const getPointyHexVertices = getFlatHexVertices
 
 /**
  * Переводит гекс-координаты `(q, r)` и индекс на кольце в плавную 2D-позицию

@@ -12,7 +12,7 @@ import type { UiIconName } from '../../UiIcon'
 import {
   buildWorldRoadGraphAndPlacements,
   getCityOuterHexRadius,
-  getPointyHexVertices,
+  getFlatHexVertices,
   type HexCellPlacement
 } from './honeycomb-geometry'
 import {
@@ -106,7 +106,7 @@ function buildFallbackWorld(status: string, queenWorking: boolean): HoneycombWor
 }
 
 function traceHexPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number): void {
-  const verts = getPointyHexVertices(cx, cy, radius)
+  const verts = getFlatHexVertices(cx, cy, radius)
   if (verts.length === 0) return
   ctx.beginPath()
   ctx.moveTo(verts[0]!.x, verts[0]!.y)
@@ -334,7 +334,7 @@ export function HiveCityScene({
         ctx.stroke()
 
         // Угловые узлы-башенки на 6 вершинах внешнего забора города.
-        const fenceVertices = getPointyHexVertices(city.worldCenterX, city.worldCenterY, cityHexRadius)
+        const fenceVertices = getFlatHexVertices(city.worldCenterX, city.worldCenterY, cityHexRadius)
         for (const v of fenceVertices) {
           traceHexPath(ctx, v.x, v.y, 7.5)
           ctx.fillStyle = '#0b1120'
@@ -344,13 +344,13 @@ export function HiveCityScene({
           ctx.stroke()
         }
 
-        // Название города — строго снаружи за забором (над верхней вершиной), чтобы не перекрывать дороги.
+        // Название города — строго снаружи за забором (над горизонтальной верхней гранью).
         ctx.font = '600 13px sans-serif'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         const cityTitle = city.hasQueenCitadel ? `Королева · ${city.projectName}` : city.projectName
         const titleW = ctx.measureText(cityTitle).width
-        const titleY = city.worldCenterY - cityHexRadius - 18
+        const titleY = city.worldCenterY - cityHexRadius * Math.cos(Math.PI / 6) - 18
         ctx.fillStyle = 'rgba(6, 10, 20, 0.85)'
         ctx.beginPath()
         ctx.roundRect(city.worldCenterX - titleW / 2 - 10, titleY - 11, titleW + 20, 22, 8)

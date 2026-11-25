@@ -10,6 +10,7 @@ export {
 export {
   buildWorldRoadGraphAndPlacements,
   findRoadPath,
+  getFlatHexVertices,
   getPointyHexVertices,
   getRingCellRadius,
   getRingRoadRadius,
