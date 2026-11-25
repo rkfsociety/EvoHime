@@ -3,7 +3,7 @@
 Статус: active implementation contract. Вся логика карты архитектуры принадлежит независимому модулю `evohime-hive` (`evohime-hive-daemon`) и отображается в Electron UI напрямую через control pipe Улья; `evohime-core` и `desktop-ipc` proto не затрагиваются.
 
 ## Цель
-Заменить статичную панораму с абстрактными департаментами в [HiveCityScene.tsx](../../desktop/evohime-electron/src/renderer/src/components/3d/HiveCityScene.tsx) на **живой кликабельный изометрический архипелаг городов без вращения камеры**:
+Заменить статичную панораму с абстрактными департаментами в [HiveCityScene.tsx](../../desktop/evohime-electron/src/renderer/src/components/hive/HiveCityScene.tsx) на **живой кликабельный изометрический архипелаг городов без вращения камеры**:
 - в центре — **Столица Евы**, отражающая реальную текущую архитектуру EvoHime (crates, оболочка, домены и зависимости);
 - вокруг неё — **города-спутники** для каждого проекта из списка `watched_repositories`: при добавлении нового проекта в наблюдение рядом автоматически «строится» его город, отражающий реальную структуру этого репозитория, и соединяется со Столицей световым мостом; при удалении проекта город сворачивается;
 - город остаётся «живым» (пульс наблюдения, потоки света по дорогам, дроны активных агентов Улья, кликабельный инспектор зданий и связей, плавный фокус/зум на выбранный город без вращения угла камеры).
@@ -24,7 +24,7 @@
 ## Изменяемые контракты
 - `evohime-hive`: новый модуль `city_map` (`HiveCityMapSnapshot`, `CityIsland`, `CityDistrict`, `CityBuilding`, `CityEdge`, версия схемы `HIVE_CITY_MAP_SCHEMA_VERSION = 1`, `deny_unknown_fields`). Любое новое поле требует инкремента `HIVE_CITY_MAP_SCHEMA_VERSION`.
 - `evohime-hive::pulse`: аддитивный вариант `HiveObservationControlRequest::GetCityMap` на собственном pipe Улья (полная обратная совместимость с `GetObservationStatus` и `NotifySettingsChanged`).
-- `evohime-electron`: новый main-клиент `hive-daemon-client.ts` для прямого подключения к `\\.\pipe\evohime-hive-observation` / `hive-observation.sock`, команда `hive.getCityMap` в `@shared/api` и `shell-bridge.ts`, переработка [HiveCityScene.tsx](../../desktop/evohime-electron/src/renderer/src/components/3d/HiveCityScene.tsx) и её интеграция в [OperationsPanel.tsx](../../desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx).
+- `evohime-electron`: новый main-клиент `hive-daemon-client.ts` для прямого подключения к `\\.\pipe\evohime-hive-observation` / `hive-observation.sock`, команда `hive.getCityMap` в `@shared/api` и `shell-bridge.ts`, переработка [HiveCityScene.tsx](../../desktop/evohime-electron/src/renderer/src/components/hive/HiveCityScene.tsx) и её интеграция в [OperationsPanel.tsx](../../desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx).
 
 ### Сводная таблица уровней лимитов фрейма и снимка
 | Уровень | Константа | Лимит | Поведение при превышении |

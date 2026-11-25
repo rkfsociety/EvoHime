@@ -11,7 +11,7 @@ use evohime_hive_contract::honeycomb::{
     HONEYCOMB_MIN_CITADEL_EXITS, HONEYCOMB_SECTOR_CAPACITY, HONEYCOMB_WORLD_SCHEMA_VERSION,
 };
 
-use crate::city_map::{build_city_island_from_checkout, CityIslandRole};
+use crate::city_map::{scan_island, CityIslandRole, MAX_REPO_SCAN_DURATION};
 use crate::honeycomb_db::{HiveDatabase, HiveDbError};
 
 /// Minimum cooldown between full project city remodel passes (5 minutes).
@@ -416,13 +416,16 @@ impl HoneycombEngine {
         } else {
             CityIslandRole::Satellite
         };
-        let island = build_city_island_from_checkout(
-            city_id,
+        let island = match scan_island(
+            checkout_path,
+            city_id.to_string(),
             &city.project_name,
             role,
-            checkout_path,
-            std::time::Instant::now(),
-        );
+            Some(std::time::Instant::now() + MAX_REPO_SCAN_DURATION),
+        ) {
+            Ok(island) => island,
+            Err(_) => return Ok(false),
+        };
 
         if self.last_structure_hashes.get(city_id) == Some(&island.structure_hash) {
             return Ok(false);

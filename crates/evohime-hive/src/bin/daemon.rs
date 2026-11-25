@@ -1811,7 +1811,7 @@ impl HoneycombRuntime {
             settings.eva_workspace_path.as_deref(),
             &settings.watched_repositories,
         );
-        let obs_status = state.observation_status.as_deref().unwrap_or("");
+        let obs_status = state.observation_status.as_str();
         let autonomy_enabled = obs_status != evohime_hive::state::HIVE_OBSERVATION_DISABLED
             && obs_status != evohime_hive::state::HIVE_OBSERVATION_SLEEPING;
         let waiting_for_limits =
