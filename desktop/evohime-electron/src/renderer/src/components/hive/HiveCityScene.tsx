@@ -435,12 +435,12 @@ export function HiveCityScene({
             if (pass === 'curb') {
               ctx.setLineDash([])
               ctx.strokeStyle = isSecondary ? '#273549' : '#334155'
-              ctx.lineWidth = isSecondary ? 12 : edge.kind === 'intercity' ? 22 : 19
+              ctx.lineWidth = isSecondary ? 14 : edge.kind === 'intercity' ? 24 : 22
               ctx.stroke()
             } else if (pass === 'asphalt') {
               ctx.setLineDash([])
               ctx.strokeStyle = isSecondary ? '#172133' : '#0f172a'
-              ctx.lineWidth = isSecondary ? 9 : edge.kind === 'intercity' ? 18 : 15
+              ctx.lineWidth = isSecondary ? 11 : edge.kind === 'intercity' ? 20 : 18
               ctx.stroke()
             } else {
               ctx.setLineDash(isSecondary ? [4, 5] : edge.kind === 'intercity' ? [10, 7] : [6, 6])
@@ -484,8 +484,8 @@ export function HiveCityScene({
         const tx = -ry
         const ty = rx
 
-        const stopDist = 13
-        const sideOffset = 8.5
+        const stopDist = 14
+        const sideOffset = 11.5
         const cityMaxRing = Math.max(
           city.maxRing,
           city.sectors.length > 0 ? 1 : 0,
@@ -565,20 +565,20 @@ export function HiveCityScene({
 
         ctx.fillStyle = ROLE_COLORS[vehicle.role]
         ctx.strokeStyle = '#020617'
-        ctx.lineWidth = 1.2
+        ctx.lineWidth = 1.0
         ctx.beginPath()
-        ctx.roundRect(-7, -4, 14, 8, 2.5)
+        ctx.roundRect(-5.5, -2.5, 11, 5, 1.8)
         ctx.fill()
         ctx.stroke()
 
         ctx.fillStyle = CARGO_COLORS[vehicle.cargo]
         ctx.beginPath()
-        ctx.arc(-1, 0, 2.4, 0, Math.PI * 2)
+        ctx.arc(-0.8, 0, 1.7, 0, Math.PI * 2)
         ctx.fill()
 
         ctx.fillStyle = vehicle.waitingAtSignal || vehicle.waitingForCarAhead ? '#ef4444' : '#fef08a'
-        ctx.fillRect(5.5, -2.5, 1.5, 1.5)
-        ctx.fillRect(5.5, 1, 1.5, 1.5)
+        ctx.fillRect(4.2, -1.8, 1.2, 1.1)
+        ctx.fillRect(4.2, 0.7, 1.2, 1.1)
 
         ctx.restore()
       }

@@ -99,10 +99,12 @@ function computeLanePose(
   fromY: number,
   toX: number,
   toY: number,
-  t: number
+  t: number,
+  isSecondary = false
 ): { readonly x: number; readonly y: number; readonly angle: number } {
   const angle = Math.atan2(toY - fromY, toX - fromX)
-  const laneOffset = 6.5
+  // Центр правой полосы строго внутри полотна (полуширина магистрали 9px, второстепенной 5.5px).
+  const laneOffset = isSecondary ? 2.4 : 4.6
   const nx = -Math.sin(angle) * laneOffset
   const ny = Math.cos(angle) * laneOffset
   return {
@@ -197,12 +199,14 @@ export function stepTrafficSimulation(
     }
     const initialSegLen = Math.max(1, Math.hypot(nextNode.x - startNode.x, nextNode.y - startNode.y))
     const initialProgress = Math.min(initialSegLen * 0.45, ((spawnIndex % 3) + 1) * 18)
+    const initEdge = graph.adjacency.get(waypoints[initialSegment] ?? '')?.find((e) => e.toId === waypoints[initialSegment + 1])?.edge
     const initPose = computeLanePose(
       startNode.x,
       startNode.y,
       nextNode.x,
       nextNode.y,
-      initialProgress / initialSegLen
+      initialProgress / initialSegLen,
+      initEdge?.kind === 'driveway'
     )
     state.vehicles.set(dispatch.id, {
       id: dispatch.id,
@@ -288,9 +292,17 @@ export function stepTrafficSimulation(
     const curFrom = graph.nodes.get(vehicle.waypoints[vehicle.segmentIndex] ?? '')
     const curTo = graph.nodes.get(vehicle.waypoints[vehicle.segmentIndex + 1] ?? '')
     if (curFrom && curTo) {
+      const curEdge = graph.adjacency.get(curFrom.id)?.find((item) => item.toId === curTo.id)?.edge
       const curLen = Math.max(1, Math.hypot(curTo.x - curFrom.x, curTo.y - curFrom.y))
       const t = Math.max(0, Math.min(1, vehicle.segmentProgressPx / curLen))
-      const targetPose = computeLanePose(curFrom.x, curFrom.y, curTo.x, curTo.y, t)
+      const targetPose = computeLanePose(
+        curFrom.x,
+        curFrom.y,
+        curTo.x,
+        curTo.y,
+        t,
+        curEdge?.kind === 'driveway'
+      )
 
       // Строго держим машину на полосе дороги; на первых 10px после поворота на перекрёстке
       // плавно доводим поперечное смещение, чтобы поворот был без скачка, но в пределах асфальта.
