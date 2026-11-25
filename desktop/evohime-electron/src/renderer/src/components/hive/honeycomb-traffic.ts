@@ -114,10 +114,11 @@ function computeLanePose(
 
 export interface TrafficSimulationState {
   readonly vehicles: Map<string, ActiveVehicle>
+  lastRevision: number
 }
 
 export function createTrafficSimulationState(): TrafficSimulationState {
-  return { vehicles: new Map() }
+  return { vehicles: new Map(), lastRevision: -1 }
 }
 
 function resolveDispatchWaypoints(
@@ -158,7 +159,14 @@ export function stepTrafficSimulation(
 ): void {
   if (world.paused || world.activeDispatches.length === 0) {
     state.vehicles.clear()
+    state.lastRevision = world.revision
     return
+  }
+
+  // При перестройке/расширении города перепривязываем машины к новому графу дорог.
+  if (state.lastRevision !== world.revision) {
+    state.vehicles.clear()
+    state.lastRevision = world.revision
   }
 
   const activeIds = new Set(world.activeDispatches.map((d) => d.id))
@@ -284,12 +292,19 @@ export function stepTrafficSimulation(
       const t = Math.max(0, Math.min(1, vehicle.segmentProgressPx / curLen))
       const targetPose = computeLanePose(curFrom.x, curFrom.y, curTo.x, curTo.y, t)
 
-      // Плавное сглаживание позиции и угла корпуса (убирает резкие скачки на поворотах и разворотах).
+      // Строго держим машину на полосе дороги; на первых 10px после поворота на перекрёстке
+      // плавно доводим поперечное смещение, чтобы поворот был без скачка, но в пределах асфальта.
       const effectiveDt = Math.min(0.1, dtSec) * Math.min(20, Math.max(1, timeScale))
-      const posAlpha = 1 - Math.exp(-effectiveDt * 14)
       const angleAlpha = 1 - Math.exp(-effectiveDt * 12)
-      vehicle.x += (targetPose.x - vehicle.x) * posAlpha
-      vehicle.y += (targetPose.y - vehicle.y) * posAlpha
+      const inCorner = vehicle.segmentProgressPx < 12
+      if (inCorner) {
+        const cornerAlpha = 1 - Math.exp(-effectiveDt * 18)
+        vehicle.x += (targetPose.x - vehicle.x) * cornerAlpha
+        vehicle.y += (targetPose.y - vehicle.y) * cornerAlpha
+      } else {
+        vehicle.x = targetPose.x
+        vehicle.y = targetPose.y
+      }
       vehicle.angleRad = lerpShortestAngle(vehicle.angleRad, targetPose.angle, angleAlpha)
 
       // Внутри Цитадели (между центром и воротами) машина скрыта полностью;

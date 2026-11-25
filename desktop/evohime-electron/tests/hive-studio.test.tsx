@@ -206,8 +206,25 @@ describe('honeycomb geometry & traffic', () => {
       stepTrafficSimulation(traffic, world, roadGraph, 0.03, 1.0 + step * 0.03, 1)
       for (const v of traffic.vehicles.values()) {
         const prev = prevPositions.get(v.id)
-        if (!prev) continue
-        expect(Math.hypot(v.x - prev.x, v.y - prev.y)).toBeLessThan(25)
+        if (prev) {
+          expect(Math.hypot(v.x - prev.x, v.y - prev.y)).toBeLessThan(25)
+        }
+        // Машина всегда едет строго по дорожному полотну (отклонение от оси дороги <= 11px).
+        if (v.opacity > 0.1) {
+          let minEdgeDist = Infinity
+          for (const edge of roadGraph.edges) {
+            const a = roadGraph.nodes.get(edge.fromId)!
+            const b = roadGraph.nodes.get(edge.toId)!
+            const dx = b.x - a.x
+            const dy = b.y - a.y
+            const lenSq = dx * dx + dy * dy
+            if (lenSq < 1e-3) continue
+            const t = Math.max(0, Math.min(1, ((v.x - a.x) * dx + (v.y - a.y) * dy) / lenSq))
+            const dist = Math.hypot(v.x - (a.x + dx * t), v.y - (a.y + dy * t))
+            if (dist < minEdgeDist) minEdgeDist = dist
+          }
+          expect(minEdgeDist).toBeLessThanOrEqual(11)
+        }
       }
     }
   })
