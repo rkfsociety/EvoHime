@@ -544,6 +544,34 @@ export function HiveCityScene({
         }
       }
 
+      // 4.5. Машины рисуются ДО плотных зданий, чтобы крыши сот гарантированно перекрывали их у граней.
+      for (const vehicle of trafficRef.current.vehicles.values()) {
+        if (vehicle.opacity <= 0.02) continue
+        ctx.save()
+        ctx.globalAlpha = vehicle.opacity
+        ctx.translate(vehicle.x, vehicle.y)
+        ctx.rotate(vehicle.angleRad)
+
+        ctx.fillStyle = ROLE_COLORS[vehicle.role]
+        ctx.strokeStyle = '#020617'
+        ctx.lineWidth = 1.2
+        ctx.beginPath()
+        ctx.roundRect(-7, -4, 14, 8, 2.5)
+        ctx.fill()
+        ctx.stroke()
+
+        ctx.fillStyle = CARGO_COLORS[vehicle.cargo]
+        ctx.beginPath()
+        ctx.arc(-1, 0, 2.4, 0, Math.PI * 2)
+        ctx.fill()
+
+        ctx.fillStyle = vehicle.waitingAtSignal || vehicle.waitingForCarAhead ? '#ef4444' : '#fef08a'
+        ctx.fillRect(5.5, -2.5, 1.5, 1.5)
+        ctx.fillRect(5.5, 1, 1.5, 1.5)
+
+        ctx.restore()
+      }
+
       // 5. Соты: Цитадель Королевы, базовые узлы, соты-дома агентов внутри секторов, модули проекта.
       for (const [id, placement] of currentPlacements.entries()) {
         // Невидимый центр сектора используется только для маршрутизации и выбора сектора.
@@ -588,10 +616,10 @@ export function HiveCityScene({
               ctx.fill()
             }
           } else {
-            // Свободное место (фундамент соты под будущего агента).
+            // Свободное место (непрозрачный фундамент соты под будущего агента).
             ctx.setLineDash([4, 3])
             traceHexPath(ctx, pose.x, pose.y, r * 0.9, placement.rotationRad)
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.35)'
+            ctx.fillStyle = '#0e172a'
             ctx.fill()
             ctx.lineWidth = 1.1
             ctx.strokeStyle = 'rgba(148, 163, 184, 0.32)'
@@ -641,14 +669,14 @@ export function HiveCityScene({
 
         if (placement.kind === 'citadel') {
           traceHexPath(ctx, pose.x, pose.y, r * 0.44, placement.rotationRad)
-          ctx.fillStyle = currentWorld.queenWorking ? 'rgba(251, 191, 36, 0.32)' : 'rgba(161, 98, 7, 0.22)'
+          ctx.fillStyle = currentWorld.queenWorking ? '#5c4314' : '#3d2e12'
           ctx.fill()
           ctx.lineWidth = 1.6
           ctx.strokeStyle = '#fbbf24'
           ctx.stroke()
         } else if (placement.kind === 'module') {
           traceHexPath(ctx, pose.x, pose.y, r * 0.45, placement.rotationRad)
-          ctx.fillStyle = 'rgba(56, 189, 248, 0.14)'
+          ctx.fillStyle = '#1d324d'
           ctx.fill()
         }
 
@@ -673,37 +701,6 @@ export function HiveCityScene({
           ctx.fillStyle = '#fef08a'
           ctx.fillText('EVA', pose.x, pose.y)
         }
-      }
-
-      // 6. Машины (только при активных рейсах, плавно исчезают за гранью сот).
-      for (const vehicle of trafficRef.current.vehicles.values()) {
-        if (vehicle.opacity <= 0.02) continue
-        ctx.save()
-        ctx.globalAlpha = vehicle.opacity
-        ctx.translate(vehicle.x, vehicle.y)
-        ctx.rotate(vehicle.angleRad)
-
-        // Корпус машины.
-        ctx.fillStyle = ROLE_COLORS[vehicle.role]
-        ctx.strokeStyle = '#020617'
-        ctx.lineWidth = 1.2
-        ctx.beginPath()
-        ctx.roundRect(-7, -4, 14, 8, 2.5)
-        ctx.fill()
-        ctx.stroke()
-
-        // Индикатор груза на крыше.
-        ctx.fillStyle = CARGO_COLORS[vehicle.cargo]
-        ctx.beginPath()
-        ctx.arc(-1, 0, 2.4, 0, Math.PI * 2)
-        ctx.fill()
-
-        // Фары.
-        ctx.fillStyle = vehicle.waitingAtSignal || vehicle.waitingForCarAhead ? '#ef4444' : '#fef08a'
-        ctx.fillRect(5.5, -2.5, 1.5, 1.5)
-        ctx.fillRect(5.5, 1, 1.5, 1.5)
-
-        ctx.restore()
       }
 
       ctx.restore()

@@ -292,23 +292,22 @@ export function stepTrafficSimulation(
       vehicle.y += (targetPose.y - vehicle.y) * posAlpha
       vehicle.angleRad = lerpShortestAngle(vehicle.angleRad, targetPose.angle, angleAlpha)
 
-      // Плавное исчезновение/появление за гранью сот на первом и последнем отрезках маршрута.
-      const fadeDistPx = Math.min(16, curLen * 0.45)
-      let opacity = 1
-      if (
-        vehicle.segmentIndex === 0 &&
-        (curFrom.kind === 'cell_entry' || curFrom.kind === 'citadel_hub' || curFrom.kind === 'exit_gate')
-      ) {
-        opacity = Math.min(opacity, Math.max(0, Math.min(1, vehicle.segmentProgressPx / Math.max(1, fadeDistPx))))
+      // Внутри Цитадели (между центром и воротами) машина скрыта полностью;
+      // за гранью любых ворот/зданий плавно появляется и исчезает.
+      if (curFrom.kind === 'citadel_hub' || curTo.kind === 'citadel_hub') {
+        vehicle.opacity = 0
+      } else {
+        const fadeDistPx = Math.min(16, curLen * 0.45)
+        let opacity = 1
+        if (curFrom.kind === 'cell_entry' || curFrom.kind === 'exit_gate') {
+          opacity = Math.min(opacity, Math.max(0, Math.min(1, vehicle.segmentProgressPx / Math.max(1, fadeDistPx))))
+        }
+        if (curTo.kind === 'cell_entry' || curTo.kind === 'exit_gate') {
+          const distToEdge = Math.max(0, curLen - vehicle.segmentProgressPx)
+          opacity = Math.min(opacity, Math.max(0, Math.min(1, distToEdge / Math.max(1, fadeDistPx))))
+        }
+        vehicle.opacity = opacity
       }
-      if (
-        vehicle.segmentIndex === vehicle.waypoints.length - 2 &&
-        (curTo.kind === 'cell_entry' || curTo.kind === 'citadel_hub' || curTo.kind === 'exit_gate')
-      ) {
-        const distToEdge = Math.max(0, curLen - vehicle.segmentProgressPx)
-        opacity = Math.min(opacity, Math.max(0, Math.min(1, distToEdge / Math.max(1, fadeDistPx))))
-      }
-      vehicle.opacity = opacity
     }
   }
 }
