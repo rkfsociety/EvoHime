@@ -378,6 +378,23 @@ export function HiveCityScene({
         ctx.lineWidth = selectedId === arc.id ? 2.6 : 1.7
         ctx.strokeStyle = selectedId === arc.id ? '#fde047' : `${roleColor}99`
         ctx.stroke()
+
+        // Название сектора строго на территории сектора (в свободной внешней полосе сектора, не задевая соты и дороги).
+        const midAngle = (arc.startAngle + arc.endAngle) / 2
+        const labelRadius = arc.outerRadius - 12
+        const lx = arc.centerX + Math.cos(midAngle) * labelRadius
+        const ly = arc.centerY + Math.sin(midAngle) * labelRadius
+        const shortSectorLabel = arc.label.replace(/^Сектор\s+/i, '')
+        ctx.translate(lx, ly)
+        // Поворачиваем по касательной; в нижней половине переворачиваем на 180°, чтобы текст не был вверх ногами.
+        const tangent = midAngle + Math.PI / 2
+        const readableAngle = Math.sin(midAngle) > 0 ? tangent + Math.PI : tangent
+        ctx.rotate(readableAngle)
+        ctx.font = '600 10px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = roleColor
+        ctx.fillText(shortSectorLabel, 0, 0)
         ctx.restore()
       }
 

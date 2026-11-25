@@ -410,7 +410,7 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
       const ring1CellR = getRingCellRadius(1)
       const ring1RoadR = getRingRoadRadius(1)
       const arcInnerR = ring1RoadR + 14
-      const arcOuterR = ring1CellR + 36
+      const arcOuterR = ring1CellR + 40
 
       const sortedRays = [...exitAngles].map(normalizeAngle).sort((a, b) => a - b)
       const pockets: { start: number; span: number }[] = []
