@@ -113,6 +113,7 @@ impl IpcBridge {
         let Some((action_id, task_id, run_id)) = linked else {
             return;
         };
+        let decision_task_id = task_id.clone();
         let state_after = if granted {
             execution_ledger::ActionState::Running
         } else {
@@ -156,6 +157,57 @@ impl IpcBridge {
                 error = %error,
                 "typed ledger event failed to publish"
             );
+        }
+        if let Ok(Some((conversation_id, client_message_id, workspace_id))) =
+            evohime_local_storage::domains::audit::task_binding(
+                database.connection(),
+                &decision_task_id,
+            )
+        {
+            let decision_payload = serde_json::json!({
+                "approval_id": approval_id,
+                "granted": granted,
+            });
+            if let Ok(bytes) = serde_json::to_vec(&decision_payload) {
+                if let Ok(drafts) =
+                    crate::conversation_event_log::project_core_event("approval.decision", &bytes)
+                {
+                    for draft in drafts {
+                        if let Ok(stored) = evohime_local_storage::domains::audit::append_event(
+                            database.connection(),
+                            evohime_local_storage::domains::audit::NewConversationEvent {
+                                conversation_id: &conversation_id,
+                                workspace_id: &workspace_id,
+                                kind: &draft.kind,
+                                category: &draft.category,
+                                authoritative_payload: &draft.authoritative_payload,
+                                renderer_payload: &draft.renderer_payload,
+                                correlation_id: Some(&client_message_id),
+                                causation_id: None,
+                                task_id: Some(&decision_task_id),
+                                run_id: None,
+                                turn_id: Some(&decision_task_id),
+                                client_message_id: None,
+                                persistence_class: &draft.persistence_class,
+                                sensitivity: &draft.sensitivity,
+                                timestamp_ms: now_ms() as i64,
+                            },
+                        ) {
+                            if let Ok(renderer) =
+                                crate::conversation_event_log::renderer_event(&stored)
+                            {
+                                if let Ok(renderer_bytes) = serde_json::to_vec(&renderer) {
+                                    let _ = database.append_event(
+                                        &decision_task_id,
+                                        "conversation.event",
+                                        &renderer_bytes,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

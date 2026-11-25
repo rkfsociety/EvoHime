@@ -16,6 +16,7 @@ import { ChatProviderPicker } from './ChatProviderPicker'
 import { PinnedGoalBar } from './PinnedGoalBar'
 import { HumanChatQuestions } from './HumanWorkItemsPanel'
 import { UiIcon } from './UiIcon'
+import { collectResolvedApprovalIds } from './approval-state'
 import {
   addOptimisticMessage,
   applyInitialConversationHistory,
@@ -546,7 +547,11 @@ export function TaskTimeline({
       : transcriptForTask(activeTaskId, activeTaskEvents.filter((event) => event.taskId === activeTaskId)),
     [activeTaskEvents, activeTaskId, transcriptForTask]
   )
-  const visibleApproval = approval && !resolvedApprovalIds.includes(approval.approvalId) ? approval : null
+  const resolvedApprovals = useMemo(
+    () => collectResolvedApprovalIds(activeTaskEvents, resolvedApprovalIds),
+    [activeTaskEvents, resolvedApprovalIds]
+  )
+  const visibleApproval = approval && !resolvedApprovals.has(approval.approvalId) ? approval : null
 
   const conversation = useMemo(() => {
     const authoritativeMessages = projectedConversationEvents

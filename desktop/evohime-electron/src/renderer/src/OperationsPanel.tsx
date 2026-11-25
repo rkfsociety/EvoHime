@@ -22,6 +22,7 @@ import {
   prependConversationEvents,
   resumeAtRetainedBoundary
 } from './conversation-projection'
+import { collectRecoveryBlockedTaskIds, collectResolvedApprovalIds } from './approval-state'
 
 interface Props {
   readonly connection: ConnectionState
@@ -1660,11 +1661,12 @@ function isQueenThinking(
   pendingTaskIds: ReadonlySet<string>,
   sendingMessage: boolean,
   activeApprovalTaskIds: ReadonlySet<string>,
-  watchdogExpiredTaskIds: ReadonlySet<string>
+  watchdogExpiredTaskIds: ReadonlySet<string>,
+  recoveryBlockedTaskIds: ReadonlySet<string> = new Set()
 ): boolean {
   if (sendingMessage) return true
   const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
-  const failedOrStoppedTaskIds = new Set<string>()
+  const failedOrStoppedTaskIds = new Set<string>(recoveryBlockedTaskIds)
   const activeTaskSeq = new Map<string, number>()
   const terminalTaskSeq = new Map<string, number>()
   const approvalTaskSeq = new Map<string, number>()
@@ -2488,41 +2490,50 @@ export function HiveDashboard({
     [hiveConversationLogEvents]
   )
 
+  const recoveryBlockedTaskIds = useMemo(
+    () => collectRecoveryBlockedTaskIds(events),
+    [events]
+  )
+  const resolvedApprovals = useMemo(
+    () => collectResolvedApprovalIds([...events, ...hiveApprovalEvents, ...hiveChatEvents], [...resolvedApprovalIds, ...resolvedLocally]),
+    [events, hiveApprovalEvents, hiveChatEvents, resolvedApprovalIds, resolvedLocally]
+  )
+
   const activeApprovals = useMemo(() => {
     const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
-    const resolved = new Set([...resolvedApprovalIds, ...resolvedLocally])
     const byId = new Map<string, { request: ApprovalRequestView; sequence: number }>()
     const newestFirst = [...hiveApprovalEvents].sort((left, right) => right.sequenceId - left.sequenceId)
     const terminated = (event: CoreEvent): boolean =>
-      hiveApprovalEvents.some((candidate) => candidate.taskId === event.taskId
+      (event.taskId.length > 0 && recoveryBlockedTaskIds.has(event.taskId))
+      || hiveApprovalEvents.some((candidate) => candidate.taskId === event.taskId
         && candidate.sequenceId > event.sequenceId && terminalTypes.has(candidate.eventType))
     for (const event of newestFirst) {
       if (event.eventType !== 'approval.required') continue
       if (terminated(event)) continue
       const request = parseApprovalRequest(event)
-      if (!request || resolved.has(request.approvalId)) continue
+      if (!request || resolvedApprovals.has(request.approvalId)) continue
       if (!byId.has(request.approvalId)) byId.set(request.approvalId, { request, sequence: event.sequenceId })
     }
     return [...byId.entries()]
-      .filter(([approvalId]) => !resolved.has(approvalId))
+      .filter(([approvalId]) => !resolvedApprovals.has(approvalId))
       .map(([, item]) => item.request)
-  }, [hiveApprovalEvents, resolvedApprovalIds, resolvedLocally])
+  }, [hiveApprovalEvents, recoveryBlockedTaskIds, resolvedApprovals])
 
   const approvalsFromConversationLog = useMemo(() => {
     const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
-    const resolved = new Set([...resolvedApprovalIds, ...resolvedLocally])
     const requests = new Map<string, { request: ApprovalRequestView; sequence: number }>()
     const orderedEvents = [...hiveChatEvents].sort((left, right) => right.sequenceId - left.sequenceId)
     for (const event of orderedEvents) {
       if (event.eventType !== 'approval.required') continue
+      if (event.taskId.length > 0 && recoveryBlockedTaskIds.has(event.taskId)) continue
       if (orderedEvents.some((candidate) => candidate.taskId === event.taskId
         && candidate.sequenceId > event.sequenceId && terminalTypes.has(candidate.eventType))) continue
       const request = parseApprovalRequest(event)
-      if (!request || resolved.has(request.approvalId) || requests.has(request.approvalId)) continue
+      if (!request || resolvedApprovals.has(request.approvalId) || requests.has(request.approvalId)) continue
       requests.set(request.approvalId, { request, sequence: event.sequenceId })
     }
     return [...requests.values()].map((entry) => entry.request)
-  }, [hiveChatEvents, resolvedApprovalIds, resolvedLocally])
+  }, [hiveChatEvents, recoveryBlockedTaskIds, resolvedApprovals])
   const effectiveActiveApprovals = useMemo(() => {
     const merged = new Map<string, ApprovalRequestView>()
     for (const request of activeApprovals) merged.set(request.approvalId, request)
@@ -3246,8 +3257,8 @@ export function HiveDashboard({
     }
   }, [queenWatchdogEvents])
   const queenTyping = useMemo(
-    () => isQueenThinking(hiveChatEvents, pendingTaskIds, sendingMessage, activeApprovalTaskIds, typingWatchdogExpiredTaskIds),
-    [activeApprovalTaskIds, hiveChatEvents, pendingTaskIds, sendingMessage, typingWatchdogExpiredTaskIds]
+    () => isQueenThinking(hiveChatEvents, pendingTaskIds, sendingMessage, activeApprovalTaskIds, typingWatchdogExpiredTaskIds, recoveryBlockedTaskIds),
+    [activeApprovalTaskIds, hiveChatEvents, pendingTaskIds, recoveryBlockedTaskIds, sendingMessage, typingWatchdogExpiredTaskIds]
   )
   const hasActiveHiveAgents = (hive?.activeAgents.length ?? 0) > 0
   const queenWorking = (queenTyping || hasActiveHiveAgents) && !paused && !waitingApproval

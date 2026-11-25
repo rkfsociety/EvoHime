@@ -164,6 +164,13 @@ pub fn project_core_event(
             "internal",
             normalized,
         )?),
+        "approval.decision" => events.push(draft(
+            "approval_decision",
+            "approval",
+            "durable",
+            "internal",
+            normalized,
+        )?),
         "child.workflow" => events.push(draft(
             "child_run_summary",
             "child_run",
@@ -831,6 +838,7 @@ mod tests {
         let cases = [
             ("tool.output", "tool"),
             ("approval.required", "approval"),
+            ("approval.decision", "approval"),
             ("child.workflow", "child_run"),
             ("workflow.progress", "task"),
             ("model.context", "usage"),

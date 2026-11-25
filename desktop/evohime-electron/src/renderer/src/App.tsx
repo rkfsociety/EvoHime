@@ -25,6 +25,7 @@ import { applyAppearance, loadAppearance, saveAppearance, type AppearanceSetting
 import { setAppLocale, translate, useT } from './i18n'
 import { REASON_TEXTS, STATE_TITLES } from './listening-labels'
 import { prependCoreEvents } from './core-event-buffer'
+import { collectRecoveryBlockedTaskIds, collectResolvedApprovalIds } from './approval-state'
 
 const SettingsModal = lazy(() => import('./SettingsModal').then((module) => ({ default: module.SettingsModal })))
 const ScheduledPanel = lazy(() => import('./ScheduledPanel').then((module) => ({ default: module.ScheduledPanel })))
@@ -603,17 +604,20 @@ function NavItem({ view, active, onSelect, badge = 0 }: NavItemProps): React.JSX
 }
 
 function countPendingApprovals(events: readonly CoreEvent[], resolvedApprovalIds: readonly string[]): number {
+  const resolved = collectResolvedApprovalIds(events, resolvedApprovalIds)
+  const recoveryBlocked = collectRecoveryBlockedTaskIds(events)
   const pending = new Map<string, { sequence: number; taskId: string; epoch: number }>()
   const newestFirst = [...events].sort((left, right) => right.sequenceId - left.sequenceId)
   for (const event of newestFirst) {
     if (event.eventType !== 'approval.required') continue
+    if (event.taskId && recoveryBlocked.has(event.taskId)) continue
     try {
       const parsed = JSON.parse(event.payload) as Record<string, unknown>
       const tagged = parsed['ApprovalRequired']
       const payload = tagged !== null && typeof tagged === 'object' && !Array.isArray(tagged)
         ? tagged as { approval_id?: unknown }
         : parsed as { approval_id?: unknown }
-      if (typeof payload.approval_id !== 'string' || payload.approval_id.length === 0 || resolvedApprovalIds.includes(payload.approval_id)) continue
+      if (typeof payload.approval_id !== 'string' || payload.approval_id.length === 0 || resolved.has(payload.approval_id)) continue
       if (!pending.has(payload.approval_id)) pending.set(payload.approval_id, { sequence: event.sequenceId, taskId: event.taskId, epoch: event.sessionEpoch ?? 0 })
     } catch {
       // Malformed events are excluded from the badge; Core remains authoritative.

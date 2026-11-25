@@ -2079,4 +2079,79 @@ describe('hive dashboard', () => {
     expect(calls.length).toBe(callsAfterSend)
   })
 
+  it('hides_stale_approval_when_ledger_decision_or_recovery_blocked_exists', () => {
+    const events = [
+      event('hive_state.snapshot', snapshot()),
+      hiveConversationPage('history', [
+        {
+          kind: 'approval_required',
+          taskId: 'eva-pulse-stale-1',
+          sequence: 10,
+          payload: {
+            approval_id: 'apr-stale-1',
+            tool_name: 'shell_execute',
+            permission: 'ShellExecute',
+            scope: 'workspace',
+            preview: { summary: 'Запустить команду в workspace' }
+          }
+        },
+        {
+          kind: 'assistant_message_delta',
+          taskId: 'eva-pulse-stale-1',
+          sequence: 11,
+          payload: { content: 'Проверяю...' }
+        }
+      ]),
+      event('ledger.approval_decision', {
+        body: {
+          kind: 'approval_decision',
+          approval_intent_id: 'apr-stale-1',
+          decision: 'approved'
+        }
+      }, 'eva-pulse-stale-1'),
+      event('run.recovery.blocked', {
+        decision: 'blocked',
+        reason: 'recovery_unknown_effect'
+      }, 'eva-pulse-stale-1')
+    ]
+
+    render(<HiveDashboard connection="connected" events={events} />)
+
+    expect(screen.queryByLabelText('Запрос подтверждения')).toBeNull()
+    expect(screen.queryByText('Королева печатает')).toBeNull()
+  })
+
+  it('hides_approval_when_conversation_log_contains_approval_decision', () => {
+    const events = [
+      event('hive_state.snapshot', snapshot()),
+      hiveConversationPage('history', [
+        {
+          kind: 'approval_required',
+          taskId: 'eva-pulse-stale-2',
+          sequence: 20,
+          payload: {
+            approval_id: 'apr-stale-2',
+            tool_name: 'shell_execute',
+            permission: 'ShellExecute',
+            scope: 'workspace',
+            preview: { summary: 'Запустить команду в workspace' }
+          }
+        },
+        {
+          kind: 'approval_decision',
+          taskId: 'eva-pulse-stale-2',
+          sequence: 21,
+          payload: {
+            approval_id: 'apr-stale-2',
+            granted: false
+          }
+        }
+      ])
+    ]
+
+    render(<HiveDashboard connection="connected" events={events} />)
+
+    expect(screen.queryByLabelText('Запрос подтверждения')).toBeNull()
+  })
+
 })
