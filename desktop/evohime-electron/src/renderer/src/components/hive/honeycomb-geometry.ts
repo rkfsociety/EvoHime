@@ -215,27 +215,38 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
       addBidirectionalEdge(`${city.id}:hub-gate:${faceIdx}`, hubId, gateId, 'radial', 4)
     }
 
-    // Гексагональные кольцевые магистрали: 6 вершин гекса + 6 середин граней (на нормалях лучей).
+    // Круглые кольцевые магистрали внутри города (24 сегмента по окружности для плавного круга).
     const ringSegments: { ring: number; aId: string; bId: string }[] = []
+    const RING_STEPS = 24
     for (let ring = 1; ring <= maxRing; ring += 1) {
       const roadRadius = getRingRoadRadius(ring)
-      const vertexRadius = roadRadius / Math.cos(Math.PI / 6)
-      // 12 узлов по периметру гексагонального кольца (чередуются: середина грани на нормали k*60° и вершина на 30°+k*60°).
+      const ringAngles = new Map<number, number | undefined>()
+      for (let step = 0; step < RING_STEPS; step += 1) {
+        const angle = (step / RING_STEPS) * Math.PI * 2
+        ringAngles.set(angle, undefined)
+      }
+      // Гарантируем точные узлы на нормалях активных радиальных лучей Цитадели.
+      for (const faceIdx of exitFaces) {
+        const rayAngle = HEX_FACE_NORMAL_ANGLES[faceIdx] ?? 0
+        // Удаляем ближайший шаг сетки, если он слишком близко (< 0.08 рад), чтобы не плодить микросегменты.
+        for (const existingAngle of Array.from(ringAngles.keys())) {
+          if (Math.abs(existingAngle - rayAngle) < 0.08) {
+            ringAngles.delete(existingAngle)
+          }
+        }
+        ringAngles.set(rayAngle, faceIdx)
+      }
+
+      const sortedEntries = Array.from(ringAngles.entries()).sort((a, b) => a[0] - b[0])
       const ringNodeIds: string[] = []
-      for (let step = 0; step < 12; step += 1) {
-        const isFaceCenter = step % 2 === 0
-        const faceIdx = Math.floor(step / 2)
-        const angle = isFaceCenter
-          ? (HEX_FACE_NORMAL_ANGLES[faceIdx] ?? 0)
-          : Math.PI / 6 + faceIdx * (Math.PI / 3)
-        const rDist = isFaceCenter ? roadRadius : vertexRadius
-        const rayIdx = isFaceCenter && exitFaces.includes(faceIdx) ? faceIdx : undefined
+
+      sortedEntries.forEach(([angle, rayIdx], step) => {
         const nodeId = `${city.id}:ring:${ring}:n:${step}`
         addNode({
           id: nodeId,
           cityId: city.id,
-          x: city.worldCenterX + Math.cos(angle) * rDist,
-          y: city.worldCenterY + Math.sin(angle) * rDist,
+          x: city.worldCenterX + Math.cos(angle) * roadRadius,
+          y: city.worldCenterY + Math.sin(angle) * roadRadius,
           kind: 'intersection',
           ring,
           rayIndex: rayIdx
@@ -260,7 +271,7 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
             }
           }
         }
-      }
+      })
 
       for (let idx = 0; idx < ringNodeIds.length; idx += 1) {
         const curr = ringNodeIds[idx]

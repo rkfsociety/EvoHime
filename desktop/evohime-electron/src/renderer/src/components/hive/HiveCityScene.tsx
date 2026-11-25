@@ -11,7 +11,10 @@ import {
 import type { UiIconName } from '../../UiIcon'
 import {
   buildWorldRoadGraphAndPlacements,
+  CELL_HEX_RADIUS,
+  CITADEL_HEX_RADIUS,
   getPointyHexVertices,
+  getRingCellRadius,
   type HexCellPlacement
 } from './honeycomb-geometry'
 import {
@@ -293,6 +296,31 @@ export function HiveCityScene({
       ctx.translate(width / 2, height / 2)
       ctx.scale(cam.zoom, cam.zoom)
       ctx.translate(-cam.x, -cam.y)
+
+      // 1.5. Внешняя гексагональная сота-окантовка каждого города (определение границ города).
+      for (const city of currentWorld.cities) {
+        const maxRing = Math.max(
+          city.maxRing,
+          city.sectors.length > 0 ? 1 : 0,
+          ...city.modules.map((m) => m.ring)
+        )
+        const contentRadius =
+          maxRing === 0 ? CITADEL_HEX_RADIUS + 34 : getRingCellRadius(maxRing) + CELL_HEX_RADIUS + 32
+        const cityHexRadius = contentRadius / Math.cos(Math.PI / 6)
+
+        ctx.save()
+        traceHexPath(ctx, city.worldCenterX, city.worldCenterY, cityHexRadius)
+        ctx.fillStyle = city.hasQueenCitadel
+          ? 'rgba(30, 41, 59, 0.22)'
+          : 'rgba(15, 23, 42, 0.28)'
+        ctx.fill()
+        ctx.lineWidth = city.hasQueenCitadel ? 2.4 : 1.8
+        ctx.strokeStyle = city.hasQueenCitadel
+          ? 'rgba(251, 191, 36, 0.36)'
+          : 'rgba(56, 189, 248, 0.30)'
+        ctx.stroke()
+        ctx.restore()
+      }
 
       // 2. Бесшовная 3-проходная отрисовка дорожной сети:
       //    Проход A: все бордюры (второстепенные -> магистрали)
