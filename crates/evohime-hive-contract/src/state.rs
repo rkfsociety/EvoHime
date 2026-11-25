@@ -430,10 +430,10 @@ pub struct HiveStateSnapshot {
     #[serde(default = "default_snapshot_llm_dispatch_interval_secs")]
     pub llm_dispatch_interval_secs: u64,
     /// Autonomous observation cycle status (`observing`, `waiting_for_limits`, `waiting_for_tasks`, `disabled`, or `sleeping` on `observation_failed`).
-    #[serde(default, skip_serializing)]
+    #[serde(default)]
     pub observation_status: String,
     /// Unix milliseconds at which the daemon plans its next observation cycle.
-    #[serde(default, skip_serializing)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_wake_at_ms: Option<i64>,
 }
 
