@@ -194,10 +194,14 @@ impl HoneycombEngine {
                     .enumerate()
                     .filter(|(_, s)| s.role == target_role)
                     .find_map(|(sector_idx, s)| {
-                        s.agents
-                            .iter()
-                            .find(|a| a.topic == topic)
-                            .map(|a| (a.id.clone(), a.active_trip_id.clone(), sector_idx, city.sectors.len()))
+                        s.agents.iter().find(|a| a.topic == topic).map(|a| {
+                            (
+                                a.id.clone(),
+                                a.active_trip_id.clone(),
+                                sector_idx,
+                                city.sectors.len(),
+                            )
+                        })
                     })
             });
 
@@ -241,7 +245,9 @@ impl HoneycombEngine {
             };
         };
         if self.world.paused {
-            let remaining = arrival_ms.saturating_sub(self.paused_since_ms.unwrap_or(now_ms)).max(0) as u64;
+            let remaining = arrival_ms
+                .saturating_sub(self.paused_since_ms.unwrap_or(now_ms))
+                .max(0) as u64;
             return HoneycombTripStatus {
                 trip_id: trip_id.to_owned(),
                 agent_id: agent_id.to_owned(),
@@ -261,7 +267,11 @@ impl HoneycombEngine {
     fn estimate_trip_travel_ms(&self, sector_idx: usize, sector_count: usize, now_ms: i64) -> i64 {
         const VEHICLE_SPEED_PX_PER_SEC: f64 = 105.0;
         const TRAFFIC_LIGHT_CYCLE_MS: i64 = 10_000;
-        let primary = self.world.cities.iter().find(|c| c.id == self.world.primary_city_id);
+        let primary = self
+            .world
+            .cities
+            .iter()
+            .find(|c| c.id == self.world.primary_city_id);
         let module_count = primary.map(|c| c.modules.len()).unwrap_or(0);
         let expansion = if module_count > 12 {
             ((module_count - 12) as f64) * 5.0
@@ -271,9 +281,12 @@ impl HoneycombEngine {
         let ring1_road_radius = 122.0 + expansion;
         let radial_len = (ring1_road_radius - 38.0).max(40.0);
         let arc_fraction = ((sector_idx + 1) as f64) / ((sector_count.max(1) + 1) as f64);
-        let ring_arc_len = std::f64::consts::PI * 2.0 * ring1_road_radius * (arc_fraction * 0.5).clamp(0.12, 0.55);
+        let ring_arc_len =
+            std::f64::consts::PI * 2.0 * ring1_road_radius * (arc_fraction * 0.5).clamp(0.12, 0.55);
         let driveway_len = 54.0;
-        let drive_ms = (((radial_len + ring_arc_len + driveway_len) / VEHICLE_SPEED_PX_PER_SEC) * 1000.0).round() as i64;
+        let drive_ms = (((radial_len + ring_arc_len + driveway_len) / VEHICLE_SPEED_PX_PER_SEC)
+            * 1000.0)
+            .round() as i64;
 
         // Account for the radial intersection traffic-light phase (radial green: 5.0s..9.2s of 10s cycle).
         let phase_ms = now_ms.rem_euclid(TRAFFIC_LIGHT_CYCLE_MS);
@@ -944,10 +957,7 @@ fn collect_desired_projects(
 ) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut seen_paths: Vec<String> = Vec::new();
-    if let Some(eva_path) = eva_workspace_path
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
+    if let Some(eva_path) = eva_workspace_path.map(str::trim).filter(|s| !s.is_empty()) {
         seen_paths.push(eva_path.to_string());
         out.push((
             "city-eva".to_string(),

@@ -640,9 +640,9 @@ fn snapshot_to_settings(snapshot: &HiveStateSnapshot) -> HiveSettings {
         if trimmed.is_empty()
             || eva_path
                 .is_some_and(|eva| evohime_hive::settings::paths_refer_to_same_repo(eva, trimmed))
-            || watched_repositories.iter().any(|existing| {
-                evohime_hive::settings::paths_refer_to_same_repo(existing, trimmed)
-            })
+            || watched_repositories
+                .iter()
+                .any(|existing| evohime_hive::settings::paths_refer_to_same_repo(existing, trimmed))
         {
             continue;
         }
@@ -2027,7 +2027,8 @@ async fn handle_observation_control_connection<S>(
             .await;
         }
         HiveObservationControlRequest::DispatchAgentTask { role, topic } => {
-            let Some(status) = honeycomb.dispatch_for_delegation(&role, &topic, unix_now_ms()) else {
+            let Some(status) = honeycomb.dispatch_for_delegation(&role, &topic, unix_now_ms())
+            else {
                 return;
             };
             let response_bytes = match serde_json::to_vec(&status) {

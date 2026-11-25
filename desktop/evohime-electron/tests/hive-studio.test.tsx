@@ -319,7 +319,7 @@ describe('honeycomb geometry & traffic', () => {
         }
       ]
     }
-    const { roadGraph } = buildHoneycombSceneLayout(singleDispatchWorld)
+    const { roadGraph } = buildWorldRoadGraphAndPlacements(singleDispatchWorld)
     const traffic = createTrafficSimulationState()
     stepTrafficSimulation(traffic, singleDispatchWorld, roadGraph, 0.016, 1.0, 1)
     const vehicle = traffic.vehicles.get('trip-agent-slot-0')
@@ -333,7 +333,7 @@ describe('honeycomb geometry & traffic', () => {
       paused: false,
       evaSourceConfigured: true,
       projectCount: 1,
-      agentCount: 2,
+      agentCount: 5,
       exitsOverride: 'auto',
       remodelSeed: 0
     })
@@ -364,7 +364,7 @@ describe('honeycomb geometry & traffic', () => {
         }
       ]
     }
-    const { roadGraph } = buildHoneycombSceneLayout(twoVehiclesWorld)
+    const { roadGraph } = buildWorldRoadGraphAndPlacements(twoVehiclesWorld)
     const traffic = createTrafficSimulationState()
     for (let step = 0; step < 120; step += 1) {
       stepTrafficSimulation(traffic, twoVehiclesWorld, roadGraph, 0.03, 1.0 + step * 0.03, 1)
