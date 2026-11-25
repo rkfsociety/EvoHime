@@ -121,8 +121,13 @@ impl HoneycombEngine {
         queen_working: bool,
     ) -> Result<(), HiveDbError> {
         let paused = !autonomy_enabled || waiting_for_limits;
+        let next_queen_working = !paused && queen_working;
+        let changed = self.world.paused != paused
+            || self.world.queen_working != next_queen_working
+            || (paused && !self.world.active_dispatches.is_empty());
+
         self.world.paused = paused;
-        self.world.queen_working = !paused && queen_working;
+        self.world.queen_working = next_queen_working;
         if paused {
             self.world.active_dispatches.clear();
             for city in &mut self.world.cities {
@@ -133,6 +138,8 @@ impl HoneycombEngine {
                     }
                 }
             }
+        }
+        if changed {
             self.world.revision = self.world.revision.saturating_add(1);
             self.db.save_world_state(&self.world)?;
         }
@@ -148,6 +155,24 @@ impl HoneycombEngine {
     ) -> Result<(), HiveDbError> {
         let desired = collect_desired_projects(eva_workspace_path, watched_repositories);
         if desired.is_empty() {
+            return Ok(());
+        }
+
+        let unchanged = self.world.cities.len() == desired.len()
+            && self
+                .world
+                .cities
+                .iter()
+                .zip(desired.iter())
+                .enumerate()
+                .all(|(idx, (city, (desired_id, desired_name)))| {
+                    let is_primary = idx == 0;
+                    city.id == *desired_id
+                        && city.project_name == *desired_name
+                        && city.is_primary == is_primary
+                        && city.has_queen_citadel == is_primary
+                });
+        if unchanged && self.world.primary_city_id == desired[0].0 {
             return Ok(());
         }
 
@@ -742,9 +767,16 @@ mod tests {
         assert_eq!(engine.world().cities[0].sectors.len(), 2);
         assert_eq!(engine.world().active_dispatches.len(), 2);
 
-        // Pausing must clear active dispatches (vehicles parked in homes).
+        // Pausing must clear active dispatches (vehicles parked in homes)
+        // and force incremental delta readers to resync the paused state.
+        let rev_before_pause = engine.world().revision;
         engine.set_active_mode(false, false, false).expect("pause");
         assert!(engine.world().paused);
         assert!(engine.world().active_dispatches.is_empty());
+        let delta = engine
+            .database()
+            .read_delta_since(rev_before_pause, 256)
+            .expect("delta");
+        assert!(delta.requires_full_resync);
     }
 }

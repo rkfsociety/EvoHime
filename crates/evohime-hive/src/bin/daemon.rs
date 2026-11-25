@@ -1787,11 +1787,12 @@ impl HoneycombRuntime {
 
     fn snapshot_world(
         &self,
-        paused: bool,
-        queen_working: bool,
+        force_pause: bool,
     ) -> Option<evohime_hive_contract::honeycomb::HoneycombWorldState> {
         let mut guard = self.engine.lock().ok()?;
-        let _ = guard.set_active_mode(!paused, false, queen_working);
+        if force_pause {
+            let _ = guard.set_active_mode(false, false, false);
+        }
         Some(guard.world().clone())
     }
 
@@ -1811,16 +1812,10 @@ impl HoneycombRuntime {
             settings.eva_workspace_path.as_deref(),
             &settings.watched_repositories,
         );
-        let obs_status = state.observation_status.as_str();
-        let autonomy_enabled = obs_status != evohime_hive::state::HIVE_OBSERVATION_DISABLED
-            && obs_status != evohime_hive::state::HIVE_OBSERVATION_SLEEPING;
-        let waiting_for_limits =
-            obs_status == evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_LIMITS;
-        let queen_working = state.queen.status == evohime_hive::state::HIVE_QUEEN_ACTIVE
-            || !state.active_agents.is_empty();
-        let _ = guard.set_active_mode(autonomy_enabled, waiting_for_limits, queen_working);
+        let (hive_active, waiting_for_limits, queen_working) = resolve_honeycomb_mode(state);
+        let _ = guard.set_active_mode(hive_active, waiting_for_limits, queen_working);
 
-        if autonomy_enabled && !waiting_for_limits {
+        if hive_active && !waiting_for_limits {
             // Сканирование и перестройка модулей проектов (с кулдауном 5 мин внутри движка).
             let mut project_paths: Vec<(String, PathBuf)> = Vec::new();
             if let Some(eva_path) = settings
@@ -1839,14 +1834,14 @@ impl HoneycombRuntime {
                 let _ = guard.remodel_city_from_checkout(&city_id, &path, now_ms);
             }
 
-            // Стартовый триггер разведки при первом включении автономности или активных задачах.
+            // Стартовый триггер разведки запускается только при явно включённой автономке.
             let primary_has_sectors = guard
                 .world()
                 .cities
                 .first()
                 .map(|c| !c.sectors.is_empty())
                 .unwrap_or(false);
-            if !primary_has_sectors {
+            if state.proactive_evolution_enabled && !primary_has_sectors {
                 let _ = guard.dispatch_relay_step(
                     evohime_hive::honeycomb_engine::RelayStage::Execution,
                     "разведка проекта",
@@ -1873,6 +1868,24 @@ impl HoneycombRuntime {
             }
         }
     }
+}
+
+/// Resolves `(hive_active, waiting_for_limits, queen_working)` for the Honeycomb engine.
+/// When proactive autonomy is disabled and there are no active tasks/agents, the Hive
+/// stays paused with zero vehicles on the roads.
+fn resolve_honeycomb_mode(state: &HiveStateSnapshot) -> (bool, bool, bool) {
+    let obs_status = state.observation_status.as_str();
+    let waiting_for_limits =
+        obs_status == evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_LIMITS;
+    let observation_alive = obs_status != evohime_hive::state::HIVE_OBSERVATION_DISABLED
+        && obs_status != evohime_hive::state::HIVE_OBSERVATION_SLEEPING;
+    let has_active_work = state.queen.status == evohime_hive::state::HIVE_QUEEN_ACTIVE
+        || !state.active_agents.is_empty();
+    let hive_active = observation_alive
+        && !waiting_for_limits
+        && (state.proactive_evolution_enabled || has_active_work);
+    let queen_working = hive_active && has_active_work;
+    (hive_active, waiting_for_limits, queen_working)
 }
 
 async fn handle_observation_control_connection<S>(
@@ -1943,12 +1956,11 @@ async fn handle_observation_control_connection<S>(
         }
         HiveObservationControlRequest::GetHoneycombWorld => {
             let status = daemon.status();
-            let paused = !status.enabled
+            let force_pause = !status.enabled
                 || status.status == evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_LIMITS
                 || status.status == evohime_hive::state::HIVE_OBSERVATION_DISABLED
                 || status.status == evohime_hive::state::HIVE_OBSERVATION_SLEEPING;
-            let queen_working = status.status == "active" || status.status == "observing";
-            let Some(world) = honeycomb.snapshot_world(paused, queen_working) else {
+            let Some(world) = honeycomb.snapshot_world(force_pause) else {
                 return;
             };
             let response_bytes = match serde_json::to_vec(&world) {
@@ -2324,5 +2336,78 @@ mod tests {
             error.starts_with("invalid_request:"),
             "unexpected error payload: {error}"
         );
+    }
+
+    #[test]
+    fn honeycomb_stays_paused_without_vehicles_when_autonomy_is_disabled_and_idle() {
+        let settings = HiveSettings::default();
+        let mut state = HiveStateSnapshot::empty(&settings);
+        state.observation_status = evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_TASKS.to_string();
+        state.proactive_evolution_enabled = false;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = evohime_hive::honeycomb_db::HiveDatabase::open(&dir.path().join("hive.db"))
+            .expect("open db");
+        let engine = evohime_hive::honeycomb_engine::HoneycombEngine::open(
+            db,
+            None,
+            &["C:/Projects/EvoHime".to_string()],
+        )
+        .expect("open engine");
+        let runtime = HoneycombRuntime {
+            engine: Arc::new(std::sync::Mutex::new(engine)),
+        };
+
+        runtime.sync_maintenance(&state, &settings, 1_000);
+        let world = runtime.snapshot_world(false).expect("world");
+        assert!(world.paused);
+        assert!(!world.queen_working);
+        assert!(world.active_dispatches.is_empty());
+        assert!(world.cities[0].sectors.is_empty());
+    }
+
+    #[test]
+    fn honeycomb_parks_vehicles_when_manual_task_finishes_with_autonomy_disabled() {
+        let settings = HiveSettings::default();
+        let mut state = HiveStateSnapshot::empty(&settings);
+        state.observation_status = evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_TASKS.to_string();
+        state.proactive_evolution_enabled = false;
+        state.queen.status = evohime_hive::state::HIVE_QUEEN_ACTIVE.to_string();
+        state.active_agents.push(evohime_hive::state::HiveActiveAgent {
+            id: "agent-1".to_string(),
+            display_name: Some("Исполнитель #1".to_string()),
+            role: "executor".to_string(),
+            current_action: "проверка кода".to_string(),
+            depth: 1,
+            spawned_subagents: 0,
+            ceiling: 4,
+        });
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = evohime_hive::honeycomb_db::HiveDatabase::open(&dir.path().join("hive.db"))
+            .expect("open db");
+        let engine = evohime_hive::honeycomb_engine::HoneycombEngine::open(
+            db,
+            None,
+            &["C:/Projects/EvoHime".to_string()],
+        )
+        .expect("open engine");
+        let runtime = HoneycombRuntime {
+            engine: Arc::new(std::sync::Mutex::new(engine)),
+        };
+
+        runtime.sync_maintenance(&state, &settings, 2_000);
+        let active_world = runtime.snapshot_world(false).expect("active world");
+        assert!(!active_world.paused);
+        assert!(active_world.queen_working);
+        assert_eq!(active_world.active_dispatches.len(), 1);
+
+        state.queen.status = evohime_hive::state::HIVE_QUEEN_IDLE.to_string();
+        state.active_agents.clear();
+        runtime.sync_maintenance(&state, &settings, 3_000);
+        let idle_world = runtime.snapshot_world(false).expect("idle world");
+        assert!(idle_world.paused);
+        assert!(!idle_world.queen_working);
+        assert!(idle_world.active_dispatches.is_empty());
     }
 }

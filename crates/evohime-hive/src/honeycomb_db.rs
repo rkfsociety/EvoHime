@@ -351,13 +351,14 @@ impl HiveDatabase {
         max_events: usize,
     ) -> Result<HoneycombWorldDelta, HiveDbError> {
         let latest = self.latest_revision()?;
-        let min_stored_rev: Option<i64> = self
+        let (min_stored_rev, max_stored_rev): (Option<i64>, Option<i64>) = self
             .conn
-            .query_row("SELECT MIN(revision) FROM hive_events", [], |row| {
-                row.get(0)
-            })
-            .ok()
-            .flatten();
+            .query_row(
+                "SELECT MIN(revision), MAX(revision) FROM hive_events",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap_or((None, None));
 
         if let Some(min_rev) = min_stored_rev {
             if (from_revision as i64) < min_rev.saturating_sub(1) {
@@ -369,14 +370,20 @@ impl HiveDatabase {
                     requires_full_resync: true,
                 });
             }
-        } else if from_revision < latest {
-            return Ok(HoneycombWorldDelta {
-                schema_version: HONEYCOMB_WORLD_SCHEMA_VERSION,
-                from_revision,
-                to_revision: latest,
-                events: Vec::new(),
-                requires_full_resync: true,
-            });
+        }
+        if from_revision < latest {
+            let has_trailing_direct_mutation = max_stored_rev
+                .map(|max_rev| (max_rev as u64) < latest)
+                .unwrap_or(true);
+            if has_trailing_direct_mutation {
+                return Ok(HoneycombWorldDelta {
+                    schema_version: HONEYCOMB_WORLD_SCHEMA_VERSION,
+                    from_revision,
+                    to_revision: latest,
+                    events: Vec::new(),
+                    requires_full_resync: true,
+                });
+            }
         }
 
         let mut stmt = self.conn.prepare(
