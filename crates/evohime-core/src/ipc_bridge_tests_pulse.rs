@@ -25,12 +25,25 @@ async fn observation_daemon_reports_status_and_wakes_on_settings_change_via_ipc(
     let server_pipe = pipe_name.clone();
     let notify_count = Arc::new(AtomicUsize::new(0));
     let notify_counter = Arc::clone(&notify_count);
+    let mut next_server = ServerOptions::new()
+        .first_pipe_instance(true)
+        .create(&server_pipe)
+        .expect("create test named pipe");
     let server_task = tokio::spawn(async move {
-        for _ in 0..3 {
-            let mut server = ServerOptions::new()
-                .create(&server_pipe)
-                .expect("create test named pipe");
+        for idx in 0..3 {
+            let mut server = next_server;
             server.connect().await.expect("accept client");
+            if idx < 2 {
+                next_server = ServerOptions::new()
+                    .create(&server_pipe)
+                    .expect("create next test named pipe");
+            } else {
+                // Keep the pipe name open until the last response is written,
+                // avoiding any transient window on Windows named pipe teardown.
+                next_server = ServerOptions::new()
+                    .create(&server_pipe)
+                    .expect("create trailing test named pipe");
+            }
             let req_bytes = evohime_desktop_ipc::transport::read_frame(&mut server)
                 .await
                 .expect("read request");
@@ -93,7 +106,12 @@ async fn observation_daemon_reports_status_and_wakes_on_settings_change_via_ipc(
         .set_hive_setting("proactive_evolution_enabled", "true")
         .await
         .expect("setting saves");
-    tokio::time::sleep(Duration::from_millis(30)).await;
+    for _ in 0..50 {
+        if notify_count.load(Ordering::SeqCst) >= 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     assert!(
         notify_count.load(Ordering::SeqCst) >= 1,
         "settings change must notify external hive daemon"

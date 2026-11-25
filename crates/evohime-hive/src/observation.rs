@@ -751,7 +751,7 @@ mod tests {
                 task_id: "eva-pulse-root-1".into(),
                 event_type: "child.workflow".into(),
                 payload: br#"{"child_task_id":"child-stale","parent_task_id":"eva-pulse-root-1","role":"plan_reviewer","state":"running"}"#.to_vec(),
-                timestamp_ms: 1_000,
+                created_at_ms: 1_000,
             }],
             hive_roots: vec!["eva-pulse-root-1".into()],
         };
@@ -794,7 +794,7 @@ mod tests {
                         task_id,
                         event_type,
                         payload,
-                        timestamp_ms: 2_000,
+                        created_at_ms: 2_000,
                     });
                     Ok(())
                 })
@@ -828,6 +828,50 @@ mod tests {
             fn persistent_agent_roles(&self) -> BoxFuture<'_, Vec<String>> {
                 Box::pin(async { Vec::new() })
             }
+            fn task_metrics(&self, _now_ms: i64) -> BoxFuture<'_, (u32, u64)> {
+                Box::pin(async { (0, 0) })
+            }
+            fn model_dispatch_windows<'a>(
+                &'a self,
+                _provider: &'a str,
+                _model: &'a str,
+                _now_ms: i64,
+                _minute_window_ms: i64,
+                _hour_window_ms: i64,
+                _day_window_ms: i64,
+            ) -> BoxFuture<'a, Result<HiveDispatchWindows, HiveContractError>> {
+                Box::pin(async { Ok(HiveDispatchWindows::default()) })
+            }
+            fn model_usage_since<'a>(
+                &'a self,
+                _start_ms: i64,
+                _provider: &'a str,
+                _model: &'a str,
+            ) -> BoxFuture<'a, Result<Vec<HiveModelUsage>, HiveContractError>> {
+                Box::pin(async { Ok(Vec::new()) })
+            }
+            fn route_tokens_since<'a>(
+                &'a self,
+                _start_ms: i64,
+                _route_scope: &'a str,
+            ) -> BoxFuture<'a, Result<u64, HiveContractError>> {
+                Box::pin(async { Ok(0) })
+            }
+            fn register_worktree_lease(
+                &self,
+                _request: HiveWorktreeLeaseRequest,
+            ) -> BoxFuture<'_, ()> {
+                Box::pin(async {})
+            }
+            fn has_active_workflow_run<'a>(&'a self, _task_id: &'a str) -> BoxFuture<'a, bool> {
+                Box::pin(async { false })
+            }
+            fn mark_worktree_cleanup_pending<'a>(
+                &'a self,
+                _worktree_id: &'a str,
+            ) -> BoxFuture<'a, ()> {
+                Box::pin(async {})
+            }
         }
 
         let _ = journal;
@@ -837,7 +881,7 @@ mod tests {
                 task_id: "eva-pulse-root-1".into(),
                 event_type: "child.workflow".into(),
                 payload: br#"{"child_task_id":"child-stale","parent_task_id":"eva-pulse-root-1","role":"plan_reviewer","state":"running"}"#.to_vec(),
-                timestamp_ms: 1_000,
+                created_at_ms: 1_000,
             }]),
             hive_roots: vec!["eva-pulse-root-1".into()],
         };

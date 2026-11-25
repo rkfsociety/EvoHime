@@ -1610,13 +1610,12 @@ async fn run_city_map_maintenance(
     daemon: HiveObservationDaemon,
 ) {
     loop {
-        let mut idle_poll = CITY_MAP_FALLBACK_POLL;
         let state =
             build_hive_state_snapshot_in_daemon(journal.as_ref(), gateway_config.as_ref(), &daemon)
                 .await;
         let settings = snapshot_to_settings(&state);
         let now_ms = unix_now_ms();
-        idle_poll = Duration::from_secs(settings.local_observation_interval_secs.max(1));
+        let idle_poll = Duration::from_secs(settings.local_observation_interval_secs.max(1));
         honeycomb.sync_maintenance(&state, &settings, now_ms);
         let job = CityMapJob {
             eva_workspace_path: settings.eva_workspace_path.clone(),
@@ -2416,15 +2415,146 @@ mod tests {
         )
     }
 
+    struct NoopJournal;
+
+    impl HiveJournalProvider for NoopJournal {
+        fn latest_sequence(&self) -> evohime_hive_contract::BoxFuture<'_, i64> {
+            Box::pin(async { 0 })
+        }
+        fn replay_events(
+            &self,
+            _after_sequence: i64,
+            _limit: usize,
+        ) -> evohime_hive_contract::BoxFuture<
+            '_,
+            Result<
+                Vec<evohime_hive_contract::HiveEventRecord>,
+                evohime_hive_contract::HiveContractError,
+            >,
+        > {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+        fn record_audit<'a>(
+            &'a self,
+            _task_id: &'a str,
+            _event_type: &'a str,
+            _payload: &'a [u8],
+        ) -> evohime_hive_contract::BoxFuture<
+            'a,
+            Result<(), evohime_hive_contract::HiveContractError>,
+        > {
+            Box::pin(async { Ok(()) })
+        }
+        fn prune_signal_records<'a>(
+            &'a self,
+            _event_types: &'a [&'a str],
+            _keep_limit: usize,
+        ) -> evohime_hive_contract::BoxFuture<'a, ()> {
+            Box::pin(async {})
+        }
+        fn load_hive_settings_json(
+            &self,
+        ) -> evohime_hive_contract::BoxFuture<
+            '_,
+            Result<Option<serde_json::Value>, evohime_hive_contract::HiveContractError>,
+        > {
+            Box::pin(async { Ok(None) })
+        }
+        fn save_hive_settings_json<'a>(
+            &'a self,
+            _settings: &'a serde_json::Value,
+        ) -> evohime_hive_contract::BoxFuture<
+            'a,
+            Result<(), evohime_hive_contract::HiveContractError>,
+        > {
+            Box::pin(async { Ok(()) })
+        }
+        fn persistent_agent_roles(&self) -> evohime_hive_contract::BoxFuture<'_, Vec<String>> {
+            Box::pin(async { Vec::new() })
+        }
+        fn task_metrics(&self, _now_ms: i64) -> evohime_hive_contract::BoxFuture<'_, (u32, u64)> {
+            Box::pin(async { (0, 0) })
+        }
+        fn filter_hive_root_tasks(
+            &self,
+            _roots: Vec<String>,
+        ) -> evohime_hive_contract::BoxFuture<'_, Vec<String>> {
+            Box::pin(async { Vec::new() })
+        }
+        fn model_dispatch_windows<'a>(
+            &'a self,
+            _provider: &'a str,
+            _model: &'a str,
+            _now_ms: i64,
+            _minute_window_ms: i64,
+            _hour_window_ms: i64,
+            _day_window_ms: i64,
+        ) -> evohime_hive_contract::BoxFuture<
+            'a,
+            Result<
+                evohime_hive_contract::HiveDispatchWindows,
+                evohime_hive_contract::HiveContractError,
+            >,
+        > {
+            Box::pin(async { Ok(evohime_hive_contract::HiveDispatchWindows::default()) })
+        }
+        fn model_usage_since<'a>(
+            &'a self,
+            _start_ms: i64,
+            _provider: &'a str,
+            _model: &'a str,
+        ) -> evohime_hive_contract::BoxFuture<
+            'a,
+            Result<
+                Vec<evohime_hive_contract::HiveModelUsage>,
+                evohime_hive_contract::HiveContractError,
+            >,
+        > {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+        fn route_tokens_since<'a>(
+            &'a self,
+            _start_ms: i64,
+            _route_scope: &'a str,
+        ) -> evohime_hive_contract::BoxFuture<
+            'a,
+            Result<u64, evohime_hive_contract::HiveContractError>,
+        > {
+            Box::pin(async { Ok(0) })
+        }
+        fn register_worktree_lease(
+            &self,
+            _request: evohime_hive_contract::HiveWorktreeLeaseRequest,
+        ) -> evohime_hive_contract::BoxFuture<'_, ()> {
+            Box::pin(async {})
+        }
+        fn has_active_workflow_run<'a>(
+            &'a self,
+            _task_id: &'a str,
+        ) -> evohime_hive_contract::BoxFuture<'a, bool> {
+            Box::pin(async { false })
+        }
+        fn mark_worktree_cleanup_pending<'a>(
+            &'a self,
+            _worktree_id: &'a str,
+        ) -> evohime_hive_contract::BoxFuture<'a, ()> {
+            Box::pin(async {})
+        }
+    }
+
     /// Sends one framed control request against an in-memory stream and returns
     /// the framed response; the connection task is joined to surface panics.
     async fn exchange_control_frame(request: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let (mut client, server) = tokio::io::duplex(256 * 1024);
         let connection = tokio::spawn(handle_observation_control_connection(
             server,
-            noop_daemon(),
-            CityMapRuntime::default(),
-            HoneycombRuntime::default(),
+            ControlServerContext {
+                daemon: noop_daemon(),
+                city_map: CityMapRuntime::default(),
+                honeycomb: HoneycombRuntime::default(),
+                journal: Arc::new(NoopJournal),
+                gateway_config: None,
+            },
         ));
         transport::write_frame(&mut client, request).await?;
         let response =
