@@ -329,6 +329,23 @@ export function HiveCityScene({
           ? 'rgba(251, 191, 36, 0.35)'
           : 'rgba(56, 189, 248, 0.35)'
         ctx.stroke()
+
+        // Название города — строго снаружи за забором (над верхней вершиной), чтобы не перекрывать дороги.
+        ctx.font = '600 13px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        const cityTitle = city.hasQueenCitadel ? `Королева · ${city.projectName}` : city.projectName
+        const titleW = ctx.measureText(cityTitle).width
+        const titleY = city.worldCenterY - cityHexRadius - 18
+        ctx.fillStyle = 'rgba(6, 10, 20, 0.85)'
+        ctx.beginPath()
+        ctx.roundRect(city.worldCenterX - titleW / 2 - 10, titleY - 11, titleW + 20, 22, 8)
+        ctx.fill()
+        ctx.strokeStyle = city.hasQueenCitadel ? 'rgba(245, 158, 11, 0.6)' : 'rgba(56, 189, 248, 0.5)'
+        ctx.lineWidth = 1
+        ctx.stroke()
+        ctx.fillStyle = city.hasQueenCitadel ? '#fef08a' : '#bae6fd'
+        ctx.fillText(cityTitle, city.worldCenterX, titleY)
         ctx.restore()
       }
 
@@ -537,29 +554,23 @@ export function HiveCityScene({
           }
         }
 
-        // Подпись соты в аккуратной плашке (видна при достаточном зуме).
+        // Подпись строго внутри границ соты (никогда не выходит на дороги).
         if (cam.zoom >= 0.42) {
-          ctx.font = placement.kind === 'citadel' ? '600 11px sans-serif' : '500 10px sans-serif'
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
-          let label = ''
           const city = currentWorld.cities.find((c) => c.id === placement.cityId)
-          if (placement.kind === 'citadel') label = `Королева · ${city?.projectName ?? ''}`
-          else if (placement.kind === 'project_hub') label = city?.projectName ?? 'Проект'
-          else if (placement.kind === 'sector') {
-            label = city?.sectors.find((s) => s.id === id)?.label ?? 'Сектор'
-          } else {
-            label = city?.modules.find((m) => m.id === id)?.name ?? ''
-          }
-          if (label) {
-            const labelY = pose.y + r + 14
-            const textW = ctx.measureText(label).width
-            ctx.fillStyle = 'rgba(6, 10, 20, 0.78)'
-            ctx.beginPath()
-            ctx.roundRect(pose.x - textW / 2 - 6, labelY - 8, textW + 12, 16, 6)
-            ctx.fill()
-            ctx.fillStyle = placement.kind === 'citadel' ? '#fef08a' : '#e2e8f0'
-            ctx.fillText(label, pose.x, labelY)
+          if (placement.kind === 'citadel') {
+            ctx.font = '600 9px sans-serif'
+            ctx.fillStyle = '#fef08a'
+            ctx.fillText('EVA', pose.x, pose.y)
+          } else if (placement.kind === 'module' && cam.zoom >= 0.72) {
+            const rawName = city?.modules.find((m) => m.id === id)?.name ?? ''
+            const shortName = rawName.length > 9 ? `${rawName.slice(0, 8)}…` : rawName
+            if (shortName) {
+              ctx.font = '500 8.5px sans-serif'
+              ctx.fillStyle = '#cbd5e1'
+              ctx.fillText(shortName, pose.x, pose.y)
+            }
           }
         }
       }
