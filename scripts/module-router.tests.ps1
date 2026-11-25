@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $router = Get-Content -LiteralPath (Join-Path $root '.github\workflows\module-router.yml') -Raw
 if ($router -notmatch 'name: module router') { throw 'Central module router is missing.' }
@@ -82,7 +82,9 @@ if ($manifestDispatch -lt 0 -or $finalFailure -lt $manifestDispatch) { throw 'Ro
 if ($dispatchBlock -notmatch 'workflowFailures = \[System\.Collections\.Generic\.List\[string\]\]::new\(\)') { throw 'Router does not retain child workflow failures while continuing to manifest publication.' }
 if ($dispatchBlock -notmatch 'Resolve-DispatchedRun \(\[PSCustomObject\]@\{ Module = .compatible-manifest.') { throw 'Router does not wait for the compatibility manifest workflow.' }
 if ($dispatchBlock -notmatch 'workflowFailures\.Count -eq 0') { throw 'Router may publish the installer after a module workflow failure.' }
-foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analysis-worker','listener','listener-runtime','transaction','verifier','updater')) {
+foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analysis-worker','listener','listener-runtime','transaction','verifier','updater','hive')) {
     if ($dispatchBlock -notmatch [regex]::Escape("'$module'")) { throw "Dispatch map is missing: $module" }
 }
+$coreCargoToml = Get-Content -LiteralPath (Join-Path $root 'crates\evohime-core\Cargo.toml') -Raw
+if ($coreCargoToml -match '(?m)^\s*evohime-hive\s*=') { throw 'evohime-core must not depend directly on evohime-hive; use evohime-hive-contract.' }
 Write-Host 'module-router smoke tests passed.'

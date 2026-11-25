@@ -23,29 +23,11 @@ pub const MAX_SEEN_IDEMPOTENCY_KEYS: usize = 512;
 /// Maximum number of durable acceptance/dead-letter records retained per kind.
 pub const MAX_DURABLE_SIGNAL_RECORDS: usize = 512;
 
-/// Prefix of every Hive task created from an accepted EvaPulse signal.
-///
-/// The prefix is the Hive-world marker used by `hive_observation` and the
-/// operations panel: a task accepted through this boundary has no chat binding,
-/// so the marker is what keeps its approval and agents inside the Hive view
-/// instead of the ordinary chat stream.
-pub const EVA_PULSE_TASK_PREFIX: &str = "eva-pulse-";
+pub use evohime_hive_contract::pulse_boundary::{parse_hive_task_uuid, EVA_PULSE_TASK_PREFIX};
 
 /// Builds the Hive-owned task identity for one accepted signal.
 fn new_hive_task_id() -> String {
     format!("{EVA_PULSE_TASK_PREFIX}{}", uuid::Uuid::new_v4())
-}
-
-/// Parses the runtime UUID of a task id, tolerating the EvaPulse marker.
-///
-/// `ToolContext` and other Core-owned structures store a `Uuid`, while a task
-/// accepted from a signal carries the Hive marker. Stripping the marker keeps
-/// that task's own identity instead of falling back to a random runtime id.
-pub fn parse_hive_task_uuid(task_id: &str) -> Result<uuid::Uuid, uuid::Error> {
-    let body = task_id
-        .strip_prefix(EVA_PULSE_TASK_PREFIX)
-        .unwrap_or(task_id);
-    uuid::Uuid::parse_str(body)
 }
 
 /// Provenance of a Hive task. This is metadata, not an authorization grant.

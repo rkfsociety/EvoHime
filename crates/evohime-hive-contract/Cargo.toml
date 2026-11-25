@@ -5,6 +5,8 @@ publish = false
 edition = "2021"
 
 [dependencies]
+evohime-model-gateway = { path = "../model-gateway" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+uuid = "1"

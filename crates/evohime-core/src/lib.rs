@@ -209,10 +209,8 @@ pub(crate) mod conversation_workbench;
 pub(crate) mod conversational_workflow_composer;
 pub mod design_intent_review_lane;
 pub(crate) mod doctor;
-/// Core-owned EvaPulse background daemon for the hive.
-pub use evohime_hive::pulse as eva_pulse;
 /// Defines the bounded typed boundary between EvaPulse and the Hive.
-pub use evohime_hive::pulse_boundary as eva_pulse_boundary;
+pub use evohime_hive_contract::pulse_boundary as eva_pulse_boundary;
 pub mod evals;
 pub(crate) mod event_trigger_runtime;
 pub(crate) mod execution_backend_registry;
@@ -231,10 +229,9 @@ pub mod goal;
 pub mod guided_calibration_sessions;
 pub mod hardware_fit_evidence;
 pub mod hive_context;
-pub(crate) use evohime_hive::observation as hive_observation;
-pub use evohime_hive::settings as hive_settings;
+pub use evohime_hive_contract::settings as hive_settings;
 /// Read-only aggregated hive visualization snapshot for the operations panel.
-pub use evohime_hive::state as hive_state;
+pub use evohime_hive_contract::state as hive_state;
 pub mod host_resource_telemetry;
 pub mod human_work_items;
 pub(crate) mod incremental_change_protocol;
@@ -352,8 +349,6 @@ mod bounded_tasks;
 mod chat_worktree;
 mod core_domains;
 pub(crate) use core_domains::*;
-pub(crate) use evohime_hive::permission_session as hive_permission_session;
-pub(crate) use evohime_hive::worktree as hive_worktree;
 pub(crate) mod adapter_contract;
 pub mod automation;
 pub mod automation_acceptance;

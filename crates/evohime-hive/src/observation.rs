@@ -817,10 +817,7 @@ mod tests {
             ) -> BoxFuture<'a, Result<(), HiveContractError>> {
                 Box::pin(async { Ok(()) })
             }
-            fn filter_hive_root_tasks(
-                &self,
-                task_ids: Vec<String>,
-            ) -> BoxFuture<'_, Vec<String>> {
+            fn filter_hive_root_tasks(&self, task_ids: Vec<String>) -> BoxFuture<'_, Vec<String>> {
                 Box::pin(async move {
                     task_ids
                         .into_iter()

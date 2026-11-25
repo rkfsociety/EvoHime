@@ -29,8 +29,8 @@ use crate::settings::{
     HiveSettings, DEFAULT_LLM_DISPATCH_INTERVAL_SECS, DEFAULT_LOCAL_OBSERVATION_INTERVAL_SECS,
 };
 use crate::state::{
-    quota_window_start_ms, HiveStateSnapshot, HIVE_DAY_WINDOW_MS, HIVE_OBSERVATION_OBSERVING,
-    HIVE_OBSERVATION_SLEEPING, HIVE_OBSERVATION_WAITING_FOR_LIMITS,
+    quota_window_start_ms, HiveStateSnapshot, HiveStateSnapshotExt as _, HIVE_DAY_WINDOW_MS,
+    HIVE_OBSERVATION_OBSERVING, HIVE_OBSERVATION_SLEEPING, HIVE_OBSERVATION_WAITING_FOR_LIMITS,
     HIVE_OBSERVATION_WAITING_FOR_TASKS,
 };
 
@@ -253,64 +253,10 @@ pub struct ObservationStatus {
     pub enabled: bool,
 }
 
-/// Versioned, observation-owned lifecycle projection independent from Hive state.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct HiveObservationSnapshot {
-    /// Projection contract version.
-    pub schema_version: u32,
-    /// Stable owner name for consumers that combine multiple runtime states.
-    pub owner: String,
-    /// `observing`, `waiting_for_limits`, `waiting_for_tasks`, `disabled`, or `sleeping` (`observation_failed`).
-    pub status: String,
-    /// Whether the observation cycle is active.
-    pub enabled: bool,
-    /// Unix milliseconds at which the next observation cycle is expected.
-    pub next_wake_at_ms: Option<i64>,
-}
-
-/// Default Windows named pipe path used for Core-to-daemon observation status queries.
-pub const DEFAULT_HIVE_OBSERVATION_CONTROL_PIPE: &str = r"\\.\pipe\evohime-hive-observation";
-
-/// Environment variable overriding the Windows named pipe path for observation control.
-pub const HIVE_OBSERVATION_CONTROL_PIPE_ENV: &str = "EVOHIME_HIVE_CONTROL_PIPE";
-
-/// Environment variable overriding the Unix socket path for observation control.
-pub const HIVE_OBSERVATION_CONTROL_SOCKET_ENV: &str = "EVOHIME_HIVE_CONTROL_SOCKET";
-
-/// Control request sent from Core to the external `evohime-hive-daemon`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "command", rename_all = "snake_case")]
-pub enum HiveObservationControlRequest {
-    /// Requests the current `HiveObservationSnapshot`.
-    GetObservationStatus,
-    /// Wakes the autonomous observation loop immediately after a settings change.
-    NotifySettingsChanged,
-    /// Requests the current city-archipelago map
-    /// ([`crate::city_map::HiveCityMapSnapshot`]). The daemon answers with a
-    /// valid snapshot frame even on a cold start (at least the embedded
-    /// capital); an old daemon answers the canonical `invalid_request` error
-    /// frame, which the client maps to `unavailable`.
-    GetCityMap,
-    /// Requests the current 2D Honeycomb world state (Plan 200).
-    GetHoneycombWorld,
-    /// Requests incremental Honeycomb mutation events since `from_revision`.
-    GetHoneycombDelta {
-        /// Last revision already applied by the client.
-        from_revision: u64,
-    },
-    /// Dispatches a vehicle to deliver a delegated task to an agent cell.
-    DispatchAgentTask {
-        /// Delegated Hive role slug (e.g. `researcher`, `planner`, `implementer`).
-        role: String,
-        /// Short task topic used to match or spawn the target agent.
-        topic: String,
-    },
-    /// Polls whether a previously dispatched vehicle trip has arrived at its cell.
-    PollTripArrival {
-        /// Dispatched vehicle trip identifier returned by `DispatchAgentTask`.
-        trip_id: String,
-    },
-}
+pub use evohime_hive_contract::control::{
+    HiveObservationControlRequest, HiveObservationSnapshot, DEFAULT_HIVE_OBSERVATION_CONTROL_PIPE,
+    HIVE_OBSERVATION_CONTROL_PIPE_ENV, HIVE_OBSERVATION_CONTROL_SOCKET_ENV,
+};
 
 /// Test seam for the observation and dispatch intervals.
 #[derive(Debug, Clone, Copy, Default)]

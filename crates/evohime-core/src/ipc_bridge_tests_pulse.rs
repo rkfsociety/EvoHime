@@ -1,98 +1,78 @@
 use super::*;
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::eva_pulse::{
-    FailedWorkerContext, HiveObservationDaemon, HiveObservationOptions, ObservationCycleReport,
-    ObservationProbe, ObservationTaskSink,
+use crate::hive_state::{
+    HiveStateSnapshot, HIVE_OBSERVATION_OBSERVING, HIVE_OBSERVATION_WAITING_FOR_TASKS,
 };
-use crate::hive_state::{HIVE_OBSERVATION_OBSERVING, HIVE_OBSERVATION_WAITING_FOR_TASKS};
+use evohime_hive_contract::control::{HiveObservationControlRequest, HiveObservationSnapshot};
 
-struct CalmProbe {
-    cycles: AtomicUsize,
-}
-
-impl ObservationProbe for CalmProbe {
-    fn observe(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = Result<ObservationCycleReport, String>> + Send + '_>> {
-        self.cycles.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async move {
-            Ok(ObservationCycleReport {
-                local_observation_interval_secs: 1,
-                llm_dispatch_interval_secs: 300,
-                daily_cost_nano_usd: Some(0),
-                daily_budget_nano_usd: 500_000_000,
-                provider_window_exhausted: false,
-                provider_window_wake_at_ms: None,
-                rate_limited_until_ms: None,
-                failed_workers: Vec::new(),
-                failed_worker_contexts: Vec::new(),
-                route_is_primary: true,
-                eva_workspace_path: None,
-                proactive_evolution_enabled: false,
-                roadmap_items: Vec::new(),
-                selected_provider: Some("literouter".to_owned()),
-                fallback_provider: None,
-                routmy_tokens_remaining: None,
-                quota_reset_utc_midnight: false,
-                allow_paid_fallback: false,
-                literouter_all_models_exhausted: false,
-                evolution_in_flight: false,
-            })
-        })
-    }
-}
-
-struct NoopSink;
-
-impl ObservationTaskSink for NoopSink {
-    fn dispatch_recovery(
-        &self,
-        _failed_workers: &[FailedWorkerContext],
-        _eva_workspace_path: Option<&str>,
-    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + '_>> {
-        Box::pin(async move { Err("not_used".into()) })
-    }
-
-    fn dispatch_evolution(
-        &self,
-        _items: &[crate::eva_pulse::RoadmapItem],
-        _eva_workspace_path: Option<&str>,
-    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + '_>> {
-        Box::pin(async move { Err("not_used".into()) })
-    }
-}
-
+#[cfg(windows)]
 #[tokio::test]
 async fn observation_daemon_reports_status_and_wakes_on_settings_change_via_ipc() {
+    use tokio::net::windows::named_pipe::ServerOptions;
+
     let directory = tempfile::tempdir().expect("temp dir");
     let journal =
         EventJournal::open(directory.path().join("observation-ipc.db")).expect("journal opens");
     let (coordinator, _events) = TaskCoordinator::new_with_journal(16, None, journal.clone());
-    let probe = Arc::new(CalmProbe {
-        cycles: AtomicUsize::new(0),
-    });
-    let daemon = HiveObservationDaemon::spawn(
-        Arc::clone(&probe) as Arc<dyn ObservationProbe>,
-        Arc::new(NoopSink) as Arc<dyn ObservationTaskSink>,
-        HiveObservationOptions {
-            interval_override: Some(Duration::from_secs(60)),
-            llm_dispatch_interval_override: Some(Duration::from_secs(300)),
-        },
-        None,
+    let pipe_name = format!(
+        r"\\.\pipe\evohime-hive-bridge-test-{}",
+        uuid::Uuid::new_v4()
     );
-    daemon.run();
-    let bridge = IpcBridge::with_coordinator(journal, coordinator)
-        .with_observation_daemon(Arc::new(daemon.clone()));
+    let server_pipe = pipe_name.clone();
+    let notify_count = Arc::new(AtomicUsize::new(0));
+    let notify_counter = Arc::clone(&notify_count);
+    let server_task = tokio::spawn(async move {
+        for _ in 0..3 {
+            let mut server = ServerOptions::new()
+                .create(&server_pipe)
+                .expect("create test named pipe");
+            server.connect().await.expect("accept client");
+            let req_bytes = evohime_desktop_ipc::transport::read_frame(&mut server)
+                .await
+                .expect("read request");
+            let req: HiveObservationControlRequest =
+                serde_json::from_slice(&req_bytes).expect("decode request");
+            let resp_bytes = match req {
+                HiveObservationControlRequest::GetHiveStateSnapshot => {
+                    let mut snap = HiveStateSnapshot::default();
+                    snap.observation_status = HIVE_OBSERVATION_WAITING_FOR_TASKS.to_owned();
+                    serde_json::to_vec(&snap).expect("encode hive state")
+                }
+                HiveObservationControlRequest::NotifySettingsChanged => {
+                    notify_counter.fetch_add(1, Ordering::SeqCst);
+                    serde_json::to_vec(&HiveObservationSnapshot {
+                        schema_version: 1,
+                        owner: "hive_observation".to_owned(),
+                        status: HIVE_OBSERVATION_OBSERVING.to_owned(),
+                        enabled: true,
+                        next_wake_at_ms: Some(12345),
+                    })
+                    .expect("encode snapshot")
+                }
+                _ => serde_json::to_vec(&HiveObservationSnapshot {
+                    schema_version: 1,
+                    owner: "hive_observation".to_owned(),
+                    status: HIVE_OBSERVATION_WAITING_FOR_TASKS.to_owned(),
+                    enabled: true,
+                    next_wake_at_ms: Some(12345),
+                })
+                .expect("encode snapshot"),
+            };
+            evohime_desktop_ipc::transport::write_frame(&mut server, &resp_bytes)
+                .await
+                .expect("write response");
+        }
+    });
 
-    tokio::time::sleep(Duration::from_millis(30)).await;
-    let initial_cycles = probe.cycles.load(Ordering::SeqCst);
-    assert!(initial_cycles >= 1);
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    let proxy =
+        Arc::new(crate::external_pulse::ExternalHiveObservationProxy::with_endpoint(pipe_name));
+    let bridge =
+        IpcBridge::with_coordinator(journal, coordinator).with_external_observation_proxy(proxy);
 
     let (event_type, payload) = super::ambient::ambient_call(
         &bridge,
@@ -115,8 +95,8 @@ async fn observation_daemon_reports_status_and_wakes_on_settings_change_via_ipc(
         .expect("setting saves");
     tokio::time::sleep(Duration::from_millis(30)).await;
     assert!(
-        probe.cycles.load(Ordering::SeqCst) > initial_cycles,
-        "internal notify must wake Level 1 observation on settings change"
+        notify_count.load(Ordering::SeqCst) >= 1,
+        "settings change must notify external hive daemon"
     );
 
     let snapshot = bridge.hive_state_snapshot().await;
@@ -124,7 +104,7 @@ async fn observation_daemon_reports_status_and_wakes_on_settings_change_via_ipc(
         snapshot.observation_status == HIVE_OBSERVATION_WAITING_FOR_TASKS
             || snapshot.observation_status == HIVE_OBSERVATION_OBSERVING
     );
-    daemon.shutdown();
+    let _ = tokio::time::timeout(Duration::from_secs(2), server_task).await;
 }
 
 #[tokio::test]

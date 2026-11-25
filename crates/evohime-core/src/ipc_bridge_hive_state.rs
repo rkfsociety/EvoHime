@@ -601,22 +601,16 @@ impl IpcBridge {
     }
 
     fn notify_observation_settings_changed(&self) {
-        match self.pulse.as_ref() {
-            Some(HiveObservationHandle::Local(controller)) => {
-                controller.notify_settings_changed();
-            }
-            Some(HiveObservationHandle::External(proxy)) => {
-                let proxy = std::sync::Arc::clone(proxy);
-                tokio::spawn(async move {
-                    if let Err(error) = proxy.notify_settings_changed().await {
-                        tracing::debug!(
-                            error = %error,
-                            "failed to notify external hive daemon of settings change"
-                        );
-                    }
-                });
-            }
-            None => {}
+        if let Some(proxy) = self.pulse.as_ref() {
+            let proxy = std::sync::Arc::clone(proxy);
+            tokio::spawn(async move {
+                if let Err(error) = proxy.notify_settings_changed().await {
+                    tracing::debug!(
+                        error = %error,
+                        "failed to notify external hive daemon of settings change"
+                    );
+                }
+            });
         }
     }
 
@@ -693,73 +687,42 @@ impl IpcBridge {
     /// an unreadable journal produces an empty snapshot instead of an error,
     /// because the panel polls this command on a timer.
     pub(super) async fn hive_state_snapshot(&self) -> crate::hive_state::HiveStateSnapshot {
-        let settings = self.journal.hive_settings().await.unwrap_or_default();
-        let projections = crate::hive_observation::replay_hive_projections(&self.journal).await;
-        let roles = crate::hive_observation::persistent_agent_roles(&self.journal).await;
-        let _selected_model = self.selected_model.get().map(|value| value.to_string());
-        let mut adjusted_config = self.gateway_config.clone();
-        if let Some(config) = adjusted_config.as_mut() {
-            config.apply_hive_route_overrides(
-                settings.hive_provider_profile.as_deref(),
-                settings.hive_model.as_deref(),
-            );
-            config.apply_hive_fallback_route_overrides(
-                settings.hive_fallback_provider_profile.as_deref(),
-                settings.hive_fallback_model.as_deref(),
-            );
-            config.apply_hive_route_limits_with_schedule(
-                "hive",
-                settings.hive_provider_limits,
-                settings.hive_daily_token_quota,
-                settings.primary_reset_schedule(),
-            );
-            config.apply_hive_route_limits_with_schedule(
-                "hive_fallback",
-                settings.hive_fallback_provider_limits,
-                settings.hive_fallback_daily_token_quota,
-                settings.fallback_reset_schedule(),
-            );
-        }
-        let mut observation = crate::hive_observation::build_hive_observation_for_hive(
-            &self.journal,
-            adjusted_config.as_ref(),
-            None,
-            settings.hive_provider_profile.as_deref(),
-            settings.hive_model.as_deref(),
-            crate::task_memory::now_millis() as i64,
-        )
-        .await;
-        if let Some(observation_handle) = self.pulse.as_ref() {
-            match observation_handle {
-                HiveObservationHandle::Local(controller) => {
-                    let status = controller.status();
-                    observation.observation_status = status.status;
-                    observation.next_observation_at_ms = status.next_wake_at_ms;
-                }
-                HiveObservationHandle::External(proxy) => {
-                    if let Ok(snapshot) = proxy.snapshot().await {
-                        observation.observation_status = snapshot.status;
-                        observation.next_observation_at_ms = snapshot.next_wake_at_ms;
-                    }
-                }
+        if let Some(proxy) = self.pulse.as_ref() {
+            if let Ok(snapshot) = proxy.hive_state_snapshot().await {
+                return snapshot;
             }
         }
-        crate::hive_state::HiveStateSnapshot::from_observation(
-            &settings,
-            &projections,
-            &roles,
-            &observation,
-        )
+        let settings = self.journal.hive_settings().await.unwrap_or_default();
+        let mut snapshot = crate::hive_state::HiveStateSnapshot::default();
+        snapshot.daily_budget_usd = settings.daily_budget_usd;
+        snapshot.eva_workspace_path = settings.eva_workspace_path().map(str::to_owned);
+        snapshot.hive_provider_profile = settings.hive_provider_profile.clone();
+        snapshot.hive_model = settings.hive_model.clone();
+        snapshot.hive_fallback_provider_profile = settings.hive_fallback_provider_profile.clone();
+        snapshot.hive_fallback_model = settings.hive_fallback_model.clone();
+        snapshot.hive_provider_limits = settings.hive_provider_limits;
+        snapshot.hive_fallback_provider_limits = settings.hive_fallback_provider_limits;
+        snapshot.hive_daily_token_quota = settings.hive_daily_token_quota;
+        snapshot.hive_fallback_daily_token_quota = settings.hive_fallback_daily_token_quota;
+        snapshot.hive_token_quota_configured = settings.hive_token_quota_configured;
+        snapshot.hive_fallback_token_quota_configured =
+            settings.hive_fallback_token_quota_configured;
+        snapshot.hive_quota_reset_utc_midnight = settings.hive_quota_reset_utc_midnight;
+        snapshot.hive_fallback_quota_reset_utc_midnight =
+            settings.hive_fallback_quota_reset_utc_midnight;
+        snapshot.hive_provider_configs = settings.effective_provider_configs(false);
+        snapshot.hive_fallback_provider_configs = settings.effective_provider_configs(true);
+        snapshot.proactive_evolution_enabled = settings.proactive_evolution_enabled;
+        snapshot.local_observation_interval_secs = settings.local_observation_interval_secs;
+        snapshot.llm_dispatch_interval_secs = settings.llm_dispatch_interval_secs;
+        snapshot
     }
 
     pub(super) async fn hive_observation_status_payload(
         &self,
     ) -> Result<Vec<u8>, serde_json::Error> {
         let mut value = match self.pulse.as_ref() {
-            Some(HiveObservationHandle::Local(controller)) => {
-                serde_json::to_value(controller.snapshot())?
-            }
-            Some(HiveObservationHandle::External(proxy)) => match proxy.snapshot().await {
+            Some(proxy) => match proxy.snapshot().await {
                 Ok(snapshot) => serde_json::to_value(snapshot)?,
                 Err(_) => return unavailable_observation_status_payload(),
             },

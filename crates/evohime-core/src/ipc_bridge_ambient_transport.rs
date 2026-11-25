@@ -329,32 +329,12 @@ impl IpcBridge {
         self
     }
 
-    /// Attaches the process-wide Hive observation daemon.
-    pub fn with_observation_daemon(
-        mut self,
-        daemon: Arc<crate::eva_pulse::HiveObservationDaemon>,
-    ) -> Self {
-        self.pulse = Some(HiveObservationHandle::Local(Arc::new(
-            crate::eva_pulse::HiveObservationController::new((*daemon).clone()),
-        )));
-        self
-    }
-
-    /// Attaches only the Hive observation lifecycle owner to the IPC bridge.
-    pub fn with_observation_controller(
-        mut self,
-        controller: Arc<crate::eva_pulse::HiveObservationController>,
-    ) -> Self {
-        self.pulse = Some(HiveObservationHandle::Local(controller));
-        self
-    }
-
     /// Attaches an IPC proxy that queries the standalone `evohime-hive-daemon` process.
     pub fn with_external_observation_proxy(
         mut self,
         proxy: Arc<crate::external_pulse::ExternalHiveObservationProxy>,
     ) -> Self {
-        self.pulse = Some(HiveObservationHandle::External(proxy));
+        self.pulse = Some(proxy);
         self
     }
 

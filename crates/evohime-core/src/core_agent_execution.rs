@@ -33,6 +33,23 @@ fn subagent_tool_allowed(name: &str) -> bool {
 }
 
 /// Denies every mutating or external permission for one subagent session.
+fn hive_world_permission_modes() -> [(
+    evohime_permissions::Permission,
+    evohime_permissions::PermissionMode,
+); 8] {
+    use evohime_permissions::{Permission, PermissionMode};
+    [
+        (Permission::FilesystemRead, PermissionMode::Allow),
+        (Permission::GitRead, PermissionMode::Allow),
+        (Permission::MemorySearch, PermissionMode::Allow),
+        (Permission::FilesystemWrite, PermissionMode::Ask),
+        (Permission::ShellExecute, PermissionMode::Ask),
+        (Permission::GitWrite, PermissionMode::Ask),
+        (Permission::BrowserAccess, PermissionMode::Ask),
+        (Permission::McpCall, PermissionMode::Ask),
+    ]
+}
+
 async fn apply_read_only_subagent_modes(
     permissions: &evohime_permissions::PermissionEngine,
     session_id: uuid::Uuid,
@@ -750,7 +767,7 @@ impl ToolAgent {
                 Some(session_id)
             } else if hive_world {
                 let session_id = uuid::Uuid::new_v4();
-                for (permission, mode) in crate::hive_permission_session::modes() {
+                for (permission, mode) in hive_world_permission_modes() {
                     self.tools
                         .permissions()
                         .set_session_mode(session_id, permission, mode)

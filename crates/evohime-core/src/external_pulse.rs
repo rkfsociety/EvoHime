@@ -5,7 +5,7 @@ use std::time::Duration;
 use evohime_desktop_ipc::transport;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::eva_pulse::{
+use evohime_hive_contract::control::{
     HiveObservationControlRequest, HiveObservationSnapshot, DEFAULT_HIVE_OBSERVATION_CONTROL_PIPE,
     HIVE_OBSERVATION_CONTROL_PIPE_ENV, HIVE_OBSERVATION_CONTROL_SOCKET_ENV,
 };
@@ -38,6 +38,14 @@ impl ExternalHiveObservationProxy {
     /// Queries the current status snapshot from the external Hive observation daemon.
     pub async fn snapshot(&self) -> Result<HiveObservationSnapshot, String> {
         self.send_request(HiveObservationControlRequest::GetObservationStatus)
+            .await
+    }
+
+    /// Queries the full aggregated `HiveStateSnapshot` from the external Hive observation daemon.
+    pub async fn hive_state_snapshot(
+        &self,
+    ) -> Result<evohime_hive_contract::state::HiveStateSnapshot, String> {
+        self.send_json_request(HiveObservationControlRequest::GetHiveStateSnapshot)
             .await
     }
 
@@ -210,6 +218,7 @@ mod tests {
                 serde_json::from_slice(&req_bytes).expect("decode request");
             let snapshot = match req {
                 HiveObservationControlRequest::GetObservationStatus
+                | HiveObservationControlRequest::GetHiveStateSnapshot
                 | HiveObservationControlRequest::NotifySettingsChanged
                 | HiveObservationControlRequest::GetCityMap
                 | HiveObservationControlRequest::GetHoneycombWorld

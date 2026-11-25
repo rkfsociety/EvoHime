@@ -1104,6 +1104,28 @@ function dispatch(
         .catch(() => ({ ok: true, value: { available: false, delta: null } as const }))
     }
 
+    case 'hive.getState': {
+      const hiveDaemon = options.hiveDaemon
+      if (!hiveDaemon || !hiveDaemon.getHiveState) {
+        return failure('protocol-error', 'Клиент демона Улья недоступен в этой сборке.')
+      }
+      return hiveDaemon
+        .getHiveState()
+        .then((outcome) => ({ ok: true, value: outcome }))
+        .catch(() => ({ ok: true, value: { available: false, snapshot: null } as const }))
+    }
+
+    case 'hive.getObservationStatus': {
+      const hiveDaemon = options.hiveDaemon
+      if (!hiveDaemon || !hiveDaemon.getObservationStatus) {
+        return failure('protocol-error', 'Клиент демона Улья недоступен в этой сборке.')
+      }
+      return hiveDaemon
+        .getObservationStatus()
+        .then((outcome) => ({ ok: true, value: outcome }))
+        .catch(() => ({ ok: true, value: { available: false, snapshot: null } as const }))
+    }
+
     case 'core.getHiveObservationStatus': {
       return accepted(client.send({ hiveObservationStatus: { schemaVersion: 1, requestId: '' } }))
     }

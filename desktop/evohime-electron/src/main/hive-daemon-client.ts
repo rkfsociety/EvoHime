@@ -84,6 +84,14 @@ const GET_HONEYCOMB_WORLD_REQUEST = encodeHiveFrame(
   JSON.stringify({ command: 'get_honeycomb_world' })
 )
 
+const GET_HIVE_STATE_REQUEST = encodeHiveFrame(
+  JSON.stringify({ command: 'get_hive_state_snapshot' })
+)
+
+const GET_OBSERVATION_STATUS_REQUEST = encodeHiveFrame(
+  JSON.stringify({ command: 'get_observation_status' })
+)
+
 export interface HiveDaemonClientOptions {
   /** Endpoint override; defaults to `hiveControlEndpoint()`. */
   readonly endpoint?: string
@@ -278,10 +286,53 @@ export function decodeCityMapFrame(payload: Buffer): HiveCityMapOutcome {
     : { available: true, snapshot }
 }
 
+export type HiveJsonSnapshotOutcome =
+  | { readonly available: true; readonly snapshot: Record<string, unknown> }
+  | { readonly available: false; readonly snapshot: null }
+
+async function fetchHiveJsonSnapshot(
+  requestFrame: Buffer,
+  options: HiveDaemonClientOptions = {}
+): Promise<HiveJsonSnapshotOutcome> {
+  const bytes = await fetchControlPayload(requestFrame, options)
+  if (bytes === null) return { available: false, snapshot: null }
+  try {
+    const value = JSON.parse(bytes.toString('utf8')) as unknown
+    if (!value || typeof value !== 'object' || Array.isArray(value) || 'error' in value) {
+      return { available: false, snapshot: null }
+    }
+    return { available: true, snapshot: value as Record<string, unknown> }
+  } catch {
+    return { available: false, snapshot: null }
+  }
+}
+
+/**
+ * Sends `get_hive_state_snapshot` over one fresh connection.
+ * Always resolves; never throws.
+ */
+export async function fetchHiveStateSnapshot(
+  options: HiveDaemonClientOptions = {}
+): Promise<HiveJsonSnapshotOutcome> {
+  return fetchHiveJsonSnapshot(GET_HIVE_STATE_REQUEST, options)
+}
+
+/**
+ * Sends `get_observation_status` over one fresh connection.
+ * Always resolves; never throws.
+ */
+export async function fetchHiveObservationStatus(
+  options: HiveDaemonClientOptions = {}
+): Promise<HiveJsonSnapshotOutcome> {
+  return fetchHiveJsonSnapshot(GET_OBSERVATION_STATUS_REQUEST, options)
+}
+
 export interface HiveCityMapClient {
   readonly getCityMap: () => Promise<HiveCityMapOutcome>
   readonly getHoneycombWorld?: () => Promise<HoneycombWorldOutcome>
   readonly getHoneycombDelta?: (fromRevision: number) => Promise<HoneycombWorldDeltaOutcome>
+  readonly getHiveState?: () => Promise<HiveJsonSnapshotOutcome>
+  readonly getObservationStatus?: () => Promise<HiveJsonSnapshotOutcome>
 }
 
 /** Builds the long-lived client used by the shell bridge. */
@@ -291,6 +342,8 @@ export function createHiveDaemonClient(
   return {
     getCityMap: () => fetchHiveCityMap(options),
     getHoneycombWorld: () => fetchHoneycombWorld(options),
-    getHoneycombDelta: (fromRevision: number) => fetchHoneycombDelta(fromRevision, options)
+    getHoneycombDelta: (fromRevision: number) => fetchHoneycombDelta(fromRevision, options),
+    getHiveState: () => fetchHiveStateSnapshot(options),
+    getObservationStatus: () => fetchHiveObservationStatus(options)
   }
 }

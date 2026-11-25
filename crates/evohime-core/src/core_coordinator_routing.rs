@@ -122,22 +122,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     }
                 }
             }
-            let hive_worktree_lease = if hive_route && !worktree_bound {
-                let lease = crate::hive_worktree::prepare_for_task(
-                    journal
-                        .as_ref()
-                        .map(|j| j as &dyn evohime_hive_contract::HiveJournalProvider),
-                    &task_id,
-                    &workspace_root,
-                )
-                .await;
-                if let Some(ref lease) = lease {
-                    workspace_root = lease.worktree_root.clone();
-                }
-                lease
-            } else {
-                None
-            };
+            let hive_worktree_lease: Option<()> = None;
             let chat_worktree_lease = if !hive_route
                 && !worktree_bound
                 && session_binding.as_ref().is_some_and(|binding| {
@@ -953,16 +938,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 if let Some(kernel_host) = kernel_host {
                     kernel_host.stop_sessions_for_task(&task_id).await;
                 }
-                if let Some(lease) = hive_worktree_lease.as_ref() {
-                    crate::hive_worktree::cleanup_if_clean(
-                        journal
-                            .as_ref()
-                            .map(|j| j as &dyn evohime_hive_contract::HiveJournalProvider),
-                        lease,
-                        &task_id,
-                    )
-                    .await;
-                }
+                let _ = hive_worktree_lease;
                 if let Some(lease) = chat_worktree_lease.as_ref() {
                     let _ =
                         crate::chat_worktree::finalize_chat_worktree(journal.as_ref(), lease).await;

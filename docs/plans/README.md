@@ -39,7 +39,7 @@
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
 | 199 | [Живой город-архипелаг реальной архитектуры Улья](199-0-hive-living-architecture-archipelago.md) | active; этапы 199.1–199.3 реализованы (3D-рендер заменён на 2D Canvas планом 200), ожидает 199.4 (CI/release evidence и закрытие) |
 | 200 | [Сотовая архитектура Улья, конвейер Королевы и динамическая симуляция](200-0-hive-queen-honeycomb-simulation.md) | implemented; локальные проверки и `evohime-hive` пройдены, ожидает завершения CI (`c832e354`) и закрытия |
-| 201 | [Полноценное разделение модулей evohime-core и evohime-hive](201-0-core-hive-module-decoupling.md) | active; этапы `201.1–201.4` сформированы после аудита зависимостей и готовы к реализации |
+| 201 | [Полноценное разделение модулей evohime-core и evohime-hive](201-0-core-hive-module-decoupling.md) | implemented; этапы `201.1–201.4` выполнены, ожидает подтверждения CI и закрытия |
 
 Незавершённые numbered plans: `180`, `184–188`, `191`, `193–195`, `199`, `200` и `201`.
 

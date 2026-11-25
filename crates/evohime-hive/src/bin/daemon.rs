@@ -28,7 +28,7 @@ use evohime_hive::pulse::{
     DEFAULT_HIVE_OBSERVATION_CONTROL_PIPE, HIVE_OBSERVATION_CONTROL_PIPE_ENV,
 };
 use evohime_hive::settings::HiveSettings;
-use evohime_hive::state::HiveStateSnapshot;
+use evohime_hive::state::{HiveStateSnapshot, HiveStateSnapshotExt as _};
 use evohime_hive_contract::{
     BoxFuture, HiveContractError, HiveCoordinator, HiveDispatchWindows, HiveEventRecord,
     HiveJournalProvider, HiveModelUsage, HiveTaskDispatchRequest, HiveTelemetrySink,
@@ -1057,14 +1057,61 @@ impl HiveJournalProvider for RealIpcJournalProvider {
 
 struct IpcCoordinator {
     client: Arc<CoreIpcClient>,
+    journal: Arc<dyn HiveJournalProvider>,
 }
 
 impl HiveCoordinator for IpcCoordinator {
     fn dispatch_task(
         &self,
-        request: HiveTaskDispatchRequest,
+        mut request: HiveTaskDispatchRequest,
     ) -> BoxFuture<'_, Result<(), HiveContractError>> {
-        Box::pin(async move { self.client.dispatch_task(request).await })
+        let client = Arc::clone(&self.client);
+        let journal = Arc::clone(&self.journal);
+        Box::pin(async move {
+            let lease = if let Some(ref root) = request.workspace_root {
+                let prepared = evohime_hive::worktree::prepare_for_task(
+                    Some(journal.as_ref()),
+                    &request.task_id,
+                    Path::new(root),
+                )
+                .await;
+                if let Some(ref worktree) = prepared {
+                    request.workspace_root =
+                        Some(worktree.worktree_root.to_string_lossy().into_owned());
+                }
+                prepared
+            } else {
+                None
+            };
+            let task_id = request.task_id.clone();
+            let result = client.dispatch_task(request).await;
+            if let Some(worktree) = lease {
+                if result.is_err() {
+                    evohime_hive::worktree::cleanup_if_clean(
+                        Some(journal.as_ref()),
+                        &worktree,
+                        &task_id,
+                    )
+                    .await;
+                } else {
+                    tokio::spawn(async move {
+                        for _ in 0..720 {
+                            tokio::time::sleep(Duration::from_secs(5)).await;
+                            if !journal.has_active_workflow_run(&task_id).await {
+                                evohime_hive::worktree::cleanup_if_clean(
+                                    Some(journal.as_ref()),
+                                    &worktree,
+                                    &task_id,
+                                )
+                                .await;
+                                break;
+                            }
+                        }
+                    });
+                }
+            }
+            result
+        })
     }
 
     fn cancel_task(&self, task_id: String) -> BoxFuture<'_, Result<(), HiveContractError>> {
@@ -1558,30 +1605,25 @@ fn run_city_map_job(runtime: &CityMapRuntime, job: &CityMapJob) -> Result<(), St
 async fn run_city_map_maintenance(
     city_map: CityMapRuntime,
     honeycomb: HoneycombRuntime,
-    client: Arc<CoreIpcClient>,
+    journal: Arc<dyn HiveJournalProvider>,
+    gateway_config: Option<ModelGatewayConfig>,
+    daemon: HiveObservationDaemon,
 ) {
     loop {
         let mut idle_poll = CITY_MAP_FALLBACK_POLL;
-        let mut job = None;
-        match client.fetch_hive_state().await {
-            Ok(state) => {
-                let settings = snapshot_to_settings(&state);
-                let now_ms = unix_now_ms();
-                idle_poll = Duration::from_secs(settings.local_observation_interval_secs.max(1));
-                honeycomb.sync_maintenance(&state, &settings, now_ms);
-                job = Some(CityMapJob {
-                    eva_workspace_path: settings.eva_workspace_path.clone(),
-                    watched_repositories: settings.watched_repositories.clone(),
-                    now_ms,
-                });
-            }
-            Err(error) => {
-                tracing::warn!(error = %error, "city map: failed to fetch hive state");
-            }
-        }
-        if let Some(job) = job {
-            city_map.request_rebuild(job);
-        }
+        let state =
+            build_hive_state_snapshot_in_daemon(journal.as_ref(), gateway_config.as_ref(), &daemon)
+                .await;
+        let settings = snapshot_to_settings(&state);
+        let now_ms = unix_now_ms();
+        idle_poll = Duration::from_secs(settings.local_observation_interval_secs.max(1));
+        honeycomb.sync_maintenance(&state, &settings, now_ms);
+        let job = CityMapJob {
+            eva_workspace_path: settings.eva_workspace_path.clone(),
+            watched_repositories: settings.watched_repositories.clone(),
+            now_ms,
+        };
+        city_map.request_rebuild(job);
         // A kick shortens the wait: settings just changed on the shell side.
         if city_map.idle_wait(idle_poll).await {
             continue;
@@ -1655,6 +1697,7 @@ async fn main() -> ExitCode {
         Arc::new(RealIpcJournalProvider::new(Arc::clone(&client)));
     let coordinator: Arc<dyn HiveCoordinator> = Arc::new(IpcCoordinator {
         client: Arc::clone(&client),
+        journal: Arc::clone(&journal),
     });
     let workspace_provider: Arc<dyn WorkspaceProvider> =
         Arc::new(IpcWorkspaceProvider::new(Arc::clone(&client)));
@@ -1687,6 +1730,15 @@ async fn main() -> ExitCode {
         "connected to Core IPC and loaded HiveSettings"
     );
 
+    let reconciled_hive_children =
+        evohime_hive::observation::reconcile_stale_hive_children_on_startup(journal.as_ref()).await;
+    if reconciled_hive_children > 0 {
+        tracing::info!(
+            reconciled = reconciled_hive_children,
+            "reconciled stale hive child projections on startup"
+        );
+    }
+
     let gateway_config = match ModelGatewayConfig::from_env() {
         Ok(config) => Some(config),
         Err(error) => {
@@ -1698,6 +1750,10 @@ async fn main() -> ExitCode {
     let telemetry: Option<Arc<dyn HiveTelemetrySink>> = file_telemetry
         .as_ref()
         .map(|sink| Arc::clone(sink) as Arc<dyn HiveTelemetrySink>);
+    let maintenance_journal = Arc::clone(&journal);
+    let maintenance_gateway_config = gateway_config.clone();
+    let control_journal = Arc::clone(&journal);
+    let control_gateway_config = gateway_config.clone();
     let daemon = HiveObservationDaemon::start(
         journal,
         gateway_config,
@@ -1713,11 +1769,15 @@ async fn main() -> ExitCode {
         &settings.watched_repositories,
     );
     let control_honeycomb = honeycomb_runtime.clone();
+    let control_ctx = ControlServerContext {
+        daemon: control_daemon,
+        city_map: control_city_map,
+        honeycomb: control_honeycomb,
+        journal: control_journal,
+        gateway_config: control_gateway_config,
+    };
     let control_task = tokio::spawn(async move {
-        if let Err(error) =
-            run_observation_control_server(control_daemon, control_city_map, control_honeycomb)
-                .await
-        {
+        if let Err(error) = run_observation_control_server(control_ctx).await {
             tracing::error!(error = %error, "observation control IPC server stopped");
         }
     });
@@ -1725,7 +1785,9 @@ async fn main() -> ExitCode {
     let city_map_maintenance = tokio::spawn(run_city_map_maintenance(
         city_map_runtime.clone(),
         honeycomb_runtime.clone(),
-        Arc::clone(&client),
+        maintenance_journal,
+        maintenance_gateway_config,
+        daemon.clone(),
     ));
     let status = daemon.status();
     tracing::info!(
@@ -1926,14 +1988,71 @@ fn resolve_honeycomb_mode(state: &HiveStateSnapshot) -> (bool, bool, bool) {
     (hive_active, waiting_for_limits, queen_working)
 }
 
-async fn handle_observation_control_connection<S>(
-    mut stream: S,
+#[derive(Clone)]
+struct ControlServerContext {
     daemon: HiveObservationDaemon,
     city_map: CityMapRuntime,
     honeycomb: HoneycombRuntime,
-) where
+    journal: Arc<dyn HiveJournalProvider>,
+    gateway_config: Option<ModelGatewayConfig>,
+}
+
+async fn build_hive_state_snapshot_in_daemon(
+    journal: &dyn HiveJournalProvider,
+    gateway_config: Option<&ModelGatewayConfig>,
+    daemon: &HiveObservationDaemon,
+) -> HiveStateSnapshot {
+    let settings = match journal.load_hive_settings_json().await {
+        Ok(Some(value)) => serde_json::from_value::<HiveSettings>(value).unwrap_or_default(),
+        _ => HiveSettings::default(),
+    };
+    let projections = evohime_hive::observation::replay_hive_projections(journal).await;
+    let roles = evohime_hive::observation::persistent_agent_roles(journal).await;
+    let mut adjusted_config = gateway_config.cloned();
+    if let Some(config) = adjusted_config.as_mut() {
+        config.apply_hive_route_overrides(
+            settings.hive_provider_profile.as_deref(),
+            settings.hive_model.as_deref(),
+        );
+        config.apply_hive_fallback_route_overrides(
+            settings.hive_fallback_provider_profile.as_deref(),
+            settings.hive_fallback_model.as_deref(),
+        );
+        config.apply_hive_route_limits_with_schedule(
+            "hive",
+            settings.hive_provider_limits,
+            settings.hive_daily_token_quota,
+            settings.primary_reset_schedule(),
+        );
+        config.apply_hive_route_limits_with_schedule(
+            "hive_fallback",
+            settings.hive_fallback_provider_limits,
+            settings.hive_fallback_daily_token_quota,
+            settings.fallback_reset_schedule(),
+        );
+    }
+    let mut observation = evohime_hive::observation::build_hive_observation_for_hive(
+        journal,
+        adjusted_config.as_ref(),
+        None,
+        settings.hive_provider_profile.as_deref(),
+        settings.hive_model.as_deref(),
+        unix_now_ms(),
+    )
+    .await;
+    let status = daemon.status();
+    observation.observation_status = status.status;
+    observation.next_observation_at_ms = status.next_wake_at_ms;
+    HiveStateSnapshot::from_observation(&settings, &projections, &roles, &observation)
+}
+
+async fn handle_observation_control_connection<S>(mut stream: S, ctx: ControlServerContext)
+where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    let daemon = ctx.daemon;
+    let city_map = ctx.city_map;
+    let honeycomb = ctx.honeycomb;
     // Explicit timeouts keep a slow reader or writer from pinning a control
     // socket and from affecting other in-flight connections (each connection
     // also runs on its own tokio task).
@@ -2110,14 +2229,36 @@ async fn handle_observation_control_connection<S>(
                 tracing::debug!("observation control IPC write failed or timed out");
             }
         }
+        HiveObservationControlRequest::GetHiveStateSnapshot => {
+            let snapshot = build_hive_state_snapshot_in_daemon(
+                ctx.journal.as_ref(),
+                ctx.gateway_config.as_ref(),
+                &daemon,
+            )
+            .await;
+            let response_bytes = match serde_json::to_vec(&snapshot) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    tracing::error!(error = %error, "failed to serialize HiveStateSnapshot");
+                    return;
+                }
+            };
+            if let Err(error) = tokio::time::timeout(
+                OBSERVATION_CONTROL_WRITE_TIMEOUT,
+                transport::write_frame(&mut stream, &response_bytes),
+            )
+            .await
+            {
+                let _ = error;
+                tracing::debug!("observation control IPC hive-state write failed or timed out");
+            }
+        }
     }
 }
 
 #[cfg(windows)]
 async fn run_observation_control_server(
-    daemon: HiveObservationDaemon,
-    city_map: CityMapRuntime,
-    honeycomb: HoneycombRuntime,
+    ctx: ControlServerContext,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::net::windows::named_pipe::ServerOptions;
 
@@ -2134,20 +2275,16 @@ async fn run_observation_control_server(
             ServerOptions::new().create_with_security_attributes_raw(&pipe_name, security.as_raw())
         }?;
         server.connect().await?;
-        let daemon = daemon.clone();
-        let city_map = city_map.clone();
-        let honeycomb = honeycomb.clone();
+        let conn_ctx = ctx.clone();
         tokio::spawn(async move {
-            handle_observation_control_connection(server, daemon, city_map, honeycomb).await;
+            handle_observation_control_connection(server, conn_ctx).await;
         });
     }
 }
 
 #[cfg(unix)]
 async fn run_observation_control_server(
-    daemon: HiveObservationDaemon,
-    city_map: CityMapRuntime,
-    honeycomb: HoneycombRuntime,
+    ctx: ControlServerContext,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let socket_path = match std::env::var_os(HIVE_OBSERVATION_CONTROL_SOCKET_ENV) {
         Some(value) if !value.is_empty() => PathBuf::from(value),
@@ -2164,11 +2301,9 @@ async fn run_observation_control_server(
 
     loop {
         let (stream, _) = listener.accept().await?;
-        let daemon = daemon.clone();
-        let city_map = city_map.clone();
-        let honeycomb = honeycomb.clone();
+        let conn_ctx = ctx.clone();
         tokio::spawn(async move {
-            handle_observation_control_connection(stream, daemon, city_map, honeycomb).await;
+            handle_observation_control_connection(stream, conn_ctx).await;
         });
     }
 }

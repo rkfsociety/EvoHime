@@ -1804,7 +1804,9 @@ export const RENDERER_COMMANDS = [
   'automation.setScheduleEnabled',
   'hive.getCityMap',
   'hive.getHoneycombWorld',
-  'hive.getHoneycombDelta'
+  'hive.getHoneycombDelta',
+  'hive.getState',
+  'hive.getObservationStatus'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -2447,6 +2449,8 @@ export interface CommandPayloads {
   'hive.getCityMap': Record<string, never>
   'hive.getHoneycombWorld': Record<string, never>
   'hive.getHoneycombDelta': { fromRevision: number }
+  'hive.getState': Record<string, never>
+  'hive.getObservationStatus': Record<string, never>
 }
 
 export interface CommandResults {
@@ -2834,6 +2838,8 @@ export interface CommandResults {
   'hive.getCityMap': HiveCityMapOutcome
   'hive.getHoneycombWorld': HoneycombWorldOutcome
   'hive.getHoneycombDelta': HoneycombWorldDeltaOutcome
+  'hive.getState': { readonly available: true; readonly snapshot: Record<string, unknown> } | { readonly available: false; readonly snapshot: null }
+  'hive.getObservationStatus': { readonly available: true; readonly snapshot: Record<string, unknown> } | { readonly available: false; readonly snapshot: null }
 }
 
 export type CommandFailureCode =

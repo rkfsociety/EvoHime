@@ -465,7 +465,7 @@ function parseMemoryExtractionDiagnostic(event: CoreEvent): MemoryExtractionDiag
  * and string: a malformed or oversized projection must render as safe defaults
  * instead of escaping into the DOM.
  */
-function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
+function parseHiveState(event: { readonly payload: string } | undefined): HiveStateView | null {
   if (!event) return null
   let parsed: unknown
   try {
@@ -697,7 +697,7 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
   }
 }
 
-function parseHiveObservationState(event: CoreEvent | undefined): HiveObservationStateView | null {
+function parseHiveObservationState(event: { readonly payload: string } | undefined): HiveObservationStateView | null {
   if (!event) return null
   try {
     const parsed = JSON.parse(event.payload) as Record<string, unknown>
@@ -1888,9 +1888,13 @@ export function HiveDashboard({
     }
   }, [])
   const connected = CONNECTED_STATES.includes(connection)
-  const hive = useMemo(() => parseHiveState(latest(events, 'hive_state.snapshot')), [events])
-  const hasHiveSnapshot = latest(events, 'hive_state.snapshot') !== undefined
-  const observationState = useMemo(() => parseHiveObservationState(latest(events, 'hive.observation_status')), [events])
+  const [directHiveStateEvent, setDirectHiveStateEvent] = useState<{ readonly payload: string } | undefined>(undefined)
+  const [directObservationEvent, setDirectObservationEvent] = useState<{ readonly payload: string } | undefined>(undefined)
+  const hiveEventSource = directHiveStateEvent ?? latest(events, 'hive_state.snapshot')
+  const observationEventSource = directObservationEvent ?? latest(events, 'hive.observation_status')
+  const hive = useMemo(() => parseHiveState(hiveEventSource), [hiveEventSource])
+  const hasHiveSnapshot = hiveEventSource !== undefined
+  const observationState = useMemo(() => parseHiveObservationState(observationEventSource), [observationEventSource])
   const hiveChatTaskIds = useMemo(
     () => new Set([...hiveConversationLogEvents, ...localPrompts.map((prompt) => ({ taskId: prompt.taskId }))]
       .map((item) => item.taskId)
@@ -2295,8 +2299,30 @@ export function HiveDashboard({
 
   const requestSnapshot = useCallback((): void => {
     if (!api) return
-    void api.invoke('core.getHiveState', {}).catch(() => undefined)
-    void api.invoke('core.getHiveObservationStatus', {}).catch(() => undefined)
+    void api
+      .invoke('hive.getState', {})
+      .then((outcome) => {
+        if (outcome.ok && outcome.value.available) {
+          setDirectHiveStateEvent({
+            payload: JSON.stringify(outcome.value.snapshot)
+          })
+          return
+        }
+        return api.invoke('core.getHiveState', {}).catch(() => undefined)
+      })
+      .catch(() => api.invoke('core.getHiveState', {}).catch(() => undefined))
+    void api
+      .invoke('hive.getObservationStatus', {})
+      .then((outcome) => {
+        if (outcome.ok && outcome.value.available) {
+          setDirectObservationEvent({
+            payload: JSON.stringify(outcome.value.snapshot)
+          })
+          return
+        }
+        return api.invoke('core.getHiveObservationStatus', {}).catch(() => undefined)
+      })
+      .catch(() => api.invoke('core.getHiveObservationStatus', {}).catch(() => undefined))
   }, [api])
 
   // Snapshot polling is read-only and bounded by the chosen interval. The autonomous
