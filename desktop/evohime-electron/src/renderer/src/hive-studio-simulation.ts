@@ -213,7 +213,7 @@ export function buildHoneycombStudioWorld(options: HoneycombStudioOptions): Hone
   for (let idx = 1; idx < projectCount; idx += 1) {
     const cityId = `city-ext-${idx}`
     const angle = ((idx - 1) * Math.PI * 2) / Math.max(1, projectCount - 1)
-    const distance = 920
+    const distance = 780
     const extLayout = buildModulesForProject(cityId, options.stage, options.remodelSeed + idx, false)
     const extMaxRing = Math.max(1, extLayout.maxRing)
     cities.push({

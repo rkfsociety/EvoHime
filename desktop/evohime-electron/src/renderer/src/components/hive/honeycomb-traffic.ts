@@ -130,13 +130,27 @@ export function stepTrafficSimulation(
     }
   }
 
+  let spawnIndex = 0
   for (const dispatch of world.activeDispatches) {
-    if (state.vehicles.has(dispatch.id)) continue
+    if (state.vehicles.has(dispatch.id)) {
+      spawnIndex += 1
+      continue
+    }
     const waypoints = resolveDispatchWaypoints(world, graph, dispatch)
-    if (waypoints.length < 2) continue
-    const startNode = graph.nodes.get(waypoints[0] ?? '')
-    const nextNode = graph.nodes.get(waypoints[1] ?? '')
-    if (!startNode || !nextNode) continue
+    if (waypoints.length < 2) {
+      spawnIndex += 1
+      continue
+    }
+    // Сдвигаем стартовый сегмент по маршруту, чтобы машины не скапливались в одной точке на выходе.
+    const initialSegment = (spawnIndex * 2) % (waypoints.length - 1)
+    const startNode = graph.nodes.get(waypoints[initialSegment] ?? '')
+    const nextNode = graph.nodes.get(waypoints[initialSegment + 1] ?? '')
+    if (!startNode || !nextNode) {
+      spawnIndex += 1
+      continue
+    }
+    const initialSegLen = Math.max(1, Math.hypot(nextNode.x - startNode.x, nextNode.y - startNode.y))
+    const initialProgress = Math.min(initialSegLen * 0.45, ((spawnIndex % 3) + 1) * 18)
     state.vehicles.set(dispatch.id, {
       id: dispatch.id,
       dispatchId: dispatch.id,
@@ -144,14 +158,15 @@ export function stepTrafficSimulation(
       role: dispatch.role,
       cargo: dispatch.cargo,
       waypoints,
-      segmentIndex: 0,
-      segmentProgressPx: 0,
+      segmentIndex: initialSegment,
+      segmentProgressPx: initialProgress,
       x: startNode.x,
       y: startNode.y,
       angleRad: Math.atan2(nextNode.y - startNode.y, nextNode.x - startNode.x),
       waitingAtSignal: false,
       waitingForCarAhead: false
     })
+    spawnIndex += 1
   }
 
   const stepPx = VEHICLE_SPEED_PX_PER_SEC * Math.min(0.1, dtSec) * Math.min(20, Math.max(1, timeScale))

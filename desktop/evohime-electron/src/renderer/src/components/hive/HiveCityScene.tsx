@@ -149,7 +149,7 @@ export function HiveCityScene({
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const cameraRef = useRef({ x: 0, y: 0, zoom: 0.92 })
+  const cameraRef = useRef({ x: 140, y: 0, zoom: 0.68 })
   const panDragRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
     active: false,
     lastX: 0,
@@ -167,7 +167,7 @@ export function HiveCityScene({
   roadGraphRef.current = roadGraph
   timeScaleRef.current = timeScale
 
-  const [zoomUi, setZoomUi] = useState(0.92)
+  const [zoomUi, setZoomUi] = useState(0.68)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [mmbPanning, setMmbPanning] = useState(false)
 
@@ -211,8 +211,8 @@ export function HiveCityScene({
   )
 
   const resetCamera = useCallback((): void => {
-    cameraRef.current = { x: 0, y: 0, zoom: 0.92 }
-    setZoomUi(0.92)
+    cameraRef.current = { x: 140, y: 0, zoom: 0.68 }
+    setZoomUi(0.68)
   }, [])
 
   useEffect(() => {
@@ -295,7 +295,7 @@ export function HiveCityScene({
       ctx.scale(cam.zoom, cam.zoom)
       ctx.translate(-cam.x, -cam.y)
 
-      // Опорные кольца городов.
+      // Опорные гексагональные кольца городов.
       for (const city of currentWorld.cities) {
         const maxRing = Math.max(
           city.maxRing,
@@ -303,9 +303,8 @@ export function HiveCityScene({
           ...city.modules.map((m) => m.ring)
         )
         for (let r = 1; r <= maxRing; r += 1) {
-          const ringR = getRingRoadRadius(r)
-          ctx.beginPath()
-          ctx.arc(city.worldCenterX, city.worldCenterY, ringR, 0, Math.PI * 2)
+          const ringR = getRingRoadRadius(r) / Math.cos(Math.PI / 6)
+          traceHexPath(ctx, city.worldCenterX, city.worldCenterY, ringR)
           ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)'
           ctx.lineWidth = 1.2
           ctx.stroke()
@@ -359,17 +358,30 @@ export function HiveCityScene({
         ctx.fill()
       }
 
-      // 4. Рёбра зависимостей между модулями проекта (кольца 2+).
+      // 4. Рёбра зависимостей между модулями проекта (мягкие дуги наружу, без пересечения Цитадели).
       for (const city of currentWorld.cities) {
         for (const edge of city.edges) {
           const fromPose = poses.get(edge.fromId)
           const toPose = poses.get(edge.toId)
           if (!fromPose || !toPose) continue
+          const mx = (fromPose.x + toPose.x) / 2
+          const my = (fromPose.y + toPose.y) / 2
+          const vx = mx - city.worldCenterX
+          const vy = my - city.worldCenterY
+          const vLen = Math.max(1, Math.hypot(vx, vy))
+          const bow = 36
+          const cx = mx + (vx / vLen) * bow
+          const cy = my + (vy / vLen) * bow
+          const highlighted = selectedId === edge.fromId || selectedId === edge.toId
           ctx.beginPath()
           ctx.moveTo(fromPose.x, fromPose.y)
-          ctx.lineTo(toPose.x, toPose.y)
-          ctx.strokeStyle = edge.active ? 'rgba(56, 189, 248, 0.6)' : 'rgba(100, 116, 139, 0.28)'
-          ctx.lineWidth = edge.active ? 2.2 : 1.4
+          ctx.quadraticCurveTo(cx, cy, toPose.x, toPose.y)
+          ctx.strokeStyle = highlighted
+            ? 'rgba(56, 189, 248, 0.85)'
+            : edge.active
+              ? 'rgba(56, 189, 248, 0.34)'
+              : 'rgba(100, 116, 139, 0.22)'
+          ctx.lineWidth = highlighted ? 2.6 : 1.5
           ctx.stroke()
         }
       }
@@ -464,9 +476,8 @@ export function HiveCityScene({
           }
         }
 
-        // Подпись соты (видна при достаточном зуме).
-        if (cam.zoom >= 0.45) {
-          ctx.fillStyle = '#e2e8f0'
+        // Подпись соты в аккуратной плашке (видна при достаточном зуме).
+        if (cam.zoom >= 0.42) {
           ctx.font = placement.kind === 'citadel' ? '600 11px sans-serif' : '500 10px sans-serif'
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
@@ -480,7 +491,14 @@ export function HiveCityScene({
             label = city?.modules.find((m) => m.id === id)?.name ?? ''
           }
           if (label) {
-            ctx.fillText(label, pose.x, pose.y + r + 11)
+            const labelY = pose.y + r + 14
+            const textW = ctx.measureText(label).width
+            ctx.fillStyle = 'rgba(6, 10, 20, 0.78)'
+            ctx.beginPath()
+            ctx.roundRect(pose.x - textW / 2 - 6, labelY - 8, textW + 12, 16, 6)
+            ctx.fill()
+            ctx.fillStyle = placement.kind === 'citadel' ? '#fef08a' : '#e2e8f0'
+            ctx.fillText(label, pose.x, labelY)
           }
         }
       }

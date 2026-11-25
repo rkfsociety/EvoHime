@@ -4,10 +4,10 @@ import type {
   HoneycombWorldState
 } from '@shared/hive-city-map'
 
-export const CITADEL_HEX_RADIUS = 46
+export const CITADEL_HEX_RADIUS = 48
 export const CELL_HEX_RADIUS = 30
-export const RING_BASE_RADIUS = 74
-export const RING_STEP = 98
+export const RING_BASE_RADIUS = 84
+export const RING_STEP = 112
 
 /** Углы нормалей к 6 граням pointy-top гексагона (строго перпендикулярно граням). */
 export const HEX_FACE_NORMAL_ANGLES: readonly number[] = [
@@ -215,32 +215,32 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
       addBidirectionalEdge(`${city.id}:hub-gate:${faceIdx}`, hubId, gateId, 'radial', 4)
     }
 
-    // Кольцевые магистрали и пересечения с активными радиальными лучами.
-    const ringAnchorSegments = 12
+    // Гексагональные кольцевые магистрали: 6 вершин гекса + 6 середин граней (на нормалях лучей).
     for (let ring = 1; ring <= maxRing; ring += 1) {
       const roadRadius = getRingRoadRadius(ring)
-      const ringAngles = new Set<number>(exitFaces.map((idx) => HEX_FACE_NORMAL_ANGLES[idx] ?? 0))
-      for (let s = 0; s < ringAnchorSegments; s += 1) {
-        ringAngles.add((s / ringAnchorSegments) * Math.PI * 2)
-      }
-      const sortedAngles = Array.from(ringAngles).sort((a, b) => a - b)
+      const vertexRadius = roadRadius / Math.cos(Math.PI / 6)
+      // 12 узлов по периметру гексагонального кольца (чередуются: середина грани на нормали k*60° и вершина на 30°+k*60°).
       const ringNodeIds: string[] = []
-
-      sortedAngles.forEach((angle, idx) => {
-        const rayIdx = exitFaces.find((face) => Math.abs((HEX_FACE_NORMAL_ANGLES[face] ?? 0) - angle) < 0.01)
-        const nodeId = `${city.id}:ring:${ring}:n:${idx}`
+      for (let step = 0; step < 12; step += 1) {
+        const isFaceCenter = step % 2 === 0
+        const faceIdx = Math.floor(step / 2)
+        const angle = isFaceCenter
+          ? (HEX_FACE_NORMAL_ANGLES[faceIdx] ?? 0)
+          : Math.PI / 6 + faceIdx * (Math.PI / 3)
+        const rDist = isFaceCenter ? roadRadius : vertexRadius
+        const rayIdx = isFaceCenter && exitFaces.includes(faceIdx) ? faceIdx : undefined
+        const nodeId = `${city.id}:ring:${ring}:n:${step}`
         addNode({
           id: nodeId,
           cityId: city.id,
-          x: city.worldCenterX + Math.cos(angle) * roadRadius,
-          y: city.worldCenterY + Math.sin(angle) * roadRadius,
+          x: city.worldCenterX + Math.cos(angle) * rDist,
+          y: city.worldCenterY + Math.sin(angle) * rDist,
           kind: 'intersection',
           ring,
           rayIndex: rayIdx
         })
         ringNodeIds.push(nodeId)
 
-        // Соединяем радиальный луч с предыдущим кольцом (или с выходом Цитадели).
         if (rayIdx !== undefined) {
           if (ring === 1) {
             addBidirectionalEdge(`${city.id}:ray:${rayIdx}:r0-1`, `${city.id}:gate:${rayIdx}`, nodeId, 'radial', 4)
@@ -259,7 +259,7 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
             }
           }
         }
-      })
+      }
 
       for (let idx = 0; idx < ringNodeIds.length; idx += 1) {
         const curr = ringNodeIds[idx]
