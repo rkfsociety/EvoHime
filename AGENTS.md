@@ -212,6 +212,13 @@ Test-NetConnection index.crates.io -Port 443
     контракт `evohime-hive-contract`. Изменения внутри `crates/evohime-hive/**` не
     должны требовать правок в `crates/evohime-core/**` или поднятия
     `release-versions/core.txt`.
+18. Перед каждым `push` обязательно запускай быструю некомпилирующую проверку
+    `pwsh -NoProfile -File .\scripts\pre-push-check.ps1` (проверяет
+    синхронность `Cargo.lock` через `--locked`, форматирование `cargo fmt`,
+    guard-тесты `module-router`, `check:protocol` и `typecheck` Electron при
+    соответствующих изменениях), а если правились тесты или логика UI — также
+    точечный лёгкий `npx vitest run <файл>`. При падении любой из этих
+    проверок исправляй причину и перепроверяй до `push`.
 
 ## Документы
 
