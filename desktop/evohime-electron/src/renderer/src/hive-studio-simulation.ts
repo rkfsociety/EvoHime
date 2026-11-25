@@ -1,380 +1,295 @@
 /**
- * Генератор демо-снапшота города Улья для стены разработки Hive Studio
- * (dev-only страница `hive-studio.html`, в production-бандл не попадает).
+ * Генератор сценария города Улья для dev-стенда Hive Studio (План 200).
  *
- * Снапшот типобезопасно повторяет контракт
- * `@shared/hive-city-map` и не должен принимать аргументов из
- * недоверенных источников: это чистая функция с фиксированным сидом.
- *
- * Импортирует только `@shared/hive-city-map` — модуль остаётся чистым
- * рендер-кодом без Node и Electron.
+ * Позволяет в реальном времени (с HMR) проигрывать:
+ * - нулевой старт (только Цитадель Королевы);
+ * - рост секторов с лимитом 3 агента на сектор;
+ * - эстафету ролей и меж-агентное общение через Королеву;
+ * - мультипроектность на одной карте (соединение по внешним кольцам);
+ * - перестройку города и режим паузы (парковка машин в домах).
  */
 
 import {
-  HIVE_CITY_MAP_SCHEMA_VERSION,
-  type CityBuilding,
-  type CityBuildingKind,
-  type CityDistrict,
-  type CityDistrictKind,
-  type CityEdge,
-  type CityEdgeKind,
-  type CityIsland,
-  type CityEcosystem,
-  type HiveCityMapSnapshot
+  HONEYCOMB_SECTOR_CAPACITY,
+  type HoneycombAgent,
+  type HoneycombAgentRole,
+  type HoneycombCargoType,
+  type HoneycombCity,
+  type HoneycombEdge,
+  type HoneycombIntercityLink,
+  type HoneycombModuleNode,
+  type HoneycombSector,
+  type HoneycombVehicleDispatch,
+  type HoneycombWorldState
 } from '@shared/hive-city-map'
-import type { UiIconName } from './UiIcon'
 
-/** Детерминированный PRNG (mulberry32), чтобы застройка не прыгала между перерисовками. */
-function mulberry32(seed: number): () => number {
-  let state = seed >>> 0
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0
-    let t = state
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296
-  }
+export type StudioGrowthStage = 'zero' | 'scouting' | 'pipeline' | 'remodeled'
+
+export interface HoneycombStudioOptions {
+  readonly stage: StudioGrowthStage
+  readonly paused: boolean
+  readonly evaSourceConfigured: boolean
+  readonly projectCount: number
+  readonly agentCount: number
+  readonly exitsOverride: 'auto' | 1 | 2 | 3 | 4 | 5 | 6
+  readonly remodelSeed: number
 }
 
-function hash32(text: string): number {
-  let hash = 0x811c9dc5
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index)
-    hash = Math.imul(hash, 0x01000193) >>> 0
-  }
-  return hash >>> 0
-}
-
-interface BuildingPlan {
-  readonly name: string
-  readonly path: string
-  readonly kind: CityBuildingKind
-  /** Приблизительный вес высоты (coverage-based), показываем реалистично разными. */
-  readonly weight: number
-  readonly files: number
-  readonly lines: number
-  readonly language: string
-}
-
-interface DistrictPlan {
-  readonly id: string
-  readonly label: string
-  readonly kind: CityDistrictKind
-  readonly buildings: readonly BuildingPlan[]
-}
-
-function rustDistrict(
-  id: string,
-  label: string,
-  kind: CityDistrictKind,
-  buildings: readonly BuildingPlan[]
-): DistrictPlan {
-  return { id, label, kind, buildings }
-}
-
-function building(
-  name: string,
-  path: string,
-  kind: CityBuildingKind,
-  files: number,
-  lines: number,
-  weight: number,
-  language = 'rust'
-): BuildingPlan {
-  return { name, path, kind, files, lines, weight, language }
-}
-
-/** Аберрация EvoHime: контур столицы, близкий к реальному репозиторию. */
-const CAPITAL_DISTRICTS: readonly DistrictPlan[] = [
-  rustDistrict('district-core', 'Core', 'core', [
-    building('Eva runtime', 'crates/evohime-core', 'citadel', 96, 24_800, 940),
-    building('Sensitive guardrails', 'crates/evohime-core/sensitive', 'service', 8, 1_400, 260),
-    building('Tool registry', 'crates/evohime-core/tools', 'service', 22, 5_300, 560)
-  ]),
-  rustDistrict('district-runtime', 'Runtime', 'runtime', [
-    building('Session runtime', 'crates/evohime-runtime', 'service', 31, 7_600, 720),
-    building('Sandbox', 'crates/evohime-sandbox', 'service', 14, 3_100, 480),
-    building('Approvals', 'crates/evohime-approvals', 'library', 9, 1_900, 320)
-  ]),
-  rustDistrict('district-memory', 'Memory', 'memory', [
-    building('Local storage', 'crates/evohime-local-storage', 'storage', 27, 6_900, 640),
-    building('Event journal', 'crates/evohime-events', 'storage', 12, 2_600, 380)
-  ]),
-  rustDistrict('district-tools', 'Tools', 'tools', [
-    building('Model gateway', 'crates/model-gateway', 'gateway', 44, 11_400, 880),
-    building('Provider router', 'crates/lite-router', 'gateway', 19, 4_300, 540),
-    building('Hive daemon', 'crates/evohime-hive', 'worker', 38, 9_900, 820),
-    building('Supervisor', 'crates/evohime-supervisor', 'worker', 21, 5_100, 600)
-  ]),
-  rustDistrict('district-shell', 'Shell', 'shell', [
-    building('Desktop IPC', 'crates/desktop-ipc', 'service', 16, 3_700, 460),
-    building('Electron main', 'desktop/evohime-electron/main', 'ui', 26, 6_400, 560),
-    building('Preload bridge', 'desktop/evohime-electron/preload', 'ui', 7, 1_500, 280)
-  ]),
-  rustDistrict('district-ui', 'UI', 'app', [
-    building('Renderer bundle', 'desktop/evohime-electron/renderer', 'ui', 58, 16_200, 900),
-    building('Hive city scene', 'desktop/evohime-electron/renderer/3d', 'ui', 12, 3_900, 520),
-    building('Updater surface', 'desktop/evohime-electron/updater', 'ui', 9, 1_800, 300)
-  ]),
-  rustDistrict('district-docs', 'Docs', 'docs', [
-    building('Architecture', 'docs/architecture', 'library', 34, 8_800, 420),
-    building('Plans', 'docs/plans', 'library', 61, 12_400, 460)
-  ])
+const ROLE_SEQUENCE: readonly HoneycombAgentRole[] = [
+  'executor',
+  'analyst',
+  'strategist',
+  'decision_coordinator'
 ]
 
-interface SatellitePlan {
-  readonly id: string
-  readonly name: string
-  readonly ecosystem: CityEcosystem
-  readonly districts: readonly DistrictPlan[]
-}
-
-const SATELLITE_PLANS: readonly SatellitePlan[] = [
-  {
-    id: 'sat-c0de910a2b4f8e11',
-    name: 'CodexGUI',
-    ecosystem: 'dotnet',
-    districts: [
-      rustDistrict('sat-codexgui-app', 'App', 'core', [
-        building('AppServer', 'AppServer', 'gateway', 6, 1_400, 620, 'csharp'),
-        building('Application', 'Application', 'service', 2, 520, 420, 'csharp'),
-        building('Automations', 'Automations', 'worker', 2, 480, 380, 'csharp')
-      ]),
-      rustDistrict('sat-codexgui-ui', 'UI', 'app', [
-        building('UI', 'UI', 'ui', 33, 6_800, 820, 'csharp'),
-        building('Views', 'Views', 'ui', 1, 340, 320, 'csharp')
-      ]),
-      rustDistrict('sat-codexgui-infra', 'Infra', 'tools', [
-        building('Infrastructure', 'Infrastructure', 'service', 8, 1_900, 560, 'csharp'),
-        building('Integrations', 'Integrations', 'gateway', 4, 960, 440, 'csharp'),
-        building('Git', 'Git', 'service', 3, 720, 400, 'csharp'),
-        building('Scripts', 'Scripts', 'worker', 6, 840, 340, 'powershell'),
-        building('Tests', 'Tests', 'library', 24, 3_600, 500, 'csharp')
-      ])
-    ]
-  },
-  {
-    id: 'sat-7a18e42d90cf3b22',
-    name: 'MemPulse',
-    ecosystem: 'dotnet',
-    districts: [
-      rustDistrict('sat-mempulse-core', 'App', 'core', [
-        building('MemPulse', 'src/MemPulse', 'worker', 21, 4_200, 680, 'csharp'),
-        building('MemPulse.Linux', 'src/MemPulse.Linux', 'service', 6, 1_100, 380, 'csharp')
-      ]),
-      rustDistrict('sat-mempulse-infra', 'Infra', 'tools', [
-        building('Installer', 'installer', 'service', 1, 240, 260, 'iss'),
-        building('Scripts', 'scripts', 'worker', 2, 310, 280, 'powershell'),
-        building('Tests', 'tests', 'library', 12, 2_100, 440, 'csharp')
-      ])
-    ]
-  },
-  {
-    id: 'sat-9e4b1c70a3d52f33',
-    name: 'PCPulse',
-    ecosystem: 'dotnet',
-    districts: [
-      rustDistrict('sat-pcpulse-core', 'Core', 'core', [
-        building('PCPulse.Core', 'src/PCPulse.Core', 'service', 20, 4_100, 680, 'csharp'),
-        building('PCPulse.Contracts', 'src/PCPulse.Contracts', 'library', 11, 1_800, 440, 'csharp'),
-        building('PCPulse.SampleModule', 'src/PCPulse.SampleModule', 'library', 3, 520, 280, 'csharp')
-      ]),
-      rustDistrict('sat-pcpulse-app', 'App', 'app', [
-        building('PCPulse.App', 'src/PCPulse.App', 'ui', 12, 2_700, 560, 'csharp'),
-        building('Docs', 'docs', 'library', 2, 420, 240, 'markdown')
-      ]),
-      rustDistrict('sat-pcpulse-infra', 'Infra', 'tools', [
-        building('Installer', 'installer', 'service', 1, 220, 240, 'iss'),
-        building('Scripts', 'scripts', 'worker', 5, 680, 320, 'powershell'),
-        building('Tests', 'tests', 'library', 10, 1_900, 420, 'csharp')
-      ])
-    ]
-  },
-  {
-    id: 'sat-ea3f9c12d4b67a05',
-    name: 'assistant-tune',
-    ecosystem: 'python',
-    districts: [
-      rustDistrict('sat1-core', 'Pipelines', 'runtime', [
-        building('Trainer', 'training/loop.py', 'service', 18, 2_400, 520, 'python'),
-        building('Eval suite', 'training/eval.py', 'library', 9, 1_100, 300, 'python')
-      ]),
-      rustDistrict('sat1-data', 'Data', 'memory', [
-        building('Dataset registry', 'data/registry.py', 'storage', 6, 900, 240, 'python')
-      ])
-    ]
-  },
-  {
-    id: 'sat-5c02f8ab91e34d77',
-    name: 'docs-site',
-    ecosystem: 'node',
-    districts: [
-      rustDistrict('sat2-site', 'Site', 'app', [
-        building('Landing', 'site/index.tsx', 'ui', 14, 1_900, 380, 'typescript'),
-        building('Docs router', 'site/router.ts', 'service', 8, 1_200, 260, 'typescript')
-      ])
-    ]
-  },
-  {
-    id: 'sat-b14d2039fe6a8c21',
-    name: 'bench-runner',
-    ecosystem: 'rust',
-    districts: [
-      rustDistrict('sat3-bench', 'Benchmarks', 'tools', [
-        building('Throughput bench', 'benches/throughput.rs', 'worker', 11, 1_600, 420),
-        building('Latency bench', 'benches/latency.rs', 'worker', 7, 1_000, 300)
-      ])
-    ]
-  }
+const AGENT_TOPICS: readonly string[] = [
+  'Индексация модулей',
+  'Анализ зависимостей',
+  'План рефакторинга',
+  'Координация релизов',
+  'Контракт IPC',
+  'Хранилище SQLite'
 ]
 
-function planIsland(
-  id: string,
-  name: string,
-  role: CityIsland['role'],
-  ecosystem: CityEcosystem,
-  districtsPlan: readonly DistrictPlan[],
-  rng: () => number
-): CityIsland {
-  const districts: CityDistrict[] = districtsPlan.map((plan) => ({
-    id: plan.id,
-    label: plan.label,
-    kind: plan.kind
-  }))
-  const buildings: CityBuilding[] = []
-  const edges: CityEdge[] = []
-  let totalFiles = 0
-  let totalLines = 0
-  for (const districtPlan of districtsPlan) {
-    for (const plan of districtPlan.buildings) {
-      const id32 = hash32(`${id}:${plan.path}`)
-      const idHex = id32.toString(16).padStart(8, '0')
-      const fileId = hash32(`${id}:${plan.path}:file`)
-      buildings.push({
-        id: `b-${idHex}-${(fileId % 0xffff).toString(16).padStart(4, '0')}`,
-        name: plan.name,
-        district_id: districtPlan.id,
-        kind: plan.kind,
-        relative_path: plan.path,
-        file_count: plan.files,
-        line_count: plan.lines,
-        height_weight_bp: plan.weight,
-        language: plan.language
-      })
-      totalFiles += plan.files
-      totalLines += plan.lines
+const CARGO_BY_ROLE: Record<HoneycombAgentRole, HoneycombCargoType> = {
+  executor: 'task',
+  analyst: 'report',
+  strategist: 'analysis',
+  decision_coordinator: 'decision'
+}
+
+const EXTRA_PROJECT_NAMES: readonly string[] = ['CodexGUI', 'MemPulse', 'PCPulse']
+
+function buildModulesForProject(
+  cityId: string,
+  stage: StudioGrowthStage,
+  remodelSeed: number,
+  isPrimary: boolean
+): { readonly modules: readonly HoneycombModuleNode[]; readonly edges: readonly HoneycombEdge[]; readonly maxRing: number } {
+  if (stage === 'zero') {
+    return { modules: [], edges: [], maxRing: 0 }
+  }
+
+  const baseModules: readonly { name: string; path: string; ring: number; kind: HoneycombModuleNode['kind']; files: number }[] =
+    isPrimary
+      ? [
+          { name: 'evohime-core', path: 'crates/evohime-core', ring: 2, kind: 'citadel', files: 96 },
+          { name: 'evohime-hive', path: 'crates/evohime-hive', ring: 2, kind: 'worker', files: 38 },
+          { name: 'local-storage', path: 'crates/evohime-local-storage', ring: 2, kind: 'storage', files: 27 },
+          { name: 'desktop-ipc', path: 'crates/desktop-ipc', ring: 2, kind: 'gateway', files: 16 },
+          { name: 'electron-ui', path: 'desktop/evohime-electron', ring: 3, kind: 'ui', files: 58 },
+          { name: 'model-gateway', path: 'crates/model-gateway', ring: 3, kind: 'gateway', files: 44 },
+          { name: 'supervisor', path: 'crates/evohime-supervisor', ring: 3, kind: 'service', files: 21 }
+        ]
+      : [
+          { name: 'app-core', path: 'src/core', ring: 2, kind: 'service', files: 22 },
+          { name: 'api-bridge', path: 'src/bridge', ring: 2, kind: 'gateway', files: 14 },
+          { name: 'ui-views', path: 'src/ui', ring: 3, kind: 'ui', files: 19 }
+        ]
+
+  const limit = stage === 'scouting' ? Math.min(3, baseModules.length) : baseModules.length
+  const shift = stage === 'remodeled' ? (remodelSeed % 5) + 1 : 0
+
+  const modules: HoneycombModuleNode[] = []
+  for (let i = 0; i < limit; i += 1) {
+    const spec = baseModules[(i + shift) % baseModules.length]!
+    const ring = stage === 'remodeled' && i % 2 === 1 && spec.ring === 2 ? 3 : spec.ring
+    modules.push({
+      id: `${cityId}:mod:${i}`,
+      cityId,
+      coord: { q: i + shift, r: ring },
+      ring,
+      name: spec.name,
+      kind: spec.kind,
+      relativePath: spec.path,
+      fileCount: spec.files,
+      lineCount: spec.files * 220,
+      language: isPrimary ? 'rust' : 'typescript'
+    })
+  }
+
+  const edges: HoneycombEdge[] = []
+  for (let i = 1; i < modules.length; i += 1) {
+    edges.push({
+      id: `${cityId}:edge:${i}`,
+      cityId,
+      fromId: modules[i - 1]!.id,
+      toId: modules[i]!.id,
+      kind: i % 2 === 0 ? 'ipc' : 'dependency',
+      active: stage === 'pipeline' || stage === 'remodeled'
+    })
+  }
+
+  const maxRing = modules.reduce((acc, item) => Math.max(acc, item.ring), 1)
+  return { modules, edges, maxRing }
+}
+
+export function buildHoneycombStudioWorld(options: HoneycombStudioOptions): HoneycombWorldState {
+  const projectCount = Math.max(1, Math.min(4, options.projectCount))
+  const effectiveAgentCount =
+    options.stage === 'zero'
+      ? 0
+      : options.stage === 'scouting'
+        ? Math.min(3, Math.max(1, options.agentCount))
+        : Math.max(1, options.agentCount)
+
+  const autoExits = Math.max(1, Math.min(6, Math.ceil(effectiveAgentCount / 2)))
+  const citadelExitsCount = options.exitsOverride === 'auto' ? autoExits : options.exitsOverride
+
+  const primaryProjectName = options.evaSourceConfigured
+    ? 'EvoHime'
+    : (EXTRA_PROJECT_NAMES[0] ?? 'Project-1')
+  const primaryCityId = 'city-primary'
+
+  // Создаём сектора с лимитом 3 агента на сектор.
+  const sectorCount =
+    effectiveAgentCount === 0 ? 0 : Math.ceil(effectiveAgentCount / HONEYCOMB_SECTOR_CAPACITY)
+  const sectors: HoneycombSector[] = []
+  const allAgents: HoneycombAgent[] = []
+
+  for (let sIdx = 0; sIdx < sectorCount; sIdx += 1) {
+    const sectorId = `${primaryCityId}:sector:${sIdx}`
+    const agentsInSector: HoneycombAgent[] = []
+    for (let slot = 0; slot < HONEYCOMB_SECTOR_CAPACITY; slot += 1) {
+      const globalIdx = sIdx * HONEYCOMB_SECTOR_CAPACITY + slot
+      if (globalIdx >= effectiveAgentCount) break
+      const role = ROLE_SEQUENCE[globalIdx % ROLE_SEQUENCE.length]!
+      const agent: HoneycombAgent = {
+        id: `agent-${globalIdx + 1}`,
+        name: `Агент #${globalIdx + 1}`,
+        role,
+        sectorId,
+        topic: AGENT_TOPICS[globalIdx % AGENT_TOPICS.length]!,
+        busy: !options.paused,
+        activeTripId: options.paused ? null : `trip-${globalIdx + 1}`
+      }
+      agentsInSector.push(agent)
+      allAgents.push(agent)
     }
+
+    sectors.push({
+      id: sectorId,
+      cityId: primaryCityId,
+      coord: { q: sIdx, r: 1 },
+      ring: 1,
+      label: `Сектор ${sIdx + 1}`,
+      capacity: HONEYCOMB_SECTOR_CAPACITY,
+      agents: agentsInSector
+    })
   }
-  // Зависимые рёбра внутри района: каждое здание ссылается на предыдущее.
-  const edgeKinds: readonly CityEdgeKind[] = ['dependency', 'ipc', 'runtime']
-  for (const districtPlan of districtsPlan) {
-    const districtBuildings = buildings.filter(
-      (item) => item.district_id === districtPlan.id
-    )
-    for (let index = 1; index < districtBuildings.length; index += 1) {
-      const from = districtBuildings[index - 1]
-      const to = districtBuildings[index]
-      if (!from || !to) continue
-      edges.push({
-        from_id: from.id,
-        to_id: to.id,
-        kind: edgeKinds[index % edgeKinds.length] ?? 'dependency',
-        weight: Math.max(1, Math.round(4 + rng() * 30))
+
+  const primaryLayout = buildModulesForProject(
+    primaryCityId,
+    options.stage,
+    options.remodelSeed,
+    true
+  )
+  const primaryMaxRing = Math.max(
+    sectors.length > 0 ? 1 : 0,
+    primaryLayout.maxRing
+  )
+
+  const cities: HoneycombCity[] = [
+    {
+      id: primaryCityId,
+      projectName: primaryProjectName,
+      isPrimary: true,
+      hasQueenCitadel: true,
+      citadelExitsCount,
+      worldCenterX: 0,
+      worldCenterY: 0,
+      maxRing: primaryMaxRing,
+      sectors,
+      modules: primaryLayout.modules,
+      edges: primaryLayout.edges
+    }
+  ]
+
+  const intercityLinks: HoneycombIntercityLink[] = []
+  const secondaryNames = options.evaSourceConfigured
+    ? EXTRA_PROJECT_NAMES
+    : EXTRA_PROJECT_NAMES.slice(1)
+
+  for (let idx = 1; idx < projectCount; idx += 1) {
+    const cityId = `city-ext-${idx}`
+    const angle = ((idx - 1) * Math.PI * 2) / Math.max(1, projectCount - 1)
+    const distance = 920
+    const extLayout = buildModulesForProject(cityId, options.stage, options.remodelSeed + idx, false)
+    const extMaxRing = Math.max(1, extLayout.maxRing)
+    cities.push({
+      id: cityId,
+      projectName: secondaryNames[idx - 1] ?? `Project-${idx}`,
+      isPrimary: false,
+      hasQueenCitadel: false,
+      citadelExitsCount: 2,
+      worldCenterX: Math.cos(angle) * distance,
+      worldCenterY: Math.sin(angle) * distance,
+      maxRing: extMaxRing,
+      sectors: [],
+      modules: extLayout.modules,
+      edges: extLayout.edges
+    })
+    if (primaryMaxRing >= 1) {
+      intercityLinks.push({
+        id: `link-primary-${cityId}`,
+        fromCityId: primaryCityId,
+        toCityId: cityId,
+        fromRing: primaryMaxRing,
+        toRing: extMaxRing
       })
     }
   }
-  return {
-    id,
-    name,
-    role,
-    source: 'live_workspace',
-    status: 'ready',
-    reason: null,
-    ecosystem,
-    structure_hash: hash32(`${id}:structure`).toString(16).padStart(8, '0'),
-    revision_hash: hash32(`${id}:rev`).toString(16).padStart(8, '0'),
-    accent_hue: role === 'capital' ? 42 : 218 + Math.floor(rng() * 100) % 140,
-    districts,
-    buildings,
-    edges,
-    total_files: totalFiles,
-    total_lines: totalLines
+
+  // Генерируем реальные рейсы конвейера (при паузе список пуст — машины в домах).
+  const activeDispatches: HoneycombVehicleDispatch[] = []
+  if (!options.paused && options.stage !== 'zero') {
+    allAgents.forEach((agent, idx) => {
+      const targetModules = cities.flatMap((c) => c.modules)
+      const moduleTarget = targetModules[idx % Math.max(1, targetModules.length)]
+      const queenHubId = `${primaryCityId}:citadel`
+      const peerAgent = allAgents[(idx + 1) % allAgents.length]
+
+      // Каждый 4-й агент демонстрирует заезд к Королеве за разрешением на меж-агентное общение.
+      if (
+        options.stage === 'pipeline' &&
+        idx % 4 === 3 &&
+        peerAgent &&
+        peerAgent.sectorId !== agent.sectorId
+      ) {
+        activeDispatches.push({
+          id: `trip-${idx + 1}`,
+          cityId: primaryCityId,
+          agentId: agent.id,
+          role: agent.role,
+          cargo: 'comms_request',
+          fromNodeId: agent.sectorId,
+          toNodeId: queenHubId,
+          finalTargetNodeId: peerAgent.sectorId,
+          startedAtMs: 1_000 + idx
+        })
+      } else {
+        activeDispatches.push({
+          id: `trip-${idx + 1}`,
+          cityId: primaryCityId,
+          agentId: agent.id,
+          role: agent.role,
+          cargo: CARGO_BY_ROLE[agent.role],
+          fromNodeId: queenHubId,
+          toNodeId: moduleTarget ? moduleTarget.id : agent.sectorId,
+          startedAtMs: 1_000 + idx
+        })
+      }
+    })
   }
-}
-
-export interface HiveStudioSimulationOptions {
-  /** Отпечаток времени снапшота (симулирует `generated_at_ms`). */
-  readonly generatedAtMs?: number | undefined
-  /** Сколько спутников показать (0..=6): удобно проверять появление/исчезновение. */
-  readonly satelliteCount?: number | undefined
-  /** Соль ведёт к другой раскладке при неизменном контракте. */
-  readonly seed?: number | undefined
-}
-
-/**
- * Детерминированный демо-снапшот столицы EvoHime и её спутников.
- * Проходит `parseHiveCityMapSnapshot` без потерь — покрыто тестом.
- */
-export function buildHiveStudioSimulation(
-  options: HiveStudioSimulationOptions = {}
-): HiveCityMapSnapshot {
-  const generatedAtMs = options.generatedAtMs ?? Date.now()
-  const satelliteCount = Math.min(SATELLITE_PLANS.length, Math.max(0, options.satelliteCount ?? 2))
-  const rng = mulberry32(options.seed ?? 199_327)
-
-  const capital = planIsland(
-    'capital-evohime',
-    'EvoHime',
-    'capital',
-    'rust',
-    CAPITAL_DISTRICTS,
-    rng
-  )
-
-  const satellites: CityIsland[] = []
-  for (let index = 0; index < satelliteCount; index += 1) {
-    const plan = SATELLITE_PLANS[index]
-    if (!plan) break
-    satellites.push(
-      planIsland(plan.id, plan.name, 'satellite', plan.ecosystem, plan.districts, rng)
-    )
-  }
-
-  const revisionHash = hash32(
-    `${capital.revision_hash}:${satellites.map((item) => item.revision_hash).join(',')}:${generatedAtMs}`
-  )
-    .toString(16)
-    .padStart(8, '0')
 
   return {
-    schema_version: HIVE_CITY_MAP_SCHEMA_VERSION,
-    generated_at_ms: generatedAtMs,
-    revision_hash: revisionHash.repeat(4).slice(0, 32),
-    capital,
-    satellites
+    schemaVersion: 2,
+    paused: options.paused,
+    queenWorking: !options.paused && options.stage !== 'zero',
+    primaryCityId,
+    cities,
+    intercityLinks,
+    activeDispatches,
+    revision: options.remodelSeed + options.agentCount * 10 + projectCount * 100
   }
 }
-
-export interface HiveStudioDepartmentState {
-  readonly key: string
-  readonly label: string
-  readonly subtitle: string
-  readonly icon: UiIconName
-  readonly activeCount: number
-  readonly maxCapacity: number
-}
-
-/**
- * Департаменты, поднятые со скриншота реального дашборда; анимация активности
- * (`step`) имитирует смену занятости, чтобы можно было смотреть оживление домов.
- */
-export const HIVE_STUDIO_DEPARTMENTS: readonly HiveStudioDepartmentState[] = [
-  { key: 'analytics', label: 'Аналитика', subtitle: 'Анализ данных', icon: 'activity', activeCount: 3, maxCapacity: 3 },
-  { key: 'planning', label: 'Планирование', subtitle: 'Планирование задач', icon: 'compass', activeCount: 2, maxCapacity: 2 },
-  { key: 'research', label: 'Исследования', subtitle: 'Поиск решений', icon: 'target', activeCount: 2, maxCapacity: 2 },
-  { key: 'development', label: 'Разработка', subtitle: 'Разработка кода', icon: 'terminal', activeCount: 3, maxCapacity: 3 },
-  { key: 'testing', label: 'Тестирование', subtitle: 'Проверка качества', icon: 'check-circle', activeCount: 2, maxCapacity: 2 },
-  { key: 'integrations', label: 'Интеграции', subtitle: 'Инфраструктура и API', icon: 'link', activeCount: 2, maxCapacity: 2 },
-  { key: 'documentation', label: 'Документация', subtitle: 'База знаний и доки', icon: 'folder', activeCount: 2, maxCapacity: 2 },
-  { key: 'support', label: 'Поддержка', subtitle: 'Помощь и сервис', icon: 'message', activeCount: 2, maxCapacity: 2 }
-]

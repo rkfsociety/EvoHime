@@ -794,3 +794,140 @@ function buildIslandView(
 }
 
 export const CITY_MAP_MAX_SATELLITES = 12
+
+// ---------------------------------------------------------------------------
+// План 200: Сотовая архитектура Улья, конвейер Королевы и 2D-симуляция
+// ---------------------------------------------------------------------------
+
+/** Фиксированная вместимость одного сектора 1-го кольца (ровно 3 агента). */
+export const HONEYCOMB_SECTOR_CAPACITY = 3 as const
+export const HONEYCOMB_MIN_CITADEL_EXITS = 1 as const
+export const HONEYCOMB_MAX_CITADEL_EXITS = 6 as const
+
+export type HoneycombAgentRole =
+  | 'executor'
+  | 'analyst'
+  | 'strategist'
+  | 'decision_coordinator'
+
+export type HoneycombCargoType =
+  | 'task'
+  | 'report'
+  | 'analysis'
+  | 'decision'
+  | 'comms_request'
+  | 'comms_approved'
+
+export interface HoneycombHexCoord {
+  readonly q: number
+  readonly r: number
+}
+
+export interface HoneycombAgent {
+  readonly id: string
+  readonly name: string
+  readonly role: HoneycombAgentRole
+  readonly sectorId: string
+  /** Тема/направление, в рамках которого агент хранит контекст и переиспользуется. */
+  readonly topic: string
+  readonly busy: boolean
+  readonly activeTripId: string | null
+}
+
+export interface HoneycombSector {
+  readonly id: string
+  readonly cityId: string
+  readonly coord: HoneycombHexCoord
+  readonly ring: 1
+  readonly label: string
+  readonly capacity: typeof HONEYCOMB_SECTOR_CAPACITY
+  readonly agents: readonly HoneycombAgent[]
+}
+
+export interface HoneycombModuleNode {
+  readonly id: string
+  readonly cityId: string
+  readonly coord: HoneycombHexCoord
+  /** Кольцо >= 2: структура изучаемого проекта. */
+  readonly ring: number
+  readonly name: string
+  readonly kind: CityBuildingKind
+  readonly relativePath: string
+  readonly fileCount: number
+  readonly lineCount: number
+  readonly language: string
+}
+
+export interface HoneycombEdge {
+  readonly id: string
+  readonly cityId: string
+  readonly fromId: string
+  readonly toId: string
+  readonly kind: CityEdgeKind
+  readonly active: boolean
+}
+
+export interface HoneycombIntercityLink {
+  readonly id: string
+  readonly fromCityId: string
+  readonly toCityId: string
+  /** Внешние (последние) кольца, через которые соединяются города. */
+  readonly fromRing: number
+  readonly toRing: number
+}
+
+export interface HoneycombVehicleDispatch {
+  readonly id: string
+  readonly cityId: string
+  readonly agentId: string
+  readonly role: HoneycombAgentRole
+  readonly cargo: HoneycombCargoType
+  readonly fromNodeId: string
+  readonly toNodeId: string
+  /** Если задано — после заезда к Королеве за разрешением машина едет к целевому агенту. */
+  readonly finalTargetNodeId?: string | undefined
+  readonly startedAtMs: number
+}
+
+export type HoneycombMutationEvent =
+  | { readonly type: 'sector.create'; readonly cityId: string; readonly sector: HoneycombSector }
+  | { readonly type: 'sector.remove'; readonly cityId: string; readonly sectorId: string }
+  | { readonly type: 'agent.spawn'; readonly cityId: string; readonly sectorId: string; readonly agent: HoneycombAgent }
+  | { readonly type: 'agent.retire'; readonly cityId: string; readonly agentId: string }
+  | { readonly type: 'building.construct'; readonly cityId: string; readonly node: HoneycombModuleNode }
+  | { readonly type: 'building.remodel'; readonly cityId: string; readonly node: HoneycombModuleNode }
+  | { readonly type: 'building.demolish'; readonly cityId: string; readonly nodeId: string }
+  | { readonly type: 'edge.link'; readonly cityId: string; readonly edge: HoneycombEdge }
+  | { readonly type: 'edge.unlink'; readonly cityId: string; readonly edgeId: string }
+  | { readonly type: 'comms.authorize'; readonly cityId: string; readonly fromAgentId: string; readonly toAgentId: string }
+  | { readonly type: 'vehicle.dispatch'; readonly dispatch: HoneycombVehicleDispatch }
+
+export interface HoneycombCity {
+  readonly id: string
+  readonly projectName: string
+  /** Основной город Королевы (исходники Евы, либо первый добавленный проект). */
+  readonly isPrimary: boolean
+  /** Единственная Цитадель Королевы на всей карте — true только у основного города. */
+  readonly hasQueenCitadel: boolean
+  /** От 1 до 6 выходов строго перпендикулярно граням внешней соты Цитадели. */
+  readonly citadelExitsCount: number
+  /** Координаты центра города на общей 2D-карте (мировые единицы). */
+  readonly worldCenterX: number
+  readonly worldCenterY: number
+  /** Наибольшее внешнее кольцо города (используется для межгородских дорог). */
+  readonly maxRing: number
+  readonly sectors: readonly HoneycombSector[]
+  readonly modules: readonly HoneycombModuleNode[]
+  readonly edges: readonly HoneycombEdge[]
+}
+
+export interface HoneycombWorldState {
+  readonly schemaVersion: 2
+  readonly paused: boolean
+  readonly queenWorking: boolean
+  readonly primaryCityId: string
+  readonly cities: readonly HoneycombCity[]
+  readonly intercityLinks: readonly HoneycombIntercityLink[]
+  readonly activeDispatches: readonly HoneycombVehicleDispatch[]
+  readonly revision: number
+}

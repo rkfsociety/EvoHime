@@ -12,7 +12,7 @@ import { ImageGenerationPanel } from './ImageGenerationPanel'
 import { AnalysisKernelPanel } from './AnalysisKernelPanel'
 import { UiIcon } from './UiIcon'
 import type { UiIconName } from './UiIcon'
-import { HiveCityScene, type HiveCityMapPayload } from './components/3d'
+import { HiveCityScene, type HiveCityMapPayload } from './components/hive'
 import { catalogErrorMessage, safeCatalogErrorCode } from './catalog-error'
 import {
   applyConversationEvents,

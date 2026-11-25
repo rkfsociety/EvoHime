@@ -1,522 +1,64 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
 
-vi.mock('../src/renderer/src/components/3d/HiveArchipelago3D', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/renderer/src/components/3d/HiveArchipelago3D')>()
-  return {
-    ...actual,
-    HiveArchipelago3D: function MockHiveArchipelago3D({
-      capital,
-      satellites,
-      departmentHouses = [],
-      onSelectDepartment,
-      onSelectIsland,
-      onSelectBuilding,
-      onBackgroundClick
-    }: import('../src/renderer/src/components/3d/HiveArchipelago3D').HiveArchipelago3DProps) {
-      const islands = [capital, ...satellites]
-      return (
-        <div
-          data-testid="hive-archipelago-3d"
-          onPointerDown={(event) => {
-            if (event.button !== 0) return
-            if (event.target === event.currentTarget) {
-              onBackgroundClick()
-            }
-          }}
-        >
-          {islands.map((view) => (
-            <div
-              key={view.island.id}
-              data-island={view.island.id}
-              className={`hive-archipelago__island hive-archipelago__island--${view.phase}`}
-            >
-              {view.buildings.map((item) => (
-                <button
-                  key={item.building.id}
-                  type="button"
-                  data-testid={`hive-tower-${item.building.id}`}
-                  onPointerDown={(event) => {
-                    if (event.button !== 0) return
-                    event.stopPropagation()
-                    onSelectBuilding(view.island.id, item.building.id)
-                  }}
-                >
-                  {item.building.name}
-                </button>
-              ))}
-            </div>
-          ))}
-          {departmentHouses.map((lot) => (
-            <div
-              key={`${lot.departmentKey}-${lot.slot}`}
-              data-testid={`hive-archipelago-house-${lot.departmentKey}-${lot.slot}`}
-              data-dept={lot.departmentKey}
-              data-active={lot.active ? 'true' : 'false'}
-              onPointerDown={(event) => {
-                if (event.button !== 0) return
-                event.stopPropagation()
-                onSelectDepartment?.(lot.departmentKey)
-              }}
-            />
-          ))}
-          {islands.map((view) => (
-            <button
-              key={`bg-${view.island.id}`}
-              type="button"
-              data-testid={`mock-select-island-${view.island.id}`}
-              onPointerDown={(event) => {
-                if (event.button !== 0) return
-                event.stopPropagation()
-                onSelectIsland(view.island.id)
-              }}
-            />
-          ))}
-        </div>
-      )
-    }
-  }
-})
-
-import type { HiveCityMapSnapshot } from '../src/shared/hive-city-map'
-import { HiveCityScene, type HiveCityDepartmentPin } from '../src/renderer/src/components/3d'
 import {
-  QUEEN_GATE_ANGLE,
-  computeQueenGateStopAngle,
-  computeRingEntryStopProgress
-} from '../src/renderer/src/components/3d/HiveArchipelago3D'
+  HiveCityScene,
+  MAX_CAMERA_ZOOM,
+  MIN_CAMERA_ZOOM
+} from '../src/renderer/src/components/hive'
+import { buildHoneycombStudioWorld } from '../src/renderer/src/hive-studio-simulation'
 
-describe('HiveCityScene', () => {
+describe('HiveCityScene (2D Canvas)', () => {
   afterEach(() => {
     cleanup()
   })
 
-  it('renders 2.5D city backdrop, fx layer, normalized status, and aria-hidden in decorative mode', () => {
+  it('renders 2D top-down canvas in fallback mode when world is omitted', () => {
     const { rerender } = render(<HiveCityScene status="observing" />)
-
     const scene = screen.getByTestId('hive-city-scene')
+    expect(scene.getAttribute('data-mode')).toBe('2d-canvas')
     expect(scene.getAttribute('data-status')).toBe('observing')
-    expect(scene.getAttribute('aria-hidden')).toBe('true')
-    expect(screen.getByTestId('hive-city-scene-art')).toBeTruthy()
-    expect(screen.getByTestId('hive-city-scene-fx')).toBeTruthy()
+    expect(screen.getByTestId('hive-city-canvas')).toBeTruthy()
 
     rerender(<HiveCityScene status="active" />)
     expect(screen.getByTestId('hive-city-scene').getAttribute('data-status')).toBe('active')
-
-    rerender(<HiveCityScene status="" />)
-    expect(screen.getByTestId('hive-city-scene').getAttribute('data-status')).toBe('idle')
   })
 
-  it('renders interactive department pins, highlights active conduits, and emits selection callbacks', async () => {
-    const user = userEvent.setup()
-    const onSelectDepartment = vi.fn()
-    const departments: readonly HiveCityDepartmentPin[] = [
-      {
-        key: 'development',
-        label: 'Разработка',
-        subtitle: 'Разработка кода',
-        icon: 'terminal',
-        activeCount: 2,
-        maxCapacity: 4
-      },
-      {
-        key: 'research',
-        label: 'Исследования',
-        subtitle: 'Поиск решений',
-        icon: 'target',
-        activeCount: 0,
-        maxCapacity: 4
-      }
-    ]
+  it('clamps zoom within [MIN_CAMERA_ZOOM, MAX_CAMERA_ZOOM] and supports MMB pan', () => {
+    const world = buildHoneycombStudioWorld({
+      stage: 'pipeline',
+      paused: false,
+      evaSourceConfigured: true,
+      projectCount: 2,
+      agentCount: 4,
+      exitsOverride: 'auto',
+      remodelSeed: 0
+    })
 
-    render(
-      <HiveCityScene
-        status="active"
-        departments={departments}
-        selectedDepartment="development"
-        onSelectDepartment={onSelectDepartment}
-      />
-    )
+    render(<HiveCityScene status="active" world={world} queenWorking />)
+    const canvas = screen.getByTestId('hive-city-canvas')
+    const zoomLabel = screen.getByTestId('hive-camera-zoom')
 
-    const scene = screen.getByTestId('hive-city-scene')
-    expect(scene.getAttribute('aria-hidden')).toBeNull()
-
-    const devPin = screen.getByTestId('hive-pin-development')
-    const researchPin = screen.getByTestId('hive-pin-research')
-    expect(devPin.getAttribute('aria-pressed')).toBe('true')
-    expect(devPin.textContent).toContain('Работает · 2/4')
-    expect(researchPin.getAttribute('aria-pressed')).toBe('false')
-    expect(researchPin.textContent).toContain('Ожидание')
-
-    const conduits = screen.getAllByTestId('hive-city-conduit')
-    const devConduit = conduits.find((item) => item.getAttribute('data-dept') === 'development')
-    const researchConduit = conduits.find((item) => item.getAttribute('data-dept') === 'research')
-    expect(devConduit?.getAttribute('data-active')).toBe('true')
-    expect(researchConduit?.getAttribute('data-active')).toBe('false')
-
-    await user.click(researchPin)
-    expect(onSelectDepartment).toHaveBeenCalledWith('research')
-  })
-})
-
-const satelliteIsland = (id: string, name: string) => ({
-  id,
-  name,
-  role: 'satellite' as const,
-  source: 'live_workspace' as const,
-  status: 'ready' as const,
-  reason: null,
-  ecosystem: 'rust' as const,
-  structure_hash: 'a'.repeat(16),
-  revision_hash: 'b'.repeat(16),
-  accent_hue: 212,
-  districts: [{ id: `${id}-core`, label: 'Ядро', kind: 'core' as const }],
-  buildings: [
-    {
-      id: `${id}/src/main.rs`,
-      name: 'main.rs',
-      district_id: `${id}-core`,
-      kind: 'worker' as const,
-      relative_path: 'src/main.rs',
-      file_count: 3,
-      line_count: 300,
-      height_weight_bp: 320,
-      language: 'rust'
+    for (let i = 0; i < 20; i += 1) {
+      fireEvent.wheel(canvas, { deltaY: -100, clientX: 200, clientY: 200 })
     }
-  ],
-  edges: [],
-  total_files: 3,
-  total_lines: 300
-})
+    expect(Number.parseInt(zoomLabel.textContent ?? '0', 10)).toBeLessThanOrEqual(
+      Math.round(MAX_CAMERA_ZOOM * 100)
+    )
 
-const capitalIsland = {
-  id: 'capital-evohime',
-  name: 'Столица Евы',
-  role: 'capital' as const,
-  source: 'live_workspace' as const,
-  status: 'ready' as const,
-  reason: null,
-  ecosystem: 'rust' as const,
-  structure_hash: 'c'.repeat(16),
-  revision_hash: 'd'.repeat(16),
-  accent_hue: 42,
-  districts: [{ id: 'capital-core', label: 'Цитадель', kind: 'core' as const }],
-  buildings: [
-    {
-      id: 'crates/evohime-core',
-      name: 'evohime-core',
-      district_id: 'capital-core',
-      kind: 'citadel' as const,
-      relative_path: 'crates/evohime-core',
-      file_count: 40,
-      line_count: 9000,
-      height_weight_bp: 1000,
-      language: 'rust'
+    for (let i = 0; i < 30; i += 1) {
+      fireEvent.wheel(canvas, { deltaY: 100, clientX: 200, clientY: 200 })
     }
-  ],
-  edges: [],
-  total_files: 40,
-  total_lines: 9000
-}
-
-const archipelagoSnapshot: HiveCityMapSnapshot = {
-  schema_version: 1,
-  generated_at_ms: 1_700_000_000_000,
-  revision_hash: 'd'.repeat(32),
-  capital: capitalIsland,
-  satellites: [satelliteIsland('sat-alpha', 'Альфа')]
-}
-
-describe('HiveCityScene — живой архипелаг (план 199.3)', () => {
-  const originalGetContext = HTMLCanvasElement.prototype.getContext
-
-  beforeEach(() => {
-    HTMLCanvasElement.prototype.getContext = ((type: string) =>
-      type === 'webgl2' || type === 'webgl' ? ({} as RenderingContext) : null) as typeof HTMLCanvasElement.prototype.getContext
-  })
-
-  afterEach(() => {
-    HTMLCanvasElement.prototype.getContext = originalGetContext
-    cleanup()
-  })
-
-  it('рендерит 3D-архипелаг с чипами и башнями и без 2D-заглушки', () => {
-    render(
-      <HiveCityScene
-        status="observing"
-        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
-      />
+    expect(Number.parseInt(zoomLabel.textContent ?? '0', 10)).toBeGreaterThanOrEqual(
+      Math.round(MIN_CAMERA_ZOOM * 100)
     )
 
-    const scene = screen.getByTestId('hive-city-scene')
-    expect(scene.getAttribute('data-mode')).toBe('3d')
-    expect(screen.getByTestId('hive-archipelago-3d')).toBeTruthy()
-    expect(screen.queryByTestId('hive-archipelago-2d')).toBeNull()
-    // Чипы: столица + спутник.
-    expect(screen.getByTestId('hive-archipelago-chip-capital-evohime').textContent).toContain('Столица Евы')
-    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').textContent).toContain('Альфа')
-    // Башни зданий из детерминированной раскладки.
-    expect(screen.getByTestId('hive-tower-crates/evohime-core')).toBeTruthy()
-    expect(screen.getByTestId('hive-tower-sat-alpha/src/main.rs')).toBeTruthy()
-    // Архипелаг не рисует панораму.
-    expect(screen.queryByTestId('hive-city-scene-art')).toBeNull()
-  })
-
-  it('при отсутствии WebGL не показывает 2D-заглушку', () => {
-    HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext
-    render(
-      <HiveCityScene
-        status="observing"
-        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
-      />
-    )
-    const scene = screen.getByTestId('hive-city-scene')
-    expect(scene.getAttribute('data-mode')).toBe('unavailable')
-    expect(screen.getByTestId('hive-archipelago-webgl-unavailable')).toBeTruthy()
-    expect(screen.queryByTestId('hive-archipelago-2d')).toBeNull()
-  })
-
-  it('клик по башне открывает инспектор, Escape и кнопка закрывают', async () => {
-    const user = userEvent.setup()
-    render(
-      <HiveCityScene
-        status="observing"
-        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
-      />
-    )
-
-    expect(screen.queryByTestId('hive-archipelago-inspector')).toBeNull()
-    fireEvent.pointerDown(screen.getByTestId('hive-tower-sat-alpha/src/main.rs'))
-
-    const inspector = screen.getByTestId('hive-archipelago-inspector')
-    expect(inspector.getAttribute('role')).toBe('dialog')
-    // Инспектор показывает модуль здания: имя, тип, относительный путь.
-    expect(inspector.textContent).toContain('main.rs')
-    expect(inspector.textContent).toContain('src/main.rs')
-
-    // Спутник в фокусе: чип альфа нажат.
-    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('true')
-
-    await user.click(screen.getByTestId('hive-archipelago-inspector-close'))
-    expect(screen.queryByTestId('hive-archipelago-inspector')).toBeNull()
-    // Фокус снят после закрытия инспектора? Нет: Escape нужен для возврата обзора.
-    fireEvent.keyDown(screen.getByTestId('hive-city-scene'), { key: 'Escape' })
-    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('false')
-  })
-
-  it('клик по чипу-спутнику выделяет остров, повторный клик и фон снимают фокус', async () => {
-    const user = userEvent.setup()
-    const onSelectDepartment = vi.fn()
-    render(
-      <HiveCityScene
-        status="observing"
-        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
-        selectedDepartment="research"
-        onSelectDepartment={onSelectDepartment}
-      />
-    )
-
-    await user.click(screen.getByTestId('hive-tower-sat-alpha/src/main.rs'))
-    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByTestId('hive-archipelago-inspector')).toBeTruthy()
-
-    // СКМ по башне и по фону не должна ни выбирать, ни сбрасывать выделение.
-    fireEvent.pointerDown(screen.getByTestId('hive-tower-crates/evohime-core'), { button: 1 })
-    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('true')
-    const canvasHost = screen.getByTestId('hive-archipelago-3d')
-    fireEvent.pointerDown(canvasHost, { target: canvasHost, button: 1 })
-    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByTestId('hive-archipelago-inspector')).toBeTruthy()
-
-    // Клик ЛКМ по фону сбрасывает остров, инспектор и департамент.
-    fireEvent.pointerDown(canvasHost, { target: canvasHost, button: 0 })
-    expect(screen.getByTestId('hive-archipelago-chip-sat-alpha').getAttribute('aria-pressed')).toBe('false')
-    expect(screen.queryByTestId('hive-archipelago-inspector')).toBeNull()
-    expect(onSelectDepartment).toHaveBeenCalledWith('research')
-  })
-
-  it('недоступный демон сохраняет панораму и показывает статус', () => {
-    render(
-      <HiveCityScene
-        status="observing"
-        cityMap={{ available: false, snapshot: null }}
-      />
-    )
-    const scene = screen.getByTestId('hive-city-scene')
-    expect(scene.getAttribute('data-mode')).toBe('panorama')
-    expect(screen.getByTestId('hive-city-scene-art')).toBeTruthy()
-    expect(screen.getByTestId('hive-city-unavailable')).toBeTruthy()
-  })
-
-  it('чипы ограничены 13 островами (столица + до 12 спутников)', () => {
-    const fullSnapshot: HiveCityMapSnapshot = {
-      ...archipelagoSnapshot,
-      satellites: Array.from({ length: 14 }, (_, index) =>
-        satelliteIsland(`sat-${index}`, `Спутник ${index}`)
-      )
-    }
-    render(
-      <HiveCityScene
-        status="observing"
-        cityMap={{ available: true, snapshot: fullSnapshot }}
-      />
-    )
-    const chips = screen.getAllByTestId(/^hive-archipelago-chip-/)
-    expect(chips).toHaveLength(13)
-  })
-
-  it('в архипелаге департаменты — дома на окраине столицы, а не-floating пины', async () => {
-    const user = userEvent.setup()
-    const onSelectDepartment = vi.fn()
-    const departments: readonly HiveCityDepartmentPin[] = [
-      {
-        key: 'development',
-        label: 'Разработка',
-        subtitle: 'Разработка кода',
-        icon: 'terminal',
-        activeCount: 2,
-        maxCapacity: 3
-      },
-      {
-        key: 'research',
-        label: 'Исследования',
-        subtitle: 'Поиск решений',
-        icon: 'target',
-        activeCount: 0,
-        maxCapacity: 2
-      }
-    ]
-    render(
-      <HiveCityScene
-        status="observing"
-        departments={departments}
-        selectedDepartment="development"
-        onSelectDepartment={onSelectDepartment}
-        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
-      />
-    )
-
-    // Пины панорамы скрыты, дома работников отрисованы на окраине столицы.
-    expect(screen.queryByTestId('hive-pin-development')).toBeNull()
-    // 3 слота разработки + 2 слота исследований = 5 домов.
-    const houses = screen.getAllByTestId(/^hive-archipelago-house-/)
-    expect(houses).toHaveLength(5)
-
-    const devHouses = houses.filter((house) => house.getAttribute('data-dept') === 'development')
-    const activeDevHouses = devHouses.filter((house) => house.getAttribute('data-active') === 'true')
-    expect(devHouses).toHaveLength(3)
-    expect(activeDevHouses).toHaveLength(2)
-
-    const house = screen.getByTestId('hive-archipelago-house-development-0')
-    await user.click(house)
-    expect(onSelectDepartment).toHaveBeenCalledWith('development')
-  })
-
-  it('жизненный цикл спутника: entering → active → exiting → размонтирование', () => {
-    vi.useFakeTimers()
-    try {
-      const { rerender } = render(
-        <HiveCityScene status="observing" cityMap={{ available: true, snapshot: archipelagoSnapshot }} />
-      )
-
-      // Добавляем спутник: фаза entering.
-      const withTwo: HiveCityMapSnapshot = {
-        ...archipelagoSnapshot,
-        satellites: [satelliteIsland('sat-alpha', 'Альфа'), satelliteIsland('sat-beta', 'Бета')]
-      }
-      rerender(
-        <HiveCityScene status="observing" cityMap={{ available: true, snapshot: withTwo }} />
-      )
-
-      const betaIsland = screen.getByTestId('hive-tower-sat-beta/src/main.rs').closest('[data-island]')
-      expect(betaIsland?.getAttribute('class')).toContain('hive-archipelago__island--entering')
-
-      act(() => {
-        vi.advanceTimersByTime(700)
-      })
-      const betaIslandAfter = screen.getByTestId('hive-tower-sat-beta/src/main.rs').closest('[data-island]')
-      expect(betaIslandAfter?.getAttribute('class'))
-        .toContain('hive-archipelago__island--active')
-
-      // Убираем спутники Бета: exiting, затем размонтирование.
-      rerender(
-        <HiveCityScene status="observing" cityMap={{ available: true, snapshot: archipelagoSnapshot }} />
-      )
-      expect(screen.getByTestId('hive-tower-sat-beta/src/main.rs').closest('[data-island]')?.getAttribute('class'))
-        .toContain('hive-archipelago__island--exiting')
-
-      act(() => {
-        vi.advanceTimersByTime(800)
-      })
-      expect(screen.queryByTestId('hive-tower-sat-beta/src/main.rs')).toBeNull()
-      // Альфа осталась активной.
-      expect(screen.getByTestId('hive-tower-sat-alpha/src/main.rs')).toBeTruthy()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('keeps waiting cars strictly before intersection borders at queen gate and ring entries', () => {
-    for (const innerR of [2.9, 3.5, 4.4]) {
-      const stopAngle = computeQueenGateStopAngle(innerR)
-      // Полуширина дороги ворот (0.32) + полудлина машины (0.18) = 0.50 по дуге.
-      const frontBumperArc = (QUEEN_GATE_ANGLE - stopAngle) * innerR - 0.18
-      expect(frontBumperArc).toBeGreaterThan(0.32)
-
-      const homeEdgeR = innerR + 0.8
-      const stopProgress = computeRingEntryStopProgress(innerR, homeEdgeR)
-      const carCenterR = homeEdgeR - stopProgress * (homeEdgeR - innerR)
-      // Внешний бордюр кольца на innerR + 0.42; передний бампер (center - 0.18) должен оставаться снаружи.
-      expect(carCenterR - 0.18).toBeGreaterThan(innerR + 0.42)
-    }
-  })
-
-  it('disables city house activity whenever the queen is inactive', () => {
-    const departments: readonly HiveCityDepartmentPin[] = [
-      {
-        key: 'development',
-        label: 'Разработка',
-        subtitle: 'Разработка кода',
-        icon: 'terminal',
-        activeCount: 2,
-        maxCapacity: 3
-      }
-    ]
-    const { rerender } = render(
-      <HiveCityScene
-        status="active"
-        queenWorking={false}
-        departments={departments}
-        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
-      />
-    )
-    const inactiveHouses = screen.getAllByTestId(/^hive-archipelago-house-/)
-    expect(inactiveHouses.some((house) => house.getAttribute('data-active') === 'true')).toBe(false)
-
-    rerender(
-      <HiveCityScene
-        status="sleeping"
-        queenWorking={true}
-        departments={departments}
-        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
-      />
-    )
-    expect(
-      screen.getAllByTestId(/^hive-archipelago-house-/).some((house) => house.getAttribute('data-active') === 'true')
-    ).toBe(false)
-
-    rerender(
-      <HiveCityScene
-        status="active"
-        queenWorking={true}
-        departments={departments}
-        cityMap={{ available: true, snapshot: archipelagoSnapshot }}
-      />
-    )
-    expect(
-      screen.getAllByTestId(/^hive-archipelago-house-/).filter((house) => house.getAttribute('data-active') === 'true')
-    ).toHaveLength(2)
+    // Панорамирование по СКМ не вызывает ошибок и переключает класс.
+    fireEvent.pointerDown(canvas, { button: 1, clientX: 100, clientY: 100, pointerId: 1 })
+    expect(screen.getByTestId('hive-city-scene').className).toContain('hive-city-scene--panning')
+    fireEvent.pointerMove(canvas, { clientX: 160, clientY: 140, pointerId: 1 })
+    fireEvent.pointerUp(canvas, { button: 1, pointerId: 1 })
+    expect(screen.getByTestId('hive-city-scene').className).not.toContain('hive-city-scene--panning')
   })
 })
