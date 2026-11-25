@@ -650,9 +650,19 @@ describe('hive dashboard', () => {
       event('tool.started', { tool_name: 'filesystem_read', arguments: '{"path":"other.txt"}' }, 'unrelated-task')
     ]} />)
     const activity = await screen.findByLabelText('Ход работы Королевы')
-    expect(within(activity).getByText('Ева читает файл: README.md')).toBeTruthy()
+    expect(within(activity).getByText('Королева Ева читает файл: README.md')).toBeTruthy()
     expect(activity.textContent).not.toContain('noise-model')
     expect(activity.textContent).not.toContain('other.txt')
+  })
+
+  it('shows queen delegation label instead of eva answering on empty message delta', async () => {
+    render(<HiveDashboard connection="connected" events={[
+      event('hive_state.snapshot', snapshot()),
+      event('agent.message.delta', { content: '' }, 'eva-pulse-test')
+    ]} />)
+    const activity = await screen.findByLabelText('Ход работы Королевы')
+    expect(within(activity).getByText('Королева Ева делегирует задачи')).toBeTruthy()
+    expect(activity.textContent).not.toContain('Ева отвечает')
   })
 
   it('attributes delegated hive agent events to the agent rather than Eva', async () => {
@@ -681,11 +691,11 @@ describe('hive dashboard', () => {
     )
     const activity = await screen.findByLabelText('Ход работы Королевы')
     const activityList = activity.querySelector('.hive-activity-list') as HTMLElement
-    expect(within(activityList).getByText('Ева вызывает hive_delegate_agent')).toBeTruthy()
+    expect(within(activityList).getByText('Королева Ева вызывает hive_delegate_agent')).toBeTruthy()
     expect(within(activityList).getByText('Исследователь ядра читает файл: AGENTS.md')).toBeTruthy()
     expect(within(activityList).getByText('Разработчик читает файл: docs/architecture.md')).toBeTruthy()
-    expect(activityList.textContent).not.toContain('Ева читает файл: AGENTS.md')
-    expect(activityList.textContent).not.toContain('Ева читает файл: docs/architecture.md')
+    expect(activityList.textContent).not.toContain('Королева Ева читает файл: AGENTS.md')
+    expect(activityList.textContent).not.toContain('Королева Ева читает файл: docs/architecture.md')
   })
 
   it('читает опубликованную проекцию старой версии', async () => {

@@ -1164,7 +1164,7 @@ function parseDelegatedRoleFromTaskId(taskId: string): string | null {
   return (lastDash > 0 ? tail.slice(0, lastDash) : tail) || null
 }
 
-/** Имя субъекта события: «Ева» для задач Королевы или имя/роль делегированного агента Улья. */
+/** Имя субъекта события: «Королева Ева» для корневых событий Улья или имя/роль делегированного агента. */
 function resolveEventActorLabel(
   taskId: string,
   activeAgents: HiveStateView['activeAgents'] = []
@@ -1172,7 +1172,7 @@ function resolveEventActorLabel(
   const active = activeAgents.find((agent) => agent.id === taskId)
   if (active?.displayName?.trim()) return active.displayName.trim()
   const role = active?.role || parseDelegatedRoleFromTaskId(taskId)
-  if (!role) return 'Ева'
+  if (!role) return 'Королева Ева'
   const normalized = role.trim().toLowerCase()
   const known = HIVE_ROLE_AGENT_LABELS[normalized]
   if (known) return known
@@ -1193,7 +1193,8 @@ function describeHiveEvent(event: CoreEvent, activeAgents: HiveStateView['active
   switch (event.eventType) {
     case 'agent.message.delta': {
       const content = typeof body['content'] === 'string' ? body['content'].trim() : ''
-      return content || `${actor} отвечает`
+      if (content) return content
+      return actor === 'Королева Ева' ? 'Королева Ева делегирует задачи' : `${actor} отвечает`
     }
     case 'tool.started':
       return `${actor} ${describeToolStart(body)}`
