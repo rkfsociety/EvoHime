@@ -7,9 +7,8 @@ use std::path::Path;
 use evohime_hive_contract::honeycomb::{
     HoneycombAgent, HoneycombAgentRole, HoneycombCargoType, HoneycombCity, HoneycombEdge,
     HoneycombHexCoord, HoneycombIntercityLink, HoneycombModuleNode, HoneycombMutationEvent,
-    HoneycombSector, HoneycombVehicleDispatch, HoneycombWorldState,
-    HONEYCOMB_MAX_CITADEL_EXITS, HONEYCOMB_MIN_CITADEL_EXITS, HONEYCOMB_SECTOR_CAPACITY,
-    HONEYCOMB_WORLD_SCHEMA_VERSION,
+    HoneycombSector, HoneycombVehicleDispatch, HoneycombWorldState, HONEYCOMB_MAX_CITADEL_EXITS,
+    HONEYCOMB_MIN_CITADEL_EXITS, HONEYCOMB_SECTOR_CAPACITY, HONEYCOMB_WORLD_SCHEMA_VERSION,
 };
 
 use crate::city_map::{build_city_island_from_checkout, CityIslandRole};
@@ -386,7 +385,9 @@ impl HoneycombEngine {
                 city.citadel_exits_count = compute_citadel_exits(city);
             }
         }
-        self.world.active_dispatches.retain(|d| d.agent_id != agent_id);
+        self.world
+            .active_dispatches
+            .retain(|d| d.agent_id != agent_id);
         if !events.is_empty() {
             self.commit_events(&events, now_ms)?;
         }
@@ -429,7 +430,11 @@ impl HoneycombEngine {
 
         let mut modules = Vec::new();
         for (idx, b) in island.buildings.iter().enumerate() {
-            let ring: u16 = if idx < 6 { 2 } else { 3 + ((idx - 6) / 10) as u16 };
+            let ring: u16 = if idx < 6 {
+                2
+            } else {
+                3 + ((idx - 6) / 10) as u16
+            };
             modules.push(HoneycombModuleNode {
                 id: format!("{city_id}:mod:{}", b.id),
                 city_id: city_id.to_string(),
@@ -483,17 +488,20 @@ impl HoneycombEngine {
         role: HoneycombAgentRole,
         events: &mut Vec<HoneycombMutationEvent>,
     ) -> Result<String, HiveDbError> {
-        let sector_id_existing = self
-            .world
-            .cities
-            .iter()
-            .find(|c| c.id == city_id)
-            .and_then(|city| {
-                city.sectors
-                    .iter()
-                    .find(|s| s.role == role && s.agents.len() < usize::from(HONEYCOMB_SECTOR_CAPACITY))
-                    .map(|s| s.id.clone())
-            });
+        let sector_id_existing =
+            self.world
+                .cities
+                .iter()
+                .find(|c| c.id == city_id)
+                .and_then(|city| {
+                    city.sectors
+                        .iter()
+                        .find(|s| {
+                            s.role == role
+                                && s.agents.len() < usize::from(HONEYCOMB_SECTOR_CAPACITY)
+                        })
+                        .map(|s| s.id.clone())
+                });
 
         if let Some(id) = sector_id_existing {
             return Ok(id);
@@ -622,7 +630,10 @@ fn collect_desired_projects(
 ) -> Vec<(String, String)> {
     let mut out = Vec::new();
     if let Some(eva_path) = eva_workspace_path.filter(|s| !s.trim().is_empty()) {
-        out.push(("city-eva".to_string(), project_name_from_path(eva_path, "EvoHime")));
+        out.push((
+            "city-eva".to_string(),
+            project_name_from_path(eva_path, "EvoHime"),
+        ));
     }
     for (idx, repo) in watched_repositories.iter().enumerate() {
         if repo.trim().is_empty() {
@@ -697,7 +708,10 @@ mod tests {
         let engine = HoneycombEngine::open(
             db,
             None,
-            &["C:/Projects/CodexGUI".to_string(), "C:/Projects/MemPulse".to_string()],
+            &[
+                "C:/Projects/CodexGUI".to_string(),
+                "C:/Projects/MemPulse".to_string(),
+            ],
         )
         .expect("open engine");
 

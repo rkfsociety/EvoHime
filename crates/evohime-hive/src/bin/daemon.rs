@@ -1684,7 +1684,8 @@ async fn main() -> ExitCode {
     let control_honeycomb = honeycomb_runtime.clone();
     let control_task = tokio::spawn(async move {
         if let Err(error) =
-            run_observation_control_server(control_daemon, control_city_map, control_honeycomb).await
+            run_observation_control_server(control_daemon, control_city_map, control_honeycomb)
+                .await
         {
             tracing::error!(error = %error, "observation control IPC server stopped");
         }
@@ -1769,8 +1770,7 @@ impl HoneycombRuntime {
             Err(_) => {
                 let fallback = std::env::temp_dir().join("evohime-hive-fallback.db");
                 #[allow(clippy::expect_used)]
-                evohime_hive::honeycomb_db::HiveDatabase::open(&fallback)
-                    .expect("temp hive db")
+                evohime_hive::honeycomb_db::HiveDatabase::open(&fallback).expect("temp hive db")
             }
         };
         #[allow(clippy::expect_used)]
@@ -1785,7 +1785,11 @@ impl HoneycombRuntime {
         }
     }
 
-    fn snapshot_world(&self, paused: bool, queen_working: bool) -> Option<evohime_hive_contract::honeycomb::HoneycombWorldState> {
+    fn snapshot_world(
+        &self,
+        paused: bool,
+        queen_working: bool,
+    ) -> Option<evohime_hive_contract::honeycomb::HoneycombWorldState> {
         let mut guard = self.engine.lock().ok()?;
         let _ = guard.set_active_mode(!paused, false, queen_working);
         Some(guard.world().clone())
@@ -1851,7 +1855,8 @@ impl HoneycombRuntime {
                 );
             } else if !state.active_agents.is_empty() {
                 for agent in state.active_agents.iter().take(4) {
-                    let stage = if agent.role.contains("аналит") || agent.role.contains("analyst") {
+                    let stage = if agent.role.contains("аналит") || agent.role.contains("analyst")
+                    {
                         evohime_hive::honeycomb_engine::RelayStage::Analysis
                     } else if agent.role.contains("стратег") || agent.role.contains("plan") {
                         evohime_hive::honeycomb_engine::RelayStage::Strategy

@@ -1104,11 +1104,8 @@ async fn expired_catalog_refreshes_automatically_on_async_preflight() {
 
     let directory = tempfile::tempdir().expect("temp dir");
     let journal = crate::EventJournal::open(directory.path().join("events.db")).expect("journal");
-    let route = ModelRouteConfig::openai_compatible(
-        "test-key",
-        format!("http://{addr}/v1"),
-        "model-a",
-    );
+    let route =
+        ModelRouteConfig::openai_compatible("test-key", format!("http://{addr}/v1"), "model-a");
     let profile = ProviderProfile::from_route_config(&route).expect("profile");
     let expired = ProviderCatalogSnapshot::fresh_from_catalog(
         &profile,

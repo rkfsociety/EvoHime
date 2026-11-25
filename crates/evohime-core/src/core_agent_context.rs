@@ -1500,7 +1500,8 @@ impl ToolAgent {
             });
             let is_hive_route =
                 preferred_route == Some("hive") || preferred_route == Some("hive_fallback");
-            let effective_route_pin = route_pin.or_else(|| is_hive_route.then_some(preferred_route).flatten());
+            let effective_route_pin =
+                route_pin.or_else(|| is_hive_route.then_some(preferred_route).flatten());
             let mut routing_request = RoutingRequest {
                 required_capabilities: vec!["chat".into()],
                 max_cost_micros_per_1k_tokens: bounded_fanout.then_some(0),

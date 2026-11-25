@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use evohime_hive_contract::honeycomb::{
     HoneycombAgent, HoneycombAgentRole, HoneycombCity, HoneycombEdge, HoneycombHexCoord,
     HoneycombIntercityLink, HoneycombModuleNode, HoneycombMutationEvent, HoneycombSector,
-    HoneycombVehicleDispatch, HoneycombWorldDelta, HoneycombWorldState,
-    HONEYCOMB_SECTOR_CAPACITY, HONEYCOMB_WORLD_SCHEMA_VERSION,
+    HoneycombVehicleDispatch, HoneycombWorldDelta, HoneycombWorldState, HONEYCOMB_SECTOR_CAPACITY,
+    HONEYCOMB_WORLD_SCHEMA_VERSION,
 };
 use rusqlite::backup::Backup;
 use rusqlite::{params, Connection, OpenFlags};
@@ -179,7 +179,11 @@ impl HiveDatabase {
             primary_city_id,
             cities,
             intercity_links,
-            active_dispatches: if paused { Vec::new() } else { active_dispatches },
+            active_dispatches: if paused {
+                Vec::new()
+            } else {
+                active_dispatches
+            },
             revision,
         })
     }
@@ -348,7 +352,9 @@ impl HiveDatabase {
         let latest = self.latest_revision()?;
         let min_stored_rev: Option<i64> = self
             .conn
-            .query_row("SELECT MIN(revision) FROM hive_events", [], |row| row.get(0))
+            .query_row("SELECT MIN(revision) FROM hive_events", [], |row| {
+                row.get(0)
+            })
             .ok()
             .flatten();
 
@@ -480,7 +486,10 @@ impl HiveDatabase {
         Ok(agents)
     }
 
-    fn load_modules_for_city(&self, city_id: &str) -> Result<Vec<HoneycombModuleNode>, HiveDbError> {
+    fn load_modules_for_city(
+        &self,
+        city_id: &str,
+    ) -> Result<Vec<HoneycombModuleNode>, HiveDbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, ring, q, r, name, kind, relative_path, file_count, line_count, language
              FROM hive_modules
@@ -504,7 +513,8 @@ impl HiveDatabase {
                 language: row.get(9)?,
             })
         })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(HiveDbError::from)
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(HiveDbError::from)
     }
 
     fn load_edges_for_city(&self, city_id: &str) -> Result<Vec<HoneycombEdge>, HiveDbError> {
@@ -524,7 +534,8 @@ impl HiveDatabase {
                 active: row.get::<_, i64>(4)? != 0,
             })
         })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(HiveDbError::from)
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(HiveDbError::from)
     }
 }
 
@@ -713,7 +724,9 @@ mod tests {
 
         // Core opens strictly read-only.
         let ro_db = HiveDatabase::open_read_only(&db_path).expect("open ro");
-        let loaded = ro_db.load_world_state(true, false, vec![]).expect("load ro");
+        let loaded = ro_db
+            .load_world_state(true, false, vec![])
+            .expect("load ro");
         assert_eq!(loaded.revision, 7);
         assert!(loaded.paused);
         assert!(loaded.active_dispatches.is_empty());
