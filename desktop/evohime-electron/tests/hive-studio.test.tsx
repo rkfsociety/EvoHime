@@ -290,6 +290,42 @@ describe('honeycomb geometry & traffic', () => {
       }
     }
   })
+
+  it('routes dispatches to the specific agent cell slot instead of empty middle sector node', () => {
+    const world = buildHoneycombStudioWorld({
+      stage: 'pipeline',
+      paused: false,
+      evaSourceConfigured: true,
+      projectCount: 1,
+      agentCount: 1,
+      exitsOverride: 'auto',
+      remodelSeed: 0
+    })
+    const primary = world.cities[0]!
+    const sector = primary.sectors[0]!
+    const agent = sector.agents[0]!
+    const singleDispatchWorld = {
+      ...world,
+      activeDispatches: [
+        {
+          id: 'trip-agent-slot-0',
+          cityId: primary.id,
+          agentId: agent.id,
+          role: agent.role,
+          cargo: 'task' as const,
+          fromNodeId: `${primary.id}:citadel`,
+          toNodeId: sector.id,
+          startedAtMs: 1000
+        }
+      ]
+    }
+    const { roadGraph } = buildHoneycombSceneLayout(singleDispatchWorld)
+    const traffic = createTrafficSimulationState()
+    stepTrafficSimulation(traffic, singleDispatchWorld, roadGraph, 0.016, 1.0, 1)
+    const vehicle = traffic.vehicles.get('trip-agent-slot-0')
+    expect(vehicle).toBeTruthy()
+    expect(vehicle!.waypoints[vehicle!.waypoints.length - 1]).toBe(`${sector.id}:slot:0`)
+  })
 })
 
 describe('Hive Studio app (2D)', () => {

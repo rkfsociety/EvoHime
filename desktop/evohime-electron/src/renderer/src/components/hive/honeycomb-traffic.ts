@@ -123,6 +123,27 @@ export function createTrafficSimulationState(): TrafficSimulationState {
   return { vehicles: new Map(), lastRevision: -1 }
 }
 
+function resolveAgentCellNodeId(
+  world: HoneycombWorldState,
+  graph: RoadGraph,
+  nodeId: string,
+  agentId: string
+): string {
+  for (const city of world.cities) {
+    const sector = city.sectors.find((s) => s.id === nodeId)
+    if (!sector) continue
+    const slot = sector.agents.findIndex((a) => a.id === agentId)
+    if (slot >= 0) {
+      const slotNodeId = `${sector.id}:slot:${slot}`
+      if (graph.nodes.has(slotNodeId)) {
+        return slotNodeId
+      }
+    }
+    return nodeId
+  }
+  return nodeId
+}
+
 function resolveDispatchWaypoints(
   world: HoneycombWorldState,
   graph: RoadGraph,
@@ -135,15 +156,18 @@ function resolveDispatchWaypoints(
       : `${primaryCity.id}:hub`
     : dispatch.toNodeId
 
+  const fromNodeId = resolveAgentCellNodeId(world, graph, dispatch.fromNodeId, dispatch.agentId)
+  const toNodeId = resolveAgentCellNodeId(world, graph, dispatch.toNodeId, dispatch.agentId)
+
   if (dispatch.finalTargetNodeId && dispatch.cargo === 'comms_request') {
     // Обязательный заезд к Королеве за разрешением, затем к целевому агенту.
-    const leg1 = findRoadPath(graph, dispatch.fromNodeId, queenHubId)
+    const leg1 = findRoadPath(graph, fromNodeId, queenHubId)
     const leg2 = findRoadPath(graph, queenHubId, dispatch.finalTargetNodeId)
     if (leg1.length > 0 && leg2.length > 1) {
       return [...leg1, ...leg2.slice(1)]
     }
   }
-  return findRoadPath(graph, dispatch.fromNodeId, dispatch.toNodeId)
+  return findRoadPath(graph, fromNodeId, toNodeId)
 }
 
 /**
