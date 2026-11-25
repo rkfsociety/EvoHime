@@ -762,18 +762,31 @@ fn collect_desired_projects(
     watched_repositories: &[String],
 ) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    if let Some(eva_path) = eva_workspace_path.filter(|s| !s.trim().is_empty()) {
+    let mut seen_paths: Vec<String> = Vec::new();
+    if let Some(eva_path) = eva_workspace_path
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        seen_paths.push(eva_path.to_string());
         out.push((
             "city-eva".to_string(),
             project_name_from_path(eva_path, "EvoHime"),
         ));
     }
-    for (idx, repo) in watched_repositories.iter().enumerate() {
-        if repo.trim().is_empty() {
+    let mut external_idx = 0usize;
+    for repo in watched_repositories {
+        let trimmed = repo.trim();
+        if trimmed.is_empty()
+            || seen_paths
+                .iter()
+                .any(|existing| crate::settings::paths_refer_to_same_repo(existing, trimmed))
+        {
             continue;
         }
-        let id = format!("city-repo-{idx}");
-        out.push((id, project_name_from_path(repo, "Project")));
+        seen_paths.push(trimmed.to_string());
+        let id = format!("city-repo-{external_idx}");
+        external_idx += 1;
+        out.push((id, project_name_from_path(trimmed, "Project")));
     }
     if out.is_empty() {
         out.push(("city-eva".to_string(), "EvoHime".to_string()));
@@ -912,5 +925,34 @@ mod tests {
             dist >= min_non_overlapping + INTERCITY_GAP_PX - 1e-6,
             "cities overlap: dist={dist}, sum_radii={min_non_overlapping}"
         );
+    }
+
+    #[test]
+    fn sync_projects_does_not_duplicate_eva_workspace_from_watched_repositories() {
+        let db = HiveDatabase::open_in_memory().expect("in-memory db");
+        let mut engine = HoneycombEngine::open(
+            db,
+            Some(r"C:\github\EvoHime"),
+            &[r"C:\github\EvoHime".to_string()],
+        )
+        .expect("open engine");
+        assert_eq!(engine.world().cities.len(), 1);
+        assert_eq!(engine.world().cities[0].id, "city-eva");
+        assert!(engine.world().cities[0].has_queen_citadel);
+
+        engine
+            .sync_projects(
+                Some(r"C:\github\EvoHime"),
+                &[
+                    r"C:\github\EvoHime\".to_string(),
+                    r"C:\github\OtherRepo".to_string(),
+                    r"C:\github\OtherRepo".to_string(),
+                ],
+            )
+            .expect("sync projects");
+        assert_eq!(engine.world().cities.len(), 2);
+        assert_eq!(engine.world().cities[0].id, "city-eva");
+        assert_eq!(engine.world().cities[1].id, "city-repo-0");
+        assert_eq!(engine.world().cities[1].project_name, "OtherRepo");
     }
 }

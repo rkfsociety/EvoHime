@@ -629,16 +629,31 @@ fn build_start_task(request: HiveTaskDispatchRequest) -> generated::StartTask {
 }
 
 fn snapshot_to_settings(snapshot: &HiveStateSnapshot) -> HiveSettings {
+    let eva_path = snapshot
+        .eva_workspace_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty());
+    let mut watched_repositories: Vec<String> = Vec::new();
+    for repo in &snapshot.watched_repositories {
+        let trimmed = repo.path.trim();
+        if trimmed.is_empty()
+            || eva_path
+                .is_some_and(|eva| evohime_hive::settings::paths_refer_to_same_repo(eva, trimmed))
+            || watched_repositories.iter().any(|existing| {
+                evohime_hive::settings::paths_refer_to_same_repo(existing, trimmed)
+            })
+        {
+            continue;
+        }
+        watched_repositories.push(trimmed.to_owned());
+    }
     HiveSettings {
         local_observation_interval_secs: snapshot.local_observation_interval_secs,
         llm_dispatch_interval_secs: snapshot.llm_dispatch_interval_secs,
         daily_budget_usd: snapshot.daily_budget_usd,
         eva_workspace_path: snapshot.eva_workspace_path.clone(),
-        watched_repositories: snapshot
-            .watched_repositories
-            .iter()
-            .map(|repo| repo.path.clone())
-            .collect(),
+        watched_repositories,
         hive_provider_profile: snapshot.hive_provider_profile.clone(),
         hive_model: snapshot.hive_model.clone(),
         hive_fallback_provider_profile: snapshot.hive_fallback_provider_profile.clone(),
@@ -1825,7 +1840,7 @@ impl HoneycombRuntime {
             {
                 project_paths.push(("city-eva".to_string(), PathBuf::from(eva_path)));
             }
-            for (idx, repo) in settings.watched_repositories.iter().enumerate() {
+            for (idx, repo) in settings.external_watched_repositories().iter().enumerate() {
                 if !repo.trim().is_empty() {
                     project_paths.push((format!("city-repo-{idx}"), PathBuf::from(repo)));
                 }
@@ -2412,5 +2427,20 @@ mod tests {
         assert!(idle_world.paused);
         assert!(!idle_world.queen_working);
         assert!(idle_world.active_dispatches.is_empty());
+    }
+
+    #[test]
+    fn snapshot_to_settings_excludes_eva_workspace_from_watched_repositories() {
+        let mut settings = HiveSettings::default();
+        settings.eva_workspace_path = Some(r"C:\github\EvoHime".to_string());
+        let snapshot = HiveStateSnapshot::empty(&settings);
+        assert_eq!(snapshot.watched_repositories.len(), 1);
+
+        let restored = snapshot_to_settings(&snapshot);
+        assert_eq!(
+            restored.eva_workspace_path.as_deref(),
+            Some(r"C:\github\EvoHime")
+        );
+        assert!(restored.watched_repositories.is_empty());
     }
 }
