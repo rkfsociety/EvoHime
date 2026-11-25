@@ -216,6 +216,7 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
     }
 
     // Гексагональные кольцевые магистрали: 6 вершин гекса + 6 середин граней (на нормалях лучей).
+    const ringSegments: { ring: number; aId: string; bId: string }[] = []
     for (let ring = 1; ring <= maxRing; ring += 1) {
       const roadRadius = getRingRoadRadius(ring)
       const vertexRadius = roadRadius / Math.cos(Math.PI / 6)
@@ -265,13 +266,16 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
         const curr = ringNodeIds[idx]
         const next = ringNodeIds[(idx + 1) % ringNodeIds.length]
         if (curr && next) {
-          addBidirectionalEdge(`${city.id}:ring:${ring}:seg:${idx}`, curr, next, 'ring', 4)
+          ringSegments.push({ ring, aId: curr, bId: next })
         }
       }
     }
 
-    // Размещаем сектора (кольцо 1) и модули (кольца 2+) и подключаем подъездные дороги.
-    const connectCellToNearestRingNode = (cellId: string, cellX: number, cellY: number, ring: number): void => {
+    // Размещаем сектора и модули и врезаем ровный перпендикулярный подъезд (второстепенная дорога)
+    // от ближайшего сегмента кольца прямо к соте.
+    const segmentSplits = new Map<number, { t: number; nodeId: string }[]>()
+
+    const connectCellToRingSegment = (cellId: string, cellX: number, cellY: number, ring: number): void => {
       addNode({
         id: cellId,
         cityId: city.id,
@@ -280,18 +284,49 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
         kind: 'cell_entry',
         ring
       })
-      let bestNode: RoadNode | null = null
+
+      let bestSegIdx = -1
+      let bestT = 0.5
+      let bestProjX = cellX
+      let bestProjY = cellY
       let bestDist = Infinity
-      for (const candidate of nodes.values()) {
-        if (candidate.cityId !== city.id || candidate.kind !== 'intersection' || candidate.ring !== ring) continue
-        const dist = Math.hypot(candidate.x - cellX, candidate.y - cellY)
+
+      ringSegments.forEach((seg, segIdx) => {
+        if (seg.ring !== ring) return
+        const a = nodes.get(seg.aId)
+        const b = nodes.get(seg.bId)
+        if (!a || !b) return
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const lenSq = dx * dx + dy * dy
+        if (lenSq < 1e-3) return
+        const t = Math.max(0.08, Math.min(0.92, ((cellX - a.x) * dx + (cellY - a.y) * dy) / lenSq))
+        const px = a.x + dx * t
+        const py = a.y + dy * t
+        const dist = Math.hypot(cellX - px, cellY - py)
         if (dist < bestDist) {
           bestDist = dist
-          bestNode = candidate
+          bestSegIdx = segIdx
+          bestT = t
+          bestProjX = px
+          bestProjY = py
         }
-      }
-      if (bestNode) {
-        addBidirectionalEdge(`${city.id}:drive:${cellId}`, bestNode.id, cellId, 'driveway', 2)
+      })
+
+      if (bestSegIdx >= 0) {
+        const tapId = `${city.id}:tap:${cellId}`
+        addNode({
+          id: tapId,
+          cityId: city.id,
+          x: bestProjX,
+          y: bestProjY,
+          kind: 'intersection',
+          ring
+        })
+        const list = segmentSplits.get(bestSegIdx) ?? []
+        list.push({ t: bestT, nodeId: tapId })
+        segmentSplits.set(bestSegIdx, list)
+        addBidirectionalEdge(`${city.id}:drive:${cellId}`, tapId, cellId, 'driveway', 2)
       }
     }
 
@@ -307,7 +342,7 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
         radius: CELL_HEX_RADIUS,
         exitAngles: []
       })
-      connectCellToNearestRingNode(sector.id, pos.x, pos.y, 1)
+      connectCellToRingSegment(sector.id, pos.x, pos.y, 1)
     })
 
     const modulesByRing = new Map<number, typeof city.modules[number][]>()
@@ -329,9 +364,25 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
           radius: CELL_HEX_RADIUS * 0.92,
           exitAngles: []
         })
-        connectCellToNearestRingNode(mod.id, pos.x, pos.y, ring)
+        connectCellToRingSegment(mod.id, pos.x, pos.y, ring)
       })
     }
+
+    // Строим кольцевые рёбра с учётом врезанных Т-образных узлов подъездов.
+    ringSegments.forEach((seg, segIdx) => {
+      const splits = segmentSplits.get(segIdx)
+      if (!splits || splits.length === 0) {
+        addBidirectionalEdge(`${city.id}:ring:${seg.ring}:seg:${segIdx}`, seg.aId, seg.bId, 'ring', 4)
+        return
+      }
+      const sorted = [...splits].sort((u, v) => u.t - v.t)
+      let prevId = seg.aId
+      sorted.forEach((split, sIdx) => {
+        addBidirectionalEdge(`${city.id}:ring:${seg.ring}:seg:${segIdx}:${sIdx}`, prevId, split.nodeId, 'ring', 4)
+        prevId = split.nodeId
+      })
+      addBidirectionalEdge(`${city.id}:ring:${seg.ring}:seg:${segIdx}:end`, prevId, seg.bId, 'ring', 4)
+    })
   }
 
   // Межгородские магистрали через самые внешние (последние) кольца городов.

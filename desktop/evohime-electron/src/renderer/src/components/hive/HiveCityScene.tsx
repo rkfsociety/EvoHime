@@ -12,7 +12,6 @@ import type { UiIconName } from '../../UiIcon'
 import {
   buildWorldRoadGraphAndPlacements,
   getPointyHexVertices,
-  getRingRoadRadius,
   type HexCellPlacement
 } from './honeycomb-geometry'
 import {
@@ -295,48 +294,58 @@ export function HiveCityScene({
       ctx.scale(cam.zoom, cam.zoom)
       ctx.translate(-cam.x, -cam.y)
 
-      // Опорные гексагональные кольца городов.
-      for (const city of currentWorld.cities) {
-        const maxRing = Math.max(
-          city.maxRing,
-          city.sectors.length > 0 ? 1 : 0,
-          ...city.modules.map((m) => m.ring)
-        )
-        for (let r = 1; r <= maxRing; r += 1) {
-          const ringR = getRingRoadRadius(r) / Math.cos(Math.PI / 6)
-          traceHexPath(ctx, city.worldCenterX, city.worldCenterY, ringR)
-          ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)'
-          ctx.lineWidth = 1.2
+      // 2. Дорожная сеть (сначала второстепенные подъездные дороги, затем магистрали с бордюрами).
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+
+      const drawRoadLayer = (kindFilter: 'secondary' | 'primary'): void => {
+        for (const edge of currentGraph.edges) {
+          const isSecondary = edge.kind === 'driveway'
+          if (kindFilter === 'secondary' && !isSecondary) continue
+          if (kindFilter === 'primary' && isSecondary) continue
+
+          const from = currentGraph.nodes.get(edge.fromId)
+          const to = currentGraph.nodes.get(edge.toId)
+          if (!from || !to) continue
+
+          const curbWidth = isSecondary ? 12 : edge.kind === 'intercity' ? 22 : 19
+          const asphaltWidth = isSecondary ? 9 : edge.kind === 'intercity' ? 18 : 15
+
+          // Бордюр дороги.
+          ctx.beginPath()
+          ctx.moveTo(from.x, from.y)
+          ctx.lineTo(to.x, to.y)
+          ctx.strokeStyle = isSecondary ? '#273549' : '#334155'
+          ctx.lineWidth = curbWidth
           ctx.stroke()
+
+          // Полотно асфальта.
+          ctx.beginPath()
+          ctx.moveTo(from.x, from.y)
+          ctx.lineTo(to.x, to.y)
+          ctx.strokeStyle = isSecondary ? '#172133' : '#0f172a'
+          ctx.lineWidth = asphaltWidth
+          ctx.stroke()
+
+          // Разметка.
+          ctx.beginPath()
+          ctx.moveTo(from.x, from.y)
+          ctx.lineTo(to.x, to.y)
+          ctx.setLineDash(isSecondary ? [4, 5] : edge.kind === 'intercity' ? [10, 7] : [6, 6])
+          ctx.strokeStyle =
+            edge.kind === 'intercity'
+              ? 'rgba(251, 191, 36, 0.55)'
+              : isSecondary
+                ? 'rgba(148, 163, 184, 0.25)'
+                : 'rgba(226, 232, 240, 0.34)'
+          ctx.lineWidth = isSecondary ? 1 : 1.3
+          ctx.stroke()
+          ctx.setLineDash([])
         }
       }
 
-      // 2. Дорожная сеть (асфальт, разметка, межгородские трассы).
-      for (const edge of currentGraph.edges) {
-        const from = currentGraph.nodes.get(edge.fromId)
-        const to = currentGraph.nodes.get(edge.toId)
-        if (!from || !to) continue
-
-        const roadWidth = edge.kind === 'intercity' ? 20 : edge.lanes === 4 ? 17 : 11
-        ctx.beginPath()
-        ctx.moveTo(from.x, from.y)
-        ctx.lineTo(to.x, to.y)
-        ctx.strokeStyle = edge.kind === 'intercity' ? '#1e293b' : '#172033'
-        ctx.lineWidth = roadWidth
-        ctx.lineCap = 'round'
-        ctx.stroke()
-
-        // Разметка по центру полосы.
-        ctx.beginPath()
-        ctx.moveTo(from.x, from.y)
-        ctx.lineTo(to.x, to.y)
-        ctx.setLineDash(edge.kind === 'intercity' ? [10, 8] : [5, 5])
-        ctx.strokeStyle =
-          edge.kind === 'intercity' ? 'rgba(251, 191, 36, 0.45)' : 'rgba(148, 163, 184, 0.32)'
-        ctx.lineWidth = 1.2
-        ctx.stroke()
-        ctx.setLineDash([])
-      }
+      drawRoadLayer('secondary')
+      drawRoadLayer('primary')
 
       // 3. Светофоры на перекрёстках.
       const lightPhase = getTrafficLightPhase(simTimeSec)
@@ -349,40 +358,37 @@ export function HiveCityScene({
       for (const node of currentGraph.nodes.values()) {
         if (node.kind !== 'intersection' || node.rayIndex === undefined) continue
         ctx.beginPath()
-        ctx.arc(node.x, node.y, 4.2, 0, Math.PI * 2)
-        ctx.fillStyle = '#0b1120'
+        ctx.arc(node.x, node.y, 4.4, 0, Math.PI * 2)
+        ctx.fillStyle = '#090d16'
         ctx.fill()
         ctx.beginPath()
-        ctx.arc(node.x, node.y, 2.4, 0, Math.PI * 2)
+        ctx.arc(node.x, node.y, 2.5, 0, Math.PI * 2)
         ctx.fillStyle = ringColor
         ctx.fill()
       }
 
-      // 4. Рёбра зависимостей между модулями проекта (мягкие дуги наружу, без пересечения Цитадели).
-      for (const city of currentWorld.cities) {
-        for (const edge of city.edges) {
-          const fromPose = poses.get(edge.fromId)
-          const toPose = poses.get(edge.toId)
-          if (!fromPose || !toPose) continue
-          const mx = (fromPose.x + toPose.x) / 2
-          const my = (fromPose.y + toPose.y) / 2
-          const vx = mx - city.worldCenterX
-          const vy = my - city.worldCenterY
-          const vLen = Math.max(1, Math.hypot(vx, vy))
-          const bow = 36
-          const cx = mx + (vx / vLen) * bow
-          const cy = my + (vy / vLen) * bow
-          const highlighted = selectedId === edge.fromId || selectedId === edge.toId
-          ctx.beginPath()
-          ctx.moveTo(fromPose.x, fromPose.y)
-          ctx.quadraticCurveTo(cx, cy, toPose.x, toPose.y)
-          ctx.strokeStyle = highlighted
-            ? 'rgba(56, 189, 248, 0.85)'
-            : edge.active
-              ? 'rgba(56, 189, 248, 0.34)'
-              : 'rgba(100, 116, 139, 0.22)'
-          ctx.lineWidth = highlighted ? 2.6 : 1.5
-          ctx.stroke()
+      // 4. Связи зависимостей модулей подсвечиваются только при выборе узла, чтобы не зашумлять карту.
+      if (selectedId) {
+        for (const city of currentWorld.cities) {
+          for (const edge of city.edges) {
+            if (selectedId !== edge.fromId && selectedId !== edge.toId) continue
+            const fromPose = poses.get(edge.fromId)
+            const toPose = poses.get(edge.toId)
+            if (!fromPose || !toPose) continue
+            const mx = (fromPose.x + toPose.x) / 2
+            const my = (fromPose.y + toPose.y) / 2
+            const vx = mx - city.worldCenterX
+            const vy = my - city.worldCenterY
+            const vLen = Math.max(1, Math.hypot(vx, vy))
+            const cx = mx + (vx / vLen) * 38
+            const cy = my + (vy / vLen) * 38
+            ctx.beginPath()
+            ctx.moveTo(fromPose.x, fromPose.y)
+            ctx.quadraticCurveTo(cx, cy, toPose.x, toPose.y)
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.88)'
+            ctx.lineWidth = 2.4
+            ctx.stroke()
+          }
         }
       }
 
@@ -428,11 +434,21 @@ export function HiveCityScene({
                 : '#475569'
         ctx.stroke()
 
-        // Внутренняя фаска.
-        traceHexPath(ctx, pose.x, pose.y, r * 0.84)
-        ctx.lineWidth = 1
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)'
+        // Внутренняя фаска и ядро Цитадели.
+        traceHexPath(ctx, pose.x, pose.y, r * 0.82)
+        ctx.lineWidth = 1.1
+        ctx.strokeStyle =
+          placement.kind === 'citadel' ? 'rgba(251, 191, 36, 0.28)' : 'rgba(255, 255, 255, 0.09)'
         ctx.stroke()
+
+        if (placement.kind === 'citadel') {
+          traceHexPath(ctx, pose.x, pose.y, r * 0.42)
+          ctx.fillStyle = currentWorld.queenWorking ? 'rgba(251, 191, 36, 0.28)' : 'rgba(161, 98, 7, 0.2)'
+          ctx.fill()
+          ctx.lineWidth = 1.5
+          ctx.strokeStyle = '#fbbf24'
+          ctx.stroke()
+        }
 
         // Метки выходов Цитадели (перпендикулярно граням).
         if (placement.kind === 'citadel' || placement.kind === 'project_hub') {
@@ -441,13 +457,13 @@ export function HiveCityScene({
             const gx = pose.x + Math.cos(angle) * apothem
             const gy = pose.y + Math.sin(angle) * apothem
             ctx.beginPath()
-            ctx.arc(gx, gy, 3.6, 0, Math.PI * 2)
+            ctx.arc(gx, gy, 3.8, 0, Math.PI * 2)
             ctx.fillStyle = placement.kind === 'citadel' ? '#fbbf24' : '#38bdf8'
             ctx.fill()
           }
         }
 
-        // Отображение 3 слотов агентов внутри сектора 1-го кольца.
+        // Отображение 3 шестиугольных гнёзд агентов внутри сектора 1-го кольца.
         if (placement.kind === 'sector') {
           const city = currentWorld.cities.find((c) => c.id === placement.cityId)
           const sector = city?.sectors.find((s) => s.id === id)
@@ -457,20 +473,21 @@ export function HiveCityScene({
               const sx = pose.x + Math.cos(slotAngle) * (r * 0.44)
               const sy = pose.y + Math.sin(slotAngle) * (r * 0.44)
               const agent = sector.agents[slot]
-              ctx.beginPath()
-              ctx.arc(sx, sy, 5.2 * pose.scale, 0, Math.PI * 2)
+              traceHexPath(ctx, sx, sy, 6.2 * pose.scale)
               if (agent) {
                 ctx.fillStyle = ROLE_COLORS[agent.role]
                 ctx.fill()
-                // Когда Улей на паузе или агент не в рейсе — машина припаркована в доме.
                 if (currentWorld.paused || !agent.activeTripId) {
                   ctx.strokeStyle = '#f8fafc'
-                  ctx.lineWidth = 1.3
+                  ctx.lineWidth = 1.4
                   ctx.stroke()
                 }
               } else {
                 ctx.fillStyle = 'rgba(148, 163, 184, 0.16)'
                 ctx.fill()
+                ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)'
+                ctx.lineWidth = 0.8
+                ctx.stroke()
               }
             }
           }
