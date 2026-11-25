@@ -20,6 +20,7 @@ export {
 export {
   CARGO_COLORS,
   createTrafficSimulationState,
+  getIntersectionPhaseOffsetSec,
   getTrafficLightPhase,
   isTrafficGreenForEdgeKind,
   ROLE_COLORS,

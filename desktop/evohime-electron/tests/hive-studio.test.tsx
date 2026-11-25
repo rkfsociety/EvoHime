@@ -15,6 +15,7 @@ import {
 } from '../src/renderer/src/components/hive/honeycomb-geometry'
 import {
   createTrafficSimulationState,
+  getIntersectionPhaseOffsetSec,
   isTrafficGreenForEdgeKind,
   stepTrafficSimulation
 } from '../src/renderer/src/components/hive/honeycomb-traffic'
@@ -162,6 +163,11 @@ describe('honeycomb geometry & traffic', () => {
     expect(isTrafficGreenForEdgeKind(1.0, 'radial')).toBe(false)
     expect(isTrafficGreenForEdgeKind(6.0, 'radial')).toBe(true)
     expect(isTrafficGreenForEdgeKind(6.0, 'ring')).toBe(false)
+
+    // Локальные светофоры имеют индивидуальные сдвиги фаз для разных перекрёстков.
+    expect(getIntersectionPhaseOffsetSec('city-primary:ring:1:n:0')).not.toBe(
+      getIntersectionPhaseOffsetSec('city-primary:ring:2:n:4')
+    )
 
     const traffic = createTrafficSimulationState()
     stepTrafficSimulation(traffic, world, roadGraph, 0.016, 1.0, 1)

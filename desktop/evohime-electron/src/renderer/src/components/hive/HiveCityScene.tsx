@@ -449,23 +449,37 @@ export function HiveCityScene({
       }
       ctx.setLineDash([])
 
-      // 3. Светофоры на перекрёстках.
-      const lightPhase = getTrafficLightPhase(simTimeSec)
-      const ringColor =
-        lightPhase === 'ring_green' || lightPhase === 'ring_green_blink'
-          ? '#22c55e'
-          : lightPhase === 'amber_to_radial' || lightPhase === 'amber_to_ring'
-            ? '#f59e0b'
-            : '#ef4444'
+      // 3. Локальные светофоры на каждом перекрёстке (отдельная фаза для кольца и радиала).
       for (const node of currentGraph.nodes.values()) {
         if (node.kind !== 'intersection' || node.rayIndex === undefined) continue
+        const localPhase = getTrafficLightPhase(simTimeSec, node.id)
+        const ringLightColor =
+          localPhase === 'ring_green' || localPhase === 'ring_green_blink'
+            ? '#22c55e'
+            : localPhase === 'amber_to_radial' || localPhase === 'amber_to_ring'
+              ? '#f59e0b'
+              : '#ef4444'
+        const radialLightColor =
+          localPhase === 'radial_green' || localPhase === 'radial_green_blink'
+            ? '#22c55e'
+            : localPhase === 'amber_to_radial' || localPhase === 'amber_to_ring'
+              ? '#f59e0b'
+              : '#ef4444'
+
+        // Корпус светофорного узла + 2 индикатора (кольцо / радиал).
         ctx.beginPath()
-        ctx.arc(node.x, node.y, 4.4, 0, Math.PI * 2)
+        ctx.arc(node.x, node.y, 5.4, 0, Math.PI * 2)
         ctx.fillStyle = '#090d16'
         ctx.fill()
+
         ctx.beginPath()
-        ctx.arc(node.x, node.y, 2.5, 0, Math.PI * 2)
-        ctx.fillStyle = ringColor
+        ctx.arc(node.x - 1.9, node.y, 1.8, 0, Math.PI * 2)
+        ctx.fillStyle = ringLightColor
+        ctx.fill()
+
+        ctx.beginPath()
+        ctx.arc(node.x + 1.9, node.y, 1.8, 0, Math.PI * 2)
+        ctx.fillStyle = radialLightColor
         ctx.fill()
       }
 

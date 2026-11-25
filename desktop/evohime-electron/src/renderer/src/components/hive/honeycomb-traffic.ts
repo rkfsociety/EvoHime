@@ -19,8 +19,19 @@ export type TrafficLightPhase =
   | 'radial_green_blink'
   | 'amber_to_ring'
 
-export function getTrafficLightPhase(timeSec: number): TrafficLightPhase {
-  const phase = ((timeSec % TRAFFIC_LIGHT_CYCLE_SEC) + TRAFFIC_LIGHT_CYCLE_SEC) % TRAFFIC_LIGHT_CYCLE_SEC
+/** Детерминированный локальный сдвиг фазы (в секундах) для конкретного перекрёстка. */
+export function getIntersectionPhaseOffsetSec(nodeId: string): number {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < nodeId.length; i += 1) {
+    hash ^= nodeId.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return ((hash % 100) / 100) * TRAFFIC_LIGHT_CYCLE_SEC
+}
+
+export function getTrafficLightPhase(timeSec: number, nodeId?: string): TrafficLightPhase {
+  const localTime = nodeId ? timeSec + getIntersectionPhaseOffsetSec(nodeId) : timeSec
+  const phase = ((localTime % TRAFFIC_LIGHT_CYCLE_SEC) + TRAFFIC_LIGHT_CYCLE_SEC) % TRAFFIC_LIGHT_CYCLE_SEC
   if (phase < 3.2) return 'ring_green'
   if (phase < 4.2) return 'ring_green_blink'
   if (phase < 5.0) return 'amber_to_radial'
@@ -31,10 +42,11 @@ export function getTrafficLightPhase(timeSec: number): TrafficLightPhase {
 
 export function isTrafficGreenForEdgeKind(
   timeSec: number,
-  edgeKind: 'radial' | 'ring' | 'driveway' | 'intercity'
+  edgeKind: 'radial' | 'ring' | 'driveway' | 'intercity',
+  nodeId?: string
 ): boolean {
   if (edgeKind === 'driveway' || edgeKind === 'intercity') return true
-  const phase = getTrafficLightPhase(timeSec)
+  const phase = getTrafficLightPhase(timeSec, nodeId)
   if (edgeKind === 'ring') {
     return phase === 'ring_green' || phase === 'ring_green_blink'
   }
@@ -184,10 +196,16 @@ export function stepTrafficSimulation(
     const segLen = Math.max(1, edge?.length ?? Math.hypot(toNode.x - fromNode.x, toNode.y - fromNode.y))
     const remaining = segLen - vehicle.segmentProgressPx
 
-    // Проверка светофора перед въездом на регулируемый перекрёсток.
+    // Проверка локального светофора перед въездом на конкретный перекрёсток `toNode.id`.
     let blockedBySignal = false
-    if (toNode.kind === 'intersection' && edge && remaining <= VEHICLE_STOP_LINE_PX + stepPx && remaining >= 4) {
-      blockedBySignal = !isTrafficGreenForEdgeKind(timeSec, edge.kind)
+    if (
+      toNode.kind === 'intersection' &&
+      toNode.rayIndex !== undefined &&
+      edge &&
+      remaining <= VEHICLE_STOP_LINE_PX + stepPx &&
+      remaining >= 4
+    ) {
+      blockedBySignal = !isTrafficGreenForEdgeKind(timeSec, edge.kind, toNode.id)
     }
 
     // Проверка дистанции до впереди идущей машины на том же отрезке и направлении.
