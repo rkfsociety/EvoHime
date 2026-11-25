@@ -82,6 +82,8 @@ export interface ActiveVehicle {
   x: number
   y: number
   angleRad: number
+  cornerOffsetX: number
+  cornerOffsetY: number
   opacity: number
   waitingAtSignal: boolean
   waitingForCarAhead: boolean
@@ -244,6 +246,8 @@ export function stepTrafficSimulation(
       x: initPose.x,
       y: initPose.y,
       angleRad: initPose.angle,
+      cornerOffsetX: 0,
+      cornerOffsetY: 0,
       opacity: 1,
       waitingAtSignal: false,
       waitingForCarAhead: false
@@ -278,14 +282,42 @@ export function stepTrafficSimulation(
       blockedBySignal = !isTrafficGreenForEdgeKind(timeSec, edge.kind, toNode.id)
     }
 
-    // Проверка дистанции до впереди идущей машины на том же отрезке и направлении.
+    // Проверка дистанции до впереди идущей машины:
+    // 1) на том же сегменте;
+    // 2) на следующем сегменте за узлом `toId` (чтобы не врезаться на стыке сегментов и светофорах);
+    // 3) на слияниях/примыканиях (впереди по курсу с тем же направлением).
     let blockedByAhead = false
+    const dirX = Math.cos(vehicle.angleRad)
+    const dirY = Math.sin(vehicle.angleRad)
     for (const peer of state.vehicles.values()) {
       if (peer.id === vehicle.id) continue
       const peerFrom = peer.waypoints[peer.segmentIndex]
       const peerTo = peer.waypoints[peer.segmentIndex + 1]
-      if (peerFrom === fromId && peerTo === toId && peer.segmentProgressPx > vehicle.segmentProgressPx) {
-        if (peer.segmentProgressPx - vehicle.segmentProgressPx < VEHICLE_SAFE_HEADWAY_PX) {
+      if (peerFrom === fromId && peerTo === toId) {
+        if (
+          peer.segmentProgressPx > vehicle.segmentProgressPx &&
+          peer.segmentProgressPx - vehicle.segmentProgressPx < VEHICLE_SAFE_HEADWAY_PX
+        ) {
+          blockedByAhead = true
+          break
+        }
+        continue
+      }
+      if (peerFrom === toId && peerTo !== fromId) {
+        const gapAcrossNode = remaining + peer.segmentProgressPx
+        if (gapAcrossNode < VEHICLE_SAFE_HEADWAY_PX) {
+          blockedByAhead = true
+          break
+        }
+        continue
+      }
+      const relX = peer.x - vehicle.x
+      const relY = peer.y - vehicle.y
+      const forwardDist = relX * dirX + relY * dirY
+      if (forwardDist > 0 && forwardDist < VEHICLE_SAFE_HEADWAY_PX * 0.9) {
+        const lateralDist = Math.abs(-relX * dirY + relY * dirX)
+        const sameHeading = Math.cos(peer.angleRad - vehicle.angleRad) > 0.45
+        if (lateralDist < 8 && sameHeading) {
           blockedByAhead = true
           break
         }
@@ -296,10 +328,12 @@ export function stepTrafficSimulation(
     vehicle.waitingForCarAhead = blockedByAhead
 
     if (!blockedBySignal && !blockedByAhead) {
+      let crossedSegment = false
       vehicle.segmentProgressPx += stepPx
       while (vehicle.segmentProgressPx >= segLen) {
         vehicle.segmentProgressPx -= segLen
         vehicle.segmentIndex += 1
+        crossedSegment = true
         if (vehicle.segmentIndex >= vehicle.waypoints.length - 1) {
           // Вместо телепорта на старт машина плавно разворачивается и едет обратно по маршруту.
           vehicle.waypoints = [...vehicle.waypoints].reverse()
@@ -310,6 +344,27 @@ export function stepTrafficSimulation(
         const nFrom = graph.nodes.get(vehicle.waypoints[vehicle.segmentIndex] ?? '')
         const nTo = graph.nodes.get(vehicle.waypoints[vehicle.segmentIndex + 1] ?? '')
         if (!nFrom || !nTo) break
+      }
+
+      if (crossedSegment) {
+        const nextFrom = graph.nodes.get(vehicle.waypoints[vehicle.segmentIndex] ?? '')
+        const nextTo = graph.nodes.get(vehicle.waypoints[vehicle.segmentIndex + 1] ?? '')
+        if (nextFrom && nextTo) {
+          const nextEdge = graph.adjacency.get(nextFrom.id)?.find((item) => item.toId === nextTo.id)?.edge
+          const nextLen = Math.max(1, Math.hypot(nextTo.x - nextFrom.x, nextTo.y - nextFrom.y))
+          const nextT = Math.max(0, Math.min(1, vehicle.segmentProgressPx / nextLen))
+          const nextPose = computeLanePose(
+            nextFrom.x,
+            nextFrom.y,
+            nextTo.x,
+            nextTo.y,
+            nextT,
+            nextEdge?.kind === 'driveway'
+          )
+          // Запоминаем разницу между текущей позицией и новой полосой, чтобы плавно свести её к 0 без скачка.
+          vehicle.cornerOffsetX = vehicle.x - nextPose.x
+          vehicle.cornerOffsetY = vehicle.y - nextPose.y
+        }
       }
     }
 
@@ -328,19 +383,21 @@ export function stepTrafficSimulation(
         curEdge?.kind === 'driveway'
       )
 
-      // Строго держим машину на полосе дороги; на первых 10px после поворота на перекрёстке
-      // плавно доводим поперечное смещение, чтобы поворот был без скачка, но в пределах асфальта.
+      // Непрерывное smoothstep-затухание углового смещения: к концу зоны поворота смещение уже равно 0,
+      // поэтому нет резкого переключения режимов и дёрганий на стыках сегментов.
+      const blendDist = Math.min(18, curLen * 0.55)
+      const u = blendDist > 1e-3 ? Math.max(0, Math.min(1, vehicle.segmentProgressPx / blendDist)) : 1
+      const smooth = u * u * (3 - 2 * u)
+      const residualWeight = 1 - smooth
+      vehicle.x = targetPose.x + vehicle.cornerOffsetX * residualWeight
+      vehicle.y = targetPose.y + vehicle.cornerOffsetY * residualWeight
+      if (u >= 1) {
+        vehicle.cornerOffsetX = 0
+        vehicle.cornerOffsetY = 0
+      }
+
       const effectiveDt = Math.min(0.1, dtSec) * Math.min(20, Math.max(1, timeScale))
       const angleAlpha = 1 - Math.exp(-effectiveDt * 12)
-      const inCorner = vehicle.segmentProgressPx < 12
-      if (inCorner) {
-        const cornerAlpha = 1 - Math.exp(-effectiveDt * 18)
-        vehicle.x += (targetPose.x - vehicle.x) * cornerAlpha
-        vehicle.y += (targetPose.y - vehicle.y) * cornerAlpha
-      } else {
-        vehicle.x = targetPose.x
-        vehicle.y = targetPose.y
-      }
       vehicle.angleRad = lerpShortestAngle(vehicle.angleRad, targetPose.angle, angleAlpha)
 
       // Внутри Цитадели (между центром и воротами) машина скрыта полностью;

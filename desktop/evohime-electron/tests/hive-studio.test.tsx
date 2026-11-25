@@ -326,6 +326,58 @@ describe('honeycomb geometry & traffic', () => {
     expect(vehicle).toBeTruthy()
     expect(vehicle!.waypoints[vehicle!.waypoints.length - 1]).toBe(`${sector.id}:slot:0`)
   })
+
+  it('keeps safe headway between vehicles across segment boundaries', () => {
+    const world = buildHoneycombStudioWorld({
+      stage: 'pipeline',
+      paused: false,
+      evaSourceConfigured: true,
+      projectCount: 1,
+      agentCount: 2,
+      exitsOverride: 'auto',
+      remodelSeed: 0
+    })
+    const primary = world.cities[0]!
+    const sector = primary.sectors[0]!
+    const twoVehiclesWorld = {
+      ...world,
+      activeDispatches: [
+        {
+          id: 'trip-lead',
+          cityId: primary.id,
+          agentId: sector.agents[0]!.id,
+          role: sector.agents[0]!.role,
+          cargo: 'task' as const,
+          fromNodeId: `${primary.id}:citadel`,
+          toNodeId: sector.id,
+          startedAtMs: 1000
+        },
+        {
+          id: 'trip-trail',
+          cityId: primary.id,
+          agentId: sector.agents[1]!.id,
+          role: sector.agents[1]!.role,
+          cargo: 'task' as const,
+          fromNodeId: `${primary.id}:citadel`,
+          toNodeId: sector.id,
+          startedAtMs: 1001
+        }
+      ]
+    }
+    const { roadGraph } = buildHoneycombSceneLayout(twoVehiclesWorld)
+    const traffic = createTrafficSimulationState()
+    for (let step = 0; step < 120; step += 1) {
+      stepTrafficSimulation(traffic, twoVehiclesWorld, roadGraph, 0.03, 1.0 + step * 0.03, 1)
+      const a = traffic.vehicles.get('trip-lead')
+      const b = traffic.vehicles.get('trip-trail')
+      if (a && b && a.opacity > 0.5 && b.opacity > 0.5) {
+        const sameDir = Math.cos(a.angleRad - b.angleRad) > 0.5
+        if (sameDir) {
+          expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(14)
+        }
+      }
+    }
+  })
 })
 
 describe('Hive Studio app (2D)', () => {
