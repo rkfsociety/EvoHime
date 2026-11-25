@@ -675,9 +675,11 @@ export function HiveCityScene({
         }
       }
 
-      // 6. Машины (только при активных рейсах, при паузе на дорогах никого нет).
+      // 6. Машины (только при активных рейсах, плавно исчезают за гранью сот).
       for (const vehicle of trafficRef.current.vehicles.values()) {
+        if (vehicle.opacity <= 0.02) continue
         ctx.save()
+        ctx.globalAlpha = vehicle.opacity
         ctx.translate(vehicle.x, vehicle.y)
         ctx.rotate(vehicle.angleRad)
 

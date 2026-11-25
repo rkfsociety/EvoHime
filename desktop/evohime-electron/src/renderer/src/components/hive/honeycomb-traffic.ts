@@ -82,6 +82,7 @@ export interface ActiveVehicle {
   x: number
   y: number
   angleRad: number
+  opacity: number
   waitingAtSignal: boolean
   waitingForCarAhead: boolean
 }
@@ -207,6 +208,7 @@ export function stepTrafficSimulation(
       x: initPose.x,
       y: initPose.y,
       angleRad: initPose.angle,
+      opacity: 1,
       waitingAtSignal: false,
       waitingForCarAhead: false
     })
@@ -289,6 +291,24 @@ export function stepTrafficSimulation(
       vehicle.x += (targetPose.x - vehicle.x) * posAlpha
       vehicle.y += (targetPose.y - vehicle.y) * posAlpha
       vehicle.angleRad = lerpShortestAngle(vehicle.angleRad, targetPose.angle, angleAlpha)
+
+      // Плавное исчезновение/появление за гранью сот на первом и последнем отрезках маршрута.
+      const fadeDistPx = Math.min(16, curLen * 0.45)
+      let opacity = 1
+      if (
+        vehicle.segmentIndex === 0 &&
+        (curFrom.kind === 'cell_entry' || curFrom.kind === 'citadel_hub' || curFrom.kind === 'exit_gate')
+      ) {
+        opacity = Math.min(opacity, Math.max(0, Math.min(1, vehicle.segmentProgressPx / Math.max(1, fadeDistPx))))
+      }
+      if (
+        vehicle.segmentIndex === vehicle.waypoints.length - 2 &&
+        (curTo.kind === 'cell_entry' || curTo.kind === 'citadel_hub' || curTo.kind === 'exit_gate')
+      ) {
+        const distToEdge = Math.max(0, curLen - vehicle.segmentProgressPx)
+        opacity = Math.min(opacity, Math.max(0, Math.min(1, distToEdge / Math.max(1, fadeDistPx))))
+      }
+      vehicle.opacity = opacity
     }
   }
 }
