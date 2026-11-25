@@ -3312,21 +3312,6 @@ export function HiveDashboard({
           {translate(queenWorking ? 'Работает' : queenStatusLabel)}
         </p>
       </div>
-      <label className="hive-settings-toggle" htmlFor="queen-autonomy-toggle">
-        <span>{translate('Автономность Королевы')}</span>
-        <input
-          id="queen-autonomy-toggle"
-          type="checkbox"
-          role="switch"
-          aria-label={translate('Автономность Королевы')}
-          checked={proactiveEvolutionEnabled}
-          disabled={!connected || proactiveEvolutionBusy}
-          onChange={(changeEvent) => void toggleProactiveEvolution(changeEvent.target.checked)}
-        />
-      </label>
-      {proactiveEvolutionError ? (
-        <p role="alert" className="hive-console__error">{translate(proactiveEvolutionError)}</p>
-      ) : null}
       <div className="hive-queen-card__foot">
         <p className="hive-queen__note">
           {paused
@@ -3651,6 +3636,21 @@ export function HiveDashboard({
                 </div>
               ) : null}
             </dl>
+            <label className="hive-settings-toggle" htmlFor="queen-autonomy-toggle">
+              <span>{translate('Автономность Королевы')}</span>
+              <input
+                id="queen-autonomy-toggle"
+                type="checkbox"
+                role="switch"
+                aria-label={translate('Автономность Королевы')}
+                checked={proactiveEvolutionEnabled}
+                disabled={!connected || proactiveEvolutionBusy}
+                onChange={(changeEvent) => void toggleProactiveEvolution(changeEvent.target.checked)}
+              />
+            </label>
+            {proactiveEvolutionError ? (
+              <p role="alert" className="hive-console__error">{translate(proactiveEvolutionError)}</p>
+            ) : null}
           </aside>
 
           <section
