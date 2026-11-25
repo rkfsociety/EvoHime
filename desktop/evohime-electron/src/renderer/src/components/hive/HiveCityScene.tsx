@@ -492,17 +492,20 @@ export function HiveCityScene({
           ...city.modules.map((m) => m.ring)
         )
 
-        // Въезды: на внутреннем перекрёстке — 4, на самом внешнем кольце (Т-перекрёсток) — 3 (без несуществующего внешнего луча).
-        const approaches: [number, number, number, number, string][] = [
-          [-rx, -ry, -ry, rx, radialLightColor],
-          [-tx, -ty, rx, ry, ringLightColor],
-          [tx, ty, -rx, -ry, ringLightColor]
+        // Въезды: [вектор от перекрёстка к подходу ax, ay, цвет сигнала].
+        // Машина въезжает в направлении `dir = (-ax, -ay)`, поэтому справа от неё (Y вниз) = `(ay, -ax)`.
+        const approaches: [number, number, string][] = [
+          [-rx, -ry, radialLightColor],
+          [-tx, -ty, ringLightColor],
+          [tx, ty, ringLightColor]
         ]
         if (node.ring < cityMaxRing) {
-          approaches.push([rx, ry, ry, -rx, radialLightColor])
+          approaches.push([rx, ry, radialLightColor])
         }
 
-        for (const [ax, ay, rightX, rightY, color] of approaches) {
+        for (const [ax, ay, color] of approaches) {
+          const rightX = ay
+          const rightY = -ax
           // Стоп-линия на правой полосе перед въездом на перекрёсток.
           const lineX = node.x + ax * (stopDist - 1.5)
           const lineY = node.y + ay * (stopDist - 1.5)
