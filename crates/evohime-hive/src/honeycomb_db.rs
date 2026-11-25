@@ -368,6 +368,8 @@ impl HiveDatabase {
                     to_revision: latest,
                     events: Vec::new(),
                     requires_full_resync: true,
+                    paused: None,
+                    queen_working: None,
                 });
             }
         }
@@ -382,6 +384,8 @@ impl HiveDatabase {
                     to_revision: latest,
                     events: Vec::new(),
                     requires_full_resync: true,
+                    paused: None,
+                    queen_working: None,
                 });
             }
         }
@@ -409,6 +413,8 @@ impl HiveDatabase {
             to_revision: latest,
             events,
             requires_full_resync: false,
+            paused: None,
+            queen_working: None,
         })
     }
 

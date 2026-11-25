@@ -1817,7 +1817,10 @@ impl HoneycombRuntime {
         from_revision: u64,
     ) -> Option<evohime_hive_contract::honeycomb::HoneycombWorldDelta> {
         let guard = self.engine.lock().ok()?;
-        guard.database().read_delta_since(from_revision, 256).ok()
+        let mut delta = guard.database().read_delta_since(from_revision, 256).ok()?;
+        delta.paused = Some(guard.world().paused);
+        delta.queen_working = Some(guard.world().queen_working);
+        Some(delta)
     }
 
     fn dispatch_for_delegation(

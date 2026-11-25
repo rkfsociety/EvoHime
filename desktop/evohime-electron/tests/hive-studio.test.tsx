@@ -202,6 +202,59 @@ describe('buildHoneycombStudioWorld', () => {
     expect(next.cities[0]?.sectors).toHaveLength(1)
     expect(next.cities[0]?.sectors[0]?.agents).toHaveLength(1)
   })
+
+  it('unpauses paused world when delta brings vehicle.dispatch or paused=false', () => {
+    const base = buildHoneycombStudioWorld({
+      stage: 'zero',
+      paused: true,
+      evaSourceConfigured: true,
+      projectCount: 1,
+      agentCount: 0,
+      exitsOverride: 'auto',
+      remodelSeed: 0
+    })
+    expect(base.paused).toBe(true)
+
+    const delta = parseHoneycombWorldDelta({
+      schemaVersion: 2,
+      fromRevision: base.revision,
+      toRevision: base.revision + 1,
+      requiresFullResync: false,
+      events: [
+        {
+          type: 'vehicle.dispatch',
+          dispatch: {
+            id: 'trip-1',
+            cityId: base.primaryCityId,
+            agentId: 'agent-1',
+            role: 'executor',
+            cargo: 'task',
+            fromNodeId: `${base.primaryCityId}:citadel`,
+            toNodeId: `${base.primaryCityId}:sector:0`,
+            startedAtMs: 1_700_000_000_000
+          }
+        }
+      ]
+    })
+    expect(delta).not.toBeNull()
+    const next = applyHoneycombDelta(base, delta!)
+    expect(next.paused).toBe(false)
+    expect(next.queenWorking).toBe(true)
+    expect(next.activeDispatches).toHaveLength(1)
+
+    const pausedAgain = applyHoneycombDelta(next, {
+      schemaVersion: 2,
+      fromRevision: next.revision,
+      toRevision: next.revision + 1,
+      requiresFullResync: false,
+      paused: true,
+      queenWorking: false,
+      events: []
+    })
+    expect(pausedAgain.paused).toBe(true)
+    expect(pausedAgain.queenWorking).toBe(false)
+    expect(pausedAgain.activeDispatches).toHaveLength(0)
+  })
 })
 
 describe('honeycomb geometry & traffic', () => {

@@ -944,6 +944,8 @@ export interface HoneycombWorldDelta {
   readonly toRevision: number
   readonly events: readonly HoneycombMutationEvent[]
   readonly requiresFullResync: boolean
+  readonly paused?: boolean
+  readonly queenWorking?: boolean
 }
 
 export type HoneycombWorldDeltaOutcome =
@@ -980,7 +982,12 @@ export function applyHoneycombDelta(
   world: HoneycombWorldState,
   delta: HoneycombWorldDelta
 ): HoneycombWorldState {
-  if (delta.events.length === 0 && delta.toRevision === world.revision) {
+  if (
+    delta.events.length === 0
+    && delta.toRevision === world.revision
+    && (delta.paused === undefined || delta.paused === world.paused)
+    && (delta.queenWorking === undefined || delta.queenWorking === world.queenWorking)
+  ) {
     return world
   }
 
@@ -991,6 +998,7 @@ export function applyHoneycombDelta(
     edges: [...c.edges]
   }))
   const activeDispatches = [...world.activeDispatches]
+  let sawVehicleDispatch = false
 
   for (const event of delta.events) {
     switch (event.type) {
@@ -1070,6 +1078,7 @@ export function applyHoneycombDelta(
         break
       }
       case 'vehicle.dispatch': {
+        sawVehicleDispatch = true
         if (!activeDispatches.some((d) => d.id === event.dispatch.id)) {
           activeDispatches.push(event.dispatch)
         }
@@ -1080,10 +1089,24 @@ export function applyHoneycombDelta(
     }
   }
 
+  const nextPaused = delta.paused !== undefined
+    ? delta.paused
+    : sawVehicleDispatch
+      ? false
+      : world.paused
+  const nextQueenWorking = delta.queenWorking !== undefined
+    ? delta.queenWorking
+    : sawVehicleDispatch
+      ? true
+      : world.queenWorking
+  const nextDispatches = nextPaused ? [] : activeDispatches
+
   return {
     ...world,
+    paused: nextPaused,
+    queenWorking: nextQueenWorking,
     cities,
-    activeDispatches,
+    activeDispatches: nextDispatches,
     revision: delta.toRevision
   }
 }

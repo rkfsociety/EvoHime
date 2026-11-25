@@ -358,6 +358,12 @@ pub struct HoneycombWorldDelta {
     pub events: Vec<HoneycombMutationEvent>,
     /// True when the client is too far behind and must request a full snapshot.
     pub requires_full_resync: bool,
+    /// Current pause state when included by the daemon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paused: Option<bool>,
+    /// Current Queen activity flag when included by the daemon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queen_working: Option<bool>,
 }
 
 /// Delivery status of a vehicle trip carrying a task to a delegated agent.
