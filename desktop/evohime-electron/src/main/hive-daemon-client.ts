@@ -1,12 +1,17 @@
 import { connect as netConnect, type Socket } from 'node:net'
 
-import type { HiveCityMapOutcome, HoneycombWorldOutcome } from '@shared/hive-city-map'
+import type {
+  HiveCityMapOutcome,
+  HoneycombWorldDeltaOutcome,
+  HoneycombWorldOutcome
+} from '@shared/hive-city-map'
 // Значения импортируются по относительному пути (в отличие от остального
 // src/main): модуль также грузит dev-конфигурация Hive Studio
 // (`vite.studio.config.ts`), которую bundler Vite собирает до алиасов.
 import {
   MAX_CITY_MAP_FRAME_BYTES,
   parseHiveCityMapSnapshot,
+  parseHoneycombWorldDelta,
   parseHoneycombWorldState
 } from '../shared/hive-city-map'
 
@@ -146,6 +151,31 @@ export async function fetchHoneycombWorld(
   }
 }
 
+/**
+ * Sends `get_honeycomb_delta` over one fresh connection and validates the answer.
+ * Always resolves; never throws.
+ */
+export async function fetchHoneycombDelta(
+  fromRevision: number,
+  options: HiveDaemonClientOptions = {}
+): Promise<HoneycombWorldDeltaOutcome> {
+  const frame = encodeHiveFrame(
+    JSON.stringify({ command: 'get_honeycomb_delta', from_revision: fromRevision })
+  )
+  const bytes = await fetchControlPayload(frame, options)
+  if (bytes === null) return { available: false, delta: null }
+  try {
+    const value = JSON.parse(bytes.toString('utf8')) as unknown
+    if (value && typeof value === 'object' && !Array.isArray(value) && 'error' in value) {
+      return { available: false, delta: null }
+    }
+    const delta = parseHoneycombWorldDelta(value)
+    return delta === null ? { available: false, delta: null } : { available: true, delta }
+  } catch {
+    return { available: false, delta: null }
+  }
+}
+
 async function fetchControlPayload(
   requestFrame: Buffer,
   options: HiveDaemonClientOptions = {}
@@ -251,6 +281,7 @@ export function decodeCityMapFrame(payload: Buffer): HiveCityMapOutcome {
 export interface HiveCityMapClient {
   readonly getCityMap: () => Promise<HiveCityMapOutcome>
   readonly getHoneycombWorld?: () => Promise<HoneycombWorldOutcome>
+  readonly getHoneycombDelta?: (fromRevision: number) => Promise<HoneycombWorldDeltaOutcome>
 }
 
 /** Builds the long-lived client used by the shell bridge. */
@@ -259,6 +290,7 @@ export function createHiveDaemonClient(
 ): HiveCityMapClient {
   return {
     getCityMap: () => fetchHiveCityMap(options),
-    getHoneycombWorld: () => fetchHoneycombWorld(options)
+    getHoneycombWorld: () => fetchHoneycombWorld(options),
+    getHoneycombDelta: (fromRevision: number) => fetchHoneycombDelta(fromRevision, options)
   }
 }

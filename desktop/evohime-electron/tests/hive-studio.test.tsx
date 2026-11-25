@@ -3,7 +3,11 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { HONEYCOMB_SECTOR_CAPACITY } from '../src/shared/hive-city-map'
+import {
+  applyHoneycombDelta,
+  HONEYCOMB_SECTOR_CAPACITY,
+  parseHoneycombWorldDelta
+} from '../src/shared/hive-city-map'
 import { StudioApp } from '../src/renderer/src/hive-studio-app'
 import { buildHoneycombStudioWorld } from '../src/renderer/src/hive-studio-simulation'
 import {
@@ -144,6 +148,59 @@ describe('buildHoneycombStudioWorld', () => {
     const traffic = createTrafficSimulationState()
     stepTrafficSimulation(traffic, world, roadGraph, 0.016, 1.0, 1)
     expect(traffic.vehicles.size).toBe(0)
+  })
+
+  it('applies incremental HoneycombWorldDelta events cleanly', () => {
+    const base = buildHoneycombStudioWorld({
+      stage: 'zero',
+      paused: false,
+      evaSourceConfigured: true,
+      projectCount: 1,
+      agentCount: 0,
+      exitsOverride: 'auto',
+      remodelSeed: 0
+    })
+    const delta = parseHoneycombWorldDelta({
+      schemaVersion: 2,
+      fromRevision: base.revision,
+      toRevision: base.revision + 1,
+      requiresFullResync: false,
+      events: [
+        {
+          type: 'sector.create',
+          cityId: 'city-primary',
+          sector: {
+            id: 'city-primary:sector:0',
+            cityId: 'city-primary',
+            coord: { q: 0, r: 1 },
+            ring: 1,
+            label: 'Исполнители',
+            role: 'executor',
+            capacity: 3,
+            agents: []
+          }
+        },
+        {
+          type: 'agent.spawn',
+          cityId: 'city-primary',
+          sectorId: 'city-primary:sector:0',
+          agent: {
+            id: 'agent-1',
+            name: 'Агент #1',
+            role: 'executor',
+            sectorId: 'city-primary:sector:0',
+            topic: 'разведка',
+            busy: true,
+            activeTripId: 'trip-1'
+          }
+        }
+      ]
+    })
+    expect(delta).not.toBeNull()
+    const next = applyHoneycombDelta(base, delta!)
+    expect(next.revision).toBe(base.revision + 1)
+    expect(next.cities[0]?.sectors).toHaveLength(1)
+    expect(next.cities[0]?.sectors[0]?.agents).toHaveLength(1)
   })
 })
 

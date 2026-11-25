@@ -2218,15 +2218,45 @@ export function HiveDashboard({
   // демонирующий клиент сам деградирует любой сбой до available:false.
   const [cityMap, setCityMap] = useState<HiveCityMapPayload | null>(() => lastKnownCityMap)
   const [honeycombWorld, setHoneycombWorld] = useState<import('@shared/hive-city-map').HoneycombWorldState | null>(null)
+  const honeycombWorldRef = useRef<import('@shared/hive-city-map').HoneycombWorldState | null>(null)
   const cityMapRef = useRef<HiveCityMapPayload | null>(lastKnownCityMap)
   const cityMapRevisionRef = useRef<string | null>(null)
   const requestCityMap = useCallback((): void => {
     if (!api) return
-    void api.invoke('hive.getHoneycombWorld', {}).then((outcome) => {
-      if (outcome.ok && outcome.value.available) {
-        setHoneycombWorld(outcome.value.world)
-      }
-    }).catch(() => undefined)
+    const currentWorld = honeycombWorldRef.current
+    if (currentWorld !== null) {
+      void api
+        .invoke('hive.getHoneycombDelta', { fromRevision: currentWorld.revision })
+        .then(async (outcome) => {
+          if (!outcome.ok || !outcome.value.available) return
+          const delta = outcome.value.delta
+          if (delta.requiresFullResync) {
+            const full = await api.invoke('hive.getHoneycombWorld', {})
+            if (full.ok && full.value.available) {
+              honeycombWorldRef.current = full.value.world
+              setHoneycombWorld(full.value.world)
+            }
+            return
+          }
+          if (delta.events.length > 0 || delta.toRevision !== currentWorld.revision) {
+            const { applyHoneycombDelta } = await import('@shared/hive-city-map')
+            const updated = applyHoneycombDelta(currentWorld, delta)
+            honeycombWorldRef.current = updated
+            setHoneycombWorld(updated)
+          }
+        })
+        .catch(() => undefined)
+    } else {
+      void api
+        .invoke('hive.getHoneycombWorld', {})
+        .then((outcome) => {
+          if (outcome.ok && outcome.value.available) {
+            honeycombWorldRef.current = outcome.value.world
+            setHoneycombWorld(outcome.value.world)
+          }
+        })
+        .catch(() => undefined)
+    }
     void api.invoke('hive.getCityMap', {}).then((outcome) => {
       if (!outcome.ok) return
       const value = outcome.value

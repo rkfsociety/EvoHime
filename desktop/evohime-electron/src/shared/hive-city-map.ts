@@ -938,6 +938,18 @@ export type HoneycombWorldOutcome =
   | { readonly available: true; readonly world: HoneycombWorldState }
   | { readonly available: false; readonly world: null }
 
+export interface HoneycombWorldDelta {
+  readonly schemaVersion: 2
+  readonly fromRevision: number
+  readonly toRevision: number
+  readonly events: readonly HoneycombMutationEvent[]
+  readonly requiresFullResync: boolean
+}
+
+export type HoneycombWorldDeltaOutcome =
+  | { readonly available: true; readonly delta: HoneycombWorldDelta }
+  | { readonly available: false; readonly delta: null }
+
 export function parseHoneycombWorldState(raw: unknown): HoneycombWorldState | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const obj = raw as Record<string, unknown>
@@ -950,4 +962,128 @@ export function parseHoneycombWorldState(raw: unknown): HoneycombWorldState | nu
   if (!Array.isArray(obj['activeDispatches'])) return null
   if (typeof obj['revision'] !== 'number' || !Number.isFinite(obj['revision'])) return null
   return raw as HoneycombWorldState
+}
+
+export function parseHoneycombWorldDelta(raw: unknown): HoneycombWorldDelta | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const obj = raw as Record<string, unknown>
+  if (obj['schemaVersion'] !== 2) return null
+  if (typeof obj['fromRevision'] !== 'number' || !Number.isFinite(obj['fromRevision'])) return null
+  if (typeof obj['toRevision'] !== 'number' || !Number.isFinite(obj['toRevision'])) return null
+  if (!Array.isArray(obj['events'])) return null
+  if (typeof obj['requiresFullResync'] !== 'boolean') return null
+  return raw as unknown as HoneycombWorldDelta
+}
+
+/** Применяет инкрементальную дельту мутаций Королевы к текущему состоянию 2D-мира. */
+export function applyHoneycombDelta(
+  world: HoneycombWorldState,
+  delta: HoneycombWorldDelta
+): HoneycombWorldState {
+  if (delta.events.length === 0 && delta.toRevision === world.revision) {
+    return world
+  }
+
+  let cities = world.cities.map((c) => ({
+    ...c,
+    sectors: [...c.sectors],
+    modules: [...c.modules],
+    edges: [...c.edges]
+  }))
+  const activeDispatches = [...world.activeDispatches]
+
+  for (const event of delta.events) {
+    switch (event.type) {
+      case 'sector.create': {
+        const city = cities.find((c) => c.id === event.cityId)
+        if (city && !city.sectors.some((s) => s.id === event.sector.id)) {
+          city.sectors.push(event.sector)
+          city.maxRing = Math.max(city.maxRing, 1)
+        }
+        break
+      }
+      case 'sector.remove': {
+        const city = cities.find((c) => c.id === event.cityId)
+        if (city) {
+          city.sectors = city.sectors.filter((s) => s.id !== event.sectorId)
+        }
+        break
+      }
+      case 'agent.spawn': {
+        const city = cities.find((c) => c.id === event.cityId)
+        const sectorIdx = city?.sectors.findIndex((s) => s.id === event.sectorId) ?? -1
+        if (city && sectorIdx >= 0) {
+          const target = city.sectors[sectorIdx]!
+          if (!target.agents.some((a) => a.id === event.agent.id)) {
+            city.sectors[sectorIdx] = {
+              ...target,
+              agents: [...target.agents, event.agent]
+            }
+          }
+        }
+        break
+      }
+      case 'agent.retire': {
+        const city = cities.find((c) => c.id === event.cityId)
+        if (city) {
+          city.sectors = city.sectors.map((s) => ({
+            ...s,
+            agents: s.agents.filter((a) => a.id !== event.agentId)
+          }))
+        }
+        break
+      }
+      case 'building.construct': {
+        const city = cities.find((c) => c.id === event.cityId)
+        if (city && !city.modules.some((m) => m.id === event.node.id)) {
+          city.modules.push(event.node)
+          city.maxRing = Math.max(city.maxRing, event.node.ring)
+        }
+        break
+      }
+      case 'building.remodel': {
+        const city = cities.find((c) => c.id === event.cityId)
+        if (city) {
+          city.modules = city.modules.map((m) => (m.id === event.node.id ? event.node : m))
+        }
+        break
+      }
+      case 'building.demolish': {
+        const city = cities.find((c) => c.id === event.cityId)
+        if (city) {
+          city.modules = city.modules.filter((m) => m.id !== event.nodeId)
+        }
+        break
+      }
+      case 'edge.link': {
+        const city = cities.find((c) => c.id === event.cityId)
+        if (city && !city.edges.some((e) => e.id === event.edge.id)) {
+          city.edges.push(event.edge)
+        }
+        break
+      }
+      case 'edge.unlink': {
+        const city = cities.find((c) => c.id === event.cityId)
+        if (city) {
+          city.edges = city.edges.filter((e) => e.id !== event.edgeId)
+        }
+        break
+      }
+      case 'vehicle.dispatch': {
+        if (!activeDispatches.some((d) => d.id === event.dispatch.id)) {
+          activeDispatches.push(event.dispatch)
+        }
+        break
+      }
+      case 'comms.authorize':
+        break
+    }
+  }
+
+  return {
+    ...world,
+    cities,
+    activeDispatches,
+    revision: delta.toRevision
+  }
 }

@@ -8,7 +8,11 @@
 import type { ListenerRuntimeStatus } from './listener-runtime'
 import type { OllamaRuntimeStatus } from './ollama-runtime'
 import type { UpdateStatus } from './update'
-import type { HiveCityMapOutcome, HoneycombWorldOutcome } from './hive-city-map'
+import type {
+  HiveCityMapOutcome,
+  HoneycombWorldDeltaOutcome,
+  HoneycombWorldOutcome
+} from './hive-city-map'
 
 export type {
   CityBuilding,
@@ -1795,7 +1799,8 @@ export const RENDERER_COMMANDS = [
   'automation.cancel',
   'automation.setScheduleEnabled',
   'hive.getCityMap',
-  'hive.getHoneycombWorld'
+  'hive.getHoneycombWorld',
+  'hive.getHoneycombDelta'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -2437,6 +2442,7 @@ export interface CommandPayloads {
   'automation.setScheduleEnabled': { scheduleId: string; enabled: boolean }
   'hive.getCityMap': Record<string, never>
   'hive.getHoneycombWorld': Record<string, never>
+  'hive.getHoneycombDelta': { fromRevision: number }
 }
 
 export interface CommandResults {
@@ -2823,6 +2829,7 @@ export interface CommandResults {
    * при недоступном демоне, таймауте или старом протоколе. */
   'hive.getCityMap': HiveCityMapOutcome
   'hive.getHoneycombWorld': HoneycombWorldOutcome
+  'hive.getHoneycombDelta': HoneycombWorldDeltaOutcome
 }
 
 export type CommandFailureCode =

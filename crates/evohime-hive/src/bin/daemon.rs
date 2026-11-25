@@ -1538,18 +1538,24 @@ fn run_city_map_job(runtime: &CityMapRuntime, job: &CityMapJob) -> Result<(), St
 /// Maintenance loop of the city map: fetches Hive settings from Core at the
 /// local observation cadence (plus kicks from `NotifySettingsChanged`), and
 /// recomputes the archipelago in a bounded background worker.
-async fn run_city_map_maintenance(city_map: CityMapRuntime, client: Arc<CoreIpcClient>) {
+async fn run_city_map_maintenance(
+    city_map: CityMapRuntime,
+    honeycomb: HoneycombRuntime,
+    client: Arc<CoreIpcClient>,
+) {
     loop {
         let mut idle_poll = CITY_MAP_FALLBACK_POLL;
         let mut job = None;
         match client.fetch_hive_state().await {
             Ok(state) => {
                 let settings = snapshot_to_settings(&state);
+                let now_ms = unix_now_ms();
                 idle_poll = Duration::from_secs(settings.local_observation_interval_secs.max(1));
+                honeycomb.sync_maintenance(&state, &settings, now_ms);
                 job = Some(CityMapJob {
                     eva_workspace_path: settings.eva_workspace_path.clone(),
                     watched_repositories: settings.watched_repositories.clone(),
-                    now_ms: unix_now_ms(),
+                    now_ms,
                 });
             }
             Err(error) => {
@@ -1683,9 +1689,10 @@ async fn main() -> ExitCode {
             tracing::error!(error = %error, "observation control IPC server stopped");
         }
     });
-    // Bounded background maintenance of the city-archipelago map (plan 199.2).
+    // Bounded background maintenance of the city-archipelago map (plan 199.2) and Honeycomb engine (plan 200).
     let city_map_maintenance = tokio::spawn(run_city_map_maintenance(
         city_map_runtime.clone(),
+        honeycomb_runtime.clone(),
         Arc::clone(&client),
     ));
     let status = daemon.status();
@@ -1790,6 +1797,76 @@ impl HoneycombRuntime {
     ) -> Option<evohime_hive_contract::honeycomb::HoneycombWorldDelta> {
         let guard = self.engine.lock().ok()?;
         guard.database().read_delta_since(from_revision, 256).ok()
+    }
+
+    fn sync_maintenance(&self, state: &HiveStateSnapshot, settings: &HiveSettings, now_ms: i64) {
+        let Ok(mut guard) = self.engine.lock() else {
+            return;
+        };
+        let _ = guard.sync_projects(
+            settings.eva_workspace_path.as_deref(),
+            &settings.watched_repositories,
+        );
+        let obs_status = state.observation_status.as_deref().unwrap_or("");
+        let autonomy_enabled = obs_status != evohime_hive::state::HIVE_OBSERVATION_DISABLED
+            && obs_status != evohime_hive::state::HIVE_OBSERVATION_SLEEPING;
+        let waiting_for_limits =
+            obs_status == evohime_hive::state::HIVE_OBSERVATION_WAITING_FOR_LIMITS;
+        let queen_working = state.queen.status == evohime_hive::state::HIVE_QUEEN_ACTIVE
+            || !state.active_agents.is_empty();
+        let _ = guard.set_active_mode(autonomy_enabled, waiting_for_limits, queen_working);
+
+        if autonomy_enabled && !waiting_for_limits {
+            // Сканирование и перестройка модулей проектов (с кулдауном 5 мин внутри движка).
+            let mut project_paths: Vec<(String, PathBuf)> = Vec::new();
+            if let Some(eva_path) = settings
+                .eva_workspace_path
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+            {
+                project_paths.push(("city-eva".to_string(), PathBuf::from(eva_path)));
+            }
+            for (idx, repo) in settings.watched_repositories.iter().enumerate() {
+                if !repo.trim().is_empty() {
+                    project_paths.push((format!("city-repo-{idx}"), PathBuf::from(repo)));
+                }
+            }
+            for (city_id, path) in project_paths {
+                let _ = guard.remodel_city_from_checkout(&city_id, &path, now_ms);
+            }
+
+            // Стартовый триггер разведки при первом включении автономности или активных задачах.
+            let primary_has_sectors = guard
+                .world()
+                .cities
+                .first()
+                .map(|c| !c.sectors.is_empty())
+                .unwrap_or(false);
+            if !primary_has_sectors {
+                let _ = guard.dispatch_relay_step(
+                    evohime_hive::honeycomb_engine::RelayStage::Execution,
+                    "разведка проекта",
+                    None,
+                    now_ms,
+                );
+            } else if !state.active_agents.is_empty() {
+                for agent in state.active_agents.iter().take(4) {
+                    let stage = if agent.role.contains("аналит") || agent.role.contains("analyst") {
+                        evohime_hive::honeycomb_engine::RelayStage::Analysis
+                    } else if agent.role.contains("стратег") || agent.role.contains("plan") {
+                        evohime_hive::honeycomb_engine::RelayStage::Strategy
+                    } else {
+                        evohime_hive::honeycomb_engine::RelayStage::Execution
+                    };
+                    let topic = if agent.current_action.trim().is_empty() {
+                        agent.role.as_str()
+                    } else {
+                        agent.current_action.as_str()
+                    };
+                    let _ = guard.dispatch_relay_step(stage, topic, None, now_ms);
+                }
+            }
+        }
     }
 }
 

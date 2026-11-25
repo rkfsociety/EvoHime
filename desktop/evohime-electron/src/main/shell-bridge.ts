@@ -1088,6 +1088,22 @@ function dispatch(
         .catch(() => ({ ok: true, value: { available: false, world: null } as const }))
     }
 
+    case 'hive.getHoneycombDelta': {
+      const hiveDaemon = options.hiveDaemon
+      if (!hiveDaemon || !hiveDaemon.getHoneycombDelta) {
+        return failure('protocol-error', 'Клиент демона Улья недоступен в этой сборке.')
+      }
+      const fromRevisionRaw = asRecord(payload)['fromRevision']
+      const fromRevision =
+        typeof fromRevisionRaw === 'number' && Number.isInteger(fromRevisionRaw) && fromRevisionRaw >= 0
+          ? fromRevisionRaw
+          : 0
+      return hiveDaemon
+        .getHoneycombDelta(fromRevision)
+        .then((outcome) => ({ ok: true, value: outcome }))
+        .catch(() => ({ ok: true, value: { available: false, delta: null } as const }))
+    }
+
     case 'core.getHiveObservationStatus': {
       return accepted(client.send({ hiveObservationStatus: { schemaVersion: 1, requestId: '' } }))
     }
