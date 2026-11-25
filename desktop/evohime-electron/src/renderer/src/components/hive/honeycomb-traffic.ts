@@ -76,7 +76,7 @@ export interface ActiveVehicle {
   readonly agentId: string
   readonly role: HoneycombAgentRole
   readonly cargo: HoneycombCargoType
-  readonly waypoints: readonly string[]
+  waypoints: readonly string[]
   segmentIndex: number
   segmentProgressPx: number
   x: number
@@ -84,6 +84,31 @@ export interface ActiveVehicle {
   angleRad: number
   waitingAtSignal: boolean
   waitingForCarAhead: boolean
+}
+
+function lerpShortestAngle(current: number, target: number, alpha: number): number {
+  let diff = (target - current) % (Math.PI * 2)
+  if (diff > Math.PI) diff -= Math.PI * 2
+  if (diff < -Math.PI) diff += Math.PI * 2
+  return current + diff * alpha
+}
+
+function computeLanePose(
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  t: number
+): { readonly x: number; readonly y: number; readonly angle: number } {
+  const angle = Math.atan2(toY - fromY, toX - fromX)
+  const laneOffset = 6.5
+  const nx = -Math.sin(angle) * laneOffset
+  const ny = Math.cos(angle) * laneOffset
+  return {
+    x: fromX + (toX - fromX) * t + nx,
+    y: fromY + (toY - fromY) * t + ny,
+    angle
+  }
 }
 
 export interface TrafficSimulationState {
@@ -163,6 +188,13 @@ export function stepTrafficSimulation(
     }
     const initialSegLen = Math.max(1, Math.hypot(nextNode.x - startNode.x, nextNode.y - startNode.y))
     const initialProgress = Math.min(initialSegLen * 0.45, ((spawnIndex % 3) + 1) * 18)
+    const initPose = computeLanePose(
+      startNode.x,
+      startNode.y,
+      nextNode.x,
+      nextNode.y,
+      initialProgress / initialSegLen
+    )
     state.vehicles.set(dispatch.id, {
       id: dispatch.id,
       dispatchId: dispatch.id,
@@ -172,9 +204,9 @@ export function stepTrafficSimulation(
       waypoints,
       segmentIndex: initialSegment,
       segmentProgressPx: initialProgress,
-      x: startNode.x,
-      y: startNode.y,
-      angleRad: Math.atan2(nextNode.y - startNode.y, nextNode.x - startNode.x),
+      x: initPose.x,
+      y: initPose.y,
+      angleRad: initPose.angle,
       waitingAtSignal: false,
       waitingForCarAhead: false
     })
@@ -231,7 +263,8 @@ export function stepTrafficSimulation(
         vehicle.segmentProgressPx -= segLen
         vehicle.segmentIndex += 1
         if (vehicle.segmentIndex >= vehicle.waypoints.length - 1) {
-          // Циклический повтор рейса на стенде, пока dispatch активен.
+          // Вместо телепорта на старт машина плавно разворачивается и едет обратно по маршруту.
+          vehicle.waypoints = [...vehicle.waypoints].reverse()
           vehicle.segmentIndex = 0
           vehicle.segmentProgressPx = 0
           break
@@ -247,14 +280,15 @@ export function stepTrafficSimulation(
     if (curFrom && curTo) {
       const curLen = Math.max(1, Math.hypot(curTo.x - curFrom.x, curTo.y - curFrom.y))
       const t = Math.max(0, Math.min(1, vehicle.segmentProgressPx / curLen))
-      const angle = Math.atan2(curTo.y - curFrom.y, curTo.x - curFrom.x)
-      // Правостороннее смещение по полосе, чтобы встречные машины не ехали друг сквозь друга.
-      const laneOffset = 6.5
-      const nx = -Math.sin(angle) * laneOffset
-      const ny = Math.cos(angle) * laneOffset
-      vehicle.x = curFrom.x + (curTo.x - curFrom.x) * t + nx
-      vehicle.y = curFrom.y + (curTo.y - curFrom.y) * t + ny
-      vehicle.angleRad = angle
+      const targetPose = computeLanePose(curFrom.x, curFrom.y, curTo.x, curTo.y, t)
+
+      // Плавное сглаживание позиции и угла корпуса (убирает резкие скачки на поворотах и разворотах).
+      const effectiveDt = Math.min(0.1, dtSec) * Math.min(20, Math.max(1, timeScale))
+      const posAlpha = 1 - Math.exp(-effectiveDt * 14)
+      const angleAlpha = 1 - Math.exp(-effectiveDt * 12)
+      vehicle.x += (targetPose.x - vehicle.x) * posAlpha
+      vehicle.y += (targetPose.y - vehicle.y) * posAlpha
+      vehicle.angleRad = lerpShortestAngle(vehicle.angleRad, targetPose.angle, angleAlpha)
     }
   }
 }

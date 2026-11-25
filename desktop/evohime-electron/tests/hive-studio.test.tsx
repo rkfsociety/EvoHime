@@ -172,6 +172,19 @@ describe('honeycomb geometry & traffic', () => {
     const traffic = createTrafficSimulationState()
     stepTrafficSimulation(traffic, world, roadGraph, 0.016, 1.0, 1)
     expect(traffic.vehicles.size).toBe(world.activeDispatches.length)
+
+    // Проверяем отсутствие телепортов: за 200 шагов ни одна машина не прыгает скачком > 25px за шаг.
+    for (let step = 0; step < 200; step += 1) {
+      const prevPositions = new Map(
+        Array.from(traffic.vehicles.values()).map((v) => [v.id, { x: v.x, y: v.y }])
+      )
+      stepTrafficSimulation(traffic, world, roadGraph, 0.03, 1.0 + step * 0.03, 1)
+      for (const v of traffic.vehicles.values()) {
+        const prev = prevPositions.get(v.id)
+        if (!prev) continue
+        expect(Math.hypot(v.x - prev.x, v.y - prev.y)).toBeLessThan(25)
+      }
+    }
   })
 })
 
