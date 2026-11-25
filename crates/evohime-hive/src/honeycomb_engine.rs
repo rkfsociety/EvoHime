@@ -724,7 +724,7 @@ fn city_outer_hex_radius(city: &HoneycombCity) -> f64 {
     let module_max_ring = city.modules.iter().map(|m| m.ring).max().unwrap_or(0);
     let sector_min_ring = if city.sectors.is_empty() { 0 } else { 1 };
     let max_ring = city.max_ring.max(sector_min_ring).max(module_max_ring);
-    let content_radius = if max_ring <= 0 {
+    let content_radius = if max_ring == 0 {
         CITADEL_HEX_RADIUS + 28.0
     } else {
         let expansion = city_ring_expansion(city);
