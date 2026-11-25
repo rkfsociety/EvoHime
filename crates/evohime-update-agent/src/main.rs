@@ -28,6 +28,8 @@ use artifacts::*;
 
 type DownloadProgress<'a> = (&'a str, u64, u64);
 type ProgressCallback<'a> = &'a dyn Fn(&str, u8, Option<DownloadProgress<'_>>);
+type DownloadCandidateFn<'a> =
+    &'a mut dyn FnMut(&UpdateCandidate, &Path, &dyn Fn(u64)) -> Result<(), String>;
 
 fn main() -> ExitCode {
     let args = env::args().collect::<Vec<_>>();
@@ -1484,7 +1486,7 @@ fn stage_updates_into_cache_with(
     data_dir: &Path,
     updates: &[UpdateCandidate],
     progress: ProgressCallback<'_>,
-    download: &mut dyn FnMut(&UpdateCandidate, &Path, &dyn Fn(u64)) -> Result<(), String>,
+    download: DownloadCandidateFn<'_>,
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
     fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
