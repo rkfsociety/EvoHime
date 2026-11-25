@@ -70,6 +70,13 @@ export function getRingCellRadius(ring: number): number {
   return RING_BASE_RADIUS + ring * RING_STEP
 }
 
+/** Вычисляет радиус внешней гексагональной соты-забора города (единый источник истины). */
+export function getCityOuterHexRadius(maxRing: number): number {
+  const contentRadius =
+    maxRing <= 0 ? CITADEL_HEX_RADIUS + 28 : getRingCellRadius(maxRing) + CELL_HEX_RADIUS + 20
+  return contentRadius / Math.cos(Math.PI / 6)
+}
+
 /**
  * Выбирает индексы граней (0..5) для `exitsCount` выходов Цитадели так,
  * чтобы при любом количестве 1..6 выходы распределялись симметрично.

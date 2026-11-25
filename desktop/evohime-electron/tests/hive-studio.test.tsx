@@ -9,6 +9,7 @@ import { buildHoneycombStudioWorld } from '../src/renderer/src/hive-studio-simul
 import {
   buildWorldRoadGraphAndPlacements,
   findRoadPath,
+  getCityOuterHexRadius,
   HEX_FACE_NORMAL_ANGLES,
   selectCitadelExitFaceIndices
 } from '../src/renderer/src/components/hive/honeycomb-geometry'
@@ -64,6 +65,17 @@ describe('buildHoneycombStudioWorld', () => {
     for (const link of world.intercityLinks) {
       expect(link.fromRing).toBeGreaterThanOrEqual(1)
       expect(link.toRing).toBeGreaterThanOrEqual(1)
+    }
+
+    // Ни одна пара городов не должна пересекаться своими внешними сотами-заборами.
+    for (let i = 0; i < world.cities.length; i += 1) {
+      for (let j = i + 1; j < world.cities.length; j += 1) {
+        const a = world.cities[i]!
+        const b = world.cities[j]!
+        const dist = Math.hypot(b.worldCenterX - a.worldCenterX, b.worldCenterY - a.worldCenterY)
+        const minRequired = getCityOuterHexRadius(a.maxRing) + getCityOuterHexRadius(b.maxRing)
+        expect(dist).toBeGreaterThan(minRequired)
+      }
     }
   })
 

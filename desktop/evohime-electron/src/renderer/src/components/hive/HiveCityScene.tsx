@@ -11,10 +11,8 @@ import {
 import type { UiIconName } from '../../UiIcon'
 import {
   buildWorldRoadGraphAndPlacements,
-  CELL_HEX_RADIUS,
-  CITADEL_HEX_RADIUS,
+  getCityOuterHexRadius,
   getPointyHexVertices,
-  getRingCellRadius,
   type HexCellPlacement
 } from './honeycomb-geometry'
 import {
@@ -151,7 +149,7 @@ export function HiveCityScene({
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const cameraRef = useRef({ x: 110, y: 0, zoom: 0.58 })
+  const cameraRef = useRef({ x: 380, y: 0, zoom: 0.45 })
   const panDragRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
     active: false,
     lastX: 0,
@@ -169,7 +167,7 @@ export function HiveCityScene({
   roadGraphRef.current = roadGraph
   timeScaleRef.current = timeScale
 
-  const [zoomUi, setZoomUi] = useState(0.58)
+  const [zoomUi, setZoomUi] = useState(0.45)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [mmbPanning, setMmbPanning] = useState(false)
 
@@ -213,8 +211,8 @@ export function HiveCityScene({
   )
 
   const resetCamera = useCallback((): void => {
-    cameraRef.current = { x: 110, y: 0, zoom: 0.58 }
-    setZoomUi(0.58)
+    cameraRef.current = { x: 380, y: 0, zoom: 0.45 }
+    setZoomUi(0.45)
   }, [])
 
   useEffect(() => {
@@ -304,9 +302,7 @@ export function HiveCityScene({
           city.sectors.length > 0 ? 1 : 0,
           ...city.modules.map((m) => m.ring)
         )
-        const contentRadius =
-          maxRing === 0 ? CITADEL_HEX_RADIUS + 28 : getRingCellRadius(maxRing) + CELL_HEX_RADIUS + 20
-        const cityHexRadius = contentRadius / Math.cos(Math.PI / 6)
+        const cityHexRadius = getCityOuterHexRadius(maxRing)
 
         ctx.save()
         // Подложка территории города внутри забора.

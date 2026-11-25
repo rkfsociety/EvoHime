@@ -22,6 +22,7 @@ import {
   type HoneycombVehicleDispatch,
   type HoneycombWorldState
 } from '@shared/hive-city-map'
+import { getCityOuterHexRadius } from './components/hive/honeycomb-geometry'
 
 export type StudioGrowthStage = 'zero' | 'scouting' | 'pipeline' | 'remodeled'
 
@@ -228,32 +229,44 @@ export function buildHoneycombStudioWorld(options: HoneycombStudioOptions): Hone
     ? EXTRA_PROJECT_NAMES
     : EXTRA_PROJECT_NAMES.slice(1)
 
-  for (let idx = 1; idx < projectCount; idx += 1) {
-    const cityId = `city-ext-${idx}`
-    const angle = ((idx - 1) * Math.PI * 2) / Math.max(1, projectCount - 1)
-    const distance = 780
-    const extLayout = buildModulesForProject(cityId, options.stage, options.remodelSeed + idx, false)
+  const primaryOuterR = getCityOuterHexRadius(primaryMaxRing)
+  const extLayouts = Array.from({ length: Math.max(0, projectCount - 1) }, (_, i) => {
+    const cityId = `city-ext-${i + 1}`
+    const extLayout = buildModulesForProject(cityId, options.stage, options.remodelSeed + i + 1, false)
     const extMaxRing = Math.max(1, extLayout.maxRing)
+    return { cityId, extLayout, extMaxRing, outerR: getCityOuterHexRadius(extMaxRing) }
+  })
+  const maxExtOuterR = extLayouts.reduce((acc, item) => Math.max(acc, item.outerR), 0)
+  const gapPx = 180
+  const minDistFromPrimary = primaryOuterR + maxExtOuterR + gapPx
+  const extCount = extLayouts.length
+  const minDistBetweenExts =
+    extCount >= 2 ? (maxExtOuterR * 2 + gapPx) / (2 * Math.sin(Math.PI / extCount)) : 0
+  const distance = Math.max(minDistFromPrimary, minDistBetweenExts)
+
+  for (let idx = 1; idx < projectCount; idx += 1) {
+    const item = extLayouts[idx - 1]!
+    const angle = ((idx - 1) * Math.PI * 2) / Math.max(1, projectCount - 1)
     cities.push({
-      id: cityId,
+      id: item.cityId,
       projectName: secondaryNames[idx - 1] ?? `Project-${idx}`,
       isPrimary: false,
       hasQueenCitadel: false,
       citadelExitsCount: 2,
       worldCenterX: Math.cos(angle) * distance,
       worldCenterY: Math.sin(angle) * distance,
-      maxRing: extMaxRing,
+      maxRing: item.extMaxRing,
       sectors: [],
-      modules: extLayout.modules,
-      edges: extLayout.edges
+      modules: item.extLayout.modules,
+      edges: item.extLayout.edges
     })
     if (primaryMaxRing >= 1) {
       intercityLinks.push({
-        id: `link-primary-${cityId}`,
+        id: `link-primary-${item.cityId}`,
         fromCityId: primaryCityId,
-        toCityId: cityId,
+        toCityId: item.cityId,
         fromRing: primaryMaxRing,
-        toRing: extMaxRing
+        toRing: item.extMaxRing
       })
     }
   }
