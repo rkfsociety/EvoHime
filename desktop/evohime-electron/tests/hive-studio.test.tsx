@@ -95,6 +95,11 @@ describe('buildHoneycombStudioWorld', () => {
     const crowdedHomes = Array.from(buildWorldRoadGraphAndPlacements(crowded).placements.values()).filter(
       (p) => p.kind === 'agent_home'
     )
+    const crowdedLabels = crowded.cities[0]!.sectors.map((s) => s.label)
+    expect(new Set(crowdedLabels).size).toBe(crowdedLabels.length)
+    for (const label of crowdedLabels) {
+      expect(label).not.toMatch(/#\d+/)
+    }
     for (let i = 0; i < crowdedHomes.length; i += 1) {
       for (let j = i + 1; j < crowdedHomes.length; j += 1) {
         const a = crowdedHomes[i]!

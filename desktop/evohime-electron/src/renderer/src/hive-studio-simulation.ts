@@ -68,6 +68,13 @@ const SECTOR_LABEL_BY_ROLE: Record<HoneycombAgentRole, string> = {
   decision_coordinator: 'Координаторы'
 }
 
+const EXTRA_UNIQUE_SECTOR_SPECS: readonly { readonly label: string; readonly role: HoneycombAgentRole }[] = [
+  { label: 'Разведчики', role: 'executor' },
+  { label: 'Ревизоры', role: 'analyst' },
+  { label: 'Архитекторы', role: 'strategist' },
+  { label: 'Интеграторы', role: 'decision_coordinator' }
+]
+
 function buildModulesForProject(
   cityId: string,
   stage: StudioGrowthStage,
@@ -149,52 +156,54 @@ export function buildHoneycombStudioWorld(options: HoneycombStudioOptions): Hone
     : (EXTRA_PROJECT_NAMES[0] ?? 'Project-1')
   const primaryCityId = 'city-primary'
 
-  // Создаём сектора с лимитом 3 агента на сектор и строго одной ролью в секторе.
-  const agentsByRole = new Map<HoneycombAgentRole, number[]>()
+  // Создаём сектора с лимитом 3 агента на сектор, одной ролью и уникальным названием (без #1/#2).
+  const sectorSlots: { label: string; role: HoneycombAgentRole; indices: number[] }[] = [
+    ...ROLE_SEQUENCE.map((role) => ({ label: SECTOR_LABEL_BY_ROLE[role], role, indices: [] as number[] })),
+    ...EXTRA_UNIQUE_SECTOR_SPECS.map((spec) => ({ label: spec.label, role: spec.role, indices: [] as number[] }))
+  ]
+
   for (let i = 0; i < effectiveAgentCount; i += 1) {
-    const role = ROLE_SEQUENCE[i % ROLE_SEQUENCE.length]!
-    const list = agentsByRole.get(role) ?? []
-    list.push(i)
-    agentsByRole.set(role, list)
+    const tier = Math.floor(i / (ROLE_SEQUENCE.length * HONEYCOMB_SECTOR_CAPACITY))
+    const roleIdx = i % ROLE_SEQUENCE.length
+    const targetIdx = Math.min(sectorSlots.length - 1, tier * ROLE_SEQUENCE.length + roleIdx)
+    const target = sectorSlots[targetIdx]
+    if (target && target.indices.length < HONEYCOMB_SECTOR_CAPACITY) {
+      target.indices.push(i)
+    }
   }
 
   const sectors: HoneycombSector[] = []
   const allAgents: HoneycombAgent[] = []
   let sectorCounter = 0
 
-  for (const role of ROLE_SEQUENCE) {
-    const indices = agentsByRole.get(role) ?? []
-    for (let offset = 0; offset < indices.length; offset += HONEYCOMB_SECTOR_CAPACITY) {
-      const chunk = indices.slice(offset, offset + HONEYCOMB_SECTOR_CAPACITY)
-      const sectorId = `${primaryCityId}:sector:${sectorCounter}`
-      const agentsInSector: HoneycombAgent[] = chunk.map((globalIdx) => {
-        const agent: HoneycombAgent = {
-          id: `agent-${globalIdx + 1}`,
-          name: `Агент #${globalIdx + 1}`,
-          role,
-          sectorId,
-          topic: AGENT_TOPICS[globalIdx % AGENT_TOPICS.length]!,
-          busy: !options.paused,
-          activeTripId: options.paused ? null : `trip-${globalIdx + 1}`
-        }
-        allAgents.push(agent)
-        return agent
-      })
+  for (const spec of sectorSlots) {
+    if (spec.indices.length === 0) continue
+    const sectorId = `${primaryCityId}:sector:${sectorCounter}`
+    const agentsInSector: HoneycombAgent[] = spec.indices.map((globalIdx) => {
+      const agent: HoneycombAgent = {
+        id: `agent-${globalIdx + 1}`,
+        name: `Агент #${globalIdx + 1}`,
+        role: spec.role,
+        sectorId,
+        topic: AGENT_TOPICS[globalIdx % AGENT_TOPICS.length]!,
+        busy: !options.paused,
+        activeTripId: options.paused ? null : `trip-${globalIdx + 1}`
+      }
+      allAgents.push(agent)
+      return agent
+    })
 
-      const roleSectorNum = Math.floor(offset / HONEYCOMB_SECTOR_CAPACITY) + 1
-      const baseLabel = SECTOR_LABEL_BY_ROLE[role]
-      sectors.push({
-        id: sectorId,
-        cityId: primaryCityId,
-        coord: { q: sectorCounter, r: 1 },
-        ring: 1,
-        label: indices.length > HONEYCOMB_SECTOR_CAPACITY ? `${baseLabel} #${roleSectorNum}` : baseLabel,
-        role,
-        capacity: HONEYCOMB_SECTOR_CAPACITY,
-        agents: agentsInSector
-      })
-      sectorCounter += 1
-    }
+    sectors.push({
+      id: sectorId,
+      cityId: primaryCityId,
+      coord: { q: sectorCounter, r: 1 },
+      ring: 1,
+      label: spec.label,
+      role: spec.role,
+      capacity: HONEYCOMB_SECTOR_CAPACITY,
+      agents: agentsInSector
+    })
+    sectorCounter += 1
   }
 
   const primaryLayout = buildModulesForProject(
