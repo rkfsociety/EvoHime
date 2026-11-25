@@ -426,6 +426,7 @@ export function HiveCityScene({
             const to = currentGraph.nodes.get(edge.toId)
             if (!from || !to) continue
 
+            ctx.lineCap = isSecondary ? 'butt' : 'round'
             ctx.beginPath()
             ctx.moveTo(from.x, from.y)
             ctx.lineTo(to.x, to.y)

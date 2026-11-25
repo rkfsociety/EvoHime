@@ -364,16 +364,13 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
     // от ближайшего сегмента кольца прямо к соте.
     const segmentSplits = new Map<number, { t: number; nodeId: string }[]>()
 
-    const connectCellToRingSegment = (cellId: string, cellX: number, cellY: number, ring: number): number => {
-      addNode({
-        id: cellId,
-        cityId: city.id,
-        x: cellX,
-        y: cellY,
-        kind: 'cell_entry',
-        ring
-      })
-
+    const connectCellToRingSegment = (
+      cellId: string,
+      cellX: number,
+      cellY: number,
+      ring: number,
+      cellRadius: number
+    ): number => {
       let bestSegIdx = -1
       let bestT = 0.5
       let bestProjX = cellX
@@ -402,6 +399,20 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
         }
       })
 
+      const approachAngle = bestSegIdx >= 0 ? Math.atan2(bestProjY - cellY, bestProjX - cellX) : Math.PI / 2
+      const apothem = cellRadius * Math.cos(Math.PI / 6)
+      const entryX = cellX + Math.cos(approachAngle) * apothem
+      const entryY = cellY + Math.sin(approachAngle) * apothem
+
+      addNode({
+        id: cellId,
+        cityId: city.id,
+        x: entryX,
+        y: entryY,
+        kind: 'cell_entry',
+        ring
+      })
+
       if (bestSegIdx >= 0) {
         const tapId = `${city.id}:tap:${cellId}`
         addNode({
@@ -416,9 +427,8 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
         list.push({ t: bestT, nodeId: tapId })
         segmentSplits.set(bestSegIdx, list)
         addBidirectionalEdge(`${city.id}:drive:${cellId}`, tapId, cellId, 'driveway', 2)
-        return Math.atan2(bestProjY - cellY, bestProjX - cellX)
       }
-      return Math.PI / 2
+      return approachAngle
     }
 
     // Размещаем кольцевые сектора (1-е кольцо) строго в дугах между радиальными дорогами,
@@ -515,10 +525,11 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
             const ay = city.worldCenterY + Math.sin(slotAngle) * ring1CellR
             const agent = sector.agents[slot]
             const cellId = agent ? `${sector.id}:slot:${slot}` : `${sector.id}:empty:${slot}`
+            const cellRadius = agent ? 19 : 19 * 0.9
             const approachAngle =
               slot === 1
-                ? connectCellToRingSegment(sector.id, ax, ay, 1)
-                : connectCellToRingSegment(cellId, ax, ay, 1)
+                ? connectCellToRingSegment(sector.id, ax, ay, 1, cellRadius)
+                : connectCellToRingSegment(cellId, ax, ay, 1, cellRadius)
             placements.set(cellId, {
               id: cellId,
               cityId: city.id,
@@ -558,7 +569,8 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
     for (const [ring, list] of modulesByRing.entries()) {
       list.forEach((mod, index) => {
         const pos = resolveCellPositionOnRing(city, ring, mod.coord, index, list.length, moduleBlockedAngles)
-        const approachAngle = connectCellToRingSegment(mod.id, pos.x, pos.y, ring)
+        const modRadius = CELL_HEX_RADIUS * 0.92
+        const approachAngle = connectCellToRingSegment(mod.id, pos.x, pos.y, ring, modRadius)
         placements.set(mod.id, {
           id: mod.id,
           cityId: city.id,
@@ -566,7 +578,7 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
           ring,
           x: pos.x,
           y: pos.y,
-          radius: CELL_HEX_RADIUS * 0.92,
+          radius: modRadius,
           rotationRad: approachAngle,
           exitAngles: []
         })
