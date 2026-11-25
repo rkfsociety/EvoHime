@@ -576,16 +576,27 @@ impl HoneycombEngine {
             return;
         }
         let primary_id = self.world.primary_city_id.clone();
-        let primary_max_ring = self
+        let primary_city = self.world.cities.iter().find(|c| c.id == primary_id);
+        let primary_max_ring = primary_city.map(|c| c.max_ring.max(1)).unwrap_or(1);
+        let primary_outer_r = primary_city.map(city_outer_hex_radius).unwrap_or(0.0);
+
+        let max_ext_outer_r = self
             .world
             .cities
             .iter()
-            .find(|c| c.id == primary_id)
-            .map(|c| c.max_ring.max(1))
-            .unwrap_or(1);
+            .filter(|c| c.id != primary_id)
+            .map(city_outer_hex_radius)
+            .fold(0.0_f64, f64::max);
 
         let ext_count = self.world.cities.len().saturating_sub(1);
-        let distance = 1_280.0_f64;
+        let min_dist_from_primary = primary_outer_r + max_ext_outer_r + INTERCITY_GAP_PX;
+        let min_dist_between_exts = if ext_count >= 2 {
+            (max_ext_outer_r * 2.0 + INTERCITY_GAP_PX)
+                / (2.0 * (std::f64::consts::PI / (ext_count as f64)).sin())
+        } else {
+            0.0
+        };
+        let distance = min_dist_from_primary.max(min_dist_between_exts);
         let mut ext_idx = 0_usize;
 
         for city in &mut self.world.cities {
@@ -626,6 +637,100 @@ impl HoneycombEngine {
         self.next_id_seq = self.next_id_seq.saturating_add(1);
         format!("{prefix}-{seq}")
     }
+}
+
+const CITADEL_HEX_RADIUS: f64 = 48.0;
+const CELL_HEX_RADIUS: f64 = 30.0;
+const RING_BASE_RADIUS: f64 = 84.0;
+const RING_STEP: f64 = 112.0;
+const INTERCITY_GAP_PX: f64 = 180.0;
+
+fn select_citadel_exit_face_indices(exits_count: u8) -> &'static [usize] {
+    match exits_count.clamp(1, 6) {
+        1 => &[0],
+        2 => &[0, 3],
+        3 => &[0, 2, 4],
+        4 => &[0, 1, 3, 4],
+        5 => &[0, 1, 2, 3, 4],
+        _ => &[0, 1, 2, 3, 4, 5],
+    }
+}
+
+fn city_ring_expansion(city: &HoneycombCity) -> f64 {
+    let sector_count = city.sectors.len();
+    if sector_count == 0 {
+        return 0.0;
+    }
+    let exits = if city.has_queen_citadel {
+        city.citadel_exits_count.clamp(1, 6)
+    } else {
+        2
+    };
+    let face_angles = [
+        std::f64::consts::FRAC_PI_6,
+        std::f64::consts::FRAC_PI_2,
+        5.0 * std::f64::consts::FRAC_PI_6,
+        7.0 * std::f64::consts::FRAC_PI_6,
+        3.0 * std::f64::consts::FRAC_PI_2,
+        11.0 * std::f64::consts::FRAC_PI_6,
+    ];
+    let mut rays: Vec<f64> = select_citadel_exit_face_indices(exits)
+        .iter()
+        .map(|&idx| face_angles[idx].rem_euclid(std::f64::consts::TAU))
+        .collect();
+    rays.sort_by(|a, b| a.total_cmp(b));
+
+    let mut spans = Vec::with_capacity(rays.len().max(1));
+    if rays.is_empty() {
+        spans.push(std::f64::consts::TAU);
+    } else {
+        for i in 0..rays.len() {
+            let a = rays[i];
+            let b = rays[(i + 1) % rays.len()];
+            spans.push(if b > a {
+                b - a
+            } else {
+                std::f64::consts::TAU - a + b
+            });
+        }
+    }
+
+    let mut counts = vec![0_usize; spans.len()];
+    for _ in 0..sector_count {
+        let mut best_idx = 0;
+        let mut best_score = -1.0_f64;
+        for (p, &span) in spans.iter().enumerate() {
+            let score = span / ((counts[p] + 1) as f64);
+            if score > best_score {
+                best_score = score;
+                best_idx = p;
+            }
+        }
+        counts[best_idx] += 1;
+    }
+
+    let mut required_radius = 0.0_f64;
+    for (p, &count) in counts.iter().enumerate() {
+        if count == 0 {
+            continue;
+        }
+        let min_arc_len = (count as f64) * 176.0 + 56.0;
+        required_radius = required_radius.max(min_arc_len / spans[p].max(0.2));
+    }
+    (required_radius - (RING_BASE_RADIUS + RING_STEP)).max(0.0)
+}
+
+fn city_outer_hex_radius(city: &HoneycombCity) -> f64 {
+    let module_max_ring = city.modules.iter().map(|m| m.ring).max().unwrap_or(0);
+    let sector_min_ring = if city.sectors.is_empty() { 0 } else { 1 };
+    let max_ring = city.max_ring.max(sector_min_ring).max(module_max_ring);
+    let content_radius = if max_ring <= 0 {
+        CITADEL_HEX_RADIUS + 28.0
+    } else {
+        let expansion = city_ring_expansion(city);
+        RING_BASE_RADIUS + (max_ring as f64) * RING_STEP + expansion + CELL_HEX_RADIUS + 20.0
+    };
+    content_radius / (std::f64::consts::FRAC_PI_6).cos()
 }
 
 fn pick_unique_sector_label(role: HoneycombAgentRole, used: &BTreeSet<String>) -> String {
@@ -778,5 +883,34 @@ mod tests {
             .read_delta_since(rev_before_pause, 256)
             .expect("delta");
         assert!(delta.requires_full_resync);
+    }
+
+    #[test]
+    fn intercity_layout_keeps_gap_between_large_city_fences() {
+        let db = HiveDatabase::open_in_memory().expect("in-memory db");
+        let mut engine = HoneycombEngine::open(
+            db,
+            None,
+            &[
+                "C:/Projects/Primary".to_string(),
+                "C:/Projects/Secondary".to_string(),
+            ],
+        )
+        .expect("open engine");
+
+        for city in &mut engine.world.cities {
+            city.max_ring = 4;
+        }
+        engine.recompute_intercity_layout();
+
+        let primary = &engine.world().cities[0];
+        let secondary = &engine.world().cities[1];
+        let dist = (secondary.world_center_x - primary.world_center_x)
+            .hypot(secondary.world_center_y - primary.world_center_y);
+        let min_non_overlapping = city_outer_hex_radius(primary) + city_outer_hex_radius(secondary);
+        assert!(
+            dist >= min_non_overlapping + INTERCITY_GAP_PX - 1e-6,
+            "cities overlap: dist={dist}, sum_radii={min_non_overlapping}"
+        );
     }
 }
