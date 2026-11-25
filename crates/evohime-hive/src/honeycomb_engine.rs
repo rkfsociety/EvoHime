@@ -1187,6 +1187,10 @@ mod tests {
         let paused = engine.poll_trip_arrival(&initial.trip_id, 6_000);
         assert!(!paused.arrived);
         engine.set_active_mode(true, false, true).expect("resume");
+        engine.sync_pause_clock(10_000);
+
+        let resumed_early = engine.poll_trip_arrival(&initial.trip_id, 11_000);
+        assert!(!resumed_early.arrived);
 
         let done = engine.poll_trip_arrival(&initial.trip_id, 60_000);
         assert!(done.arrived);

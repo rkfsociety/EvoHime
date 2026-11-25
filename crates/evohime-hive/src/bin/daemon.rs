@@ -1807,6 +1807,7 @@ impl HoneycombRuntime {
         let mut guard = self.engine.lock().ok()?;
         if force_pause {
             let _ = guard.set_active_mode(false, false, false);
+            guard.sync_pause_clock(unix_now_ms());
         }
         Some(guard.world().clone())
     }
@@ -1848,6 +1849,7 @@ impl HoneycombRuntime {
         );
         let (hive_active, waiting_for_limits, queen_working) = resolve_honeycomb_mode(state);
         let _ = guard.set_active_mode(hive_active, waiting_for_limits, queen_working);
+        guard.sync_pause_clock(now_ms);
 
         if hive_active && !waiting_for_limits {
             // Сканирование и перестройка модулей проектов (с кулдауном 5 мин внутри движка).
