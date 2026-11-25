@@ -51,8 +51,10 @@ async fn observation_daemon_reports_status_and_wakes_on_settings_change_via_ipc(
                 serde_json::from_slice(&req_bytes).expect("decode request");
             let resp_bytes = match req {
                 HiveObservationControlRequest::GetHiveStateSnapshot => {
-                    let mut snap = HiveStateSnapshot::default();
-                    snap.observation_status = HIVE_OBSERVATION_WAITING_FOR_TASKS.to_owned();
+                    let snap = HiveStateSnapshot {
+                        observation_status: HIVE_OBSERVATION_WAITING_FOR_TASKS.to_owned(),
+                        ..Default::default()
+                    };
                     serde_json::to_vec(&snap).expect("encode hive state")
                 }
                 HiveObservationControlRequest::NotifySettingsChanged => {

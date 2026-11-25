@@ -693,29 +693,28 @@ impl IpcBridge {
             }
         }
         let settings = self.journal.hive_settings().await.unwrap_or_default();
-        let mut snapshot = crate::hive_state::HiveStateSnapshot::default();
-        snapshot.daily_budget_usd = settings.daily_budget_usd;
-        snapshot.eva_workspace_path = settings.eva_workspace_path().map(str::to_owned);
-        snapshot.hive_provider_profile = settings.hive_provider_profile.clone();
-        snapshot.hive_model = settings.hive_model.clone();
-        snapshot.hive_fallback_provider_profile = settings.hive_fallback_provider_profile.clone();
-        snapshot.hive_fallback_model = settings.hive_fallback_model.clone();
-        snapshot.hive_provider_limits = settings.hive_provider_limits;
-        snapshot.hive_fallback_provider_limits = settings.hive_fallback_provider_limits;
-        snapshot.hive_daily_token_quota = settings.hive_daily_token_quota;
-        snapshot.hive_fallback_daily_token_quota = settings.hive_fallback_daily_token_quota;
-        snapshot.hive_token_quota_configured = settings.hive_token_quota_configured;
-        snapshot.hive_fallback_token_quota_configured =
-            settings.hive_fallback_token_quota_configured;
-        snapshot.hive_quota_reset_utc_midnight = settings.hive_quota_reset_utc_midnight;
-        snapshot.hive_fallback_quota_reset_utc_midnight =
-            settings.hive_fallback_quota_reset_utc_midnight;
-        snapshot.hive_provider_configs = settings.effective_provider_configs(false);
-        snapshot.hive_fallback_provider_configs = settings.effective_provider_configs(true);
-        snapshot.proactive_evolution_enabled = settings.proactive_evolution_enabled;
-        snapshot.local_observation_interval_secs = settings.local_observation_interval_secs;
-        snapshot.llm_dispatch_interval_secs = settings.llm_dispatch_interval_secs;
-        snapshot
+        crate::hive_state::HiveStateSnapshot {
+            daily_budget_usd: settings.daily_budget_usd,
+            eva_workspace_path: settings.eva_workspace_path().map(str::to_owned),
+            hive_provider_profile: settings.hive_provider_profile.clone(),
+            hive_model: settings.hive_model.clone(),
+            hive_fallback_provider_profile: settings.hive_fallback_provider_profile.clone(),
+            hive_fallback_model: settings.hive_fallback_model.clone(),
+            hive_provider_limits: settings.hive_provider_limits,
+            hive_fallback_provider_limits: settings.hive_fallback_provider_limits,
+            hive_daily_token_quota: settings.hive_daily_token_quota,
+            hive_fallback_daily_token_quota: settings.hive_fallback_daily_token_quota,
+            hive_token_quota_configured: settings.hive_token_quota_configured,
+            hive_fallback_token_quota_configured: settings.hive_fallback_token_quota_configured,
+            hive_quota_reset_utc_midnight: settings.hive_quota_reset_utc_midnight,
+            hive_fallback_quota_reset_utc_midnight: settings.hive_fallback_quota_reset_utc_midnight,
+            hive_provider_configs: settings.effective_provider_configs(false),
+            hive_fallback_provider_configs: settings.effective_provider_configs(true),
+            proactive_evolution_enabled: settings.proactive_evolution_enabled,
+            local_observation_interval_secs: settings.local_observation_interval_secs,
+            llm_dispatch_interval_secs: settings.llm_dispatch_interval_secs,
+            ..Default::default()
+        }
     }
 
     pub(super) async fn hive_observation_status_payload(
