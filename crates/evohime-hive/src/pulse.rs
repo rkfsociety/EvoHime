@@ -298,6 +298,18 @@ pub enum HiveObservationControlRequest {
         /// Last revision already applied by the client.
         from_revision: u64,
     },
+    /// Dispatches a vehicle to deliver a delegated task to an agent cell.
+    DispatchAgentTask {
+        /// Delegated Hive role slug (e.g. `researcher`, `planner`, `implementer`).
+        role: String,
+        /// Short task topic used to match or spawn the target agent.
+        topic: String,
+    },
+    /// Polls whether a previously dispatched vehicle trip has arrived at its cell.
+    PollTripArrival {
+        /// Dispatched vehicle trip identifier returned by `DispatchAgentTask`.
+        trip_id: String,
+    },
 }
 
 /// Test seam for the observation and dispatch intervals.

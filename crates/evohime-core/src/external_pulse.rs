@@ -49,10 +49,41 @@ impl ExternalHiveObservationProxy {
         Ok(())
     }
 
+    /// Dispatches a vehicle in `evohime-hive-daemon` for a delegated child agent.
+    pub async fn dispatch_agent_task(
+        &self,
+        role: &str,
+        topic: &str,
+    ) -> Result<evohime_hive_contract::honeycomb::HoneycombTripStatus, String> {
+        self.send_json_request(HiveObservationControlRequest::DispatchAgentTask {
+            role: role.to_owned(),
+            topic: topic.to_owned(),
+        })
+        .await
+    }
+
+    /// Polls whether a vehicle dispatched for `trip_id` has reached the agent's cell.
+    pub async fn poll_trip_arrival(
+        &self,
+        trip_id: &str,
+    ) -> Result<evohime_hive_contract::honeycomb::HoneycombTripStatus, String> {
+        self.send_json_request(HiveObservationControlRequest::PollTripArrival {
+            trip_id: trip_id.to_owned(),
+        })
+        .await
+    }
+
     async fn send_request(
         &self,
         request: HiveObservationControlRequest,
     ) -> Result<HiveObservationSnapshot, String> {
+        self.send_json_request(request).await
+    }
+
+    async fn send_json_request<T: serde::de::DeserializeOwned>(
+        &self,
+        request: HiveObservationControlRequest,
+    ) -> Result<T, String> {
         let payload = serde_json::to_vec(&request)
             .map_err(|error| format!("observation_serialization_failed: {error}"))?;
         let response_bytes = tokio::time::timeout(OBSERVATION_IPC_TIMEOUT, async {
@@ -62,7 +93,7 @@ impl ExternalHiveObservationProxy {
         .await
         .map_err(|_| "observation_unavailable: IPC request timed out".to_owned())??;
 
-        serde_json::from_slice::<HiveObservationSnapshot>(&response_bytes)
+        serde_json::from_slice::<T>(&response_bytes)
             .map_err(|error| format!("observation_unavailable: invalid daemon response: {error}"))
     }
 
@@ -182,7 +213,9 @@ mod tests {
                 | HiveObservationControlRequest::NotifySettingsChanged
                 | HiveObservationControlRequest::GetCityMap
                 | HiveObservationControlRequest::GetHoneycombWorld
-                | HiveObservationControlRequest::GetHoneycombDelta { .. } => {
+                | HiveObservationControlRequest::GetHoneycombDelta { .. }
+                | HiveObservationControlRequest::DispatchAgentTask { .. }
+                | HiveObservationControlRequest::PollTripArrival { .. } => {
                     HiveObservationSnapshot {
                         schema_version: 1,
                         owner: "hive_observation".to_owned(),

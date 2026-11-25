@@ -360,6 +360,20 @@ pub struct HoneycombWorldDelta {
     pub requires_full_resync: bool,
 }
 
+/// Delivery status of a vehicle trip carrying a task to a delegated agent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoneycombTripStatus {
+    /// Dispatched vehicle trip identifier.
+    pub trip_id: String,
+    /// Target agent identifier in the Honeycomb city.
+    pub agent_id: String,
+    /// Whether the vehicle has arrived at the agent's cell.
+    pub arrived: bool,
+    /// Remaining estimated travel time in milliseconds (`0` once arrived).
+    pub eta_ms: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

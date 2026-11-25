@@ -7,8 +7,9 @@ use std::path::Path;
 use evohime_hive_contract::honeycomb::{
     HoneycombAgent, HoneycombAgentRole, HoneycombCargoType, HoneycombCity, HoneycombEdge,
     HoneycombHexCoord, HoneycombIntercityLink, HoneycombModuleNode, HoneycombMutationEvent,
-    HoneycombSector, HoneycombVehicleDispatch, HoneycombWorldState, HONEYCOMB_MAX_CITADEL_EXITS,
-    HONEYCOMB_MIN_CITADEL_EXITS, HONEYCOMB_SECTOR_CAPACITY, HONEYCOMB_WORLD_SCHEMA_VERSION,
+    HoneycombSector, HoneycombTripStatus, HoneycombVehicleDispatch, HoneycombWorldState,
+    HONEYCOMB_MAX_CITADEL_EXITS, HONEYCOMB_MIN_CITADEL_EXITS, HONEYCOMB_SECTOR_CAPACITY,
+    HONEYCOMB_WORLD_SCHEMA_VERSION,
 };
 
 use crate::city_map::{scan_island, CityIslandRole, MAX_REPO_SCAN_DURATION};
@@ -75,6 +76,8 @@ pub struct HoneycombEngine {
     world: HoneycombWorldState,
     last_remodel_at_ms: HashMap<String, i64>,
     last_structure_hashes: HashMap<String, String>,
+    trip_arrivals_ms: HashMap<String, i64>,
+    paused_since_ms: Option<i64>,
     next_id_seq: u64,
 }
 
@@ -95,6 +98,8 @@ impl HoneycombEngine {
             world,
             last_remodel_at_ms: HashMap::new(),
             last_structure_hashes: HashMap::new(),
+            trip_arrivals_ms: HashMap::new(),
+            paused_since_ms: None,
             next_id_seq: 1,
         };
         engine.recompute_intercity_layout();
@@ -144,6 +149,142 @@ impl HoneycombEngine {
             self.db.save_world_state(&self.world)?;
         }
         Ok(())
+    }
+
+    /// Synchronizes pause-adjusted travel timers with the current wall-clock time.
+    pub fn sync_pause_clock(&mut self, now_ms: i64) {
+        if self.world.paused {
+            if self.paused_since_ms.is_none() {
+                self.paused_since_ms = Some(now_ms);
+            }
+        } else if let Some(paused_at) = self.paused_since_ms.take() {
+            let pause_delta = now_ms.saturating_sub(paused_at).max(0);
+            for arrival in self.trip_arrivals_ms.values_mut() {
+                *arrival = arrival.saturating_add(pause_delta);
+            }
+        }
+    }
+
+    /// Dispatches (or reuses) a vehicle for a delegated Hive role and returns its
+    /// arrival status and estimated travel duration (including road distance
+    /// and traffic-light waits).
+    pub fn dispatch_for_delegation(
+        &mut self,
+        role: &str,
+        topic: &str,
+        now_ms: i64,
+    ) -> Result<HoneycombTripStatus, HiveDbError> {
+        if self.world.paused {
+            self.set_active_mode(true, false, true)?;
+        }
+        self.sync_pause_clock(now_ms);
+        let stage = relay_stage_for_role_slug(role);
+        let _ = self.dispatch_relay_step(stage, topic, None, now_ms)?;
+
+        let primary_id = self.world.primary_city_id.clone();
+        let target_role = stage.role();
+        let matched = self
+            .world
+            .cities
+            .iter()
+            .find(|c| c.id == primary_id)
+            .and_then(|city| {
+                city.sectors
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| s.role == target_role)
+                    .find_map(|(sector_idx, s)| {
+                        s.agents
+                            .iter()
+                            .find(|a| a.topic == topic)
+                            .map(|a| (a.id.clone(), a.active_trip_id.clone(), sector_idx, city.sectors.len()))
+                    })
+            });
+
+        let Some((agent_id, active_trip_id, sector_idx, sector_count)) = matched else {
+            return Ok(HoneycombTripStatus {
+                trip_id: String::new(),
+                agent_id: String::new(),
+                arrived: true,
+                eta_ms: 0,
+            });
+        };
+        let trip_id = active_trip_id.unwrap_or_else(|| format!("trip-{agent_id}"));
+        if !self.trip_arrivals_ms.contains_key(&trip_id) {
+            let travel_ms = self.estimate_trip_travel_ms(sector_idx, sector_count, now_ms);
+            self.trip_arrivals_ms
+                .insert(trip_id.clone(), now_ms.saturating_add(travel_ms));
+        }
+        Ok(self.build_trip_status(&trip_id, &agent_id, now_ms))
+    }
+
+    /// Polls whether the vehicle for `trip_id` has arrived at its destination cell.
+    pub fn poll_trip_arrival(&mut self, trip_id: &str, now_ms: i64) -> HoneycombTripStatus {
+        self.sync_pause_clock(now_ms);
+        let agent_id = self
+            .world
+            .active_dispatches
+            .iter()
+            .find(|d| d.id == trip_id)
+            .map(|d| d.agent_id.clone())
+            .unwrap_or_default();
+        self.build_trip_status(trip_id, &agent_id, now_ms)
+    }
+
+    fn build_trip_status(&self, trip_id: &str, agent_id: &str, now_ms: i64) -> HoneycombTripStatus {
+        let Some(&arrival_ms) = self.trip_arrivals_ms.get(trip_id) else {
+            return HoneycombTripStatus {
+                trip_id: trip_id.to_owned(),
+                agent_id: agent_id.to_owned(),
+                arrived: true,
+                eta_ms: 0,
+            };
+        };
+        if self.world.paused {
+            let remaining = arrival_ms.saturating_sub(self.paused_since_ms.unwrap_or(now_ms)).max(0) as u64;
+            return HoneycombTripStatus {
+                trip_id: trip_id.to_owned(),
+                agent_id: agent_id.to_owned(),
+                arrived: false,
+                eta_ms: remaining.max(250),
+            };
+        }
+        let remaining = arrival_ms.saturating_sub(now_ms).max(0) as u64;
+        HoneycombTripStatus {
+            trip_id: trip_id.to_owned(),
+            agent_id: agent_id.to_owned(),
+            arrived: remaining == 0,
+            eta_ms: remaining,
+        }
+    }
+
+    fn estimate_trip_travel_ms(&self, sector_idx: usize, sector_count: usize, now_ms: i64) -> i64 {
+        const VEHICLE_SPEED_PX_PER_SEC: f64 = 105.0;
+        const TRAFFIC_LIGHT_CYCLE_MS: i64 = 10_000;
+        let primary = self.world.cities.iter().find(|c| c.id == self.world.primary_city_id);
+        let module_count = primary.map(|c| c.modules.len()).unwrap_or(0);
+        let expansion = if module_count > 12 {
+            ((module_count - 12) as f64) * 5.0
+        } else {
+            0.0
+        };
+        let ring1_road_radius = 122.0 + expansion;
+        let radial_len = (ring1_road_radius - 38.0).max(40.0);
+        let arc_fraction = ((sector_idx + 1) as f64) / ((sector_count.max(1) + 1) as f64);
+        let ring_arc_len = std::f64::consts::PI * 2.0 * ring1_road_radius * (arc_fraction * 0.5).clamp(0.12, 0.55);
+        let driveway_len = 54.0;
+        let drive_ms = (((radial_len + ring_arc_len + driveway_len) / VEHICLE_SPEED_PX_PER_SEC) * 1000.0).round() as i64;
+
+        // Account for the radial intersection traffic-light phase (radial green: 5.0s..9.2s of 10s cycle).
+        let phase_ms = now_ms.rem_euclid(TRAFFIC_LIGHT_CYCLE_MS);
+        let radial_wait_ms = if (5_000..9_200).contains(&phase_ms) {
+            0
+        } else if phase_ms < 5_000 {
+            5_000 - phase_ms
+        } else {
+            TRAFFIC_LIGHT_CYCLE_MS - phase_ms + 5_000
+        };
+        (drive_ms + radial_wait_ms).clamp(1_200, 18_000)
     }
 
     /// Synchronizes configured project cities while keeping the single Queen Citadel
@@ -748,6 +889,31 @@ fn city_outer_hex_radius(city: &HoneycombCity) -> f64 {
     content_radius / (std::f64::consts::FRAC_PI_6).cos()
 }
 
+fn relay_stage_for_role_slug(role: &str) -> RelayStage {
+    let lower = role.trim().to_ascii_lowercase();
+    if lower.contains("analyst")
+        || lower.contains("reviewer")
+        || lower.contains("аналит")
+        || lower.contains("ревиз")
+    {
+        RelayStage::Analysis
+    } else if lower.contains("plan")
+        || lower.contains("architect")
+        || lower.contains("стратег")
+        || lower.contains("архитект")
+    {
+        RelayStage::Strategy
+    } else if lower.contains("release")
+        || lower.contains("coord")
+        || lower.contains("интегр")
+        || lower.contains("релиз")
+    {
+        RelayStage::DecisionCoordination
+    } else {
+        RelayStage::Execution
+    }
+}
+
 fn pick_unique_sector_label(role: HoneycombAgentRole, used: &BTreeSet<String>) -> String {
     let primary = role.default_sector_label();
     if !used.contains(primary) {
@@ -990,5 +1156,30 @@ mod tests {
         assert_eq!(engine.world().cities[0].sectors.len(), 1);
         assert_eq!(engine.world().cities[0].sectors[0].agents.len(), 1);
         assert_eq!(engine.world().active_dispatches.len(), 1);
+    }
+
+    #[test]
+    fn delegated_trip_waits_for_travel_time_and_pauses_when_hive_paused() {
+        let db = HiveDatabase::open_in_memory().expect("in-memory db");
+        let mut engine = HoneycombEngine::open(db, Some("C:/github/EvoHime"), &[]).expect("open");
+        let initial = engine
+            .dispatch_for_delegation("researcher", "план-1", 5_000)
+            .expect("dispatch");
+        assert!(!initial.arrived);
+        assert!(initial.eta_ms >= 1_200);
+
+        let mid = engine.poll_trip_arrival(&initial.trip_id, 5_500);
+        assert!(!mid.arrived);
+        assert!(mid.eta_ms < initial.eta_ms);
+
+        // Pausing shifts arrival deadline forward so paused time does not count as travel.
+        engine.set_active_mode(false, false, false).expect("pause");
+        let paused = engine.poll_trip_arrival(&initial.trip_id, 6_000);
+        assert!(!paused.arrived);
+        engine.set_active_mode(true, false, true).expect("resume");
+
+        let done = engine.poll_trip_arrival(&initial.trip_id, 60_000);
+        assert!(done.arrived);
+        assert_eq!(done.eta_ms, 0);
     }
 }

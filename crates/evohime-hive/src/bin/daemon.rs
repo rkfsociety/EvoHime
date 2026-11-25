@@ -1819,6 +1819,25 @@ impl HoneycombRuntime {
         guard.database().read_delta_since(from_revision, 256).ok()
     }
 
+    fn dispatch_for_delegation(
+        &self,
+        role: &str,
+        topic: &str,
+        now_ms: i64,
+    ) -> Option<evohime_hive_contract::honeycomb::HoneycombTripStatus> {
+        let mut guard = self.engine.lock().ok()?;
+        guard.dispatch_for_delegation(role, topic, now_ms).ok()
+    }
+
+    fn poll_trip_arrival(
+        &self,
+        trip_id: &str,
+        now_ms: i64,
+    ) -> Option<evohime_hive_contract::honeycomb::HoneycombTripStatus> {
+        let mut guard = self.engine.lock().ok()?;
+        Some(guard.poll_trip_arrival(trip_id, now_ms))
+    }
+
     fn sync_maintenance(&self, state: &HiveStateSnapshot, settings: &HiveSettings, now_ms: i64) {
         let Ok(mut guard) = self.engine.lock() else {
             return;
@@ -1998,6 +2017,40 @@ async fn handle_observation_control_connection<S>(
                 Ok(bytes) => bytes,
                 Err(error) => {
                     tracing::error!(error = %error, "failed to serialize HoneycombWorldDelta");
+                    return;
+                }
+            };
+            let _ = tokio::time::timeout(
+                OBSERVATION_CONTROL_WRITE_TIMEOUT,
+                transport::write_frame(&mut stream, &response_bytes),
+            )
+            .await;
+        }
+        HiveObservationControlRequest::DispatchAgentTask { role, topic } => {
+            let Some(status) = honeycomb.dispatch_for_delegation(&role, &topic, unix_now_ms()) else {
+                return;
+            };
+            let response_bytes = match serde_json::to_vec(&status) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    tracing::error!(error = %error, "failed to serialize HoneycombTripStatus");
+                    return;
+                }
+            };
+            let _ = tokio::time::timeout(
+                OBSERVATION_CONTROL_WRITE_TIMEOUT,
+                transport::write_frame(&mut stream, &response_bytes),
+            )
+            .await;
+        }
+        HiveObservationControlRequest::PollTripArrival { trip_id } => {
+            let Some(status) = honeycomb.poll_trip_arrival(&trip_id, unix_now_ms()) else {
+                return;
+            };
+            let response_bytes = match serde_json::to_vec(&status) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    tracing::error!(error = %error, "failed to serialize HoneycombTripStatus");
                     return;
                 }
             };

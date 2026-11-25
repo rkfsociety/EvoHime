@@ -146,6 +146,46 @@ fn role_requires_mutation_session(role: &str, allowed_tools: &[String]) -> bool 
     })
 }
 
+async fn wait_for_hive_vehicle_delivery(
+    role: &str,
+    topic: &str,
+    cancellation: &tokio_util::sync::CancellationToken,
+) -> bool {
+    const DELIVERY_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+    const MAX_DELIVERY_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+    let proxy = crate::external_pulse::ExternalHiveObservationProxy::new();
+    let initial = match proxy.dispatch_agent_task(role, topic).await {
+        Ok(status) => status,
+        Err(_) => {
+            // When evohime-hive-daemon is not running (e.g. unit tests or CLI), do not block delegation.
+            return true;
+        }
+    };
+    if initial.arrived || initial.trip_id.is_empty() {
+        return true;
+    }
+
+    let deadline = tokio::time::Instant::now() + MAX_DELIVERY_WAIT;
+    loop {
+        if cancellation.is_cancelled() {
+            return false;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return true;
+        }
+        tokio::select! {
+            () = cancellation.cancelled() => return false,
+            () = tokio::time::sleep(DELIVERY_POLL_INTERVAL) => {}
+        }
+        match proxy.poll_trip_arrival(&initial.trip_id).await {
+            Ok(status) if status.arrived => return true,
+            Ok(_) => {}
+            Err(_) => return true,
+        }
+    }
+}
+
 fn validate_role_slug(raw: &str) -> Result<String, ToolError> {
     let normalized = raw.trim().to_ascii_lowercase();
     if normalized.len() < 2
@@ -359,6 +399,20 @@ impl ToolAgent {
         );
 
         let run_cancel = cancellation.child_token();
+        if !wait_for_hive_vehicle_delivery(&role, &display_name, &run_cancel).await {
+            self.record_child_workflow_projection(
+                parent_task_id,
+                &child_task_id,
+                &role,
+                &display_name,
+                "cancelled",
+            )
+            .await;
+            return Err(ToolError::Execution(
+                "hive_delegate_agent was cancelled while waiting for vehicle delivery".into(),
+            ));
+        }
+
         let timed_out = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let timer = {
             let timed_out = Arc::clone(&timed_out);
