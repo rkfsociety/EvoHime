@@ -1,7 +1,8 @@
 //! Dedicated SQLite storage for the Hive city state (Plan 200, Single-Writer).
 //!
 //! Only `evohime-hive` writes to this database; `evohime-core` may open it
-//! strictly in read-only mode via [`HiveDatabase::open_read_only`] (`PRAGMA query_only = ON`).
+//! strictly in read-only mode via [`crate::honeycomb_db::HiveDatabase::open_read_only`]
+//! (`PRAGMA query_only = ON`).
 //! Schema migrations run transactionally after creating a backup of the
 //! existing database file.
 

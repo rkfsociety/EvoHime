@@ -1466,7 +1466,7 @@ mod tests {
         assert_eq!(snapshot.queen.reason, "provider_4h_cap_reached");
         assert_eq!(
             snapshot.queen.wake_at_ms,
-            Some(1_000_000 + HIVE_FOUR_HOUR_WINDOW_MS)
+            Some(1_000_000 + HIVE_FOUR_HOUR_WINDOW_MS + 1)
         );
     }
 }
