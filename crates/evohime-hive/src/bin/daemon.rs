@@ -1935,9 +1935,7 @@ fn resolve_honeycomb_mode(state: &HiveStateSnapshot) -> (bool, bool, bool) {
         && obs_status != evohime_hive::state::HIVE_OBSERVATION_SLEEPING;
     let has_active_work = state.queen.status == evohime_hive::state::HIVE_QUEEN_ACTIVE
         || !state.active_agents.is_empty();
-    let hive_active = observation_alive
-        && !waiting_for_limits
-        && state.proactive_evolution_enabled;
+    let hive_active = observation_alive && !waiting_for_limits && state.proactive_evolution_enabled;
     let queen_working = hive_active && has_active_work;
     (hive_active, waiting_for_limits, queen_working)
 }

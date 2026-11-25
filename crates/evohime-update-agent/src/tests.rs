@@ -1192,10 +1192,7 @@ fn stage_updates_downloads_modules_in_candidate_order() {
         buf.into_inner()
     };
 
-    let shell_zip = build_zip(&[
-        ("EvoHime.exe", b"mz"),
-        ("resources/app.asar", b"asar"),
-    ]);
+    let shell_zip = build_zip(&[("EvoHime.exe", b"mz"), ("resources/app.asar", b"asar")]);
     let ui_zip = build_zip(&[("index.html", b"<!doctype html>")]);
 
     let make_candidate = |module: &str, artifact: &str, bytes: &[u8]| UpdateCandidate {
@@ -1203,7 +1200,9 @@ fn stage_updates_downloads_modules_in_candidate_order() {
         installed: "0.1.0".to_owned(),
         available: "0.2.0".to_owned(),
         artifact: artifact.to_owned(),
-        download_url: format!("https://github.com/rkfsociety/EvoHime/releases/download/v0.2.0/{artifact}"),
+        download_url: format!(
+            "https://github.com/rkfsociety/EvoHime/releases/download/v0.2.0/{artifact}"
+        ),
         sha256: hex::encode(sha2::Sha256::digest(bytes)),
         size: bytes.len() as u64,
         summary: String::new(),
@@ -1226,7 +1225,11 @@ fn stage_updates_downloads_modules_in_candidate_order() {
         make_candidate("shell-host", "shell-host.zip", &payloads["shell-host"]),
         make_candidate("ui-bundle", "ui-bundle.zip", &payloads["ui-bundle"]),
         make_candidate("core", "evohime-core.exe", &payloads["core"]),
-        make_candidate("supervisor", "evohime-supervisor.exe", &payloads["supervisor"]),
+        make_candidate(
+            "supervisor",
+            "evohime-supervisor.exe",
+            &payloads["supervisor"],
+        ),
         make_candidate("hive", "evohime-hive.exe", &payloads["hive"]),
     ];
 
@@ -1245,11 +1248,10 @@ fn stage_updates_downloads_modules_in_candidate_order() {
                 }
             }
             let _ = (message, percent);
-            let _ = telemetry_state.borrow_mut().record(
-                std::time::Instant::now(),
-                percent,
-                download,
-            );
+            let _ =
+                telemetry_state
+                    .borrow_mut()
+                    .record(std::time::Instant::now(), percent, download);
         },
         &mut |update, destination, on_progress| {
             download_order.push(update.module.clone());
@@ -1266,10 +1268,7 @@ fn stage_updates_downloads_modules_in_candidate_order() {
     let expected = vec!["shell-host", "ui-bundle", "core", "supervisor", "hive"];
     assert_eq!(download_order, expected);
     assert_eq!(*active_order.borrow(), expected);
-    assert_eq!(
-        telemetry_state.borrow().completed_modules,
-        expected
-    );
+    assert_eq!(telemetry_state.borrow().completed_modules, expected);
 
     let _ = fs::remove_dir_all(root);
 }

@@ -2706,7 +2706,10 @@ mod tests {
             text: "Task".to_owned(),
         }];
 
-        assert_eq!(decide(&report, 1_700_000_000_000), ObservationDecision::AllGood);
+        assert_eq!(
+            decide(&report, 1_700_000_000_000),
+            ObservationDecision::AllGood
+        );
     }
 
     #[test]

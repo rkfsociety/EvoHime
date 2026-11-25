@@ -1573,8 +1573,9 @@ fn stage_updates_into_cache_with(
                         work.join("evohime-updater.exe.next"),
                     )
                     .map_err(|error| error.to_string())?;
-                    validate_pe_image(&work.join("evohime-updater.exe.next"))
-                        .map_err(|error| format!("updater: staged worker PE validation failed: {error}"))?;
+                    validate_pe_image(&work.join("evohime-updater.exe.next")).map_err(|error| {
+                        format!("updater: staged worker PE validation failed: {error}")
+                    })?;
                     fs::rename(
                         work.join("updater-package").join("updater"),
                         work.join("updater"),
@@ -1584,11 +1585,7 @@ fn stage_updates_into_cache_with(
                 }
                 _ => {}
             }
-            progress(
-                &format!("Загрузка {} завершена", update.module),
-                100,
-                None,
-            );
+            progress(&format!("Загрузка {} завершена", update.module), 100, None);
         }
 
         // Promote verified artifacts from isolated temp dir into staging.
