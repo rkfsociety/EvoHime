@@ -226,7 +226,7 @@ impl HoneycombEngine {
             let sector_id = self.ensure_sector_for_role(&primary_id, role, &mut events)?;
             let agent = HoneycombAgent {
                 id: new_agent_id.clone(),
-                name: format!("Агент {}", &new_agent_id),
+                name: format!("Агент {}", new_agent_id),
                 role,
                 sector_id: sector_id.clone(),
                 topic: topic.to_string(),
@@ -623,7 +623,7 @@ fn pick_unique_sector_label(role: HoneycombAgentRole, used: &BTreeSet<String>) -
 
 fn compute_citadel_exits(city: &HoneycombCity) -> u8 {
     let total_agents: usize = city.sectors.iter().map(|s| s.agents.len()).sum();
-    let exits = (total_agents + 1) / 2;
+    let exits = total_agents.div_ceil(2);
     (exits as u8).clamp(HONEYCOMB_MIN_CITADEL_EXITS, HONEYCOMB_MAX_CITADEL_EXITS)
 }
 
