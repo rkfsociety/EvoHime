@@ -813,7 +813,6 @@ dependencies = [
  "evohime-cli-contract",
  "evohime-context-budget",
  "evohime-desktop-ipc",
- "evohime-hive",
  "evohime-hive-contract",
  "evohime-listener-contract",
  "evohime-listener-ipc",
