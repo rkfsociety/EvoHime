@@ -294,58 +294,56 @@ export function HiveCityScene({
       ctx.scale(cam.zoom, cam.zoom)
       ctx.translate(-cam.x, -cam.y)
 
-      // 2. Дорожная сеть (сначала второстепенные подъездные дороги, затем магистрали с бордюрами).
+      // 2. Бесшовная 3-проходная отрисовка дорожной сети:
+      //    Проход A: все бордюры (второстепенные -> магистрали)
+      //    Проход B: всё полотно асфальта (полностью перекрывает внутренние швы на узлах)
+      //    Проход C: вся осевая разметка
       ctx.lineJoin = 'round'
       ctx.lineCap = 'round'
 
-      const drawRoadLayer = (kindFilter: 'secondary' | 'primary'): void => {
-        for (const edge of currentGraph.edges) {
-          const isSecondary = edge.kind === 'driveway'
-          if (kindFilter === 'secondary' && !isSecondary) continue
-          if (kindFilter === 'primary' && isSecondary) continue
+      const roadPasses: readonly ('curb' | 'asphalt' | 'marking')[] = ['curb', 'asphalt', 'marking']
+      const roadTiers: readonly ('secondary' | 'primary')[] = ['secondary', 'primary']
 
-          const from = currentGraph.nodes.get(edge.fromId)
-          const to = currentGraph.nodes.get(edge.toId)
-          if (!from || !to) continue
+      for (const pass of roadPasses) {
+        for (const tier of roadTiers) {
+          for (const edge of currentGraph.edges) {
+            const isSecondary = edge.kind === 'driveway'
+            if (tier === 'secondary' && !isSecondary) continue
+            if (tier === 'primary' && isSecondary) continue
 
-          const curbWidth = isSecondary ? 12 : edge.kind === 'intercity' ? 22 : 19
-          const asphaltWidth = isSecondary ? 9 : edge.kind === 'intercity' ? 18 : 15
+            const from = currentGraph.nodes.get(edge.fromId)
+            const to = currentGraph.nodes.get(edge.toId)
+            if (!from || !to) continue
 
-          // Бордюр дороги.
-          ctx.beginPath()
-          ctx.moveTo(from.x, from.y)
-          ctx.lineTo(to.x, to.y)
-          ctx.strokeStyle = isSecondary ? '#273549' : '#334155'
-          ctx.lineWidth = curbWidth
-          ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(from.x, from.y)
+            ctx.lineTo(to.x, to.y)
 
-          // Полотно асфальта.
-          ctx.beginPath()
-          ctx.moveTo(from.x, from.y)
-          ctx.lineTo(to.x, to.y)
-          ctx.strokeStyle = isSecondary ? '#172133' : '#0f172a'
-          ctx.lineWidth = asphaltWidth
-          ctx.stroke()
-
-          // Разметка.
-          ctx.beginPath()
-          ctx.moveTo(from.x, from.y)
-          ctx.lineTo(to.x, to.y)
-          ctx.setLineDash(isSecondary ? [4, 5] : edge.kind === 'intercity' ? [10, 7] : [6, 6])
-          ctx.strokeStyle =
-            edge.kind === 'intercity'
-              ? 'rgba(251, 191, 36, 0.55)'
-              : isSecondary
-                ? 'rgba(148, 163, 184, 0.25)'
-                : 'rgba(226, 232, 240, 0.34)'
-          ctx.lineWidth = isSecondary ? 1 : 1.3
-          ctx.stroke()
-          ctx.setLineDash([])
+            if (pass === 'curb') {
+              ctx.setLineDash([])
+              ctx.strokeStyle = isSecondary ? '#273549' : '#334155'
+              ctx.lineWidth = isSecondary ? 12 : edge.kind === 'intercity' ? 22 : 19
+              ctx.stroke()
+            } else if (pass === 'asphalt') {
+              ctx.setLineDash([])
+              ctx.strokeStyle = isSecondary ? '#172133' : '#0f172a'
+              ctx.lineWidth = isSecondary ? 9 : edge.kind === 'intercity' ? 18 : 15
+              ctx.stroke()
+            } else {
+              ctx.setLineDash(isSecondary ? [4, 5] : edge.kind === 'intercity' ? [10, 7] : [6, 6])
+              ctx.strokeStyle =
+                edge.kind === 'intercity'
+                  ? 'rgba(251, 191, 36, 0.55)'
+                  : isSecondary
+                    ? 'rgba(148, 163, 184, 0.25)'
+                    : 'rgba(226, 232, 240, 0.34)'
+              ctx.lineWidth = isSecondary ? 1 : 1.3
+              ctx.stroke()
+            }
+          }
         }
       }
-
-      drawRoadLayer('secondary')
-      drawRoadLayer('primary')
+      ctx.setLineDash([])
 
       // 3. Светофоры на перекрёстках.
       const lightPhase = getTrafficLightPhase(simTimeSec)
