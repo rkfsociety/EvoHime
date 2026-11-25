@@ -57,6 +57,8 @@ export interface HexCellPlacement {
   readonly x: number
   readonly y: number
   readonly radius: number
+  /** Угол поворота нормали грани (для зданий — перпендикулярно входящей дороге; `Math.PI / 6` = flat-top). */
+  readonly rotationRad: number
   readonly exitAngles: readonly number[]
   readonly sectorId?: string | undefined
   readonly agentSlot?: number | undefined
@@ -114,17 +116,30 @@ export function selectCitadelExitFaceIndices(exitsCount: number): readonly numbe
   }
 }
 
-/** Возвращает 6 вершин flat-top гексагона (верхняя и нижняя грани горизонтальны). */
-export function getFlatHexVertices(cx: number, cy: number, radius: number): readonly Point2D[] {
+/**
+ * Возвращает 6 вершин гексагона, где грань `0` перпендикулярна углу `faceNormalRad`
+ * (при `faceNormalRad = Math.PI / 6` или `Math.PI / 2` — это flat-top с горизонтальными верхней/нижней гранями).
+ */
+export function getHexVerticesByNormal(
+  cx: number,
+  cy: number,
+  radius: number,
+  faceNormalRad: number = Math.PI / 2
+): readonly Point2D[] {
   const vertices: Point2D[] = []
   for (let i = 0; i < 6; i += 1) {
-    const angle = (i * Math.PI) / 3
+    const angle = faceNormalRad - Math.PI / 6 + (i * Math.PI) / 3
     vertices.push({
       x: cx + Math.cos(angle) * radius,
       y: cy + Math.sin(angle) * radius
     })
   }
   return vertices
+}
+
+/** Возвращает 6 вершин flat-top гексагона (верхняя и нижняя грани горизонтальны). */
+export function getFlatHexVertices(cx: number, cy: number, radius: number): readonly Point2D[] {
+  return getHexVerticesByNormal(cx, cy, radius, Math.PI / 2)
 }
 
 /** @deprecated Используй `getFlatHexVertices`. */
@@ -240,6 +255,7 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
       x: city.worldCenterX,
       y: city.worldCenterY,
       radius: city.hasQueenCitadel ? CITADEL_HEX_RADIUS : CITADEL_HEX_RADIUS * 0.78,
+      rotationRad: Math.PI / 2,
       exitAngles
     })
 
@@ -348,7 +364,7 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
     // от ближайшего сегмента кольца прямо к соте.
     const segmentSplits = new Map<number, { t: number; nodeId: string }[]>()
 
-    const connectCellToRingSegment = (cellId: string, cellX: number, cellY: number, ring: number): void => {
+    const connectCellToRingSegment = (cellId: string, cellX: number, cellY: number, ring: number): number => {
       addNode({
         id: cellId,
         cityId: city.id,
@@ -400,7 +416,9 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
         list.push({ t: bestT, nodeId: tapId })
         segmentSplits.set(bestSegIdx, list)
         addBidirectionalEdge(`${city.id}:drive:${cellId}`, tapId, cellId, 'driveway', 2)
+        return Math.atan2(bestProjY - cellY, bestProjX - cellX)
       }
+      return Math.PI / 2
     }
 
     // Размещаем кольцевые сектора (1-е кольцо) строго в дугах между радиальными дорогами,
@@ -485,10 +503,11 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
             x: sectorEntryX,
             y: sectorEntryY,
             radius: 18,
+            rotationRad: Math.PI / 2,
             exitAngles: []
           })
 
-          // 3 соты-дома агентов внутри дуги сектора (симметрично, без пересечения дорог).
+          // 3 соты-дома агентов внутри дуги сектора (грань перпендикулярна входящей подъездной дороге).
           const subSpan = (endAngle - startAngle) / 3
           for (let slot = 0; slot < 3; slot += 1) {
             const slotAngle = startAngle + (slot + 0.5) * subSpan
@@ -496,6 +515,10 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
             const ay = city.worldCenterY + Math.sin(slotAngle) * ring1CellR
             const agent = sector.agents[slot]
             const cellId = agent ? `${sector.id}:slot:${slot}` : `${sector.id}:empty:${slot}`
+            const approachAngle =
+              slot === 1
+                ? connectCellToRingSegment(sector.id, ax, ay, 1)
+                : connectCellToRingSegment(cellId, ax, ay, 1)
             placements.set(cellId, {
               id: cellId,
               cityId: city.id,
@@ -504,15 +527,11 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
               x: ax,
               y: ay,
               radius: 19,
+              rotationRad: approachAngle,
               exitAngles: [],
               sectorId: sector.id,
               agentSlot: slot
             })
-            if (slot === 1) {
-              connectCellToRingSegment(sector.id, ax, ay, 1)
-            } else {
-              connectCellToRingSegment(cellId, ax, ay, 1)
-            }
           }
         }
       })
@@ -539,6 +558,7 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
     for (const [ring, list] of modulesByRing.entries()) {
       list.forEach((mod, index) => {
         const pos = resolveCellPositionOnRing(city, ring, mod.coord, index, list.length, moduleBlockedAngles)
+        const approachAngle = connectCellToRingSegment(mod.id, pos.x, pos.y, ring)
         placements.set(mod.id, {
           id: mod.id,
           cityId: city.id,
@@ -547,9 +567,9 @@ export function buildWorldRoadGraphAndPlacements(world: HoneycombWorldState): {
           x: pos.x,
           y: pos.y,
           radius: CELL_HEX_RADIUS * 0.92,
+          rotationRad: approachAngle,
           exitAngles: []
         })
-        connectCellToRingSegment(mod.id, pos.x, pos.y, ring)
       })
     }
 

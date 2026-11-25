@@ -11,6 +11,7 @@ export {
   buildWorldRoadGraphAndPlacements,
   findRoadPath,
   getFlatHexVertices,
+  getHexVerticesByNormal,
   getPointyHexVertices,
   getRingCellRadius,
   getRingRoadRadius,

@@ -13,6 +13,7 @@ import {
   buildWorldRoadGraphAndPlacements,
   getCityOuterHexRadius,
   getFlatHexVertices,
+  getHexVerticesByNormal,
   type HexCellPlacement
 } from './honeycomb-geometry'
 import {
@@ -105,8 +106,14 @@ function buildFallbackWorld(status: string, queenWorking: boolean): HoneycombWor
   }
 }
 
-function traceHexPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number): void {
-  const verts = getFlatHexVertices(cx, cy, radius)
+function traceHexPath(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+  faceNormalRad: number = Math.PI / 2
+): void {
+  const verts = getHexVerticesByNormal(cx, cy, radius, faceNormalRad)
   if (verts.length === 0) return
   ctx.beginPath()
   ctx.moveTo(verts[0]!.x, verts[0]!.y)
@@ -557,18 +564,18 @@ export function HiveCityScene({
             ctx.shadowColor = 'rgba(0, 0, 0, 0.55)'
             ctx.shadowBlur = 10
             ctx.shadowOffsetY = 3
-            traceHexPath(ctx, pose.x, pose.y, r)
+            traceHexPath(ctx, pose.x, pose.y, r, placement.rotationRad)
             ctx.fillStyle = '#132036'
             ctx.fill()
             ctx.restore()
 
-            traceHexPath(ctx, pose.x, pose.y, r)
+            traceHexPath(ctx, pose.x, pose.y, r, placement.rotationRad)
             ctx.lineWidth = isSelected ? 2.6 : 2.0
             ctx.strokeStyle = isSelected ? '#fde047' : ROLE_COLORS[agent.role]
             ctx.stroke()
 
             // Внутренняя сота-ядро агента.
-            traceHexPath(ctx, pose.x, pose.y, r * 0.54)
+            traceHexPath(ctx, pose.x, pose.y, r * 0.54, placement.rotationRad)
             ctx.fillStyle = ROLE_COLORS[agent.role]
             ctx.fill()
 
@@ -582,7 +589,7 @@ export function HiveCityScene({
           } else {
             // Свободное место (фундамент соты под будущего агента).
             ctx.setLineDash([4, 3])
-            traceHexPath(ctx, pose.x, pose.y, r * 0.9)
+            traceHexPath(ctx, pose.x, pose.y, r * 0.9, placement.rotationRad)
             ctx.fillStyle = 'rgba(15, 23, 42, 0.35)'
             ctx.fill()
             ctx.lineWidth = 1.1
@@ -599,7 +606,7 @@ export function HiveCityScene({
         ctx.shadowColor = 'rgba(0, 0, 0, 0.55)'
         ctx.shadowBlur = placement.kind === 'citadel' ? 24 : 12
         ctx.shadowOffsetY = 4
-        traceHexPath(ctx, pose.x, pose.y, r)
+        traceHexPath(ctx, pose.x, pose.y, r, placement.rotationRad)
         if (placement.kind === 'citadel') {
           ctx.fillStyle = '#1e1b2e'
         } else if (placement.kind === 'project_hub') {
@@ -611,7 +618,7 @@ export function HiveCityScene({
         ctx.restore()
 
         // Внешняя фаска и контур соты.
-        traceHexPath(ctx, pose.x, pose.y, r)
+        traceHexPath(ctx, pose.x, pose.y, r, placement.rotationRad)
         ctx.lineWidth = isSelected ? 2.8 : placement.kind === 'citadel' ? 2.4 : 1.8
         ctx.strokeStyle = isSelected
           ? '#fde047'
@@ -625,21 +632,21 @@ export function HiveCityScene({
         ctx.stroke()
 
         // Внутренняя фаска и ядро Цитадели / крыша модуля.
-        traceHexPath(ctx, pose.x, pose.y, r * 0.78)
+        traceHexPath(ctx, pose.x, pose.y, r * 0.78, placement.rotationRad)
         ctx.lineWidth = 1.1
         ctx.strokeStyle =
           placement.kind === 'citadel' ? 'rgba(251, 191, 36, 0.32)' : 'rgba(148, 163, 184, 0.2)'
         ctx.stroke()
 
         if (placement.kind === 'citadel') {
-          traceHexPath(ctx, pose.x, pose.y, r * 0.44)
+          traceHexPath(ctx, pose.x, pose.y, r * 0.44, placement.rotationRad)
           ctx.fillStyle = currentWorld.queenWorking ? 'rgba(251, 191, 36, 0.32)' : 'rgba(161, 98, 7, 0.22)'
           ctx.fill()
           ctx.lineWidth = 1.6
           ctx.strokeStyle = '#fbbf24'
           ctx.stroke()
         } else if (placement.kind === 'module') {
-          traceHexPath(ctx, pose.x, pose.y, r * 0.45)
+          traceHexPath(ctx, pose.x, pose.y, r * 0.45, placement.rotationRad)
           ctx.fillStyle = 'rgba(56, 189, 248, 0.14)'
           ctx.fill()
         }
