@@ -277,6 +277,18 @@ impl HoneycombEngine {
             _ => return Ok(events),
         };
 
+        if self
+            .world
+            .active_dispatches
+            .iter()
+            .any(|existing| existing.agent_id == agent_id)
+        {
+            if !events.is_empty() {
+                self.commit_events(&events, now_ms)?;
+            }
+            return Ok(events);
+        }
+
         let trip_id = self.alloc_id("trip");
         let citadel_node = format!("{primary_id}:citadel");
         let destination = target_module_id
@@ -370,6 +382,9 @@ impl HoneycombEngine {
                 dispatch: dispatch.clone(),
             },
         ];
+        self.world
+            .active_dispatches
+            .retain(|existing| existing.agent_id != from_agent_id);
         self.world.active_dispatches.push(dispatch);
         self.commit_events(&events, now_ms)?;
         Ok(events)
@@ -954,5 +969,26 @@ mod tests {
         assert_eq!(engine.world().cities[0].id, "city-eva");
         assert_eq!(engine.world().cities[1].id, "city-repo-0");
         assert_eq!(engine.world().cities[1].project_name, "OtherRepo");
+    }
+
+    #[test]
+    fn repeated_dispatch_for_same_agent_keeps_single_vehicle() {
+        let db = HiveDatabase::open_in_memory().expect("in-memory db");
+        let mut engine = HoneycombEngine::open(db, Some("C:/github/EvoHime"), &[]).expect("open");
+        engine.set_active_mode(true, false, true).expect("active");
+
+        engine
+            .dispatch_relay_step(RelayStage::Execution, "индексация", None, 1_000)
+            .expect("first dispatch");
+        engine
+            .dispatch_relay_step(RelayStage::Execution, "индексация", None, 2_000)
+            .expect("second dispatch");
+        engine
+            .dispatch_relay_step(RelayStage::Execution, "индексация", None, 3_000)
+            .expect("third dispatch");
+
+        assert_eq!(engine.world().cities[0].sectors.len(), 1);
+        assert_eq!(engine.world().cities[0].sectors[0].agents.len(), 1);
+        assert_eq!(engine.world().active_dispatches.len(), 1);
     }
 }
