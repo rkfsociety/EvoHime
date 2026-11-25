@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'gh-retry.ps1')
 
 $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("evohime-bootstrap-" + [System.Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
@@ -12,9 +13,13 @@ New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 try {
     $resolvedManifestPath = $ManifestPath
     if ([string]::IsNullOrWhiteSpace($resolvedManifestPath)) {
-        gh release download compatibility --repo $Repository --pattern 'evohime.compatible.json' --dir $tempDir --clobber
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Не удалось скачать evohime.compatible.json из релиза compatibility ($Repository)."
+        try {
+            Invoke-GhWithRetry -FailureMessage "Не удалось скачать evohime.compatible.json из релиза compatibility ($Repository)." -Command {
+                gh release download compatibility --repo $Repository --pattern 'evohime.compatible.json' --dir $tempDir --clobber
+            } | Out-Null
+        }
+        catch {
+            Write-Host $_.Exception.Message
             exit 1
         }
         $resolvedManifestPath = Join-Path $tempDir 'evohime.compatible.json'
@@ -32,9 +37,13 @@ try {
     }
     $manifestIds = @($manifest.components | ForEach-Object { [string]$_.id })
 
-    gh release download installer --repo $Repository --pattern 'EvoHime-Setup.json' --dir $tempDir --clobber
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Не удалось скачать EvoHime-Setup.json из релиза installer ($Repository)."
+    try {
+        Invoke-GhWithRetry -FailureMessage "Не удалось скачать EvoHime-Setup.json из релиза installer ($Repository)." -Command {
+            gh release download installer --repo $Repository --pattern 'EvoHime-Setup.json' --dir $tempDir --clobber
+        } | Out-Null
+    }
+    catch {
+        Write-Host $_.Exception.Message
         exit 1
     }
 
@@ -46,8 +55,17 @@ try {
         exit 1
     }
 
-    $encodedContent = gh api "repos/$Repository/contents/crates/evohime-update-agent/src/main.rs?ref=$installerCommit" --jq '.content'
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($encodedContent)) {
+    try {
+        $encodedLines = Invoke-GhWithRetry -FailureMessage "Не удалось получить crates/evohime-update-agent/src/main.rs для коммита $installerCommit." -Command {
+            gh api "repos/$Repository/contents/crates/evohime-update-agent/src/main.rs?ref=$installerCommit" --jq '.content'
+        }
+        $encodedContent = ($encodedLines | ForEach-Object { "$_" }) -join "`n"
+    }
+    catch {
+        Write-Host $_.Exception.Message
+        exit 1
+    }
+    if ([string]::IsNullOrWhiteSpace($encodedContent)) {
         Write-Host "Не удалось получить crates/evohime-update-agent/src/main.rs для коммита $installerCommit."
         exit 1
     }

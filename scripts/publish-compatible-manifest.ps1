@@ -11,6 +11,8 @@ if ($GenerateOnly -and $PublishOnly) {
 if (-not $env:GH_TOKEN) { throw 'GH_TOKEN is required.' }
 if (-not $env:GITHUB_REPOSITORY) { throw 'GITHUB_REPOSITORY is required.' }
 
+. (Join-Path $PSScriptRoot 'gh-retry.ps1')
+
 $output = Join-Path $env:RUNNER_TEMP 'evohime.compatible.json'
 
 if (-not $PublishOnly) {
@@ -18,8 +20,16 @@ $moduleIds = @(
     'shell-host', 'ui-bundle', 'core', 'supervisor', 'cli', 'analysis-worker',
     'listener', 'listener-runtime', 'transaction', 'verifier', 'updater', 'hive'
 )
-$releasePages = @(gh api --paginate --slurp "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json)
-if ($LASTEXITCODE -ne 0) { throw 'Не удалось получить список модульных релизов.' }
+$releasePages = Invoke-WithRetry -FailureMessage 'Не удалось получить список модульных релизов.' -Command {
+    $rawPages = Invoke-GhRaw -Command {
+        gh api --paginate --slurp "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
+    }
+    $jsonText = ($rawPages | ForEach-Object { "$_" }) -join "`n"
+    if ([string]::IsNullOrWhiteSpace($jsonText)) {
+        throw 'Пустой ответ GitHub API при получении списка релизов.'
+    }
+    return ,@($jsonText | ConvertFrom-Json)
+}
 $releases = @($releasePages | ForEach-Object { $_ })
 
 function Parse-Version([string]$value) {
@@ -53,7 +63,9 @@ function Read-AssetJson($asset) {
         'X-GitHub-Api-Version' = '2022-11-28'
         'User-Agent' = 'EvoHime-compatible-manifest'
     }
-    return Invoke-RestMethod -Uri $asset.url -Headers $headers
+    return Invoke-WithRetry -FailureMessage "Не удалось загрузить asset $($asset.name)." -Command {
+        Invoke-RestMethod -Uri $asset.url -Headers $headers
+    }
 }
 
 function Normalize-StringArray($value, [string]$field, [string]$module) {
@@ -166,16 +178,25 @@ $notes = Join-Path $env:RUNNER_TEMP 'compatible-manifest-notes.md'
     'Этот fixed release содержит только манифест. Он ссылается на конкретные'
     'module releases, версии, зависимости и SHA-256; installer пересобирать не нужно.'
 ) | Set-Content -LiteralPath $notes -Encoding utf8NoBOM
-gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    gh release create $tag --repo $env:GITHUB_REPOSITORY --title $tag --notes-file $notes --latest=false
-    if ($LASTEXITCODE -ne 0) { throw 'Не удалось создать release совместимого комплекта.' }
-} else {
-    gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $tag --notes-file $notes --latest=false
-    if ($LASTEXITCODE -ne 0) { throw 'Не удалось обновить release совместимого комплекта.' }
+$releaseExists = $true
+$null = Invoke-GhWithRetry -FailureMessage "Не удалось проверить release $tag." -AllowNotFound -Command {
+    gh release view $tag --repo $env:GITHUB_REPOSITORY
 }
-gh release upload $tag --repo $env:GITHUB_REPOSITORY $output --clobber
-if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать манифест совместимого комплекта.' }
+if ($LASTEXITCODE -ne 0) {
+    $releaseExists = $false
+}
+if (-not $releaseExists) {
+    Invoke-GhWithRetry -FailureMessage 'Не удалось создать release совместимого комплекта.' -Command {
+        gh release create $tag --repo $env:GITHUB_REPOSITORY --title $tag --notes-file $notes --latest=false
+    } | Out-Null
+} else {
+    Invoke-GhWithRetry -FailureMessage 'Не удалось обновить release совместимого комплекта.' -Command {
+        gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $tag --notes-file $notes --latest=false
+    } | Out-Null
+}
+Invoke-GhWithRetry -FailureMessage 'Не удалось опубликовать манифест совместимого комплекта.' -Command {
+    gh release upload $tag --repo $env:GITHUB_REPOSITORY $output --clobber
+} | Out-Null
 ./scripts/mark-installer-release-latest.ps1 -Repository $env:GITHUB_REPOSITORY
 Write-Host "Опубликован совместимый комплект: $tag"
 }
