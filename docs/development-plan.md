@@ -1,6 +1,6 @@
 # План разработки EvoHime Desktop
 
-Обновлено: 2026-11-21.
+Обновлено: 2026-11-25.
 
 ## Цель
 Сохранять стабильный локальный Windows AI-agent: пользователь запускает один
@@ -23,7 +23,7 @@ restart подтверждаются отдельно. Автоматическ�
 
 ## Исполняемая очередь
 Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
-Текущий активный каталог содержит планы `180`, `184–188`, `191` и `193–195`;
+Текущий активный каталог содержит планы `180`, `184–188`, `191`, `193–195`, `199` и `200`;
 точные темы, статусы и зависимости находятся в [`plans/README.md`](plans/README.md).
 Планы 01–179 перенесены в канонические документы, а закрытые MVP-планы
 `127–130` не входят в очередь повторно.
@@ -58,12 +58,14 @@ restart подтверждаются отдельно. Автоматическ�
 | 171 | Language Intelligence Runtime | закрыт 2026-09-15 |
 | 172 | self-healing updater и recovery без нового модуля | закрыт 2026-09-15 |
 | 173 | Cloud Provider Profiles | закрыт 2026-09-25 |
-| 189 | GitHub Public Repository Integration v1 | реализован в checkout 2026-09-27; CI и публикация ожидают push |
+| 189 | GitHub Public Repository Integration v1 | закрыт; контракт перенесён в канонические документы |
 | 193 | Agent Coordination, Loop Guards и Session Recall | active implementation contract |
 | 194 | Background Jobs Control Center | active implementation contract |
 | 195 | Capability Extensions и Workflow Composition | active implementation contract |
 | 197 | Изолированные сессии чатов (провайдер, модель, права и worktree) | закрыт 2026-11-20; CI и module release gates пройдены |
 | 198 | Независимые EvaPulse и Улей | закрыт 2026-11-21; CI, module releases и compatible manifest пройдены |
+| 199 | Живой город-архипелаг реальной архитектуры Улья | этапы 199.1–199.3 реализованы (3D заменён на 2D Canvas планом 200), ожидает 199.4 |
+| 200 | Сотовая архитектура Улья, конвейер Королевы и динамическая симуляция | implemented в checkout; ожидает завершения CI (`c832e354`) и закрытия |
 
 Планы 01–173 закрыты и удалены из временного каталога после переноса
 контрактов и evidence в канонические документы. Нельзя считать план закрытым
@@ -105,10 +107,8 @@ recovery, IPC/UI при наличии, focused tests, release evidence и об�
 pwsh -File .\scripts\documentation.tests.ps1
 ```
 
-## Открытые пункты после `653c229b`
-- дождаться зелёного CI по workflow `core module`: предыдущий красный запуск
-  вызван panicking-вычитанием `Duration - Duration` в pacing LiteRouter,
-  исправление вошло в `653c229b`;
+## Открытые пункты
+- дождаться зелёного CI на `c832e354` (`Rust documentation`, `module router`, `core module`, `hive module`) и закрыть планы `199` и `200` с переносом контрактов в канонические документы;
 - покрыть секцию бюджета улья Electron E2E-тестом; сейчас есть только Rust
   unit-тесты снимка;
 - решить, должны ли per-model RPM/RPH/RPD переживать перезапуск Core:

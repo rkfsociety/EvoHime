@@ -1,7 +1,7 @@
 # Планы реализации
 
 Каталог `docs/plans/` содержит только незавершённые implementation contracts.
-Обновлено: 2026-11-21. Наличие комплекта `NN-0` ... `NN-4` означает, что
+Обновлено: 2026-11-25. Наличие комплекта `NN-0` ... `NN-4` означает, что
 направление ещё не закрыто; статус реализации не выводится из одного файла
 плана.
 
@@ -27,7 +27,7 @@
 
 | План | Тема | Состояние |
 | --- | --- | --- |
-| 180 | [Core-owned A2A Bridge](180-0-core-a2a-bridge.md) | active; исторический источник issue #158 |
+| 180 | [Core-owned A2A Bridge](180-0-core-a2a-bridge.md) | active; этапы 180.1–180.3 реализованы, ожидает 180.4 (CI/release evidence и закрытие) |
 | 184 | [Core-owned Execution-Trace Evaluation](184-0-core-execution-trace-evaluation.md) | active; trace contract/legacy digest есть, 184.2 capture не подключён |
 | 185 | [Core-owned Behavioral Simulation Harness](185-0-core-behavioral-simulation-harness.md) | active; исторический источник issue #161; blocking dependency 184 |
 | 186 | [Core-owned Local Typed-Decision Fast Path](186-0-core-local-typed-decision-fast-path.md) | active; исторический источник issue #162 |
@@ -37,15 +37,16 @@
 | 193 | [Agent Coordination, Loop Guards и Session Recall](193-0-core-agent-coordination-loop-guards-and-session-recall.md) | active; анализ DeepSeek Harness, audit checkout и trace evidence 2026-11-17 (лимит шагов маскировался как completed) |
 | 194 | [Background Jobs Control Center](194-0-core-background-jobs-control-center.md) | active; UX/IPC поверх реализованного background-execution/v1 |
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
-| 199 | [Живой город-архипелаг реальной архитектуры Улья](199-0-hive-living-architecture-archipelago.md) | active; Hive-owned (`evohime-hive-daemon` + прямой Electron UI, без изменений в Core) |
+| 199 | [Живой город-архипелаг реальной архитектуры Улья](199-0-hive-living-architecture-archipelago.md) | active; этапы 199.1–199.3 реализованы (3D-рендер заменён на 2D Canvas планом 200), ожидает 199.4 (CI/release evidence и закрытие) |
+| 200 | [Сотовая архитектура Улья, конвейер Королевы и динамическая симуляция](200-0-hive-queen-honeycomb-simulation.md) | implemented; локальные проверки и `evohime-hive` пройдены, ожидает завершения CI (`c832e354`) и закрытия |
 
-Незавершённые numbered plans: `180`, `184–188`, `191`, `193–195` и `199`.
+Незавершённые numbered plans: `180`, `184–188`, `191`, `193–195`, `199` и `200`.
 
-Номера `149–172`, `182–183` и `200` являются закрытыми идентификаторами очереди.
+Номера `149–172` и `182–183` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая
 работа получает следующий свободный номер только после проверки дубликатов и
 зависимостей; следующий номер — `201`, текущий active catalog — `180`,
-`184–188`, `191`, `193–195` и `199`. Номера issues в активных планах — исторические
+`184–188`, `191`, `193–195`, `199` и `200`. Номера issues в активных планах — исторические
 идентификаторы постановок и не являются текущим источником статуса или
 критерием закрытия.
 

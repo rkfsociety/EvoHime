@@ -1,6 +1,6 @@
 # План 184.1 — trace contract, normalization и assertions
 
-Статус: active implementation contract. Schema, assertions и legacy digest подтверждены exact-SHA CI на базовом main; follow-up hardening ожидает CI, а git diff --check остаётся открытым gate.
+Статус: active implementation contract. Schema, assertions и legacy digest подтверждены; этап 184.2 capture ещё не подключён.
 
 ## Scope и изменяемые контракты
 
