@@ -518,4 +518,33 @@ describe('model picker', () => {
       vi.useRealTimers()
     }
   })
+
+  it('selects thinking level from the model picker submenu', async () => {
+    const onSelectChatModel = vi.fn()
+    const onSelectThinkingLevel = vi.fn()
+    render(
+      <ModelPicker
+        connection="connected"
+        provider="literouter"
+        events={[
+          event('model.catalog', { mode: 'free', models: ['glm-5.3-flash:free', 'deepseek:free'] })
+        ]}
+        selectedModel="glm-5.3-flash:free"
+        onSelectChatModel={onSelectChatModel}
+        thinkingLevel="auto"
+        onSelectThinkingLevel={onSelectThinkingLevel}
+      />
+    )
+
+    const button = await screen.findByRole('button', { name: /Модель/ })
+    expect(button.textContent).toContain('Авто')
+    await userEvent.click(button)
+
+    const submenu = await screen.findByRole('menu', { name: 'Уровень рассуждений' })
+    expect(submenu).toBeTruthy()
+    await userEvent.click(screen.getByRole('menuitemradio', { name: 'Высокий' }))
+
+    expect(onSelectThinkingLevel).toHaveBeenCalledWith('high')
+    expect(screen.queryByRole('menu', { name: 'Уровень рассуждений' })).toBeNull()
+  })
 })

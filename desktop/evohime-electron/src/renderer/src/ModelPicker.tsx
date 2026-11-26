@@ -1,7 +1,7 @@
 import { translate } from './i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ChatProviderMode, ConnectionState, CoreEvent, CodexModel, CodexRateLimit, ModelTier } from '@shared/api'
+import type { ChatProviderMode, ChatThinkingLevel, ConnectionState, CoreEvent, CodexModel, CodexRateLimit, ModelTier } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { CodexRateLimits } from './CodexRateLimits'
@@ -34,7 +34,21 @@ export interface ModelPickerProps {
   readonly onModelChange?: (model: string) => void
   readonly selectedModel?: string
   readonly onSelectChatModel?: (model: string) => void
+  readonly thinkingLevel?: ChatThinkingLevel
+  readonly onSelectThinkingLevel?: (level: ChatThinkingLevel) => void
   readonly disabled?: boolean
+}
+
+const THINKING_LEVEL_OPTIONS: readonly { readonly value: ChatThinkingLevel; readonly label: string }[] = [
+  { value: 'auto', label: 'Авто' },
+  { value: 'off', label: 'Выкл' },
+  { value: 'low', label: 'Низкий' },
+  { value: 'medium', label: 'Средний' },
+  { value: 'high', label: 'Высокий' }
+]
+
+function thinkingLevelShortLabel(level: ChatThinkingLevel): string {
+  return THINKING_LEVEL_OPTIONS.find((item) => item.value === level)?.label ?? 'Авто'
 }
 
 const MAX_CATALOG_AUTO_RETRIES = 3
@@ -69,7 +83,7 @@ function isPermanentAuthFailure(status: CatalogStatus | null): boolean {
     || status.credentialStatus === 'invalid'
 }
 
-export function ModelPicker({ connection, events, provider = 'literouter', use = 'agent', onModelChange, selectedModel, onSelectChatModel, disabled = false }: ModelPickerProps & { readonly provider?: ChatProviderMode }): React.JSX.Element | null {
+export function ModelPicker({ connection, events, provider = 'literouter', use = 'agent', onModelChange, selectedModel, onSelectChatModel, thinkingLevel = 'auto', onSelectThinkingLevel, disabled = false }: ModelPickerProps & { readonly provider?: ChatProviderMode }): React.JSX.Element | null {
   const api = useShellApi()
   const { shared, summary } = useProviderState()
   const connected = CONNECTED_STATES.includes(connection)
@@ -388,6 +402,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
         onSelect={(model) => void select(model)}
         onToggleFavorite={toggleFavorite}
         disabled={disabled}
+        {...(onSelectThinkingLevel ? { thinkingLevel, onSelectThinkingLevel } : {})}
         {...(provider !== 'codex_cli' && models.length > 0
           ? {
               capabilityFilter: {
@@ -451,6 +466,8 @@ interface ModelDropdownProps {
   readonly current: string
   readonly onSelect: (model: string) => void
   readonly onToggleFavorite: (model: string) => void
+  readonly thinkingLevel?: ChatThinkingLevel
+  readonly onSelectThinkingLevel?: (level: ChatThinkingLevel) => void
   readonly disabled?: boolean
   readonly capabilityFilter?: {
     readonly checked: boolean
@@ -496,9 +513,10 @@ function catalogStatusLabel(status: CatalogStatus): string {
  * grey text on white inside the dark composer. This one is styled by the app,
  * and a catalogue of dozens of models needs a filter anyway.
  */
-function ModelDropdown({ models, current, onSelect, onToggleFavorite, disabled = false, capabilityFilter }: ModelDropdownProps): React.JSX.Element {
+function ModelDropdown({ models, current, onSelect, onToggleFavorite, thinkingLevel = 'auto', onSelectThinkingLevel, disabled = false, capabilityFilter }: ModelDropdownProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [hoveredModel, setHoveredModel] = useState<string | null>(null)
   const root = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -534,10 +552,14 @@ function ModelDropdown({ models, current, onSelect, onToggleFavorite, disabled =
         disabled={disabled || models.length === 0}
         onClick={() => {
           setQuery('')
+          setHoveredModel(current || models[0]?.value || null)
           setOpen((value) => !value)
         }}
       >
         <span className="model-picker__value">{translate(current || translate("загрузка моделей…"))}</span>
+        {onSelectThinkingLevel ? (
+          <span className="model-picker__thinking-badge">{translate(thinkingLevelShortLabel(thinkingLevel))}</span>
+        ) : null}
         <span className="model-picker__chevron" aria-hidden="true"><UiIcon name="chevron-down" size={12} /></span>
       </button>
 
@@ -567,7 +589,11 @@ function ModelDropdown({ models, current, onSelect, onToggleFavorite, disabled =
               <li className="model-picker__none">{translate("Ничего не найдено")}</li>
             ) : (
               visible.map((model) => (
-                <li key={model.value} className="model-picker__option-row">
+                <li
+                  key={model.value}
+                  className="model-picker__option-row"
+                  onMouseEnter={() => setHoveredModel(model.value)}
+                >
                   <button
                     type="button"
                     role="option"
@@ -578,6 +604,9 @@ function ModelDropdown({ models, current, onSelect, onToggleFavorite, disabled =
                     }}
                   >
                     <span className="model-picker__option-label">{translate(model.label)}</span>
+                    {onSelectThinkingLevel && model.value === current ? (
+                      <span className="model-picker__option-thinking">{translate(thinkingLevelShortLabel(thinkingLevel))}</span>
+                    ) : null}
                   </button>
                   <button
                     type="button"
@@ -592,10 +621,38 @@ function ModelDropdown({ models, current, onSelect, onToggleFavorite, disabled =
                   >
                     {model.favorite ? '★' : '☆'}
                   </button>
+                  {onSelectThinkingLevel ? (
+                    <span className="model-picker__submenu-arrow" aria-hidden="true">›</span>
+                  ) : null}
                 </li>
               ))
             )}
           </ul>
+          {onSelectThinkingLevel && (hoveredModel ?? (current || visible[0]?.value)) ? (
+            <div className="model-picker__thinking-submenu" role="menu" aria-label={translate("Уровень рассуждений")}>
+              <div className="model-picker__thinking-title">{translate("Уровень рассуждений")}</div>
+              {THINKING_LEVEL_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={thinkingLevel === option.value}
+                  className={`model-picker__thinking-option${thinkingLevel === option.value ? ' model-picker__thinking-option--active' : ''}`}
+                  onClick={() => {
+                    const targetModel = hoveredModel ?? (current || visible[0]?.value)
+                    if (targetModel && targetModel !== current) {
+                      onSelect(targetModel)
+                    }
+                    onSelectThinkingLevel(option.value)
+                    setOpen(false)
+                  }}
+                >
+                  <span>{translate(option.label)}</span>
+                  {thinkingLevel === option.value ? <span aria-hidden="true">✓</span> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

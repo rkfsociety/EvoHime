@@ -1251,25 +1251,10 @@ export function TaskTimeline({
                   provider={providerMode}
                   selectedModel={chatModel}
                   onSelectChatModel={handleChatModelChange}
+                  thinkingLevel={chatThinkingLevel}
+                  onSelectThinkingLevel={handleChatThinkingChange}
                   use="agent"
                 />
-              </div>
-              <div className="composer__control-group">
-                <label className="composer__isolation">
-                  <span className="sr-only">{translate("Уровень thinking")}</span>
-                  <select
-                    aria-label={translate("Уровень thinking")}
-                    value={chatThinkingLevel}
-                    disabled={busy || !connected}
-                    onChange={(event) => handleChatThinkingChange(event.target.value as ChatThinkingLevel)}
-                  >
-                    <option value="auto">{translate("Thinking: Авто")}</option>
-                    <option value="off">{translate("Thinking: Выкл")}</option>
-                    <option value="low">{translate("Thinking: Низкий")}</option>
-                    <option value="medium">{translate("Thinking: Средний")}</option>
-                    <option value="high">{translate("Thinking: Высокий")}</option>
-                  </select>
-                </label>
               </div>
               <div className="composer__control-group">
                 <ComposerIcon name="lock" className="composer__control-icon" />
