@@ -646,11 +646,14 @@ describe('hive dashboard', () => {
     render(<HiveDashboard connection="connected" events={[
       event('hive_state.snapshot', snapshot()),
       event('tool.started', { tool_name: 'filesystem_read', arguments: '{"path":"README.md"}' }, 'eva-pulse-test'),
+      event('tool.started', { tool_name: 'hive_delegate_agent', arguments: '{"role":"researcher","agent_name":"Исследователь"}' }, 'eva-pulse-test'),
       event('model.trace', { model: 'noise-model' }, 'eva-pulse-test'),
       event('tool.started', { tool_name: 'filesystem_read', arguments: '{"path":"other.txt"}' }, 'unrelated-task')
     ]} />)
     const activity = await screen.findByLabelText('Ход работы Королевы')
-    expect(within(activity).getByText('Королева Ева читает файл: README.md')).toBeTruthy()
+    expect(within(activity).getByText('Королева Ева координирует агентов')).toBeTruthy()
+    expect(within(activity).getByText('Королева Ева поручает задачу агенту: Исследователь')).toBeTruthy()
+    expect(activity.textContent).not.toContain('Королева Ева читает файл')
     expect(activity.textContent).not.toContain('noise-model')
     expect(activity.textContent).not.toContain('other.txt')
   })
@@ -691,7 +694,7 @@ describe('hive dashboard', () => {
     )
     const activity = await screen.findByLabelText('Ход работы Королевы')
     const activityList = activity.querySelector('.hive-activity-list') as HTMLElement
-    expect(within(activityList).getByText('Королева Ева вызывает hive_delegate_agent')).toBeTruthy()
+    expect(within(activityList).getByText('Королева Ева поручает задачу агенту')).toBeTruthy()
     expect(within(activityList).getByText('Исследователь ядра читает файл: AGENTS.md')).toBeTruthy()
     expect(within(activityList).getByText('Разработчик читает файл: docs/architecture.md')).toBeTruthy()
     expect(activityList.textContent).not.toContain('Королева Ева читает файл: AGENTS.md')

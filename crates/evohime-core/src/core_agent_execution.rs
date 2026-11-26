@@ -917,7 +917,8 @@ impl ToolAgent {
                 path,
             )
         });
-        let self_development_intent = eva_workspace_isolated
+        let self_development_intent = !is_hive_queen
+            && eva_workspace_isolated
             && (prompt.contains("eva_workspace_") || prompt.contains("eva_self_development"));
         for tool in self.tools.list() {
             if let Some(ref allowed) = child_allowed_tools {
@@ -1066,7 +1067,7 @@ impl ToolAgent {
         if mutation_authorized {
             required_ids.extend_from_slice(FULL_ACCESS_WORKING_SET);
         }
-        if eva_workspace_isolated {
+        if eva_workspace_isolated && !is_hive_queen {
             // This is a task-scoped request, not a new grant: manifests still
             // pass the same permission preflight, and approval-required tools
             // remain gated by the existing approval flow.

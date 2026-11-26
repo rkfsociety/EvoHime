@@ -2068,11 +2068,10 @@ impl CoordinatorObservationTaskSink {
 }
 
 const PROJECT_CONTEXT_PREAMBLE: &str = "\
-ПЕРЕД ТЕМ КАК ПИСАТЬ КОД, ты обязана изучить контекст проекта. Выполни следующие шаги:\n\
-1. Прочитай файл `AGENTS.md` в корне проекта (если он есть) с помощью `eva_workspace_read_file` (если доступен) или делегируй чтение роли `researcher` через `hive_delegate_agent`. Строго соблюдай правила из него (например, правила коммитов, ветвления и запреты).\n\
-2. Прочитай `docs/architecture.md` (если он есть), чтобы понять, как устроен проект.\n\
-3. Выполни команду `git log -n 5` в песочнице (через `eva_workspace_git` или роль `researcher`), чтобы увидеть, что делалось в проекте до тебя.\n\
-Только после этого приступай к изменениям.\n\n";
+ПЕРЕД ТЕМ КАК ПЛАНИРОВАТЬ ИЗМЕНЕНИЯ, делегируй изучение контекста проекта агенту роли `researcher` через `hive_delegate_agent` (сама ничего не читай и не запускай):\n\
+1. Поручи агенту `researcher` прочитать `AGENTS.md` и `docs/architecture.md` (если они есть) и строго соблюдать правила из них (коммиты, ветвление, запреты).\n\
+2. Поручи агенту `researcher` выполнить `git log -n 5`, чтобы увидеть, что делалось в проекте до тебя.\n\
+Только после отчёта агента переходи к планированию и делегированию следующих шагов.\n\n";
 
 fn format_roadmap_items_list(items: &[RoadmapItem]) -> String {
     items
@@ -2105,14 +2104,14 @@ fn proactive_evolution_prompt(items: &[RoadmapItem]) -> String {
     }
     let items_list = format_roadmap_items_list(items);
     format!(
-        "Ты — Королева Ева. Ты работаешь в автономном режиме. Вот список невыполненных задач из твоих файлов планов:\n\
+        "Ты — Королева Ева. Ты работаешь в автономном режиме как чистый оркестратор. Вот список невыполненных задач из твоих файлов планов:\n\
 {items_list}\n\n\
-Проанализируй этот список. Выбери РОВНО ОДНУ задачу, которую ты можешь безопасно и качественно реализовать прямо сейчас (учитывая твои инструменты `eva_workspace_*` и контекст проекта из `AGENTS.md`).\n\n\
+Проанализируй этот список. Выбери РОВНО ОДНУ задачу, которую твои агенты могут безопасно и качественно реализовать прямо сейчас.\n\n\
 Если задача требует слишком много ресурсов или ты не уверена в её безопасности, выбери другую. Если ВСЕ задачи слишком сложные, верни ответ \"SKIP\".\n\n\
-Если ты выбрала задачу, твои действия (делегируй шаги специализированным ролям через `hive_delegate_agent` с понятным русским именем в `agent_name` или используй `eva_workspace_*` при изолированной саморазработке):\n\
-1. Изучи `AGENTS.md` и `docs/architecture.md` (роль `researcher`).\n\
-2. Выполни `git log -n 5` и составь план (роль `planner`).\n\
-3. Реализуй выбранную задачу с понятным `plan_summary` (роль `implementer` или `eva_workspace_write_file`).\n\
+Если ты выбрала задачу, сама ничего не читай, не редактируй и не запускай команды — делегируй все шаги специализированным ролям через `hive_delegate_agent` с понятным русским именем в `agent_name`:\n\
+1. Изучи `AGENTS.md`, `docs/architecture.md` и `git log -n 5` (роль `researcher`).\n\
+2. Составь план (роль `planner`).\n\
+3. Реализуй выбранную задачу с понятным `plan_summary` (роль `implementer`).\n\
 4. Запусти тесты и линтеры (роль `tester`).\n\
 5. Если успешно — сделай коммит (роль `releaser`), пуш и отметь пункт как `[x]` в файле планов.\n\
 6. Если не получилось — опиши проблему и верни \"FAILED: [причина]\"."
@@ -2223,9 +2222,10 @@ fn recovery_task_prompt(incident: &str, workspace_path: Option<&str>) -> String 
     match workspace_path {
         Some(path) => format!(
             "{PROJECT_CONTEXT_PREAMBLE}\
-             Обнаружен сбой ({incident}). Твой код находится в {path}. Используй инструменты \
-             `eva_workspace_*`, чтобы найти причину, исправить код, запустить тесты и сделать \
-             коммит. Если для исправления нужна платная модель (DeepSeek), запроси подтверждение \
+             Обнаружен сбой ({incident}). Код находится в {path}. Делегируй агентам через \
+             `hive_delegate_agent` поиск причины (`researcher`), исправление кода (`implementer`), \
+             запуск тестов (`tester`) и коммит (`releaser`). Сама не читай файлы и не запускай \
+             команды. Если для исправления нужна платная модель (DeepSeek), запроси подтверждение \
              у пользователя."
         ),
         None => format!(
@@ -2761,7 +2761,7 @@ mod tests {
             .expect("request received");
         assert_eq!(req.task_id, task_id);
         let prompt = recovery_task_prompt("failed-worker", Some("D:/eva"));
-        assert!(prompt.contains("eva_workspace_*"));
+        assert!(prompt.contains("hive_delegate_agent"));
         assert!(prompt.contains("D:/eva"));
     }
 
@@ -2813,8 +2813,8 @@ mod tests {
         let prompt = recovery_task_prompt("worker task-1 завершился с ошибкой", Some("D:/eva"));
         assert!(prompt.contains("Обнаружен сбой"));
         assert!(prompt.contains("D:/eva"));
-        assert!(prompt.contains("`eva_workspace_*`"));
-        assert!(prompt.contains("запустить тесты и сделать коммит"));
+        assert!(prompt.contains("`hive_delegate_agent`"));
+        assert!(prompt.contains("запуск тестов (`tester`) и коммит (`releaser`)"));
         assert!(prompt.contains("платная модель (DeepSeek)"));
         assert_eq!(
             evohime_tool_runtime::self_development::SELF_DEVELOPMENT_CAPABILITY,
@@ -3255,14 +3255,14 @@ mod tests {
         }]);
         let recovery = recovery_task_prompt("worker crashed", Some("D:/eva"));
 
-        assert!(recovery.starts_with("ПЕРЕД ТЕМ КАК ПИСАТЬ КОД"));
-        assert!(recovery.contains("eva_workspace_read_file"));
+        assert!(recovery.starts_with("ПЕРЕД ТЕМ КАК ПЛАНИРОВАТЬ ИЗМЕНЕНИЯ"));
+        assert!(recovery.contains("hive_delegate_agent"));
         for prompt in [&evolution, &recovery] {
             assert!(prompt.contains("AGENTS.md"));
             assert!(prompt.contains("docs/architecture.md"));
             assert!(prompt.contains("git log -n 5"));
         }
-        assert!(evolution.contains("eva_workspace_*"));
+        assert!(evolution.contains("hive_delegate_agent"));
     }
 
     #[tokio::test]

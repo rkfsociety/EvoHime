@@ -1080,6 +1080,8 @@ const QUEEN_ACTIVITY_EVENTS: ReadonlySet<string> = new Set([
 ])
 
 const TOOL_ACTION_LABELS: Record<string, string> = {
+  hive_delegate_agent: 'поручает задачу агенту',
+  hive_register_role: 'создаёт роль агента',
   filesystem_read: 'читает файл',
   eva_workspace_read_file: 'читает файл',
   filesystem_patch: 'правит файл',
@@ -1095,6 +1097,13 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
   workflow_cancel: 'отменяет workflow',
   workflow_catalog: 'смотрит каталог workflow'
 }
+
+const QUEEN_ORCHESTRATION_TOOLS: ReadonlySet<string> = new Set([
+  'hive_delegate_agent',
+  'hive_register_role',
+  'goal_create',
+  'goal_verify'
+])
 
 /** Разбирает payload события; Core оборачивает тело в единственный ключ-вариант (`ToolStarted` и т. п.). */
 function eventBody(event: CoreEvent): Record<string, unknown> {
@@ -1119,14 +1128,19 @@ function shortText(value: string, max: number): string {
 }
 
 /** «читает файл AGENTS.md» по событию `tool.started`. */
-function describeToolStart(body: Record<string, unknown>): string {
+function describeToolStart(body: Record<string, unknown>, actor = ''): string {
   const tool = typeof body['tool_name'] === 'string' ? body['tool_name'] : 'инструмент'
+  if (actor === 'Королева Ева' && !QUEEN_ORCHESTRATION_TOOLS.has(tool)) {
+    return 'координирует агентов'
+  }
   const action = TOOL_ACTION_LABELS[tool] ?? `вызывает ${tool}`
   let target = ''
   if (typeof body['arguments'] === 'string') {
     try {
       const args = JSON.parse(body['arguments']) as Record<string, unknown>
-      const raw = args['path'] ?? args['command'] ?? args['file'] ?? args['query']
+      const raw = tool === 'hive_delegate_agent'
+        ? (args['agent_name'] ?? args['role'] ?? args['task'])
+        : (args['path'] ?? args['command'] ?? args['file'] ?? args['query'])
       if (typeof raw === 'string') target = shortText(raw, 80)
     } catch {
       target = ''
@@ -1197,7 +1211,7 @@ function describeHiveEvent(event: CoreEvent, activeAgents: HiveStateView['active
       return actor === 'Королева Ева' ? 'Королева Ева делегирует задачи' : `${actor} отвечает`
     }
     case 'tool.started':
-      return `${actor} ${describeToolStart(body)}`
+      return `${actor} ${describeToolStart(body, actor)}`
     case 'tool.output': {
       const output = typeof body['output'] === 'string' ? body['output'] : ''
       const failed = /^(resource not found|tool execution failed|permission denied)/i.test(output)
@@ -1230,7 +1244,7 @@ function queenCurrentActivity(
   if (!latestEvent) return 'Обрабатывает запрос'
   const actor = resolveEventActorLabel(latestEvent.taskId, activeAgents)
   const body = eventBody(latestEvent)
-  if (latestEvent.eventType === 'tool.started') return `${actor} ${describeToolStart(body)}`
+  if (latestEvent.eventType === 'tool.started') return `${actor} ${describeToolStart(body, actor)}`
   if (latestEvent.eventType === 'tool.output') return 'Анализирует результат инструмента'
   return `${actor} думает над следующим шагом`
 }

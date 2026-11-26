@@ -8,13 +8,16 @@ use evohime_tool_runtime::{ToolContext, ToolError, ToolResult};
 const HIVE_CHILD_OUTPUT_BYTES: usize = 24 * 1024;
 const HIVE_CHILD_DEFAULT_STEPS: usize = 16;
 
-/// Returns `true` when `tool_name` is a direct workspace/shell/git/browser tool
-/// that the Hive Queen must delegate to specialized child roles rather than call itself.
+/// Returns `true` when `tool_name` is a direct tool that the Hive Queen must
+/// not call herself; the Queen only orchestrates and delegates to child agents.
 pub(crate) fn queen_excluded_direct_tool(tool_name: &str) -> bool {
-    tool_name.starts_with("filesystem_")
-        || tool_name.starts_with("git_")
-        || tool_name == "shell_execute"
-        || tool_name.starts_with("browser_")
+    !matches!(
+        tool_name,
+        evohime_tool_runtime::agent::HIVE_DELEGATE_NAME
+            | evohime_tool_runtime::agent::HIVE_REGISTER_ROLE_NAME
+            | "goal_create"
+            | "goal_verify"
+    )
 }
 
 /// Returns the default tool allowlist for a built-in Hive role, if recognized.
