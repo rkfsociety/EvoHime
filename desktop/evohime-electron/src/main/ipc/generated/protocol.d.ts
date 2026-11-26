@@ -4460,6 +4460,9 @@ export namespace evohime {
                 /** StartTask isolationMode. */
                 isolationMode: string;
 
+                /** StartTask reasoningEffort. */
+                reasoningEffort: string;
+
                 /**
                  * Encodes the specified StartTask message. Does not implicitly {@link evohime.desktop.v1.StartTask.verify|verify} messages.
                  * @param message StartTask message or plain object to encode
@@ -4529,6 +4532,9 @@ export namespace evohime {
 
                     /** StartTask isolationMode */
                     isolationMode?: (string|null);
+
+                    /** StartTask reasoningEffort */
+                    reasoningEffort?: (string|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

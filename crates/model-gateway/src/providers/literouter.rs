@@ -221,6 +221,34 @@ impl LiteRouterProvider {
         let mut rate_limited_models = HashSet::new();
         let tools = tools.map(wire_tools);
         let has_tools = tools.as_ref().is_some_and(|specs| !specs.is_empty());
+        let is_deepseek = self
+            .config
+            .base_url
+            .to_ascii_lowercase()
+            .contains("deepseek")
+            || current_model.to_ascii_lowercase().contains("deepseek");
+        let (effective_thinking, effective_reasoning_effort) = match options.reasoning_effort {
+            Some(crate::providers::ReasoningEffort::Off) if is_deepseek => (
+                Some(ThinkingConfig {
+                    kind: "disabled".into(),
+                    budget_tokens: None,
+                }),
+                None,
+            ),
+            Some(
+                crate::providers::ReasoningEffort::Low
+                | crate::providers::ReasoningEffort::Medium
+                | crate::providers::ReasoningEffort::High,
+            ) if is_deepseek => (
+                Some(ThinkingConfig {
+                    kind: "enabled".into(),
+                    budget_tokens: None,
+                }),
+                None,
+            ),
+            Some(effort) => (thinking, Some(effort.as_api_str())),
+            None => (thinking, self.reasoning_effort),
+        };
         let mut body = ChatCompletionRequest {
             model: current_model.clone(),
             messages: messages.iter().map(ApiMessage::from_chat_message).collect(),
@@ -234,8 +262,8 @@ impl LiteRouterProvider {
             } else {
                 None
             },
-            thinking,
-            reasoning_effort: self.reasoning_effort,
+            thinking: effective_thinking,
+            reasoning_effort: effective_reasoning_effort,
             max_tokens: options.max_output_tokens,
         };
 
@@ -801,6 +829,8 @@ struct StreamOptions {
 struct ApiMessage {
     role: String,
     content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tool_calls: Vec<ApiRequestToolCall>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -826,6 +856,7 @@ impl ApiMessage {
         Self {
             role: message.role.as_str().to_string(),
             content: message.content.clone(),
+            reasoning_content: message.reasoning_content.clone(),
             tool_calls: message
                 .tool_calls
                 .iter()
@@ -863,6 +894,8 @@ struct StreamDelta {
     content: Option<String>,
     #[serde(default)]
     thinking: Option<String>,
+    #[serde(default)]
+    reasoning_content: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -885,6 +918,8 @@ struct CompletionMessage {
     content: Option<String>,
     #[serde(default)]
     thinking: Option<String>,
+    #[serde(default)]
+    reasoning_content: Option<String>,
     #[serde(default)]
     tool_calls: Vec<ApiToolCall>,
 }
@@ -980,7 +1015,7 @@ impl CompletionResponse {
             .collect();
         ChatResult {
             content: message.content.unwrap_or_default(),
-            thinking: message.thinking,
+            thinking: message.thinking.or(message.reasoning_content),
             tool_calls,
             usage,
         }
@@ -1022,7 +1057,12 @@ fn parse_sse_line(line: &str) -> Option<Result<ChatStreamItem, ProviderError>> {
 
     if let Some(choice) = chunk.choices.first() {
         // Handle thinking chunks (Wave 3B: extended reasoning)
-        if let Some(thinking) = choice.delta.thinking.clone() {
+        if let Some(thinking) = choice
+            .delta
+            .thinking
+            .clone()
+            .or_else(|| choice.delta.reasoning_content.clone())
+        {
             if !thinking.is_empty() {
                 return Some(Ok(ChatStreamItem::Thinking(thinking)));
             }
@@ -1270,6 +1310,38 @@ mod tests {
     }
 
     #[test]
+    fn reasoning_content_round_trips_from_response_to_follow_up_request() {
+        let parsed: CompletionResponse = serde_json::from_value(json!({
+            "choices": [{
+                "message": {
+                    "content": "",
+                    "reasoning_content": "checking README first",
+                    "tool_calls": [{
+                        "id": "call-ds-1",
+                        "function": {
+                            "name": "filesystem_read",
+                            "arguments": "{\"path\":\"README.md\"}"
+                        }
+                    }]
+                }
+            }]
+        }))
+        .expect("completion response parses");
+        let chat_result = parsed.into_chat_result();
+        assert_eq!(
+            chat_result.thinking.as_deref(),
+            Some("checking README first")
+        );
+
+        let follow_up =
+            ChatMessage::assistant_tool_calls(chat_result.content, chat_result.tool_calls)
+                .with_reasoning_content(chat_result.thinking);
+        let wire = serde_json::to_value(ApiMessage::from_chat_message(&follow_up))
+            .expect("api message serializes");
+        assert_eq!(wire["reasoning_content"], "checking README first");
+    }
+
+    #[test]
     fn wire_tools_keep_the_core_tool_id_and_strip_provider_unsafe_metadata() {
         let mut spec = ToolSpec::function(
             "filesystem_read",
@@ -1385,6 +1457,7 @@ mod tests {
                 message: CompletionMessage {
                     content: Some(String::new()),
                     thinking: None,
+                    reasoning_content: None,
                     tool_calls: vec![ApiToolCall {
                         id: Some("call_1".into()),
                         function: Some(ApiFunctionCall {

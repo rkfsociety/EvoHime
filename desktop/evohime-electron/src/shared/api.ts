@@ -914,6 +914,9 @@ export interface ChatMessage {
 /** Filesystem isolation mode for a chat session. */
 export type ChatIsolationMode = 'shared_workspace' | 'isolated_worktree'
 
+/** Thinking / reasoning effort level selected in the composer. */
+export type ChatThinkingLevel = 'auto' | 'off' | 'low' | 'medium' | 'high'
+
 /** Per-chat session settings persisted additively in `chats.json`. */
 export interface ChatSessionSettings {
   readonly provider?: ProviderKind
@@ -921,6 +924,7 @@ export interface ChatSessionSettings {
   readonly model?: string
   readonly permissionMode?: PermissionMode
   readonly isolationMode?: ChatIsolationMode
+  readonly reasoningEffort?: ChatThinkingLevel
 }
 
 /** A conversation of the shell, optionally scoped to one workspace. */
@@ -1856,7 +1860,7 @@ export interface CommandPayloads {
   'workspace.pick': Record<string, never>
   'workspace.select': { path: string }
   'workspace.forget': { path: string }
-  'core.startTask': { taskId: string; prompt: string; workspacePath: string; conversationId?: string; clientMessageId?: string; preferredRouteHint?: 'local' | 'cloud' | 'codex_cli' | 'hive' | null; executionKind?: 'dialogue' | 'coding'; goalId?: string; provider?: ProviderKind; profileId?: ProviderProfileId; model?: string; permissionMode?: PermissionMode; isolationMode?: ChatIsolationMode }
+  'core.startTask': { taskId: string; prompt: string; workspacePath: string; conversationId?: string; clientMessageId?: string; preferredRouteHint?: 'local' | 'cloud' | 'codex_cli' | 'hive' | null; executionKind?: 'dialogue' | 'coding'; goalId?: string; provider?: ProviderKind; profileId?: ProviderProfileId; model?: string; permissionMode?: PermissionMode; isolationMode?: ChatIsolationMode; reasoningEffort?: ChatThinkingLevel }
   'core.getConversationEvents': { conversationId: string; beforeSequence?: number; afterSequence?: number; limit?: number; kindsFilter?: readonly string[] }
   'core.subscribeConversationEvents': { conversationId: string; afterSequence: number; limit?: number; kindsFilter?: readonly string[] }
   'core.getConversationWorkbench': { conversationId: string; workspaceId: string; runId?: string; backendSnapshotHash?: string; capabilitySnapshotHash?: string; afterSequence?: number; limit?: number }

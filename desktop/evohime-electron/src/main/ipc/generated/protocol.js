@@ -11288,6 +11288,7 @@ export const evohime = $root.evohime = (() => {
                  * @property {string|null} [model] StartTask model
                  * @property {string|null} [permissionMode] StartTask permissionMode
                  * @property {string|null} [isolationMode] StartTask isolationMode
+                 * @property {string|null} [reasoningEffort] StartTask reasoningEffort
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -11424,6 +11425,14 @@ export const evohime = $root.evohime = (() => {
                 StartTask.prototype.isolationMode = "";
 
                 /**
+                 * StartTask reasoningEffort.
+                 * @member {string} reasoningEffort
+                 * @memberof evohime.desktop.v1.StartTask
+                 * @instance
+                 */
+                StartTask.prototype.reasoningEffort = "";
+
+                /**
                  * Encodes the specified StartTask message. Does not implicitly {@link evohime.desktop.v1.StartTask.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.StartTask
@@ -11465,6 +11474,8 @@ export const evohime = $root.evohime = (() => {
                         writer.uint32(/* id 12, wireType 2 =*/98).string(message.permissionMode);
                     if (message.isolationMode != null && $Object.hasOwnProperty.call(message, "isolationMode") && message.isolationMode !== "")
                         writer.uint32(/* id 13, wireType 2 =*/106).string(message.isolationMode);
+                    if (message.reasoningEffort != null && $Object.hasOwnProperty.call(message, "reasoningEffort") && message.reasoningEffort !== "")
+                        writer.uint32(/* id 14, wireType 2 =*/114).string(message.reasoningEffort);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -11624,6 +11635,15 @@ export const evohime = $root.evohime = (() => {
                                     message.isolationMode = value;
                                 else
                                     delete message.isolationMode;
+                                continue;
+                            }
+                        case 14: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.reasoningEffort = value;
+                                else
+                                    delete message.reasoningEffort;
                                 continue;
                             }
                         }

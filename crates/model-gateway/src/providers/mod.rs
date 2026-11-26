@@ -109,6 +109,10 @@ pub struct ChatMessage {
     pub role: ChatRole,
     /// Text content associated with the message.
     pub content: String,
+    /// Optional provider reasoning content (e.g. DeepSeek `reasoning_content`)
+    /// preserved across tool-call turns so thinking-mode APIs accept follow-ups.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     /// Native tool calls requested by an assistant message.
     pub tool_calls: Vec<crate::tools::NativeToolCall>,
     /// Tool-call identifier for a tool observation.
@@ -121,6 +125,7 @@ impl ChatMessage {
         Self {
             role,
             content: content.into(),
+            reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
         }
@@ -134,9 +139,16 @@ impl ChatMessage {
         Self {
             role: ChatRole::Assistant,
             content: content.into(),
+            reasoning_content: None,
             tool_calls,
             tool_call_id: None,
         }
+    }
+
+    /// Attaches provider reasoning content to this message.
+    pub fn with_reasoning_content(mut self, reasoning_content: Option<String>) -> Self {
+        self.reasoning_content = reasoning_content;
+        self
     }
 
     /// Creates a tool observation associated with the originating call ID.
@@ -144,6 +156,7 @@ impl ChatMessage {
         Self {
             role: ChatRole::Tool,
             content: content.into(),
+            reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: Some(tool_call_id.into()),
         }
@@ -166,6 +179,44 @@ pub struct ThinkingConfig {
     pub budget_tokens: Option<u32>,
 }
 
+/// Requested thinking / reasoning effort level for a model completion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningEffort {
+    /// Disable extended thinking when the provider supports toggling it.
+    Off,
+    /// Request light reasoning effort.
+    Low,
+    /// Request balanced reasoning effort.
+    Medium,
+    /// Request deep reasoning effort.
+    High,
+}
+
+impl ReasoningEffort {
+    /// Parses a wire/UI string (`"off"`, `"low"`, `"medium"`, `"high"`).
+    /// Returns `None` for `"auto"`, empty, or unknown values.
+    pub fn from_str_opt(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "off" | "none" => Some(Self::Off),
+            "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            _ => None,
+        }
+    }
+
+    /// Returns the OpenAI-compatible `reasoning_effort` wire value.
+    pub fn as_api_str(self) -> &'static str {
+        match self {
+            Self::Off => "none",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
 /// Optional per-call bounds for a non-streaming provider completion.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ChatRequestOptions {
@@ -173,6 +224,8 @@ pub struct ChatRequestOptions {
     pub max_output_tokens: Option<u32>,
     /// Maximum retries after the first attempt; `Some(0)` disables retries.
     pub max_retries: Option<u32>,
+    /// Optional thinking / reasoning effort override for this request.
+    pub reasoning_effort: Option<ReasoningEffort>,
 }
 
 /// Configuration, transport, API, or stream failure returned by a provider adapter.

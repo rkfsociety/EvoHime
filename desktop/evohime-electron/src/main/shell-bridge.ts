@@ -276,6 +276,16 @@ function dispatch(
           : value['isolationMode'] === 'shared_workspace' || value['isolationMode'] === 'isolated_worktree'
             ? value['isolationMode']
             : null
+      const reasoningEffort =
+        value['reasoningEffort'] === undefined
+          ? undefined
+          : value['reasoningEffort'] === 'auto' ||
+              value['reasoningEffort'] === 'off' ||
+              value['reasoningEffort'] === 'low' ||
+              value['reasoningEffort'] === 'medium' ||
+              value['reasoningEffort'] === 'high'
+            ? value['reasoningEffort']
+            : null
       if (
         taskId === null ||
         prompt === null ||
@@ -290,7 +300,8 @@ function dispatch(
         profileId === null ||
         model === null ||
         permissionMode === null ||
-        isolationMode === null
+        isolationMode === null ||
+        reasoningEffort === null
       ) {
         return failure('invalid-payload', 'Некорректные параметры задачи.')
       }
@@ -313,7 +324,8 @@ function dispatch(
         ...(profileId ? { profileId } : {}),
         ...(model && model.length > 0 ? { model } : {}),
         ...(permissionMode ? { permissionMode } : {}),
-        ...(isolationMode ? { isolationMode } : {})
+        ...(isolationMode ? { isolationMode } : {}),
+        ...(reasoningEffort && reasoningEffort !== 'auto' ? { reasoningEffort } : {})
       }
       return accepted(client.send({ startTask: conversationId.length > 0
         ? { ...startTask, conversationId, clientMessageId }
@@ -1802,13 +1814,24 @@ function dispatch(
               sessionRecord['isolationMode'] === 'isolated_worktree'
             ? sessionRecord['isolationMode']
             : null
+      const reasoningEffort =
+        sessionRecord['reasoningEffort'] === undefined
+          ? undefined
+          : sessionRecord['reasoningEffort'] === 'auto' ||
+              sessionRecord['reasoningEffort'] === 'off' ||
+              sessionRecord['reasoningEffort'] === 'low' ||
+              sessionRecord['reasoningEffort'] === 'medium' ||
+              sessionRecord['reasoningEffort'] === 'high'
+            ? sessionRecord['reasoningEffort']
+            : null
       if (
         chatId === null ||
         provider === null ||
         profileId === null ||
         model === null ||
         permissionMode === null ||
-        isolationMode === null
+        isolationMode === null ||
+        reasoningEffort === null
       ) {
         return failure('invalid-payload', 'Некорректные настройки сессии чата.')
       }
@@ -1818,7 +1841,8 @@ function dispatch(
           ...(profileId ? { profileId } : {}),
           ...(model && model.length > 0 ? { model } : {}),
           ...(permissionMode ? { permissionMode } : {}),
-          ...(isolationMode ? { isolationMode } : {})
+          ...(isolationMode ? { isolationMode } : {}),
+          ...(reasoningEffort ? { reasoningEffort } : {})
         }),
         log,
         (saved) => ({ ok: true, value: saved })

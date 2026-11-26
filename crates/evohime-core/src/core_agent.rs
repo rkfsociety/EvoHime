@@ -968,6 +968,7 @@ struct CallModelInput<'a> {
     max_output_tokens: Option<u32>,
     route_pin: Option<&'a str>,
     selected_model: Option<&'a str>,
+    reasoning_effort: Option<evohime_model_gateway::ReasoningEffort>,
 }
 
 pub(crate) struct ModelRequestEnvelopeInput<'a> {

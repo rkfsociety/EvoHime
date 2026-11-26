@@ -446,6 +446,8 @@ message StartTask {
   string permission_mode = 12;
   // Optional per-chat filesystem isolation mode ("shared_workspace", "isolated_worktree").
   string isolation_mode = 13;
+  // Optional per-chat thinking / reasoning effort level ("auto", "off", "low", "medium", "high").
+  string reasoning_effort = 14;
 }
 
 // Bounded read-only workspace browsing for the native Files surface.

@@ -33,6 +33,8 @@ pub struct SessionBinding {
     pub permission_mode: Option<evohime_permissions::PermissionMode>,
     /// Режим файловой изоляции (`SharedWorkspace` по умолчанию или `IsolatedWorktree`).
     pub isolation_mode: IsolationMode,
+    /// Необязательный уровень размышлений (thinking / reasoning effort) для задачи.
+    pub reasoning_effort: Option<evohime_model_gateway::ReasoningEffort>,
 }
 
 /// Запросы, которыми внутренние компоненты Core вызывают операции runtime и

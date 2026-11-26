@@ -58,7 +58,6 @@ pub use crate::provider_contract::{
     ProviderImageOutput, RetryConfig, RoutePolicySnapshot, RunHealthOverlay, RunResult, RunTrace,
     SnapshotCandidateDecision, SnapshotError, SnapshotRouteDecision,
 };
-pub use crate::providers::ChatRequestOptions;
 pub use crate::providers::ImageOutputFuture;
 use crate::providers::{
     literouter::LiteRouterProvider, local::LocalProvider, mock::MockProvider,
@@ -66,6 +65,7 @@ use crate::providers::{
     openai_responses::OpenAIResponsesProvider, ChatMessage, ModelProvider, ProviderError,
     ProviderKind, TokenStream,
 };
+pub use crate::providers::{ChatRequestOptions, ReasoningEffort};
 pub use crate::rate_limit_signal::{clear_rate_limit, rate_limited_until, record_rate_limit};
 pub use crate::retry::RetryPolicy;
 pub use crate::routing_catalog::{CatalogError, CatalogStore, EvaluationCatalog, EvaluationRecord};

@@ -1861,6 +1861,7 @@ impl ToolAgent {
                     max_output_tokens: None,
                     route_pin: session_route_pin.as_deref(),
                     selected_model: pinned_selected_model.as_deref(),
+                    reasoning_effort: session_binding.as_ref().and_then(|binding| binding.reasoning_effort),
                 }) => result?,
             };
             let _previous_request_id = std::mem::replace(
@@ -2392,10 +2393,10 @@ impl ToolAgent {
                 return Ok(final_message);
             }
 
-            messages.push(ChatMessage::assistant_tool_calls(
-                result.content,
-                tool_calls.clone(),
-            ));
+            messages.push(
+                ChatMessage::assistant_tool_calls(result.content, tool_calls.clone())
+                    .with_reasoning_content(result.thinking),
+            );
             for call in tool_calls {
                 let hook_sequence = observability_sequence;
                 observability_sequence = observability_sequence.saturating_add(1);

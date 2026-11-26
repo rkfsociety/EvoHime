@@ -1,7 +1,7 @@
 import { formatTime, translate, useAppLocale } from './i18n'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import { HIVE_SYSTEM_CHAT_ID, type ChatIsolationMode, type ChatMessage, type ChatProviderMode, type ChatRecord, type ChatSessionSettings, type ConnectionState, type CoreEvent } from '@shared/api'
+import { HIVE_SYSTEM_CHAT_ID, type ChatIsolationMode, type ChatMessage, type ChatProviderMode, type ChatRecord, type ChatSessionSettings, type ChatThinkingLevel, type ConnectionState, type CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
@@ -203,6 +203,12 @@ export function TaskTimeline({
     return window.localStorage.getItem(`evohime.chat-model.${initialProvider}`) ?? ''
   })
   const [chatIsolationMode, setChatIsolationMode] = useState<ChatIsolationMode>('shared_workspace')
+  const [chatThinkingLevel, setChatThinkingLevel] = useState<ChatThinkingLevel>(() => {
+    const stored = window.localStorage.getItem('evohime.chat-thinking-level')
+    return stored === 'off' || stored === 'low' || stored === 'medium' || stored === 'high' || stored === 'auto'
+      ? stored
+      : 'auto'
+  })
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const [conversationLog, setConversationLog] = useState<ConversationProjectionState | null>(null)
   const [loadingOlderHistory, setLoadingOlderHistory] = useState(false)
@@ -246,7 +252,10 @@ export function TaskTimeline({
     if (chat.session?.isolationMode) {
       setChatIsolationMode(chat.session.isolationMode)
     }
-  }, [chat?.id, chat?.session?.isolationMode, chat?.session?.model, chat?.session?.provider])
+    if (chat.session?.reasoningEffort) {
+      setChatThinkingLevel(chat.session.reasoningEffort)
+    }
+  }, [chat?.id, chat?.session?.isolationMode, chat?.session?.model, chat?.session?.provider, chat?.session?.reasoningEffort])
 
   const persistChatSession = useCallback(
     (patch: Partial<ChatSessionSettings>) => {
@@ -254,6 +263,7 @@ export function TaskTimeline({
         ...(providerMode !== 'codex_cli' ? { provider: providerMode } : {}),
         ...(chatModel.length > 0 ? { model: chatModel } : {}),
         ...(chatIsolationMode ? { isolationMode: chatIsolationMode } : {}),
+        ...(chatThinkingLevel ? { reasoningEffort: chatThinkingLevel } : {}),
         ...patch
       }
       if (!api || !chatId) return
@@ -261,7 +271,7 @@ export function TaskTimeline({
         if (outcome.ok && outcome.value) setChat(outcome.value)
       })
     },
-    [api, chatId, chatIsolationMode, chatModel, providerMode]
+    [api, chatId, chatIsolationMode, chatModel, chatThinkingLevel, providerMode]
   )
 
   const handleChatProviderChange = useCallback(
@@ -306,6 +316,15 @@ export function TaskTimeline({
     (nextIsolation: ChatIsolationMode) => {
       setChatIsolationMode(nextIsolation)
       persistChatSession({ isolationMode: nextIsolation })
+    },
+    [persistChatSession]
+  )
+
+  const handleChatThinkingChange = useCallback(
+    (nextLevel: ChatThinkingLevel) => {
+      setChatThinkingLevel(nextLevel)
+      window.localStorage.setItem('evohime.chat-thinking-level', nextLevel)
+      persistChatSession({ reasoningEffort: nextLevel })
     },
     [persistChatSession]
   )
@@ -651,13 +670,14 @@ export function TaskTimeline({
       executionKind: conversationLog.conversationId === HIVE_SYSTEM_CHAT_ID ? 'dialogue' : (providerMode === 'codex_cli' ? 'coding' : 'dialogue'),
       ...(providerMode !== 'codex_cli' ? { provider: providerMode } : {}),
       ...(chatModel.length > 0 ? { model: chatModel } : {}),
-      ...(chatIsolationMode === 'isolated_worktree' ? { isolationMode: chatIsolationMode } : {})
+      ...(chatIsolationMode === 'isolated_worktree' ? { isolationMode: chatIsolationMode } : {}),
+      ...(chatThinkingLevel !== 'auto' ? { reasoningEffort: chatThinkingLevel } : {})
     })
     if (!outcome.ok) {
       setConversationProjection((current) => current ? markOptimisticFailed(current, clientMessageId) : current)
       setCommandError(outcome.message)
     }
-  }, [api, chatIsolationMode, chatModel, conversationLog, providerMode, setConversationProjection, workspace])
+  }, [api, chatIsolationMode, chatModel, chatThinkingLevel, conversationLog, providerMode, setConversationProjection, workspace])
 
   const running = activeTaskId !== null && (startingTaskId === activeTaskId || !finished)
 
@@ -814,7 +834,8 @@ export function TaskTimeline({
       const initialSession: ChatSessionSettings = {
         ...(providerMode !== 'codex_cli' ? { provider: providerMode } : {}),
         ...(chatModel.length > 0 ? { model: chatModel } : {}),
-        ...(chatIsolationMode ? { isolationMode: chatIsolationMode } : {})
+        ...(chatIsolationMode ? { isolationMode: chatIsolationMode } : {}),
+        ...(chatThinkingLevel ? { reasoningEffort: chatThinkingLevel } : {})
       }
       const savedSession = await api.invoke('chat.saveSessionSettings', {
         chatId: targetChatId,
@@ -841,6 +862,7 @@ export function TaskTimeline({
       ...(providerMode !== 'codex_cli' ? { provider: providerMode } : {}),
       ...(chatModel.length > 0 ? { model: chatModel } : {}),
       ...(chatIsolationMode === 'isolated_worktree' ? { isolationMode: chatIsolationMode } : {}),
+      ...(chatThinkingLevel !== 'auto' ? { reasoningEffort: chatThinkingLevel } : {}),
       ...(goalId ? { goalId } : {})
     })
     setBusy(false)
@@ -870,7 +892,7 @@ export function TaskTimeline({
       await api.invoke('core.stopTask', { taskId: nextTaskId })
     }
     return true
-  }, [api, chatId, onChatOpened, onChatTouched, providerMode, setConversationProjection, workspace])
+  }, [api, chatId, chatIsolationMode, chatModel, chatThinkingLevel, onChatOpened, onChatTouched, providerMode, setConversationProjection, workspace])
 
   const start = useCallback(async () => {
     if (!api || (prompt.trim().length === 0 && (attachments.length === 0 || goalMode))) return
@@ -1231,6 +1253,23 @@ export function TaskTimeline({
                   onSelectChatModel={handleChatModelChange}
                   use="agent"
                 />
+              </div>
+              <div className="composer__control-group">
+                <label className="composer__isolation">
+                  <span className="sr-only">{translate("Уровень thinking")}</span>
+                  <select
+                    aria-label={translate("Уровень thinking")}
+                    value={chatThinkingLevel}
+                    disabled={busy || !connected}
+                    onChange={(event) => handleChatThinkingChange(event.target.value as ChatThinkingLevel)}
+                  >
+                    <option value="auto">{translate("Thinking: Авто")}</option>
+                    <option value="off">{translate("Thinking: Выкл")}</option>
+                    <option value="low">{translate("Thinking: Низкий")}</option>
+                    <option value="medium">{translate("Thinking: Средний")}</option>
+                    <option value="high">{translate("Thinking: Высокий")}</option>
+                  </select>
+                </label>
               </div>
               <div className="composer__control-group">
                 <ComposerIcon name="lock" className="composer__control-icon" />

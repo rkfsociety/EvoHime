@@ -937,11 +937,14 @@ fn build_session_binding_from_start_task(
         "isolated_worktree" => crate::IsolationMode::IsolatedWorktree,
         _ => crate::IsolationMode::SharedWorkspace,
     };
+    let reasoning_effort =
+        evohime_model_gateway::ReasoningEffort::from_str_opt(&start.reasoning_effort);
     if provider.is_none()
         && profile_id.is_none()
         && model.is_none()
         && permission_mode.is_none()
         && isolation_mode == crate::IsolationMode::SharedWorkspace
+        && reasoning_effort.is_none()
     {
         return None;
     }
@@ -951,6 +954,7 @@ fn build_session_binding_from_start_task(
         model,
         permission_mode,
         isolation_mode,
+        reasoning_effort,
     })
 }
 

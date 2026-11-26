@@ -490,13 +490,22 @@ function parseSessionSettings(value: unknown): ChatSessionSettings | undefined {
     record['isolationMode'] === 'shared_workspace' || record['isolationMode'] === 'isolated_worktree'
       ? (record['isolationMode'] as ChatIsolationMode)
       : undefined
-  if (!provider && !profileId && !model && !permissionMode && !isolationMode) return undefined
+  const reasoningEffort =
+    record['reasoningEffort'] === 'auto' ||
+    record['reasoningEffort'] === 'off' ||
+    record['reasoningEffort'] === 'low' ||
+    record['reasoningEffort'] === 'medium' ||
+    record['reasoningEffort'] === 'high'
+      ? record['reasoningEffort']
+      : undefined
+  if (!provider && !profileId && !model && !permissionMode && !isolationMode && !reasoningEffort) return undefined
   return {
     ...(provider ? { provider } : {}),
     ...(profileId ? { profileId } : {}),
     ...(model ? { model } : {}),
     ...(permissionMode ? { permissionMode } : {}),
-    ...(isolationMode ? { isolationMode } : {})
+    ...(isolationMode ? { isolationMode } : {}),
+    ...(reasoningEffort ? { reasoningEffort } : {})
   }
 }
 

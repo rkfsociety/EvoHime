@@ -769,6 +769,7 @@ impl ToolAgent {
                             .map(|sample| sample.result.selected_route.as_str())
                     }),
                     selected_model: input.selected_model,
+                    reasoning_effort: input.reasoning_effort,
                 })
                 .await?;
             let usage = sample.result.result.usage.ok_or_else(|| {
@@ -871,6 +872,7 @@ impl ToolAgent {
                 max_output_tokens: Some(planning_output),
                 route_pin: input.route_pin,
                 selected_model: input.selected_model,
+                reasoning_effort: input.reasoning_effort,
             })
             .await?;
         if planning.result.result.has_tool_calls()
@@ -944,6 +946,7 @@ impl ToolAgent {
                     max_output_tokens: Some(max_output_tokens),
                     route_pin: input.route_pin.or(Some(&expected_route)),
                     selected_model: input.selected_model,
+                    reasoning_effort: input.reasoning_effort,
                 })
                 .await?;
             if child.result.result.has_tool_calls()
@@ -1402,6 +1405,7 @@ impl ToolAgent {
             max_output_tokens,
             route_pin,
             selected_model,
+            reasoning_effort,
         } = input;
         let resilience_policy = model_resilience_policy::builtin_policy();
         let purpose = model_purpose_routing::purpose_for_task_class(task_class);
@@ -1640,6 +1644,7 @@ impl ToolAgent {
                     evohime_model_gateway::ChatRequestOptions {
                         max_output_tokens,
                         max_retries: max_output_tokens.map(|_| 0),
+                        reasoning_effort,
                     },
                     effective_route_pin,
                 );

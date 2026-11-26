@@ -677,6 +677,7 @@ impl FreeAccessProbeTransport for GatewayProbeTransport<'_> {
             ChatRequestOptions {
                 max_output_tokens: Some(FREE_ACCESS_PROBE_MAX_OUTPUT_TOKENS),
                 max_retries: Some(0),
+                reasoning_effort: None,
             },
         );
         tokio::select! {
