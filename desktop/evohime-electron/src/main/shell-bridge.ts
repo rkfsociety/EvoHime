@@ -246,6 +246,23 @@ function dispatch(
       return { ok: true, value: workspaces.forget(path) }
     }
 
+    case 'workspace.openFolder': {
+      const path = asBoundedString(asRecord(payload)['path'])
+      if (path === null) {
+        return failure('invalid-payload', 'Некорректный путь рабочей папки.')
+      }
+      const known = workspaces.list().options.find((item) => item.path.toLowerCase() === path.toLowerCase())
+      if (!known) {
+        return failure('workspace-unavailable', 'Эта папка не найдена в списке проектов.')
+      }
+      return shell.openPath(known.path).then((errorMessage) => {
+        if (errorMessage) {
+          return failure('protocol-error', errorMessage)
+        }
+        return { ok: true, value: { opened: true } }
+      })
+    }
+
     case 'core.startTask': {
       const value = asRecord(payload)
       const taskId = asGoalToken(value['taskId'])

@@ -23,6 +23,7 @@ export type UiIconName =
   | 'message'
   | 'mic'
   | 'mic-off'
+  | 'more-horizontal'
   | 'panel-right'
   | 'plus'
   | 'pulse'
@@ -297,6 +298,14 @@ export function UiIcon({ name, size = 16, className = '' }: UiIconProps): React.
         <svg {...common}>
           <path d="m21 3-7.2 18-3.1-7.7L3 10.2 21 3Z" />
           <path d="m21 3-10.3 10.3" />
+        </svg>
+      )
+    case 'more-horizontal':
+      return (
+        <svg {...common}>
+          <circle cx="5" cy="12" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="19" cy="12" r="1.3" fill="currentColor" stroke="none" />
         </svg>
       )
   }

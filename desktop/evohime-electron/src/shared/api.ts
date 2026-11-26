@@ -1472,6 +1472,7 @@ export const RENDERER_COMMANDS = [
   'workspace.pick',
   'workspace.select',
   'workspace.forget',
+  'workspace.openFolder',
   'core.startTask',
   'core.getConversationEvents',
   'core.subscribeConversationEvents',
@@ -1861,6 +1862,7 @@ export interface CommandPayloads {
   'workspace.pick': Record<string, never>
   'workspace.select': { path: string }
   'workspace.forget': { path: string }
+  'workspace.openFolder': { path: string }
   'core.startTask': { taskId: string; prompt: string; workspacePath: string; conversationId?: string; clientMessageId?: string; preferredRouteHint?: 'local' | 'cloud' | 'codex_cli' | 'hive' | null; executionKind?: 'dialogue' | 'coding'; goalId?: string; provider?: ProviderKind; profileId?: ProviderProfileId; model?: string; permissionMode?: PermissionMode; isolationMode?: ChatIsolationMode; reasoningEffort?: ChatThinkingLevel }
   'core.getConversationEvents': { conversationId: string; beforeSequence?: number; afterSequence?: number; limit?: number; kindsFilter?: readonly string[] }
   'core.subscribeConversationEvents': { conversationId: string; afterSequence: number; limit?: number; kindsFilter?: readonly string[] }
@@ -2487,6 +2489,7 @@ export interface CommandResults {
   'workspace.pick': { cancelled: boolean; selection: WorkspaceSelection }
   'workspace.select': WorkspaceSelection
   'workspace.forget': WorkspaceSelection
+  'workspace.openFolder': { opened: boolean }
   'core.startTask': { accepted: boolean }
   'core.getConversationEvents': { accepted: boolean }
   'core.subscribeConversationEvents': { accepted: boolean }

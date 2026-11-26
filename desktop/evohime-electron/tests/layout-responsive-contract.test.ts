@@ -23,7 +23,7 @@ describe('responsive shell layout contract', () => {
     expect(projectSidebar).toContain("api.invoke('workspace.select'")
     expect(projectSidebar).toContain("api.invoke('workspace.pick'")
     expect(projectSidebar).toContain('chat-rail__workspace-switcher')
-    expect(taskTimeline).toContain('composer__scope')
+    expect(taskTimeline).not.toContain('composer__scope')
     expect(taskTimeline).not.toContain('composer__control-group--project')
   })
 

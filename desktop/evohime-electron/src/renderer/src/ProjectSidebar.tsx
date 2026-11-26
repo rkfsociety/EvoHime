@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { ChatSummary, ConnectionState, WorkspaceOption } from '@shared/api'
 
@@ -45,6 +45,24 @@ export function ProjectSidebar({
   const [projects, setProjects] = useState<readonly WorkspaceOption[]>([])
   const [chats, setChats] = useState<readonly ChatSummary[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [openProjectMenuPath, setOpenProjectMenuPath] = useState<string | null>(null)
+  const projectsRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (!openProjectMenuPath) return
+    const onPointerDown = (event: MouseEvent): void => {
+      if (!projectsRef.current?.contains(event.target as Node)) setOpenProjectMenuPath(null)
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setOpenProjectMenuPath(null)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [openProjectMenuPath])
 
   const loadProjects = useCallback(async () => {
     if (!api) {
@@ -103,6 +121,36 @@ export function ProjectSidebar({
     }
   }, [api, onWorkspaceChange])
 
+  const forgetWorkspace = useCallback(async (path: string) => {
+    if (!api) return
+    const outcome = await api.invoke('workspace.forget', { path })
+    setOpenProjectMenuPath(null)
+    if (outcome.ok) {
+      setProjects(outcome.value.options)
+      onWorkspaceChange(outcome.value.selected)
+      setError(null)
+    } else {
+      setError(outcome.message)
+    }
+  }, [api, onWorkspaceChange])
+
+  const openWorkspaceInExplorer = useCallback(async (path: string) => {
+    if (!api) return
+    setOpenProjectMenuPath(null)
+    const outcome = await api.invoke('workspace.openFolder', { path })
+    if (!outcome.ok) {
+      setError(outcome.message)
+    }
+  }, [api])
+
+  const startNewChatInProject = useCallback(async (path: string) => {
+    setOpenProjectMenuPath(null)
+    if (workspace === null || !samePath(workspace, path)) {
+      await selectWorkspace(path)
+    }
+    onChatChange(null)
+  }, [onChatChange, selectWorkspace, workspace])
+
   const removeChat = useCallback(
     async (id: string) => {
       if (!api) return
@@ -143,26 +191,9 @@ export function ProjectSidebar({
         )
       ) : null}
 
-      <section className="chat-rail__workspace-switcher" aria-label={t('Рабочая папка')}>
-        <label htmlFor="workspace-select">{t('Рабочая папка')}</label>
-        <div className="chat-rail__workspace-row">
-          <div className="chat-rail__select-wrap">
-            <select
-              id="workspace-select"
-              value={workspace ?? ''}
-              onChange={(event) => void selectWorkspace(event.target.value)}
-              aria-label={t('Рабочая папка')}
-              title={workspace ?? t('Без проекта')}
-            >
-              <option value="">{t('Без проекта')}</option>
-              {projects.map((project) => (
-                <option key={project.path} value={project.path}>
-                  {basename(project.path)}{project.available ? '' : t(' · недоступен')}
-                </option>
-              ))}
-            </select>
-            <span className="chat-rail__select-chevron" aria-hidden="true"><UiIcon name="chevron-down" size={13} /></span>
-          </div>
+      <section className="chat-rail__workspace-switcher" aria-label={t('Проекты')} ref={projectsRef}>
+        <div className="chat-rail__projects-header">
+          <span className="chat-rail__projects-title">{t('Проекты')}</span>
           <button
             type="button"
             className="chat-rail__workspace-pick"
@@ -170,9 +201,87 @@ export function ProjectSidebar({
             title={t('Выбрать папку')}
             onClick={() => void pickWorkspace()}
           >
-            <UiIcon name="folder-plus" size={15} />
+            <UiIcon name="folder-plus" size={14} />
           </button>
         </div>
+        {projects.length === 0 ? (
+          <p className="chat-rail__projects-empty">{t('Без проекта')}</p>
+        ) : (
+          <ul className="chat-rail__projects" aria-label={t('Список проектов')}>
+            {projects.map((project) => {
+              const name = basename(project.path)
+              const active = workspace !== null && samePath(project.path, workspace)
+              const menuOpen = openProjectMenuPath !== null && samePath(openProjectMenuPath, project.path)
+              return (
+                <li
+                  key={project.path}
+                  className={`chat-rail__project-row${active ? ' chat-rail__project-row--active' : ''}${!project.available ? ' chat-rail__project-row--missing' : ''}`}
+                >
+                  <button
+                    type="button"
+                    className="chat-rail__project-btn"
+                    aria-current={active ? 'true' : undefined}
+                    title={project.path}
+                    onClick={() => void selectWorkspace(project.path)}
+                  >
+                    <span className="chat-rail__project-icon" aria-hidden="true">
+                      <UiIcon name="folder" size={14} />
+                    </span>
+                    <span className="chat-rail__project-name">{name}</span>
+                  </button>
+                  <div className="chat-rail__project-actions">
+                    <button
+                      type="button"
+                      className="chat-rail__project-action"
+                      aria-label={t('Действия с проектом {name}').replace('{name}', name)}
+                      aria-expanded={menuOpen}
+                      title={t('Действия с проектом')}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setOpenProjectMenuPath(menuOpen ? null : project.path)
+                      }}
+                    >
+                      <UiIcon name="more-horizontal" size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="chat-rail__project-action"
+                      aria-label={t('Создать чат в проекте {name}').replace('{name}', name)}
+                      title={t('Новый чат в этом проекте')}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void startNewChatInProject(project.path)
+                      }}
+                    >
+                      <UiIcon name="plus" size={13} />
+                    </button>
+                  </div>
+                  {menuOpen ? (
+                    <div className="chat-rail__project-menu" role="menu" aria-label={t('Действия с проектом {name}').replace('{name}', name)}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => void openWorkspaceInExplorer(project.path)}
+                      >
+                        <UiIcon name="folder" size={13} />
+                        <span>{t('Открыть в проводнике')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="chat-rail__project-menu-danger"
+                        onClick={() => void forgetWorkspace(project.path)}
+                      >
+                        <UiIcon name="x" size={13} />
+                        <span>{t('Удалить из списка')}</span>
+                      </button>
+                    </div>
+                  ) : null}
+                </li>
+              )
+            })}
+          </ul>
+        )}
       </section>
 
       <div className="chat-rail__heading">

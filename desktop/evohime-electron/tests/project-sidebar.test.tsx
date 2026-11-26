@@ -67,8 +67,23 @@ describe('project sidebar', () => {
     expect(screen.queryByRole('button', { name: 'Запланировано' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Плагины' })).toBeNull()
     expect(screen.getByRole('heading', { name: 'Чаты' })).toBeTruthy()
-    expect(screen.getByRole('combobox', { name: 'Рабочая папка' })).toBeTruthy()
+    expect(await screen.findByRole('list', { name: 'Список проектов' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'repo' })).toBeTruthy()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Изучи проект' })).toBeTruthy())
+  })
+
+  it('opens project actions menu (explorer, delete) and starts a new chat in a project', async () => {
+    const { props } = renderSidebar({ chatId: 'chat-1' })
+    await screen.findByRole('button', { name: 'repo' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Действия с проектом repo' }))
+    expect(screen.getByRole('menu', { name: 'Действия с проектом repo' })).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Открыть в проводнике' }))
+    expect(calls).toContainEqual({ command: 'workspace.openFolder', payload: { path: 'C:\\work\\repo' } })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Создать чат в проекте repo' }))
+    expect(props.onChatChange).toHaveBeenCalledWith(null)
   })
 
   it('opens a project-scoped empty chat without creating it yet', async () => {
