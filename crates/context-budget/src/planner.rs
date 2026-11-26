@@ -105,6 +105,8 @@ pub struct PlanRequest {
     pub model: String,
     /// Окно, заявленное провайдером, если известно.
     pub provider_window: Option<u32>,
+    /// Пользовательский порог сжатия контекста (токены), если задан.
+    pub user_compression_tokens: Option<u32>,
     /// unix ms.
     pub now: i64,
     /// Кандидаты, из которых планировщик собирает контекст.
@@ -281,6 +283,7 @@ impl ContextPlanner {
         let base_profile = profile_override.unwrap_or_else(|| {
             self.catalog
                 .resolve(&request.provider, &request.model, request.provider_window)
+                .with_user_limits(None, request.user_compression_tokens)
         });
         let profile = if fallback_estimator {
             base_profile.scaled_for_fallback_estimator()
@@ -829,6 +832,7 @@ mod tests {
             provider: "literouter".to_string(),
             model: "gpt-4o-mini".to_string(),
             provider_window: None,
+            user_compression_tokens: None,
             now: 1_000_000,
             inputs,
             loadout: None,

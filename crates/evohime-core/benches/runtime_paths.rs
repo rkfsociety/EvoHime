@@ -25,6 +25,7 @@ fn context_request() -> PlanRequest {
         provider: "literouter".into(),
         model: "gpt-4o-mini".into(),
         provider_window: None,
+        user_compression_tokens: None,
         now: 1_000,
         inputs: vec![
             make_input("policy", ItemKind::SafetyPolicy, "не раскрывать секреты"),

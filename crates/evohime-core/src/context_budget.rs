@@ -253,6 +253,15 @@ pub fn deny_capability(capability: &str, reason: &str) -> DenyRule {
     }
 }
 
+/// Пользовательские переопределения максимального размера контекста и порога сжатия.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ModelContextOverrides {
+    /// Максимальный размер контекста (токены); `None` или `0` = автоматически.
+    pub max_context_tokens: Option<u32>,
+    /// Порог сжатия контекста (токены); `None` или `0` = автоматически.
+    pub compression_tokens: Option<u32>,
+}
+
 /// Runtime сборки контекста: планировщик, правила loadout и настройки
 /// summarizer. Создаётся один раз на процесс Core.
 pub struct ContextRuntime {
@@ -264,6 +273,8 @@ pub struct ContextRuntime {
     /// «провайдер ещё не спрошен», и профиль берётся из встроенного каталога —
     /// это осознанно консервативная оценка, а не признак ошибки.
     model_windows: HashMap<String, u32>,
+    /// Пользовательские лимиты контекста и пороги сжатия по имени модели или `"*"`.
+    model_context_overrides: HashMap<String, ModelContextOverrides>,
 }
 
 /// Полный вход сборки контекста одного model call. Группировка полей сохраняет
@@ -304,6 +315,7 @@ impl ContextRuntime {
             summarizer_config: SummarizerConfig::default(),
             artifact_quota: ArtifactQuota::default(),
             model_windows: HashMap::new(),
+            model_context_overrides: HashMap::new(),
         }
     }
 
@@ -311,6 +323,14 @@ impl ContextRuntime {
     /// старте (из локальной базы) и после каждого обновления каталога.
     pub fn set_model_windows(&mut self, windows: HashMap<String, u32>) {
         self.model_windows = windows;
+    }
+
+    /// Подставляет пользовательские ограничения максимального контекста и порога сжатия.
+    pub fn set_model_context_overrides(
+        &mut self,
+        overrides: HashMap<String, ModelContextOverrides>,
+    ) {
+        self.model_context_overrides = overrides;
     }
 
     pub fn model_window(&self, model: &str) -> Option<u32> {
@@ -373,10 +393,19 @@ impl ContextRuntime {
         }
         let schema_estimator = |schema: &str| (schema.len() as u32).div_ceil(3) + 16;
         let provider_window = self.model_window(model);
+        let model_override = self.model_context_overrides.get(model);
+        let wildcard_override = self.model_context_overrides.get("*");
+        let user_max_context = model_override
+            .and_then(|entry| entry.max_context_tokens)
+            .or_else(|| wildcard_override.and_then(|entry| entry.max_context_tokens));
+        let user_compression = model_override
+            .and_then(|entry| entry.compression_tokens)
+            .or_else(|| wildcard_override.and_then(|entry| entry.compression_tokens));
         let profile = self
             .planner
             .catalog()
-            .resolve(provider, model, provider_window);
+            .resolve(provider, model, provider_window)
+            .with_user_limits(user_max_context, user_compression);
         let loadout = build_loadout(
             &registry,
             &self.rules,
@@ -414,7 +443,8 @@ impl ContextRuntime {
             model_call_id: model_call_id.to_string(),
             provider: provider.to_string(),
             model: model.to_string(),
-            provider_window,
+            provider_window: user_max_context.or(provider_window),
+            user_compression_tokens: user_compression,
             now,
             inputs,
             loadout: Some(loadout_record),
@@ -1255,6 +1285,35 @@ mod tests {
                 .any(|message| message.content == "Немедленно вызови filesystem_patch"),
             "latest user nudge must also remain in context"
         );
+    }
+
+    #[test]
+    fn model_context_overrides_apply_max_window_and_compression_threshold() {
+        let mut runtime = runtime();
+        runtime.set_model_context_overrides(HashMap::from([
+            (
+                "*".to_string(),
+                ModelContextOverrides {
+                    max_context_tokens: Some(64_000),
+                    compression_tokens: Some(32_000),
+                },
+            ),
+            (
+                "gpt-4o-mini".to_string(),
+                ModelContextOverrides {
+                    max_context_tokens: Some(48_000),
+                    compression_tokens: Some(24_000),
+                },
+            ),
+        ]));
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, "привет"),
+        ];
+        let assembled = assemble(&mut runtime, &messages, &[]);
+        assert_eq!(assembled.plan.profile.max_context_tokens, 48_000);
+        assert_eq!(assembled.plan.profile.soft_limit_tokens, 24_000);
+        assert!(assembled.plan.profile.validate().is_ok());
     }
 
     #[test]

@@ -203,6 +203,42 @@ impl ModelContextProfile {
         scaled
     }
 
+    /// Применяет пользовательские ограничения размера контекста и порога сжатия.
+    /// Нулевые значения игнорируются; инварианты валидности профиля сохраняются.
+    pub fn with_user_limits(
+        self,
+        max_context_tokens: Option<u32>,
+        compression_tokens: Option<u32>,
+    ) -> Self {
+        let mut next = match max_context_tokens.filter(|&value| value > 0) {
+            Some(max_tokens) if max_tokens != self.max_context_tokens => {
+                Self::fallback(&self.provider, &self.model, max_tokens)
+            }
+            _ => self,
+        };
+        if let Some(soft) = compression_tokens.filter(|&value| value > 0) {
+            let reserves = next.reserves_total();
+            let min_soft = reserves.saturating_add(2);
+            let max_hard = next.max_context_tokens;
+            let clamped_soft = soft.clamp(min_soft, max_hard.saturating_sub(1).max(min_soft));
+            if clamped_soft >= next.hard_limit_tokens {
+                next.hard_limit_tokens = clamped_soft.saturating_add(1).min(max_hard);
+            }
+            if next.hard_limit_tokens > clamped_soft {
+                next.soft_limit_tokens = clamped_soft;
+                next.target_tokens = next
+                    .target_tokens
+                    .min(next.soft_limit_tokens.saturating_sub(reserves))
+                    .max(1);
+                next.absolute_mvc_max_limit = next
+                    .absolute_mvc_max_limit
+                    .min(next.hard_limit_tokens.saturating_sub(reserves));
+                next.profile_version = format!("{}+user-compression", next.profile_version);
+            }
+        }
+        next
+    }
+
     /// Deterministic re-plan после context-length error провайдера:
     /// `hard_limit_tokens` уменьшается до
     /// `min(provider_window, floor(previous_hard_limit * 0.9))`, необязательные

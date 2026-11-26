@@ -1579,6 +1579,46 @@ impl ToolAgent {
                 context_runtime.set_model_windows(windows);
             }
         }
+        let mut context_overrides: std::collections::HashMap<
+            String,
+            crate::context_budget::ModelContextOverrides,
+        > = evohime_model_gateway::config::model_rate_limits_from_env()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(model_name, limit)| {
+                let max_context_tokens = limit.context_length_tokens.filter(|&v| v > 0);
+                let compression_tokens = limit.context_compression_tokens.filter(|&v| v > 0);
+                if max_context_tokens.is_some() || compression_tokens.is_some() {
+                    Some((
+                        model_name,
+                        crate::context_budget::ModelContextOverrides {
+                            max_context_tokens,
+                            compression_tokens,
+                        },
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if hive_world {
+            if let Some(settings) = hive_settings_loaded.as_ref() {
+                let hive_max = settings.hive_max_context_tokens.filter(|&v| v > 0);
+                let hive_compression = settings.hive_context_compression_tokens.filter(|&v| v > 0);
+                if hive_max.is_some() || hive_compression.is_some() {
+                    let entry = context_overrides.entry("*".to_owned()).or_default();
+                    if hive_max.is_some() {
+                        entry.max_context_tokens = hive_max;
+                    }
+                    if hive_compression.is_some() {
+                        entry.compression_tokens = hive_compression;
+                    }
+                }
+            }
+        }
+        if !context_overrides.is_empty() {
+            context_runtime.set_model_context_overrides(context_overrides);
+        }
         let context_session_id = task_id.clone();
         // План 01.2: после restart в рабочий контекст возвращаются только
         // `confirmed` записи; остальные изолируются в recovery view с

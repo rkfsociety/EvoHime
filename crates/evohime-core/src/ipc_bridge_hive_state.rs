@@ -424,6 +424,51 @@ impl IpcBridge {
         .map_err(|error| error.to_string())
     }
 
+    /// Validates and persists a Hive-wide context limit setting (`hive_max_context_tokens` or `hive_context_compression_tokens`).
+    pub(crate) async fn save_hive_context_tokens_setting(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> Result<Vec<u8>, String> {
+        let mut settings = self.journal.hive_settings().await?;
+        let trimmed = value.trim();
+        let parsed = if trimmed.is_empty() || trimmed == "0" {
+            None
+        } else {
+            match trimmed.parse::<u32>() {
+                Ok(tokens) if tokens <= 1_000_000_000 => Some(tokens),
+                _ => {
+                    let current = if key == "hive_max_context_tokens" {
+                        settings.hive_max_context_tokens
+                    } else {
+                        settings.hive_context_compression_tokens
+                    };
+                    return serde_json::to_vec(&serde_json::json!({
+                        "accepted": false,
+                        "setting_key": key,
+                        key: current,
+                        "error_code": "context token limit must be a non-negative integer up to 1000000000",
+                    }))
+                    .map_err(|error| error.to_string());
+                }
+            }
+        };
+        if key == "hive_max_context_tokens" {
+            settings.hive_max_context_tokens = parsed;
+        } else {
+            settings.hive_context_compression_tokens = parsed;
+        }
+        self.journal.save_hive_settings(&settings).await?;
+        self.notify_observation_settings_changed();
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+            "setting_key": key,
+            key: parsed,
+            "error_code": "",
+        }))
+        .map_err(|error| error.to_string())
+    }
+
     async fn save_hive_request_limits_batch(&self, value: &str) -> Result<Vec<u8>, String> {
         let key = "hive_request_limits";
         let Ok(update) = serde_json::from_str::<HiveRequestLimitsUpdate>(value) else {
@@ -700,6 +745,9 @@ impl IpcBridge {
             }
             "proactive_evolution_enabled" => self.save_proactive_evolution_enabled(value).await,
             "hive_reasoning_effort" => self.save_hive_reasoning_effort(value).await,
+            "hive_max_context_tokens" | "hive_context_compression_tokens" => {
+                self.save_hive_context_tokens_setting(key, value).await
+            }
             other => serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
                 "eva_workspace_path": serde_json::Value::Null,
@@ -757,6 +805,8 @@ impl IpcBridge {
             hive_fallback_provider_configs: settings.effective_provider_configs(true),
             proactive_evolution_enabled: settings.proactive_evolution_enabled,
             hive_reasoning_effort: settings.hive_reasoning_effort.clone(),
+            hive_max_context_tokens: settings.hive_max_context_tokens,
+            hive_context_compression_tokens: settings.hive_context_compression_tokens,
             local_observation_interval_secs: settings.local_observation_interval_secs,
             llm_dispatch_interval_secs: settings.llm_dispatch_interval_secs,
             ..Default::default()

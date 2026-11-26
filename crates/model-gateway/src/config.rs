@@ -191,6 +191,20 @@ pub struct ModelRateLimitConfig {
     /// Whether the token ceiling resets at UTC midnight (legacy flag).
     #[serde(default, alias = "quotaResetUtcMidnight")]
     pub quota_reset_utc_midnight: bool,
+    /// Optional user-configured maximum context window (tokens).
+    #[serde(
+        default,
+        alias = "contextLengthTokens",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub context_length_tokens: Option<u32>,
+    /// Optional user-configured context compression threshold (tokens).
+    #[serde(
+        default,
+        alias = "contextCompressionTokens",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub context_compression_tokens: Option<u32>,
     /// Whether all provider limits reset on a fixed daily schedule.
     #[serde(default, alias = "resetScheduleEnabled")]
     pub reset_schedule_enabled: bool,
@@ -662,6 +676,7 @@ impl ModelRouteConfig {
                 reset_time_minutes: schedule.time_minutes,
                 reset_utc_offset_hours: schedule.utc_offset_hours,
                 pricing: None,
+                ..ModelRateLimitConfig::default()
             },
         );
         self
@@ -1401,7 +1416,9 @@ fn parse_hive_provider_keys_from_env(var_name: &str) -> Option<HashMap<String, S
     Some(normalized)
 }
 
-fn model_rate_limits_from_env() -> Result<HashMap<String, ModelRateLimitConfig>, ProviderError> {
+/// Parses `MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON` from the process environment.
+pub fn model_rate_limits_from_env() -> Result<HashMap<String, ModelRateLimitConfig>, ProviderError>
+{
     let Ok(raw) = env::var("MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON") else {
         return Ok(HashMap::new());
     };
@@ -1938,6 +1955,7 @@ mod tests {
                 reset_time_minutes: 0,
                 reset_utc_offset_hours: 0,
                 pricing: None,
+                ..ModelRateLimitConfig::default()
             },
         )]));
         assert_eq!(
@@ -1991,6 +2009,7 @@ mod tests {
             reset_time_minutes: 0,
             reset_utc_offset_hours: 0,
             pricing: None,
+            ..ModelRateLimitConfig::default()
         };
         route
             .model_rate_limits
@@ -2042,6 +2061,7 @@ mod tests {
             reset_time_minutes: 0,
             reset_utc_offset_hours: 0,
             pricing: None,
+            ..ModelRateLimitConfig::default()
         };
         route.model_rate_limits.insert("*".into(), limits(true, 10));
         route

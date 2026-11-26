@@ -106,6 +106,7 @@ function createEmptyModelLimitDraft(modelId: string, nextKey: () => string): Mod
     rpd: '0',
     concurrencyLimit: '0',
     contextLengthTokens: '0',
+    contextCompressionTokens: '0',
     maxOutputTokens: '0',
     capabilities: {
       jsonOutput: false,
@@ -154,6 +155,7 @@ function buildModelLimitDrafts(
         rpd: String(settings.rpd ?? 0),
         concurrencyLimit: String(settings.concurrencyLimit ?? 0),
         contextLengthTokens: String(settings.contextLengthTokens ?? 0),
+        contextCompressionTokens: String(settings.contextCompressionTokens ?? 0),
         maxOutputTokens: String(settings.maxOutputTokens ?? 0),
         capabilities: {
           jsonOutput: settings.capabilities?.jsonOutput === true,
@@ -469,21 +471,30 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
         }
         let concurrencyLimit: number | undefined
         let contextLengthTokens: number | undefined
+        let contextCompressionTokens: number | undefined
         let maxOutputTokens: number | undefined
+        const parsedContext = Number(entry.contextLengthTokens)
+        const parsedCompression = Number(entry.contextCompressionTokens)
+        if (
+          !Number.isInteger(parsedContext) || parsedContext < 0 || parsedContext > 1_000_000_000
+          || !Number.isInteger(parsedCompression) || parsedCompression < 0 || parsedCompression > 1_000_000_000
+        ) {
+          setStatus({ kind: 'failed', message: 'Размер контекста и порог сжатия должны быть неотрицательными целыми числами.' })
+          return
+        }
+        if (parsedContext > 0) contextLengthTokens = parsedContext
+        if (parsedCompression > 0) contextCompressionTokens = parsedCompression
         if (schema.supportsExtendedModelSpecs && trimmedModel !== '*') {
           const parsedConcurrency = parseModelCap(entry.concurrencyLimit)
-          const parsedContext = Number(entry.contextLengthTokens)
           const parsedMaxOutput = Number(entry.maxOutputTokens)
           if (
             parsedConcurrency === null
-            || !Number.isInteger(parsedContext) || parsedContext < 0 || parsedContext > 1_000_000_000
             || !Number.isInteger(parsedMaxOutput) || parsedMaxOutput < 0 || parsedMaxOutput > 1_000_000_000
           ) {
-            setStatus({ kind: 'failed', message: 'Concurrency, длина контекста и Max Output должны быть неотрицательными целыми числами.' })
+            setStatus({ kind: 'failed', message: 'Concurrency и Max Output должны быть неотрицательными целыми числами.' })
             return
           }
           if (parsedConcurrency > 0) concurrencyLimit = parsedConcurrency
-          if (parsedContext > 0) contextLengthTokens = parsedContext
           if (parsedMaxOutput > 0) maxOutputTokens = parsedMaxOutput
         }
         let dailyTokenQuota: number | null = null
@@ -532,13 +543,14 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           && trimmedModel !== '*'
           && Object.values(entry.capabilities).some(Boolean)
         nextModelRateLimits[trimmedModel] = {
-          enabled: schema.hideRateLimits ? Boolean(concurrencyLimit || contextLengthTokens || maxOutputTokens || hasCapabilities || pricing) : entry.enabled,
+          enabled: schema.hideRateLimits ? Boolean(concurrencyLimit || contextLengthTokens || contextCompressionTokens || maxOutputTokens || hasCapabilities || pricing) : entry.enabled,
           rpm,
           rph,
           rp4h,
           rpd,
           ...(concurrencyLimit !== undefined ? { concurrencyLimit } : {}),
           ...(contextLengthTokens !== undefined ? { contextLengthTokens } : {}),
+          ...(contextCompressionTokens !== undefined ? { contextCompressionTokens } : {}),
           ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
           ...(hasCapabilities ? { capabilities: entry.capabilities } : {}),
           ...(trimmedModel === '*' && !schema.hideRateLimits

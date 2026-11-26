@@ -176,6 +176,8 @@ impl HiveStateSnapshotExt for HiveStateSnapshot {
             hive_fallback_provider_configs: settings.effective_provider_configs(true),
             proactive_evolution_enabled: settings.proactive_evolution_enabled,
             hive_reasoning_effort: settings.hive_reasoning_effort.clone(),
+            hive_max_context_tokens: settings.hive_max_context_tokens,
+            hive_context_compression_tokens: settings.hive_context_compression_tokens,
             local_observation_interval_secs: settings.local_observation_interval_secs,
             llm_dispatch_interval_secs: settings.llm_dispatch_interval_secs,
             observation_status: observation_status_from(observation),

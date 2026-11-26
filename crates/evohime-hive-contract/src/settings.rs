@@ -188,6 +188,12 @@ pub struct HiveSettings {
     /// Optional thinking / reasoning effort level applied to all Hive models that support it (`"off"`, `"low"`, `"medium"`, `"high"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hive_reasoning_effort: Option<String>,
+    /// Optional maximum context window (tokens) applied to Hive models (`None` = automatic).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hive_max_context_tokens: Option<u32>,
+    /// Optional context compression threshold (tokens) applied to Hive models (`None` = automatic).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hive_context_compression_tokens: Option<u32>,
     /// Per-provider saved settings for the primary Hive route, keyed by normalized provider profile.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub hive_provider_configs: std::collections::BTreeMap<String, HiveProviderRouteSettings>,
@@ -247,6 +253,8 @@ impl Default for HiveSettings {
             hive_fallback_token_quota_configured: false,
             proactive_evolution_enabled: false,
             hive_reasoning_effort: None,
+            hive_max_context_tokens: None,
+            hive_context_compression_tokens: None,
             hive_provider_configs: std::collections::BTreeMap::new(),
             hive_fallback_provider_configs: std::collections::BTreeMap::new(),
         }

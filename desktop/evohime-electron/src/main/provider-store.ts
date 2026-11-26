@@ -269,6 +269,8 @@ function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
   if (concurrencyLimit !== undefined && (typeof concurrencyLimit !== 'number' || !Number.isInteger(concurrencyLimit) || concurrencyLimit < 0 || concurrencyLimit > MAX_MODEL_RATE)) return null
   const contextLengthTokens = value['contextLengthTokens'] ?? value['context_length_tokens']
   if (contextLengthTokens !== undefined && (typeof contextLengthTokens !== 'number' || !Number.isInteger(contextLengthTokens) || contextLengthTokens < 0 || contextLengthTokens > 1_000_000_000)) return null
+  const contextCompressionTokens = value['contextCompressionTokens'] ?? value['context_compression_tokens']
+  if (contextCompressionTokens !== undefined && (typeof contextCompressionTokens !== 'number' || !Number.isInteger(contextCompressionTokens) || contextCompressionTokens < 0 || contextCompressionTokens > 1_000_000_000)) return null
   const maxOutputTokens = value['maxOutputTokens'] ?? value['max_output_tokens']
   if (maxOutputTokens !== undefined && (typeof maxOutputTokens !== 'number' || !Number.isInteger(maxOutputTokens) || maxOutputTokens < 0 || maxOutputTokens > 1_000_000_000)) return null
   const dailyTokenQuota = value['dailyTokenQuota'] ?? value['daily_token_quota']
@@ -292,6 +294,7 @@ function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
     ...result,
     ...(concurrencyLimit !== undefined ? { concurrencyLimit } : {}),
     ...(contextLengthTokens !== undefined ? { contextLengthTokens } : {}),
+    ...(contextCompressionTokens !== undefined ? { contextCompressionTokens } : {}),
     ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
     ...(capabilities !== undefined ? { capabilities } : {}),
     ...(pricing !== undefined ? { pricing } : {}),

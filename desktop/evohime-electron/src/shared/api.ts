@@ -772,6 +772,7 @@ export interface ModelRateLimitSettings {
   readonly rpd: number
   readonly concurrencyLimit?: number
   readonly contextLengthTokens?: number
+  readonly contextCompressionTokens?: number
   readonly maxOutputTokens?: number
   readonly capabilities?: ModelCapabilitiesSettings
   readonly dailyTokenQuota?: number | null

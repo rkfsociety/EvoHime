@@ -116,6 +116,7 @@ export interface ModelLimitDraft {
   readonly rpd: string
   readonly concurrencyLimit: string
   readonly contextLengthTokens: string
+  readonly contextCompressionTokens: string
   readonly maxOutputTokens: string
   readonly capabilities: Required<ModelCapabilitiesSettings>
   readonly dailyTokenQuota: string
@@ -304,6 +305,35 @@ export function ModelSettingsBlock({
                 </>
               ) : null}
 
+              <div className="provider-form__grid">
+                <label htmlFor={`provider-context-len-${entry.key}`}>
+                  {translate('Макс. размер контекста (токены, 0 = авто)')}
+                  <input
+                    id={`provider-context-len-${entry.key}`}
+                    type="number"
+                    min={0}
+                    max={1_000_000_000}
+                    step={1}
+                    value={entry.contextLengthTokens}
+                    onChange={(event) => onUpdateEntry(entry.key, { contextLengthTokens: event.target.value })}
+                    disabled={busy}
+                  />
+                </label>
+                <label htmlFor={`provider-context-compress-${entry.key}`}>
+                  {translate('Сжатие контекста при (токены, 0 = авто)')}
+                  <input
+                    id={`provider-context-compress-${entry.key}`}
+                    type="number"
+                    min={0}
+                    max={1_000_000_000}
+                    step={1}
+                    value={entry.contextCompressionTokens}
+                    onChange={(event) => onUpdateEntry(entry.key, { contextCompressionTokens: event.target.value })}
+                    disabled={busy}
+                  />
+                </label>
+              </div>
+
               {supportsExtendedModelSpecs && trimmedModel !== '*' ? (
                 <>
                   <div className="provider-form__grid">
@@ -317,19 +347,6 @@ export function ModelSettingsBlock({
                         step={1}
                         value={entry.concurrencyLimit}
                         onChange={(event) => onUpdateEntry(entry.key, { concurrencyLimit: event.target.value })}
-                        disabled={busy}
-                      />
-                    </label>
-                    <label htmlFor={`provider-context-len-${entry.key}`}>
-                      {translate('Длина контекста (токены)')}
-                      <input
-                        id={`provider-context-len-${entry.key}`}
-                        type="number"
-                        min={0}
-                        max={1_000_000_000}
-                        step={1}
-                        value={entry.contextLengthTokens}
-                        onChange={(event) => onUpdateEntry(entry.key, { contextLengthTokens: event.target.value })}
                         disabled={busy}
                       />
                     </label>

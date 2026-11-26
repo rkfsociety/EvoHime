@@ -353,6 +353,8 @@ interface HiveStateView {
   readonly hiveFallbackProviderConfigs: Readonly<Record<string, HiveProviderRouteSettingsView>>
   readonly proactiveEvolutionEnabled: boolean
   readonly hiveReasoningEffort: 'auto' | 'off' | 'low' | 'medium' | 'high'
+  readonly hiveMaxContextTokens: number | null
+  readonly hiveContextCompressionTokens: number | null
   readonly observationStatus: string
   readonly nextWakeAtMs: number | null
 }
@@ -698,6 +700,14 @@ function parseHiveState(event: { readonly payload: string } | undefined): HiveSt
       root['hive_reasoning_effort'] === 'high'
         ? root['hive_reasoning_effort']
         : 'auto',
+    hiveMaxContextTokens:
+      typeof root['hive_max_context_tokens'] === 'number' && Number.isInteger(root['hive_max_context_tokens']) && root['hive_max_context_tokens'] > 0
+        ? root['hive_max_context_tokens']
+        : null,
+    hiveContextCompressionTokens:
+      typeof root['hive_context_compression_tokens'] === 'number' && Number.isInteger(root['hive_context_compression_tokens']) && root['hive_context_compression_tokens'] > 0
+        ? root['hive_context_compression_tokens']
+        : null,
     observationStatus: text(root['observation_status'] ?? root['pulse_status'], 32),
     nextWakeAtMs: typeof root['next_wake_at_ms'] === 'number' && Number.isSafeInteger(root['next_wake_at_ms'])
       ? root['next_wake_at_ms']
@@ -1854,6 +1864,8 @@ export function HiveDashboard({
   const [hiveFallbackQuotaDraft, setHiveFallbackQuotaDraft] = useState('0')
   const [hivePrimaryResetDraft, setHivePrimaryResetDraft] = useState<HiveResetScheduleDraft>({ enabled: false, resetTime: '00:00', utcOffsetHours: 0 })
   const [hiveFallbackResetDraft, setHiveFallbackResetDraft] = useState<HiveResetScheduleDraft>({ enabled: false, resetTime: '00:00', utcOffsetHours: 0 })
+  const [hiveMaxContextDraft, setHiveMaxContextDraft] = useState('0')
+  const [hiveContextCompressionDraft, setHiveContextCompressionDraft] = useState('0')
   const [hiveLimitsBusy, setHiveLimitsBusy] = useState(false)
   const [hiveLimitsError, setHiveLimitsError] = useState<string | null>(null)
   const [hiveLimitsSaved, setHiveLimitsSaved] = useState(false)
@@ -2147,7 +2159,9 @@ export function HiveDashboard({
     if (!hive) return
     setProactiveEvolutionEnabled(hive.proactiveEvolutionEnabled)
     setHiveReasoningEffort(hive.hiveReasoningEffort)
-  }, [hive?.hiveReasoningEffort, hive?.proactiveEvolutionEnabled])
+    setHiveMaxContextDraft(String(hive.hiveMaxContextTokens ?? 0))
+    setHiveContextCompressionDraft(String(hive.hiveContextCompressionTokens ?? 0))
+  }, [hive?.hiveContextCompressionTokens, hive?.hiveMaxContextTokens, hive?.hiveReasoningEffort, hive?.proactiveEvolutionEnabled])
   const hiveSettingsResult = latest(events, 'hive_settings.saved')
   useEffect(() => {
     if (!hiveSettingsResult) return
@@ -2164,6 +2178,8 @@ export function HiveDashboard({
         daily_budget_usd?: number | null
         proactive_evolution_enabled?: boolean
         hive_reasoning_effort?: string | null
+        hive_max_context_tokens?: number | null
+        hive_context_compression_tokens?: number | null
         error_code?: string
       }
       if (result.setting_key === 'hive_request_limits') {
@@ -2230,6 +2246,24 @@ export function HiveDashboard({
             : 'auto'
         )
         setProactiveEvolutionError(result.accepted ? null : (result.error_code || 'Не удалось сохранить уровень рассуждений.'))
+        return
+      }
+      if (result.setting_key === 'hive_max_context_tokens') {
+        if (result.accepted) {
+          setHiveMaxContextDraft(String(result.hive_max_context_tokens ?? 0))
+        } else {
+          setHiveLimitsBusy(false)
+          setHiveLimitsError(result.error_code || 'Core отклонил размер контекста Улья.')
+        }
+        return
+      }
+      if (result.setting_key === 'hive_context_compression_tokens') {
+        if (result.accepted) {
+          setHiveContextCompressionDraft(String(result.hive_context_compression_tokens ?? 0))
+        } else {
+          setHiveLimitsBusy(false)
+          setHiveLimitsError(result.error_code || 'Core отклонил порог сжатия контекста Улья.')
+        }
         return
       }
       if (typeof result.daily_budget_usd === 'number' && Number.isFinite(result.daily_budget_usd)) {
@@ -2831,6 +2865,15 @@ export function HiveDashboard({
       setHiveLimitsError('Укажи корректное время сброса лимитов в формате ЧЧ:ММ.')
       return
     }
+    const maxContextTokens = Number(hiveMaxContextDraft.trim() || '0')
+    const contextCompressionTokens = Number(hiveContextCompressionDraft.trim() || '0')
+    if (
+      !Number.isInteger(maxContextTokens) || maxContextTokens < 0 || maxContextTokens > 1_000_000_000
+      || !Number.isInteger(contextCompressionTokens) || contextCompressionTokens < 0 || contextCompressionTokens > 1_000_000_000
+    ) {
+      setHiveLimitsError('Размер контекста и порог сжатия Улья должны быть целыми числами от 0 до 1000000000.')
+      return
+    }
     setHiveLimitsBusy(true)
     setHiveLimitsError(null)
     setHiveLimitsSaved(false)
@@ -2857,6 +2900,24 @@ export function HiveDashboard({
         primary_reset_schedule: primaryResetSchedule,
         fallback_reset_schedule: fallbackResetSchedule
       })
+      const maxContextOutcome = await api.invoke('core.setHiveSetting', {
+        key: 'hive_max_context_tokens',
+        value: String(maxContextTokens)
+      })
+      if (!maxContextOutcome.ok) {
+        setHiveLimitsError(maxContextOutcome.message)
+        setHiveLimitsBusy(false)
+        return
+      }
+      const compressionOutcome = await api.invoke('core.setHiveSetting', {
+        key: 'hive_context_compression_tokens',
+        value: String(contextCompressionTokens)
+      })
+      if (!compressionOutcome.ok) {
+        setHiveLimitsError(compressionOutcome.message)
+        setHiveLimitsBusy(false)
+        return
+      }
       const outcome = await api.invoke('core.setHiveSetting', { key: 'hive_request_limits', value })
       if (!outcome.ok) {
         setHiveLimitsError(outcome.message)
@@ -2868,7 +2929,7 @@ export function HiveDashboard({
       setHiveLimitsError('Не удалось сохранить лимиты Улья: Core не ответил.')
       setHiveLimitsBusy(false)
     }
-  }, [api, effectiveHiveFallbackProvider, effectiveHiveProvider, hiveFallbackLimitsDraft, hiveFallbackQuotaDraft, hiveFallbackResetDraft, hivePrimaryLimitsDraft, hivePrimaryQuotaDraft, hivePrimaryResetDraft, requestSnapshot])
+  }, [api, effectiveHiveFallbackProvider, effectiveHiveProvider, hiveContextCompressionDraft, hiveFallbackLimitsDraft, hiveFallbackQuotaDraft, hiveFallbackResetDraft, hiveMaxContextDraft, hivePrimaryLimitsDraft, hivePrimaryQuotaDraft, hivePrimaryResetDraft, requestSnapshot])
 
   const toggleProactiveEvolution = useCallback(async (nextEnabled: boolean): Promise<void> => {
     if (!api) return
@@ -4561,6 +4622,42 @@ export function HiveDashboard({
                   onQuotaChange={setHiveFallbackQuotaDraft}
                   onResetScheduleChange={setHiveFallbackResetDraft}
                 />
+                <div className="hive-settings-modal__grid hive-settings-modal__grid--balanced">
+                  <label className="hive-provider" htmlFor="hive-max-context-tokens-input">
+                    <span>{translate('Макс. размер контекста Улья (токены, 0 = авто)')}</span>
+                    <input
+                      id="hive-max-context-tokens-input"
+                      type="number"
+                      min={0}
+                      max={1_000_000_000}
+                      step={1}
+                      value={hiveMaxContextDraft}
+                      disabled={!connected || hiveLimitsBusy}
+                      onChange={(event) => {
+                        setHiveMaxContextDraft(event.target.value)
+                        setHiveLimitsError(null)
+                        setHiveLimitsSaved(false)
+                      }}
+                    />
+                  </label>
+                  <label className="hive-provider" htmlFor="hive-context-compression-tokens-input">
+                    <span>{translate('Сжатие контекста Улья при (токены, 0 = авто)')}</span>
+                    <input
+                      id="hive-context-compression-tokens-input"
+                      type="number"
+                      min={0}
+                      max={1_000_000_000}
+                      step={1}
+                      value={hiveContextCompressionDraft}
+                      disabled={!connected || hiveLimitsBusy}
+                      onChange={(event) => {
+                        setHiveContextCompressionDraft(event.target.value)
+                        setHiveLimitsError(null)
+                        setHiveLimitsSaved(false)
+                      }}
+                    />
+                  </label>
+                </div>
                 <button type="button" disabled={!connected || hiveLimitsBusy} onClick={() => void saveHiveRequestLimits()}>
                   {translate(hiveLimitsBusy ? 'Сохранение…' : 'Сохранить лимиты Улья')}
                 </button>
