@@ -6475,9 +6475,9 @@ body {
 }
 
 .settings-modal__window {
-  width: min(1120px, 100%);
-  height: min(780px, 100%);
-  max-height: 100%;
+  width: min(1680px, 96vw);
+  height: min(1170px, 92vh);
+  max-height: 92vh;
   aspect-ratio: auto;
   border-radius: 18px;
   border-color: var(--border-strong);
