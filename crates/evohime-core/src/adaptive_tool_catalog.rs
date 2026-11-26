@@ -109,6 +109,9 @@ pub fn build_projection(
 ) -> Result<ToolCatalogProjection, CatalogError> {
     let mut tools = Vec::new();
     for manifest in manifests {
+        if evohime_tool_runtime::RETIRED_TOOL_IDS.contains(&manifest.tool_id.as_str()) {
+            continue;
+        }
         let schema = serde_json::to_vec(&manifest.input_schema)
             .map_err(|_| CatalogError::SchemaTooLarge(manifest.tool_id.clone()))?;
         if schema.len() > MAX_FULL_SCHEMA_BYTES {
@@ -533,37 +536,11 @@ const CROSS_LINGUAL_PREFIXES: &[(&str, &[&str])] = &[
     ("формат", &["fmt", "format", "cargo", "cargo_fmt"]),
     ("линт", &["clippy", "lint", "cargo", "cargo_clippy"]),
     // Browser / HTTP
-    (
-        "браузер",
-        &[
-            "browser",
-            "web",
-            "page",
-            "browser_open",
-            "browser_session_navigate",
-        ],
-    ),
-    (
-        "сайт",
-        &[
-            "browser",
-            "web",
-            "page",
-            "url",
-            "browser_open",
-            "browser_session_navigate",
-        ],
-    ),
+    ("браузер", &["browser", "web", "page", "browser_open"]),
+    ("сайт", &["browser", "web", "page", "url", "browser_open"]),
     (
         "страниц",
-        &[
-            "browser",
-            "web",
-            "page",
-            "browser_open",
-            "browser_extract",
-            "browser_session_read",
-        ],
+        &["browser", "web", "page", "browser_open", "browser_extract"],
     ),
     (
         "откр",
@@ -577,22 +554,12 @@ const CROSS_LINGUAL_PREFIXES: &[(&str, &[&str])] = &[
     ),
     (
         "ссылк",
-        &["url", "browser", "http", "browser_open", "http_request"],
+        &["url", "browser", "http", "browser_open", "http_fetch"],
     ),
-    (
-        "скриншот",
-        &["screenshot", "browser", "browser_session_screenshot"],
-    ),
-    (
-        "снимок",
-        &["screenshot", "browser", "browser_session_screenshot"],
-    ),
-    ("клик", &["click", "browser", "browser_session_click"]),
-    ("нажм", &["click", "browser", "browser_session_click"]),
-    ("запрос", &["http", "request", "http_request"]),
+    ("запрос", &["http", "request", "fetch", "http_fetch"]),
     (
         "скач",
-        &["http", "request", "pull", "http_request", "git_pull"],
+        &["http", "request", "fetch", "pull", "http_fetch", "git_pull"],
     ),
     // Archive
     (
@@ -819,10 +786,6 @@ mod tests {
                 manifest("archive_list", "List contents of an archive"),
                 manifest("browser_extract", "Extract text from a web page"),
                 manifest("browser_open", "Open a web page and summarize its contents"),
-                manifest(
-                    "browser_session_screenshot",
-                    "Take a screenshot of the browser tab",
-                ),
                 manifest("cargo_test", "Run cargo test in the workspace"),
                 manifest(
                     "filesystem_list",
@@ -877,7 +840,8 @@ mod tests {
             ("распакуй архив", "archive_extract"),
             ("посмотри последние строки логов", "logs_tail"),
             ("запусти тесты проекта", "cargo_test"),
-            ("сделай скриншот страницы", "browser_session_screenshot"),
+            ("открой сайт в браузере", "browser_open"),
+            ("извлеки текст со страницы", "browser_extract"),
             ("вспомни прошлые решения из памяти", "memory_search"),
         ];
 
@@ -911,5 +875,25 @@ mod tests {
         let by_yo = select_deterministic(&projection, "отчет", 1).unwrap();
         assert_eq!(by_yo.fallback, None);
         assert_eq!(by_yo.selected_ids, ["weather_tool"]);
+    }
+
+    #[test]
+    fn build_projection_excludes_retired_browser_session_tools() {
+        let manifests = evohime_tool_runtime::ToolRegistry::bootstrap().manifests();
+        let projection = build_projection(&manifests, "p", "g").unwrap();
+        for retired in evohime_tool_runtime::RETIRED_TOOL_IDS {
+            assert!(
+                !projection.tools.iter().any(|tool| tool.tool_id == *retired),
+                "retired tool {retired} must not enter catalog projection"
+            );
+        }
+        assert!(projection
+            .tools
+            .iter()
+            .any(|tool| tool.tool_id == "browser_open"));
+        assert!(projection
+            .tools
+            .iter()
+            .any(|tool| tool.tool_id == "browser_extract"));
     }
 }

@@ -949,6 +949,12 @@ impl ToolAgent {
             && eva_workspace_isolated
             && (prompt.contains("eva_workspace_") || prompt.contains("eva_self_development"));
         for tool in self.tools.list() {
+            // Retired tools remain registered so stored conversations get the
+            // typed `legacy_disabled` refusal, but they must never enter
+            // preflight or be offered to the model: every dispatch would fail.
+            if evohime_tool_runtime::RETIRED_TOOL_IDS.contains(&tool.name) {
+                continue;
+            }
             if let Some(ref allowed) = child_allowed_tools {
                 if !allowed.iter().any(|name| name == tool.name) {
                     preflight.push((
@@ -4549,6 +4555,114 @@ mod conversation_history_tests {
                 (ChatRole::Assistant, "old answer"),
                 (ChatRole::User, "new question"),
             ]
+        );
+    }
+
+    #[test]
+    fn retired_browser_session_tools_are_never_advertised_to_model() {
+        std::thread::Builder::new()
+            .name("evohime-retired-browser-tools-test".into())
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("test runtime builds")
+                    .block_on(retired_browser_session_tools_are_never_advertised_to_model_inner());
+            })
+            .expect("test thread starts")
+            .join()
+            .expect("test thread completes");
+    }
+
+    async fn retired_browser_session_tools_are_never_advertised_to_model_inner() {
+        use evohime_model_gateway::{
+            providers::{ChatFuture, ChatMessage, ModelProvider, ProviderKind, TokenStream},
+            ChatResult, ModelGateway, ToolSpec,
+        };
+        use evohime_permissions::{Permission, PermissionEngine, PermissionMode};
+        use std::sync::{Arc, Mutex};
+
+        struct CapturingProvider {
+            captured_tools: Arc<Mutex<Vec<String>>>,
+        }
+
+        impl ModelProvider for CapturingProvider {
+            fn kind(&self) -> ProviderKind {
+                ProviderKind::Mock
+            }
+            fn model_name(&self) -> &str {
+                "mock-capture"
+            }
+            fn base_url(&self) -> &str {
+                "mock://capture"
+            }
+            fn supports_tool_calls(&self) -> bool {
+                true
+            }
+            fn supports_structured_output(&self) -> bool {
+                true
+            }
+            fn stream_chat(&self, _messages: &[ChatMessage]) -> TokenStream {
+                Box::pin(futures_util::stream::empty())
+            }
+            fn chat_with_tools(
+                &self,
+                _model: Option<&str>,
+                _messages: &[ChatMessage],
+                tools: &[ToolSpec],
+            ) -> ChatFuture {
+                let mut guard = self.captured_tools.lock().expect("capture lock");
+                guard.extend(tools.iter().map(|spec| spec.function.name.clone()));
+                Box::pin(async {
+                    Ok(ChatResult {
+                        content: "готово".into(),
+                        ..ChatResult::default()
+                    })
+                })
+            }
+        }
+
+        let captured_tools = Arc::new(Mutex::new(Vec::new()));
+        let provider = CapturingProvider {
+            captured_tools: captured_tools.clone(),
+        };
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(Permission::BrowserAccess, PermissionMode::Allow)
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let agent = ToolAgent::new(
+            Arc::new(ModelGateway::from_provider(Arc::new(provider))),
+            Arc::new(registry),
+        );
+        let workspace = tempfile::tempdir().expect("workspace tempdir");
+        let (tx, _rx) = tokio::sync::mpsc::channel(64);
+        let events = EventSink::new(tx);
+        let _ = agent
+            .run_once(
+                "task-browser-retired",
+                "Открой сайт example.com в браузере, нажми на кнопку и сделай скриншот страницы.",
+                workspace.path(),
+                &events,
+            )
+            .await
+            .expect("task completes");
+
+        let advertised = captured_tools.lock().expect("capture lock");
+        assert!(
+            !advertised.is_empty(),
+            "model should receive active tools for a browser request"
+        );
+        for retired in evohime_tool_runtime::RETIRED_TOOL_IDS {
+            assert!(
+                !advertised.iter().any(|name| name == retired),
+                "retired tool {retired} must never be advertised to the model; got {advertised:?}"
+            );
+        }
+        assert!(
+            advertised.iter().any(|name| name == "browser_open"),
+            "active browser_open should remain available; got {advertised:?}"
         );
     }
 }
