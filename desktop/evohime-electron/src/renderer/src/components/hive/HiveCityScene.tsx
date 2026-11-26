@@ -619,21 +619,26 @@ export function HiveCityScene({
             ctx.fill()
             ctx.restore()
 
+            const isAgentActive = !currentWorld.paused && agent.busy
             traceHexPath(ctx, pose.x, pose.y, r, placement.rotationRad)
-            ctx.lineWidth = isSelected ? 2.6 : 2.0
-            ctx.strokeStyle = isSelected ? '#fde047' : ROLE_COLORS[agent.role]
+            ctx.lineWidth = isSelected ? 2.6 : isAgentActive ? 2.2 : 1.5
+            ctx.strokeStyle = isSelected
+              ? '#fde047'
+              : isAgentActive
+                ? ROLE_COLORS[agent.role]
+                : `${ROLE_COLORS[agent.role]}66`
             ctx.stroke()
 
-            // Внутренняя сота-ядро агента.
+            // Внутренняя сота-ядро агента: ярко горит только когда агент реально работает.
             traceHexPath(ctx, pose.x, pose.y, r * 0.54, placement.rotationRad)
-            ctx.fillStyle = ROLE_COLORS[agent.role]
+            ctx.fillStyle = isAgentActive ? ROLE_COLORS[agent.role] : `${ROLE_COLORS[agent.role]}38`
             ctx.fill()
 
             // Если Улей на паузе или агент не в рейсе — машина припаркована в его соте.
             if (currentWorld.paused || !agent.activeTripId) {
               ctx.beginPath()
               ctx.arc(pose.x, pose.y, 3.0 * pose.scale, 0, Math.PI * 2)
-              ctx.fillStyle = '#f8fafc'
+              ctx.fillStyle = isAgentActive ? '#f8fafc' : 'rgba(248, 250, 252, 0.45)'
               ctx.fill()
             }
           } else {
