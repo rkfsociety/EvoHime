@@ -200,11 +200,45 @@ function normalizeModelPricing(value: unknown): ModelRateLimitSettings['pricing'
       return null
     }
   }
+  const peakInput = value['peakInputUsdPer1M'] ?? value['peak_input_usd_per_1m']
+  const peakCached = value['peakCachedInputUsdPer1M'] ?? value['peak_cached_input_usd_per_1m']
+  const peakOutput = value['peakOutputUsdPer1M'] ?? value['peak_output_usd_per_1m']
+  for (const rate of [peakInput, peakCached, peakOutput]) {
+    if (rate !== undefined && (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0 || rate > MAX_MODEL_PRICE_USD_PER_1M)) {
+      return null
+    }
+  }
   return {
     inputUsdPer1M: rawInput as number,
     cachedInputUsdPer1M: rawCached as number,
-    outputUsdPer1M: rawOutput as number
+    outputUsdPer1M: rawOutput as number,
+    ...(peakInput !== undefined ? { peakInputUsdPer1M: peakInput as number } : {}),
+    ...(peakCached !== undefined ? { peakCachedInputUsdPer1M: peakCached as number } : {}),
+    ...(peakOutput !== undefined ? { peakOutputUsdPer1M: peakOutput as number } : {})
   }
+}
+
+function normalizeModelCapabilities(value: unknown): ModelRateLimitSettings['capabilities'] | null | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) return null
+  const keys = [
+    'jsonOutput',
+    'toolCalls',
+    'responsesApi',
+    'anthropicApi',
+    'chatPrefixCompletion',
+    'fimCompletion',
+    'vision'
+  ] as const
+  const result: Record<string, boolean> = {}
+  for (const key of keys) {
+    const flag = value[key]
+    if (flag !== undefined) {
+      if (typeof flag !== 'boolean') return null
+      result[key] = flag
+    }
+  }
+  return result
 }
 
 function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
@@ -229,6 +263,14 @@ function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
   }
   const pricing = normalizeModelPricing(value['pricing'])
   if (pricing === null) return null
+  const capabilities = normalizeModelCapabilities(value['capabilities'])
+  if (capabilities === null) return null
+  const concurrencyLimit = value['concurrencyLimit'] ?? value['concurrency_limit']
+  if (concurrencyLimit !== undefined && (typeof concurrencyLimit !== 'number' || !Number.isInteger(concurrencyLimit) || concurrencyLimit < 0 || concurrencyLimit > MAX_MODEL_RATE)) return null
+  const contextLengthTokens = value['contextLengthTokens'] ?? value['context_length_tokens']
+  if (contextLengthTokens !== undefined && (typeof contextLengthTokens !== 'number' || !Number.isInteger(contextLengthTokens) || contextLengthTokens < 0 || contextLengthTokens > 1_000_000_000)) return null
+  const maxOutputTokens = value['maxOutputTokens'] ?? value['max_output_tokens']
+  if (maxOutputTokens !== undefined && (typeof maxOutputTokens !== 'number' || !Number.isInteger(maxOutputTokens) || maxOutputTokens < 0 || maxOutputTokens > 1_000_000_000)) return null
   const dailyTokenQuota = value['dailyTokenQuota'] ?? value['daily_token_quota']
   if (dailyTokenQuota !== undefined && dailyTokenQuota !== null &&
     (typeof dailyTokenQuota !== 'number' || !Number.isSafeInteger(dailyTokenQuota) || dailyTokenQuota < 0 || dailyTokenQuota > 1_000_000_000_000)) return null
@@ -248,6 +290,10 @@ function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
   ) return null
   return {
     ...result,
+    ...(concurrencyLimit !== undefined ? { concurrencyLimit } : {}),
+    ...(contextLengthTokens !== undefined ? { contextLengthTokens } : {}),
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+    ...(capabilities !== undefined ? { capabilities } : {}),
     ...(pricing !== undefined ? { pricing } : {}),
     ...(dailyTokenQuota !== undefined ? { dailyTokenQuota: dailyTokenQuota as number | null } : {}),
     ...(quotaResetUtcMidnight !== undefined ? { quotaResetUtcMidnight } : {}),

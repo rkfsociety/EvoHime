@@ -95,6 +95,41 @@ function pacingOrDefault(value: RequestPacingSettings | undefined, provider: Pro
   return value ?? defaultRequestPacing(provider)
 }
 
+function createEmptyModelLimitDraft(modelId: string, nextKey: () => string): ModelLimitDraft {
+  return {
+    key: nextKey(),
+    modelId,
+    enabled: false,
+    rpm: '0',
+    rph: '0',
+    rp4h: '0',
+    rpd: '0',
+    concurrencyLimit: '0',
+    contextLengthTokens: '0',
+    maxOutputTokens: '0',
+    capabilities: {
+      jsonOutput: false,
+      toolCalls: false,
+      responsesApi: false,
+      anthropicApi: false,
+      chatPrefixCompletion: false,
+      fimCompletion: false,
+      vision: false
+    },
+    dailyTokenQuota: '',
+    resetScheduleEnabled: false,
+    resetTime: '00:00',
+    resetUtcOffsetHours: 0,
+    pricingEnabled: false,
+    inputUsdPer1M: '0',
+    cachedInputUsdPer1M: '0',
+    outputUsdPer1M: '0',
+    peakInputUsdPer1M: '0',
+    peakCachedInputUsdPer1M: '0',
+    peakOutputUsdPer1M: '0'
+  }
+}
+
 function buildModelLimitDrafts(
   limits: ProviderModelRateLimits | undefined,
   activeModel: string,
@@ -117,6 +152,18 @@ function buildModelLimitDrafts(
         rph: String(settings.rph ?? 0),
         rp4h: String(settings.rp4h ?? 0),
         rpd: String(settings.rpd ?? 0),
+        concurrencyLimit: String(settings.concurrencyLimit ?? 0),
+        contextLengthTokens: String(settings.contextLengthTokens ?? 0),
+        maxOutputTokens: String(settings.maxOutputTokens ?? 0),
+        capabilities: {
+          jsonOutput: settings.capabilities?.jsonOutput === true,
+          toolCalls: settings.capabilities?.toolCalls === true,
+          responsesApi: settings.capabilities?.responsesApi === true,
+          anthropicApi: settings.capabilities?.anthropicApi === true,
+          chatPrefixCompletion: settings.capabilities?.chatPrefixCompletion === true,
+          fimCompletion: settings.capabilities?.fimCompletion === true,
+          vision: settings.capabilities?.vision === true
+        },
         dailyTokenQuota: String(settings.dailyTokenQuota ?? ''),
         resetScheduleEnabled: settings.resetScheduleEnabled === true || settings.quotaResetUtcMidnight === true,
         resetTime: formatResetTime(settings.resetTimeMinutes ?? 0),
@@ -124,69 +171,24 @@ function buildModelLimitDrafts(
         pricingEnabled: settings.pricing !== undefined,
         inputUsdPer1M: String(settings.pricing?.inputUsdPer1M ?? 0),
         cachedInputUsdPer1M: String(settings.pricing?.cachedInputUsdPer1M ?? 0),
-        outputUsdPer1M: String(settings.pricing?.outputUsdPer1M ?? 0)
+        outputUsdPer1M: String(settings.pricing?.outputUsdPer1M ?? 0),
+        peakInputUsdPer1M: String(settings.pricing?.peakInputUsdPer1M ?? 0),
+        peakCachedInputUsdPer1M: String(settings.pricing?.peakCachedInputUsdPer1M ?? 0),
+        peakOutputUsdPer1M: String(settings.pricing?.peakOutputUsdPer1M ?? 0)
       })
     }
   }
 
   if (!seen.has('*')) {
-    entries.unshift({
-      key: nextKey(),
-      modelId: '*',
-      enabled: false,
-      rpm: '0',
-      rph: '0',
-      rp4h: '0',
-      rpd: '0',
-      dailyTokenQuota: '',
-      resetScheduleEnabled: false,
-      resetTime: '00:00',
-      resetUtcOffsetHours: 0,
-      pricingEnabled: false,
-      inputUsdPer1M: '0',
-      cachedInputUsdPer1M: '0',
-      outputUsdPer1M: '0'
-    })
+    entries.unshift(createEmptyModelLimitDraft('*', nextKey))
   }
 
   if (trimmedActive && !seen.has(trimmedActive)) {
-    entries.unshift({
-      key: nextKey(),
-      modelId: trimmedActive,
-      enabled: false,
-      rpm: '0',
-      rph: '0',
-      rp4h: '0',
-      rpd: '0',
-      dailyTokenQuota: '',
-      resetScheduleEnabled: false,
-      resetTime: '00:00',
-      resetUtcOffsetHours: 0,
-      pricingEnabled: false,
-      inputUsdPer1M: '0',
-      cachedInputUsdPer1M: '0',
-      outputUsdPer1M: '0'
-    })
+    entries.unshift(createEmptyModelLimitDraft(trimmedActive, nextKey))
   }
 
   if (entries.length === 0) {
-    entries.push({
-      key: nextKey(),
-      modelId: '',
-      enabled: false,
-      rpm: '0',
-      rph: '0',
-      rp4h: '0',
-      rpd: '0',
-      dailyTokenQuota: '',
-      resetScheduleEnabled: false,
-      resetTime: '00:00',
-      resetUtcOffsetHours: 0,
-      pricingEnabled: false,
-      inputUsdPer1M: '0',
-      cachedInputUsdPer1M: '0',
-      outputUsdPer1M: '0'
-    })
+    entries.push(createEmptyModelLimitDraft('', nextKey))
   }
 
   return entries
@@ -432,26 +434,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setModelLimitEntries((current) => {
       const used = new Set(current.map((item) => item.modelId.trim()).filter(Boolean))
       const suggested = catalogModels.find((id) => !used.has(id)) ?? ''
-      return [
-        ...current,
-        {
-          key: nextCardKey(),
-          modelId: suggested,
-          enabled: false,
-          rpm: '0',
-          rph: '0',
-          rp4h: '0',
-          rpd: '0',
-          dailyTokenQuota: '',
-          resetScheduleEnabled: false,
-          resetTime: '00:00',
-          resetUtcOffsetHours: 0,
-          pricingEnabled: false,
-          inputUsdPer1M: '0',
-          cachedInputUsdPer1M: '0',
-          outputUsdPer1M: '0'
-        }
-      ]
+      return [...current, createEmptyModelLimitDraft(suggested, nextCardKey)]
     })
   }, [catalogModels, nextCardKey])
 
@@ -476,13 +459,32 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       for (const entry of modelLimitEntries) {
         const trimmedModel = entry.modelId.trim()
         if (!trimmedModel && trimmedModel !== '*') continue
-        const rpm = parseModelCap(entry.rpm)
-        const rph = parseModelCap(entry.rph)
-        const rp4h = parseModelCap(entry.rp4h)
-        const rpd = parseModelCap(entry.rpd)
+        const rpm = schema.hideRateLimits ? 0 : parseModelCap(entry.rpm)
+        const rph = schema.hideRateLimits ? 0 : parseModelCap(entry.rph)
+        const rp4h = schema.hideRateLimits ? 0 : parseModelCap(entry.rp4h)
+        const rpd = schema.hideRateLimits ? 0 : parseModelCap(entry.rpd)
         if (rpm === null || rph === null || rp4h === null || rpd === null) {
           setStatus({ kind: 'failed', message: 'Лимиты RPM/RPH/RP4H/RPD должны быть целыми числами от 0 до 4294967295.' })
           return
+        }
+        let concurrencyLimit: number | undefined
+        let contextLengthTokens: number | undefined
+        let maxOutputTokens: number | undefined
+        if (schema.supportsExtendedModelSpecs && trimmedModel !== '*') {
+          const parsedConcurrency = parseModelCap(entry.concurrencyLimit)
+          const parsedContext = Number(entry.contextLengthTokens)
+          const parsedMaxOutput = Number(entry.maxOutputTokens)
+          if (
+            parsedConcurrency === null
+            || !Number.isInteger(parsedContext) || parsedContext < 0 || parsedContext > 1_000_000_000
+            || !Number.isInteger(parsedMaxOutput) || parsedMaxOutput < 0 || parsedMaxOutput > 1_000_000_000
+          ) {
+            setStatus({ kind: 'failed', message: 'Concurrency, длина контекста и Max Output должны быть неотрицательными целыми числами.' })
+            return
+          }
+          if (parsedConcurrency > 0) concurrencyLimit = parsedConcurrency
+          if (parsedContext > 0) contextLengthTokens = parsedContext
+          if (parsedMaxOutput > 0) maxOutputTokens = parsedMaxOutput
         }
         let dailyTokenQuota: number | null = null
         if (trimmedModel === '*' && entry.dailyTokenQuota.trim().length > 0) {
@@ -498,11 +500,24 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           const inputUsdPer1M = parseModelPrice(entry.inputUsdPer1M)
           const cachedInputUsdPer1M = parseModelPrice(entry.cachedInputUsdPer1M)
           const outputUsdPer1M = parseModelPrice(entry.outputUsdPer1M)
-          if (inputUsdPer1M === null || cachedInputUsdPer1M === null || outputUsdPer1M === null) {
+          const peakInputUsdPer1M = schema.supportsExtendedModelSpecs ? parseModelPrice(entry.peakInputUsdPer1M) : 0
+          const peakCachedInputUsdPer1M = schema.supportsExtendedModelSpecs ? parseModelPrice(entry.peakCachedInputUsdPer1M) : 0
+          const peakOutputUsdPer1M = schema.supportsExtendedModelSpecs ? parseModelPrice(entry.peakOutputUsdPer1M) : 0
+          if (
+            inputUsdPer1M === null || cachedInputUsdPer1M === null || outputUsdPer1M === null
+            || peakInputUsdPer1M === null || peakCachedInputUsdPer1M === null || peakOutputUsdPer1M === null
+          ) {
             setStatus({ kind: 'failed', message: 'Стоимость токенов должна быть числом от 0 до 10000 USD за 1 млн.' })
             return
           }
-          pricing = { inputUsdPer1M, cachedInputUsdPer1M, outputUsdPer1M }
+          pricing = {
+            inputUsdPer1M,
+            cachedInputUsdPer1M,
+            outputUsdPer1M,
+            ...(schema.supportsExtendedModelSpecs
+              ? { peakInputUsdPer1M, peakCachedInputUsdPer1M, peakOutputUsdPer1M }
+              : {})
+          }
         }
         let resetTimeMinutes = 0
         if (trimmedModel === '*' && entry.resetScheduleEnabled) {
@@ -513,13 +528,20 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           }
           resetTimeMinutes = parsedTime
         }
+        const hasCapabilities = schema.supportsExtendedModelSpecs
+          && trimmedModel !== '*'
+          && Object.values(entry.capabilities).some(Boolean)
         nextModelRateLimits[trimmedModel] = {
-          enabled: entry.enabled,
+          enabled: schema.hideRateLimits ? Boolean(concurrencyLimit || contextLengthTokens || maxOutputTokens || hasCapabilities || pricing) : entry.enabled,
           rpm,
           rph,
           rp4h,
           rpd,
-          ...(trimmedModel === '*'
+          ...(concurrencyLimit !== undefined ? { concurrencyLimit } : {}),
+          ...(contextLengthTokens !== undefined ? { contextLengthTokens } : {}),
+          ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+          ...(hasCapabilities ? { capabilities: entry.capabilities } : {}),
+          ...(trimmedModel === '*' && !schema.hideRateLimits
             ? {
                 dailyTokenQuota,
                 quotaResetUtcMidnight: entry.resetScheduleEnabled,
@@ -719,6 +741,8 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           entries={modelLimitEntries}
           catalogModels={catalogModels}
           busy={busy}
+          hideRateLimits={Boolean(schema.hideRateLimits)}
+          supportsExtendedModelSpecs={Boolean(schema.supportsExtendedModelSpecs)}
           onUpdateEntry={updateModelLimitEntry}
           onAddEntry={addModelLimitEntry}
           onRemoveEntry={removeModelLimitEntry}

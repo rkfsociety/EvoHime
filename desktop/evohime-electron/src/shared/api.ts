@@ -747,6 +747,20 @@ export interface ModelPricingSettings {
   readonly inputUsdPer1M: number
   readonly cachedInputUsdPer1M: number
   readonly outputUsdPer1M: number
+  readonly peakInputUsdPer1M?: number
+  readonly peakCachedInputUsdPer1M?: number
+  readonly peakOutputUsdPer1M?: number
+}
+
+/** Optional per-model capability flags configured by the user. */
+export interface ModelCapabilitiesSettings {
+  readonly jsonOutput?: boolean
+  readonly toolCalls?: boolean
+  readonly responsesApi?: boolean
+  readonly anthropicApi?: boolean
+  readonly chatPrefixCompletion?: boolean
+  readonly fimCompletion?: boolean
+  readonly vision?: boolean
 }
 
 /** Per-model rolling request limits and optional token pricing. Disabled and empty by default. */
@@ -756,6 +770,10 @@ export interface ModelRateLimitSettings {
   readonly rph: number
   readonly rp4h?: number
   readonly rpd: number
+  readonly concurrencyLimit?: number
+  readonly contextLengthTokens?: number
+  readonly maxOutputTokens?: number
+  readonly capabilities?: ModelCapabilitiesSettings
   readonly dailyTokenQuota?: number | null
   readonly quotaResetUtcMidnight?: boolean
   readonly resetScheduleEnabled?: boolean

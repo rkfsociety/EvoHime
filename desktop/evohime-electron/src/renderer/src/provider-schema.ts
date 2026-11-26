@@ -23,6 +23,8 @@ export interface ProviderUISchema {
   readonly supportsEvidenceRouting: boolean
   readonly supportsAutoProbe: boolean
   readonly supportsLocalModelDownload: boolean
+  readonly hideRateLimits?: boolean
+  readonly supportsExtendedModelSpecs?: boolean
   readonly defaultTier: ModelTier
   readonly defaultProbePolicy: FreeAccessProbePolicy
   readonly description: string
@@ -56,6 +58,7 @@ function buildOpenAICompatibleProfileSchema(profileId: ProviderProfileId): Provi
   const isCustom = profileId === 'custom'
   const isCloudflare = profileId === 'cloudflare_workers_ai'
   const isOpenRouter = profileId === 'openrouter'
+  const isDeepSeek = profileId === 'deepseek'
   const defaultTier: ModelTier = PAID_OPENAI_COMPATIBLE_PROFILES.has(profileId) ? 'paid' : 'free'
 
   return {
@@ -67,6 +70,8 @@ function buildOpenAICompatibleProfileSchema(profileId: ProviderProfileId): Provi
     supportsRequestPacing: false,
     supportsFreeAccessProbe: isOpenRouter || isCloudflare,
     supportsModelLimits: true,
+    hideRateLimits: isDeepSeek,
+    supportsExtendedModelSpecs: isDeepSeek,
     supportsEvidenceRouting: isOpenRouter,
     supportsAutoProbe: isOpenRouter,
     supportsLocalModelDownload: false,
