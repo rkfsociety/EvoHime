@@ -207,13 +207,22 @@ const DELIVERY_MUTATION_NUDGE_LIMIT: u32 = 3;
 const ITERATION_LIMIT_FINAL_ANSWER_PROMPT: &str =
     "Это последний доступный шаг задачи, инструменты больше не предоставляются. Не вызывай инструменты и не повторяй исследование: верни обычным текстом итог по уже выполненной работе, явно указав, что осталось несделанным, если работа не завершена.";
 
+/// Cooldown before retrying the model when a standard-budget task crosses a
+/// step window instead of aborting on the iteration limit.
+const STEP_WINDOW_COOLDOWN: Duration = Duration::from_secs(3);
+
 /// True when the current iteration is the reserved final answer step.
 ///
-/// The loop allows `max_iterations` tool-capable steps and one extra step that
-/// is guaranteed to be tool-free, so a model that keeps calling tools cannot
-/// end the task with a bare limit error and no text.
+/// Bounded runs (`max_iterations < DEFAULT_TOOL_ITERATIONS`) allow
+/// `max_iterations` tool-capable steps and one extra tool-free step. Standard
+/// runs (`max_iterations >= DEFAULT_TOOL_ITERATIONS`) never terminate on the
+/// step limit and instead pause briefly before continuing.
 fn iteration_limit_final_answer(iteration: usize, max_iterations: usize) -> bool {
     iteration >= max_iterations
+}
+
+fn is_unbounded_step_mode(max_iterations: usize) -> bool {
+    max_iterations >= crate::core_agent::DEFAULT_TOOL_ITERATIONS
 }
 
 /// Serializes guardrail-redacted tool arguments for the conversation trace and
@@ -1603,8 +1612,32 @@ impl ToolAgent {
                 })
                 .unwrap_or_default(),
         );
-        for iteration in 0..=self.max_iterations {
-            let final_iteration = iteration_limit_final_answer(iteration, self.max_iterations);
+        let unbounded_steps = is_unbounded_step_mode(self.max_iterations);
+        let mut next_iteration: usize = 0;
+        loop {
+            let iteration = next_iteration;
+            next_iteration = next_iteration.saturating_add(1);
+            if !unbounded_steps && iteration > self.max_iterations {
+                break;
+            }
+            if unbounded_steps && iteration > 0 && iteration % self.max_iterations == 0 {
+                write_model_trace(
+                    "task.step_window_cooldown",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "iteration": iteration,
+                        "window_steps": self.max_iterations,
+                        "cooldown_ms": STEP_WINDOW_COOLDOWN.as_millis(),
+                    }),
+                );
+                tokio::select! {
+                    _ = tokio::time::sleep(STEP_WINDOW_COOLDOWN) => {}
+                    _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+                }
+            }
+            let final_iteration =
+                !unbounded_steps && iteration_limit_final_answer(iteration, self.max_iterations);
+            let has_next_step = unbounded_steps || iteration + 1 < self.max_iterations;
             if final_iteration {
                 // Дополнительный tool-free шаг сверх лимита: инструменты
                 // убираются из запроса, а модель обязана превратить уже
@@ -2058,7 +2091,7 @@ impl ToolAgent {
                 let duplicate_guidance = format!(
                     "Ты уже выполняла точно такой вызов {tool_name}. Его повтор удалён Core. Самостоятельно выбери следующий новый шаг: используй другой подтверждённый путь или filesystem_search, затем продолжи исследование/реализацию. Не повторяй последний вызов и не завершай задачу отчётом."
                 );
-                if tool_calls.is_empty() && iteration + 1 < self.max_iterations {
+                if tool_calls.is_empty() && has_next_step {
                     write_model_trace(
                         "task.duplicate_tool_call_recovery",
                         serde_json::json!({
@@ -2127,10 +2160,7 @@ impl ToolAgent {
                         || trimmed.starts_with("SKIP.")
                         || trimmed.starts_with("FAILED:")
                 };
-                if !missing.is_empty()
-                    && !queen_explicit_terminal
-                    && iteration + 1 < self.max_iterations
-                {
+                if !missing.is_empty() && !queen_explicit_terminal && has_next_step {
                     let repeated = last_delivery_missing.as_deref() == Some(missing.as_slice());
                     delivery_gate_repeats = if repeated {
                         delivery_gate_repeats + 1
@@ -2188,7 +2218,7 @@ impl ToolAgent {
                     && goal_verify_available
                     && !goal_verified_in_run
                     && !goal_verify_nudged
-                    && iteration + 1 < self.max_iterations
+                    && has_next_step
                 {
                     goal_verify_nudged = true;
                     write_model_trace(
@@ -2207,7 +2237,7 @@ impl ToolAgent {
                     continue;
                 }
                 let mut final_message = strip_legacy_function_blocks(&result.content);
-                if final_message.trim().is_empty() && iteration + 1 < self.max_iterations {
+                if final_message.trim().is_empty() && has_next_step {
                     write_model_trace(
                         "task.empty_final_recovery",
                         serde_json::json!({
@@ -4373,6 +4403,17 @@ mod conversation_history_tests {
         assert!(iteration_limit_final_answer(32, 32));
         assert!(!iteration_limit_final_answer(31, 32));
         assert!(iteration_limit_final_answer(0, 0));
+    }
+
+    #[test]
+    fn standard_step_budget_enables_cooldown_instead_of_hard_stop() {
+        assert!(!is_unbounded_step_mode(1));
+        assert!(!is_unbounded_step_mode(2));
+        assert!(!is_unbounded_step_mode(31));
+        assert!(is_unbounded_step_mode(
+            crate::core_agent::DEFAULT_TOOL_ITERATIONS
+        ));
+        assert!(is_unbounded_step_mode(64));
     }
 
     #[test]
