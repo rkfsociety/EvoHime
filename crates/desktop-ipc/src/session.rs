@@ -400,6 +400,8 @@ pub struct VerifiedHandshake {
     pub client_id: String,
     /// Verified client role.
     pub client_role: String,
+    /// Verified capability names offered by the client (already bounded).
+    pub capabilities: Vec<String>,
 }
 
 /// Issues nonces and verifies handshakes for one Core generation.
@@ -515,6 +517,7 @@ impl HandshakeVerifier {
         Ok(VerifiedHandshake {
             client_id: request.client_id.clone(),
             client_role: request.client_role.clone(),
+            capabilities: request.capabilities.clone(),
         })
     }
 }

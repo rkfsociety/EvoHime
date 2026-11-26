@@ -12,6 +12,7 @@ import { buildSupportBundleFiles, claimAutomaticSupportReport, serializeSupportB
 import { hasLiveSupervisor, isSupervisorImageName, readLaunchContext } from './ipc/launch-context'
 import { CorePipeClient } from './ipc/pipe-client'
 import { createHiveDaemonClient } from './hive-daemon-client'
+import { scheduleHiveAutonomyRestore } from './hive-autonomy-session'
 import { dataDirectory, logDirectory } from './paths'
 import { ProviderStore } from './provider-store'
 import { RepairService } from './repair-service'
@@ -191,7 +192,12 @@ if (process.argv.includes('--evohime-browser-backend')) {
     client.on('state', (state: ShellState) => {
       lastShellState = state
       broadcast({ kind: 'state', state })
-      if (state.connection === 'connected') writeUpdateHealth(updateHealthFile)
+      if (state.connection === 'connected' && client instanceof CorePipeClient) {
+        writeUpdateHealth(updateHealthFile)
+        // Демон при своём старте сбрасывает автономность Улья; если пользователь
+        // включал её в этой сессии Евы, шелл возвращает выбор после перезапуска Core.
+        scheduleHiveAutonomyRestore(client, log)
+      }
     })
     client.on('core-event', (event) => {
       lastCoreEventAtMs = Date.now()

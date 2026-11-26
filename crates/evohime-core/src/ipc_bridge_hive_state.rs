@@ -687,9 +687,22 @@ impl IpcBridge {
     /// an unreadable journal produces an empty snapshot instead of an error,
     /// because the panel polls this command on a timer.
     pub(super) async fn hive_state_snapshot(&self) -> crate::hive_state::HiveStateSnapshot {
-        if let Some(proxy) = self.pulse.as_ref() {
-            if let Ok(snapshot) = proxy.hive_state_snapshot().await {
-                return snapshot;
+        self.hive_state_snapshot_with_options(false).await
+    }
+
+    /// Same as [`Self::hive_state_snapshot`], but `skip_daemon_proxy` serves
+    /// the journal-built snapshot directly. Requests answered back to the
+    /// Hive daemon must use it: proxying into the daemon re-enters its only
+    /// serialized Core session and deadlocks the chain.
+    pub(super) async fn hive_state_snapshot_with_options(
+        &self,
+        skip_daemon_proxy: bool,
+    ) -> crate::hive_state::HiveStateSnapshot {
+        if !skip_daemon_proxy {
+            if let Some(proxy) = self.pulse.as_ref() {
+                if let Ok(snapshot) = proxy.hive_state_snapshot().await {
+                    return snapshot;
+                }
             }
         }
         let settings = self.journal.hive_settings().await.unwrap_or_default();

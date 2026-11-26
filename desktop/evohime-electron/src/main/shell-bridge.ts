@@ -36,6 +36,7 @@ import type { RepairService } from './repair-service'
 import type { CorePipeClient } from './ipc/pipe-client'
 import { ChatStoreError, type ChatStore } from './chat-store'
 import { normalizeWorkspacePath } from './workspace-store'
+import { rememberHiveAutonomyChoice } from './hive-autonomy-session'
 import { resolveIdentity, resolveRepository } from './identity'
 import {
   defaultCompatibleProfileSummary,
@@ -1175,6 +1176,9 @@ function dispatch(
         return restartCore().then((restarted) => ({ ok: true, value: { accepted: restarted } }))
       }
       log('info', 'shell.command_forwarded', { command })
+      // Запоминаем выбор автономности этой сессии: после перезапуска Core шелл
+      // вернёт его (демон при старте сбрасывает флаг сам).
+      if (key === 'proactive_evolution_enabled') rememberHiveAutonomyChoice(value)
       return accepted(client.send({ setHiveSetting: { schemaVersion: 1, requestId: '', key, value } }))
     }
 

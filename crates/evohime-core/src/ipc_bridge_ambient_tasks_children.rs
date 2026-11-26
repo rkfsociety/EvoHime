@@ -506,7 +506,15 @@ impl IpcBridge {
                     .await?;
             }
             Some(generated::command_envelope::Command::HiveState(_)) => {
-                let snapshot = self.hive_state_snapshot().await;
+                // The daemon itself reads Core state through this command; an
+                // answer that proxies back into the daemon would re-enter its
+                // single serialized IPC session forever, so the daemon always
+                // receives the journal-built snapshot directly.
+                let serve_without_proxy =
+                    authenticated_client.is_some_and(|identity| identity.is_hive_daemon());
+                let snapshot = self
+                    .hive_state_snapshot_with_options(serve_without_proxy)
+                    .await;
                 self.write_response(
                     writer,
                     "hive_state.snapshot",
@@ -979,6 +987,7 @@ mod start_task_route_tests {
         let client = |client_role: &str| super::super::AuthenticatedIpcClient {
             client_id: "electron-shell".into(),
             client_role: client_role.into(),
+            client_capabilities: Vec::new(),
         };
         assert!(super::is_trusted_hive_shell(Some(&client("shell"))));
         assert!(!super::is_trusted_hive_shell(Some(&client("cli"))));

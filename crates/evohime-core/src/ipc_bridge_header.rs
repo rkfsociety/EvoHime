@@ -722,6 +722,15 @@ pub(crate) struct AuthenticatedIpcClient {
     pub(crate) client_id: String,
     /// Verified client role (`shell`, `listener`, or `cli`).
     pub(crate) client_role: String,
+    /// Verified capability names offered during the handshake (bounded).
+    pub(crate) client_capabilities: Vec<String>,
+}
+
+impl AuthenticatedIpcClient {
+    /// Whether this connection belongs to the standalone Hive observation daemon.
+    pub(crate) fn is_hive_daemon(&self) -> bool {
+        self.client_capabilities.iter().any(|cap| cap == "hive-daemon")
+    }
 }
 
 /// Проект, под которым живут принятые предложения. Речь у стола не
@@ -821,4 +830,25 @@ fn runtime_identity() -> (String, u64) {
             .map(|value| value.as_secs())
             .unwrap_or_default(),
     )
+}
+
+#[cfg(test)]
+mod authenticated_client_capability_tests {
+    use super::AuthenticatedIpcClient;
+
+    fn client(capabilities: &[&str]) -> AuthenticatedIpcClient {
+        AuthenticatedIpcClient {
+            client_id: "test-client".into(),
+            client_role: "shell".into(),
+            client_capabilities: capabilities.iter().map(|cap| (*cap).to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn only_the_hive_daemon_capability_marks_a_daemon_connection() {
+        assert!(client(&["hive-daemon"]).is_hive_daemon());
+        assert!(client(&["shell-state", "hive-daemon"]).is_hive_daemon());
+        assert!(!client(&["shell-state"]).is_hive_daemon());
+        assert!(!client(&[]).is_hive_daemon());
+    }
 }

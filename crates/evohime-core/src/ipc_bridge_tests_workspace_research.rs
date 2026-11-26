@@ -1134,6 +1134,7 @@ async fn hive_conversation_accepts_the_authenticated_shell_role() {
     let shell = AuthenticatedIpcClient {
         client_id: "electron-shell".into(),
         client_role: "shell".into(),
+        client_capabilities: Vec::new(),
     };
     bridge
         .process_once_as(Some(&shell), None, &mut server_reader, &mut server_writer)

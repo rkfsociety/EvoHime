@@ -397,6 +397,7 @@ where
             Some(crate::ipc_bridge::AuthenticatedIpcClient {
                 client_id: verified.client_id,
                 client_role: verified.client_role,
+                client_capabilities: verified.capabilities,
             })
         }
         Err(rejection) => {
