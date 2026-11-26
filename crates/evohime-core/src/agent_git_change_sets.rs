@@ -651,13 +651,14 @@ pub async fn commit_candidate(candidate: &GitCommitCandidate) -> Result<String, 
     )
     .await
     .map_err(|_| ChangeSetError::CommitOutcomeUnknown)?;
+    let commit_message = evohime_tool_runtime::with_evohime_co_author(&candidate.proposed_message);
     let args = [
         "commit",
         "--only",
         "--pathspec-from-file=-",
         "--pathspec-file-nul",
         "-m",
-        candidate.proposed_message.as_str(),
+        commit_message.as_str(),
     ];
     run_git(&root, &args, Some(&pathspec)).await?;
     current_head(&root)
@@ -775,7 +776,9 @@ pub async fn reconcile_pending_commit(
     let message = String::from_utf8_lossy(&message)
         .trim_end_matches(['\r', '\n'])
         .to_owned();
-    if message != candidate.proposed_message {
+    let expected_with_trailer =
+        evohime_tool_runtime::with_evohime_co_author(&candidate.proposed_message);
+    if message != candidate.proposed_message && message != expected_with_trailer {
         return Ok(PendingCommitReconciliation::Unknown);
     }
     let changed = run_git(

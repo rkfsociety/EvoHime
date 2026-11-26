@@ -86,6 +86,8 @@ pub use tools::filesystem;
 pub use tools::filesystem_advanced;
 /// Built-in Git tool adapter.
 pub use tools::git;
+/// Git co-author trailer helper for EvoHime commits.
+pub use tools::git::{with_evohime_co_author, EVOHIME_CO_AUTHOR_TRAILER};
 /// Extended Git tool adapter.
 pub use tools::git_advanced;
 /// Core goal verification tool adapter.

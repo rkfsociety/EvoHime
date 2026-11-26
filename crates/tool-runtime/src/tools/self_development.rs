@@ -1111,7 +1111,8 @@ async fn git_commit(
             "Git index contains paths outside this self-development session".into(),
         ));
     }
-    let mut commit_args = vec!["commit", "--only", "-m", message, "--"];
+    let commit_message = crate::tools::git::with_evohime_co_author(message);
+    let mut commit_args = vec!["commit", "--only", "-m", commit_message.as_str(), "--"];
     commit_args.extend(gate.modified_paths().iter().map(String::as_str));
     let output = run_process(
         "git",

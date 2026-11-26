@@ -33,6 +33,9 @@ pub const COMMIT_DESCRIPTION: &str = "Create a git commit";
 pub const COMMIT_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
 /// Maximum runtime for a repository commit.
 pub const COMMIT_TIMEOUT: Duration = Duration::from_secs(20);
+/// Git co-author trailer attributing commits to the official EvoHime GitHub account.
+pub const EVOHIME_CO_AUTHOR_TRAILER: &str =
+    "Co-authored-by: EvoHime <361535004+EvoHime@users.noreply.github.com>";
 
 /// Stable registry identifier for fast-forward-only pulls.
 pub const PULL_NAME: &str = "git_pull";
@@ -147,6 +150,44 @@ pub async fn diff(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
     run_git(ctx, &args).await
 }
 
+/// Appends the EvoHime GitHub co-author trailer to a commit message unless already present.
+pub fn with_evohime_co_author(message: &str) -> String {
+    let trimmed = message.trim_end();
+    if trimmed.is_empty() {
+        return EVOHIME_CO_AUTHOR_TRAILER.to_string();
+    }
+    let has_evohime_trailer = trimmed.lines().any(|line| {
+        let lower = line.trim().to_ascii_lowercase();
+        lower.starts_with("co-authored-by:")
+            && (lower.contains("361535004+evohime@users.noreply.github.com")
+                || lower.contains("evohime <"))
+    });
+    if has_evohime_trailer {
+        return trimmed.to_string();
+    }
+    let ends_with_trailer_block = trimmed.contains("\n\n")
+        && trimmed
+            .lines()
+            .last()
+            .is_some_and(|line| is_git_trailer_line(line.trim()));
+    if ends_with_trailer_block {
+        format!("{trimmed}\n{EVOHIME_CO_AUTHOR_TRAILER}")
+    } else {
+        format!("{trimmed}\n\n{EVOHIME_CO_AUTHOR_TRAILER}")
+    }
+}
+
+fn is_git_trailer_line(line: &str) -> bool {
+    let Some((key, value)) = line.split_once(':') else {
+        return false;
+    };
+    !key.is_empty()
+        && !value.trim().is_empty()
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+}
+
 /// Stages all workspace changes and creates a commit with the supplied message.
 pub async fn commit(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let input: CommitInput =
@@ -156,7 +197,8 @@ pub async fn commit(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
         })?;
 
     run_git(ctx, &["add", "-A"]).await?;
-    match run_git(ctx, &["commit", "-m", &input.message]).await {
+    let message = with_evohime_co_author(&input.message);
+    match run_git(ctx, &["commit", "-m", &message]).await {
         Ok(result) => Ok(result),
         Err(ToolError::Execution(message))
             if message.contains("nothing to commit")
@@ -1014,6 +1056,30 @@ mod tests {
         // For now, we just ensure the commit was successful
         assert!(
             result.output.contains("Add notes") || result.output.contains("completed successfully")
+        );
+
+        let body = run_git(&ctx, &["show", "-s", "--format=%B", "HEAD"])
+            .await
+            .expect("git show");
+        assert!(body.output.contains(EVOHIME_CO_AUTHOR_TRAILER));
+    }
+
+    #[test]
+    fn with_evohime_co_author_appends_trailer_once() {
+        let plain = with_evohime_co_author("feat: add feature");
+        assert_eq!(
+            plain,
+            format!("feat: add feature\n\n{EVOHIME_CO_AUTHOR_TRAILER}")
+        );
+        assert_eq!(with_evohime_co_author(&plain), plain);
+
+        let with_existing_trailer =
+            with_evohime_co_author("fix: bug\n\nSigned-off-by: Dev <dev@example.com>");
+        assert_eq!(
+            with_existing_trailer,
+            format!(
+                "fix: bug\n\nSigned-off-by: Dev <dev@example.com>\n{EVOHIME_CO_AUTHOR_TRAILER}"
+            )
         );
     }
 }
