@@ -239,9 +239,16 @@ fn commit_is_blocked_by_delivery_gate(
     verification_test_passed: bool,
     diff_check_passed: bool,
 ) -> bool {
-    requirements.commit
-        && ((requirements.verification && !verification_test_passed)
-            || (requirements.diff_check && !diff_check_passed))
+    if !requirements.commit {
+        return false;
+    }
+    if requirements.diff_check && !diff_check_passed {
+        return true;
+    }
+    if requirements.verification_command && !verification_test_passed {
+        return true;
+    }
+    false
 }
 
 /// Serializes guardrail-redacted tool arguments for the conversation trace and
@@ -3159,6 +3166,7 @@ impl ToolAgent {
                     *failures += 1;
                     failures_without_success += 1;
                     if *failures >= 3
+                        && !commit_blocked
                         && !matches!(
                             call.name.as_str(),
                             TOOL_FILESYSTEM_READ | TOOL_FILESYSTEM_LIST | TOOL_FILESYSTEM_SEARCH
@@ -3224,8 +3232,11 @@ impl ToolAgent {
                         }
                     }
                 }
+                let lightweight_verification_passed = diff_check_passed || commit_done;
                 verification_done = (!delivery_requirements.verification
-                    || verification_test_passed)
+                    || verification_test_passed
+                    || (!delivery_requirements.verification_command
+                        && lightweight_verification_passed))
                     && (!delivery_requirements.diff_check || diff_check_passed);
                 // Temporary exception: patch context is typed by filesystem_patch in wave III.
                 // Until then this hint may inspect only that specific recovery marker.
@@ -4455,21 +4466,37 @@ mod conversation_history_tests {
 
     #[test]
     fn commit_gate_allows_commit_when_tests_not_required() {
-        let doc_commit = super::DeliveryRequirements::from_prompt(
+        let mut doc_commit = super::DeliveryRequirements::from_prompt(
             "Добавь ссылку в README.md и сделай git commit и git push в main.",
         );
+        super::reconcile_delivery_requirements(&mut doc_commit, true);
         assert!(doc_commit.commit);
-        assert!(!doc_commit.verification);
+        assert!(!doc_commit.verification_command);
         assert!(!doc_commit.diff_check);
         assert!(!commit_is_blocked_by_delivery_gate(
             doc_commit, false, false
         ));
 
-        let tested_commit = super::DeliveryRequirements::from_prompt(
+        let mut inspect_doc_commit = super::DeliveryRequirements::from_prompt(
+            "Проверь файл README.md: добавь упоминание Google Gemini. Сделай коммит и отправь изменения в main (git push).",
+        );
+        super::reconcile_delivery_requirements(&mut inspect_doc_commit, true);
+        assert!(inspect_doc_commit.commit);
+        assert!(inspect_doc_commit.verification);
+        assert!(!inspect_doc_commit.verification_command);
+        assert!(!commit_is_blocked_by_delivery_gate(
+            inspect_doc_commit,
+            false,
+            true
+        ));
+
+        let mut tested_commit = super::DeliveryRequirements::from_prompt(
             "Исправь баг, проверь тесты и сделай git commit.",
         );
+        super::reconcile_delivery_requirements(&mut tested_commit, true);
         assert!(tested_commit.commit);
         assert!(tested_commit.verification);
+        assert!(tested_commit.verification_command);
         assert!(commit_is_blocked_by_delivery_gate(
             tested_commit,
             false,
