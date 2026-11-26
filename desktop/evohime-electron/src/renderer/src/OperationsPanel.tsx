@@ -3288,7 +3288,10 @@ export function HiveDashboard({
   const [revealedActivityVersion, setRevealedActivityVersion] = useState(0)
   const [activeActivityDispatch, setActiveActivityDispatch] = useState<import('@shared/hive-city-map').HoneycombVehicleDispatch | null>(null)
 
+  const activeAgentsCount = hive?.activeAgents.length ?? 0
+
   const buildActivityDispatch = useCallback((entry: HiveLogEntry): import('@shared/hive-city-map').HoneycombVehicleDispatch | null => {
+    if (!proactiveEvolutionEnabled || paused || activeAgentsCount === 0) return null
     const currentWorld = honeycombWorldRef.current
     if (!currentWorld || currentWorld.cities.length === 0) return null
     const primaryCity = currentWorld.cities.find((c) => c.id === currentWorld.primaryCityId) ?? currentWorld.cities[0]
@@ -3324,7 +3327,7 @@ export function HiveDashboard({
       toNodeId: targetNodeId,
       startedAtMs: Date.now()
     }
-  }, [])
+  }, [activeAgentsCount, paused, proactiveEvolutionEnabled])
 
   const advanceActivityQueue = useCallback((): void => {
     while (waitingDispatchIdRef.current === null && pendingActivityQueueRef.current.length > 0) {
@@ -3608,26 +3611,26 @@ export function HiveDashboard({
 
   const sceneWorld = useMemo<import('@shared/hive-city-map').HoneycombWorldState | undefined>(() => {
     if (!honeycombWorld) return undefined
-    const hasLiveHiveWork = queenWorking || (hive?.activeAgents.length ?? 0) > 0
-    if (activeActivityDispatch) {
-      const baseDispatches = hasLiveHiveWork ? honeycombWorld.activeDispatches : []
+    const hasLiveHiveWork = proactiveEvolutionEnabled && !paused && (queenWorking || activeAgentsCount > 0)
+    if (activeActivityDispatch && hasLiveHiveWork && activeAgentsCount > 0) {
       return {
         ...honeycombWorld,
         paused: false,
         activeDispatches: [
-          ...baseDispatches.filter((d) => d.id !== activeActivityDispatch.id),
+          ...honeycombWorld.activeDispatches.filter((d) => d.id !== activeActivityDispatch.id),
           activeActivityDispatch
         ]
       }
     }
-    if (!hasLiveHiveWork && honeycombWorld.activeDispatches.length > 0) {
+    if (!hasLiveHiveWork || activeAgentsCount === 0) {
       return {
         ...honeycombWorld,
+        paused: !proactiveEvolutionEnabled || paused || honeycombWorld.paused,
         activeDispatches: []
       }
     }
     return honeycombWorld
-  }, [activeActivityDispatch, hive?.activeAgents.length, honeycombWorld, queenWorking])
+  }, [activeActivityDispatch, activeAgentsCount, honeycombWorld, paused, proactiveEvolutionEnabled, queenWorking])
 
   return (
     <section className="hive-console" aria-label={translate('Улей (Hive)')}>

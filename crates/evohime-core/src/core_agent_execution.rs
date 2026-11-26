@@ -866,14 +866,23 @@ impl ToolAgent {
             }
         };
         let workspace_root: std::path::PathBuf = workspace_root.into();
-        let eva_workspace_configured = if hive_world && !read_only_subagent {
-            let workspace_str = workspace_root.to_string_lossy();
-            evohime_tool_runtime::self_development::EvaWorkspace::open(workspace_str.as_ref())
-                .ok()
-                .map(|workspace| workspace.root().to_path_buf())
+        let eva_workspace_path = if hive_world && !read_only_subagent {
+            match &self.journal {
+                Some(journal) => journal
+                    .hive_settings()
+                    .await
+                    .ok()
+                    .and_then(|settings| settings.eva_workspace_path().map(str::to_owned)),
+                None => None,
+            }
         } else {
             None
         };
+        let eva_workspace_configured = eva_workspace_path.as_deref().and_then(|path| {
+            evohime_tool_runtime::self_development::EvaWorkspace::open(path)
+                .ok()
+                .map(|workspace| workspace.root().to_path_buf())
+        });
         // World boundary: Hive tasks use their own per-task permission session
         // (initialized in `run_once`), so global chat permission modes and
         // parallel runs cannot widen or narrow each other's rights.
