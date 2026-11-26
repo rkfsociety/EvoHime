@@ -1230,10 +1230,6 @@ export function TaskTimeline({
 
           <div className="composer__footer">
             <div className="composer__footer-start">
-              <div className="composer__scope" title={workspace ?? translate("Без проекта")}>
-                <ComposerIcon name="folder" className="composer__control-icon" />
-                <strong>{translate(workspace ? basename(workspace) : translate("Без проекта"))}</strong>
-              </div>
               <div className="composer__control-group">
                 <ComposerIcon name="link" className="composer__control-icon" />
                 <ChatProviderPicker
@@ -1487,9 +1483,4 @@ function formatMessageTime(atMs: number): string {
 function makeTaskId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   return `task-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-function basename(path: string): string {
-  const parts = path.split(/[\\/]/).filter((part) => part.length > 0)
-  return parts.at(-1) ?? path
 }
