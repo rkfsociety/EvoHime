@@ -18,7 +18,7 @@ import { ProjectSidebar } from './ProjectSidebar'
 import { TaskTimeline } from './TaskTimeline'
 import type { SettingsTab } from './SettingsModal'
 import { RecoveryBanner } from './RecoveryBanner'
-import { ProviderStateProvider } from './provider-state'
+import { ProviderStateProvider, useProviderState } from './provider-state'
 import { BrandLotus } from './BrandLotus'
 import { EvaIcon } from './EvaIcon'
 import { UiIcon, type UiIconName } from './UiIcon'
@@ -93,7 +93,16 @@ const PRIMARY_VIEWS: readonly ViewDescriptor[] = [{ id: 'chat', label: 'Чат',
 const SETTINGS_LABEL = 'Настройки'
 
 export function App(): React.JSX.Element {
+  return (
+    <ProviderStateProvider>
+      <AppContent />
+    </ProviderStateProvider>
+  )
+}
+
+function AppContent(): React.JSX.Element {
   const t = useT()
+  const { loading: providerLoading } = useProviderState()
   const [appearance, setAppearance] = useState<AppearanceSettings>(() => loadAppearance())
   const [state, setState] = useState<ShellState | null>(null)
   const [events, setEvents] = useState<readonly CoreEvent[]>([])
@@ -107,6 +116,7 @@ export function App(): React.JSX.Element {
   // Bumped when a chat is renamed or reordered so the sidebar reloads its list.
   const [chatRevision, setChatRevision] = useState(0)
   const [identity, setIdentity] = useState<UserIdentity | null>(null)
+  const [identityLoaded, setIdentityLoaded] = useState(false)
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   const [repair, setRepair] = useState<RepairStatus | null>(null)
   const [traceOpen, setTraceOpen] = useState(false)
@@ -119,17 +129,15 @@ export function App(): React.JSX.Element {
   const [workbenchVisible, setWorkbenchVisible] = useState(false)
   const [browserVisible, setBrowserVisible] = useState(false)
   const [summaryVisible, setSummaryVisible] = useState(false)
-  // Пока Core ни разу не подключился в этой сессии, холодный запуск показывается
-  // одной спокойной фазой «Запуск»: без чередования «Переподключение» →
-  // «Восстановление событий» → «Синхронизация состояния» и без аларм-баннеров
-  // о «потерянной» связи, которая ещё не устанавливалась.
+  // Пока Core ни разу не подключился и не завершил синхронизацию + загрузку
+  // стартовых данных, холодный запуск показывается одной спокойной фазой «Запуск».
   const [everConnected, setEverConnected] = useState(false)
   const [bootBypassed, setBootBypassed] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
+  const bootReady = state !== null && state.connection === 'connected' && !providerLoading && identityLoaded
   useEffect(() => {
-    if (state === null) return
-    setEverConnected((value) => value || state.connection === 'connected')
-  }, [state])
+    if (bootReady) setEverConnected(true)
+  }, [bootReady])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return
@@ -229,10 +237,16 @@ export function App(): React.JSX.Element {
   }, [api])
 
   useEffect(() => {
-    if (!api) return
-    void api.invoke('identity.get', {}).then((outcome) => {
-      if (outcome.ok) setIdentity(outcome.value)
-    })
+    if (!api) {
+      setIdentityLoaded(true)
+      return
+    }
+    void api
+      .invoke('identity.get', {})
+      .then((outcome) => {
+        if (outcome.ok) setIdentity(outcome.value)
+      })
+      .finally(() => setIdentityLoaded(true))
   }, [api])
 
   useEffect(() => {
@@ -265,7 +279,10 @@ export function App(): React.JSX.Element {
   const connection = state?.connection ?? 'starting'
   // Фазы до первого подключения в сессии сворачиваются в «Запуск»: пилюля
   // перестаёт мигать label'ами на каждом шаге стартовой машины состояний.
-  const displayConnection = !everConnected && COLD_START_PHASES.includes(connection) ? 'starting' : connection
+  const displayConnection =
+    !everConnected && (COLD_START_PHASES.includes(connection) || connection === 'connected')
+      ? 'starting'
+      : connection
   const title = view === 'chat' ? t('Диалог') : t(VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
   const showSummary = chatId !== null || summaryVisible
   const showSidePanels = showSummary || workbenchVisible || browserVisible
@@ -273,7 +290,7 @@ export function App(): React.JSX.Element {
   const showBootSplash = !everConnected && !bootBypassed
 
   return (
-    <ProviderStateProvider>
+    <>
     {showBootSplash ? (
       <div className="boot-splash" role="status" aria-live="polite" aria-label={t('Запуск EvoHime')}>
         <div className="boot-splash__card">
@@ -541,7 +558,7 @@ export function App(): React.JSX.Element {
       </footer>
 
     </div>
-    </ProviderStateProvider>
+    </>
   )
 }
 

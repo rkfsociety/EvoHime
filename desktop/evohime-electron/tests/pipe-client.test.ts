@@ -423,7 +423,10 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
     server = await startStubCore(pipeName, {
       onCommand: (command) => {
         if (command.handshake) return [readyFrame()]
-        if (command.resyncRequest) requestedResync = true
+        if (command.resyncRequest) {
+          requestedResync = true
+          return [resyncEndFrame(0, false)]
+        }
         return []
       }
     })
@@ -500,13 +503,17 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
   it('preserves unseen events when conversation history pages overlap', async () => {
     const pipeName = uniquePipeName()
     server = await startStubCore(pipeName, {
-      onCommand: (command) => command.handshake
-        ? [
+      onCommand: (command) => {
+        if (command.handshake) {
+          return [
             readyFrame(),
             conversationEventFrame(1),
             conversationEventFrame(2, ['conversation-event-1', 'conversation-event-2'])
           ]
-        : []
+        }
+        if (command.resyncRequest) return [resyncEndFrame(2, false)]
+        return []
+      }
     })
 
     const target = createClient(pipeName)
@@ -574,10 +581,13 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
   it('suppresses a repeat delivery of the same typed ledger event_id', async () => {
     const pipeName = uniquePipeName()
     server = await startStubCore(pipeName, {
-      onCommand: (command) =>
-        command.handshake
-          ? [readyFrame(), ledgerEventFrame(1, 'evt-dup-1'), ledgerEventFrame(2, 'evt-dup-1')]
-          : []
+      onCommand: (command) => {
+        if (command.handshake) {
+          return [readyFrame(), ledgerEventFrame(1, 'evt-dup-1'), ledgerEventFrame(2, 'evt-dup-1')]
+        }
+        if (command.resyncRequest) return [resyncEndFrame(2, false)]
+        return []
+      }
     })
 
     const target = createClient(pipeName)
@@ -654,6 +664,7 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
         connections += 1
       },
       onCommand: (command, socket) => {
+        if (command.resyncRequest) return [resyncEndFrame(0, false)]
         if (!command.handshake) {
           return []
         }
@@ -812,6 +823,7 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
         connections += 1
       },
       onCommand: (command, socket) => {
+        if (command.resyncRequest) return [resyncEndFrame(0, false)]
         if (!command.handshake) {
           return []
         }
@@ -839,6 +851,7 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
     let nonce = ''
     server = await startStubCore(pipeName, {
       onCommand: (command) => {
+        if (command.resyncRequest) return [resyncEndFrame(0, false)]
         if (!command.handshake) {
           return []
         }

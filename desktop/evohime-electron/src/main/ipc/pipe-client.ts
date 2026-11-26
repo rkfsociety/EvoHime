@@ -668,13 +668,16 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     this.authRejections = 0
     this.clearPlannedRestart()
     this.resolveConnectedWaiters(true)
-    this.setState('connected', null)
 
     // A fresh Electron process has no local sequence cursor yet. Replay the
-    // bounded Core journal as well, otherwise the renderer starts with an
-    // empty trace after every restart and can only observe future events.
-    this.setState('replaying', null)
-    this.autoResync(false)
+    // bounded Core journal before reporting `connected`, so the renderer does
+    // not flash a ready state and drop the boot splash while still catching up.
+    if (this.capabilities.includes('resync') || this.capabilities.includes('replay')) {
+      this.setState('replaying', null)
+      this.autoResync(false)
+    } else {
+      this.setState('connected', null)
+    }
     this.flushQueue()
   }
 
