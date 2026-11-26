@@ -13,6 +13,7 @@ import { RecoveryBanner } from './RecoveryBanner'
 import { PermissionModePicker } from './PermissionModePicker'
 import { RoutingStatus } from './RoutingStatus'
 import { ChatProviderPicker } from './ChatProviderPicker'
+import { useProviderState } from './provider-state'
 import { PinnedGoalBar } from './PinnedGoalBar'
 import { HumanChatQuestions } from './HumanWorkItemsPanel'
 import { UiIcon } from './UiIcon'
@@ -181,6 +182,7 @@ export function TaskTimeline({
   const [sentPromptAtMs, setSentPromptAtMs] = useState<number | null>(null)
   const [commandError, setCommandError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const { summary: providerSummary, apply: applyProviderSummary } = useProviderState()
   const [providerMode, setProviderMode] = useState<ChatProviderMode>(() => {
     const stored = window.localStorage.getItem('evohime.chat-provider-mode')
     return stored === 'codex_cli' || stored === 'openai_compatible' || stored === 'openai_responses' || stored === 'literouter' || stored === 'ollama'
@@ -259,13 +261,21 @@ export function TaskTimeline({
   const handleChatProviderChange = useCallback(
     (next: ChatProviderMode) => {
       setProviderMode(next)
-      const remembered = window.localStorage.getItem(`evohime.chat-model.${next}`) ?? ''
+      window.localStorage.setItem('evohime.chat-provider-mode', next)
+      const remembered =
+        window.localStorage.getItem(`evohime.chat-model.${next}`) ??
+        (next !== 'codex_cli' ? (providerSummary?.profiles?.[next]?.model ?? '') : '')
       setChatModel(remembered)
+      if (next !== 'codex_cli' && api) {
+        void api.invoke('provider.select', { provider: next }).then((outcome) => {
+          if (outcome.ok) applyProviderSummary(outcome.value.summary)
+        })
+      }
       if (next !== 'codex_cli') {
         persistChatSession({ provider: next, model: remembered })
       }
     },
-    [persistChatSession]
+    [api, applyProviderSummary, persistChatSession, providerSummary?.profiles]
   )
 
   const handleChatModelChange = useCallback(
@@ -273,10 +283,17 @@ export function TaskTimeline({
       setChatModel(nextModel)
       if (nextModel.length > 0) {
         window.localStorage.setItem(`evohime.chat-model.${providerMode}`, nextModel)
+        if (api) {
+          if (providerMode === 'codex_cli') {
+            void api.invoke('codex.selectModel', { model: nextModel })
+          } else {
+            void api.invoke('core.selectModel', { model: nextModel })
+          }
+        }
       }
       persistChatSession({ model: nextModel })
     },
-    [persistChatSession, providerMode]
+    [api, persistChatSession, providerMode]
   )
 
   const handleChatIsolationChange = useCallback(

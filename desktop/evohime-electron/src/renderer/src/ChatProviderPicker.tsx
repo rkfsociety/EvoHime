@@ -65,12 +65,13 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
   }, [codex?.installed, summary?.compatibleProfiles, summary?.profiles])
 
   useEffect(() => {
+    if (!summary) return
     if (options.some((option) => option.value === value)) return
-    const preferred = summary?.provider && options.some((option) => option.value === summary.provider)
+    const preferred = summary.provider && options.some((option) => option.value === summary.provider)
       ? summary.provider
       : options[0]?.value
     if (preferred) onChange(preferred)
-  }, [onChange, options, summary?.provider, value])
+  }, [onChange, options, summary, value])
 
   // The settings surface changes the active provider for the next task too.
   // Keep the composer selection tied to that same Core-backed snapshot rather
