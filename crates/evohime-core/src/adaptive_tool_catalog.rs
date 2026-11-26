@@ -174,7 +174,7 @@ pub fn select_deterministic(
     } else {
         max_tools
     };
-    let query_tokens = tokens(query);
+    let query_tokens = expand_query_tokens(query);
     let mut ranked = projection
         .tools
         .iter()
@@ -297,13 +297,179 @@ fn bounded_hash(value: &str) -> String {
 }
 
 fn tokens(value: &str) -> BTreeSet<String> {
-    value
-        .to_ascii_lowercase()
-        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+    let mut result = BTreeSet::new();
+    for token in value
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
         .filter(|token| !token.is_empty())
-        .map(ToOwned::to_owned)
-        .collect()
+    {
+        let normalized = normalize_yo(token);
+        if normalized != token {
+            result.insert(normalized.clone());
+        }
+        result.insert(token.to_owned());
+        if token.contains('_') {
+            for part in token.split('_').filter(|part| !part.is_empty()) {
+                result.insert(part.to_owned());
+            }
+        }
+    }
+    result
 }
+
+fn normalize_yo(token: &str) -> String {
+    if token.contains('ё') {
+        token.replace('ё', "е")
+    } else {
+        token.to_owned()
+    }
+}
+
+fn expand_query_tokens(query: &str) -> BTreeSet<String> {
+    let base = tokens(query);
+    let mut expanded = base.clone();
+    for token in &base {
+        let normalized = normalize_yo(token);
+        for (prefix, targets) in CROSS_LINGUAL_PREFIXES {
+            if normalized.starts_with(prefix) {
+                for target in *targets {
+                    expanded.insert((*target).to_owned());
+                }
+            }
+        }
+    }
+    expanded
+}
+
+/// Cross-lingual prefix rules mapping Russian (and common stem) query tokens
+/// onto canonical English/tool_id tokens used in tool manifests.
+const CROSS_LINGUAL_PREFIXES: &[(&str, &[&str])] = &[
+    // Filesystem
+    ("файл", &["file", "files", "filesystem"]),
+    ("прочит", &["read", "filesystem_read"]),
+    ("чита", &["read", "filesystem_read"]),
+    ("чтен", &["read", "filesystem_read"]),
+    ("содержим", &["read", "filesystem_read"]),
+    ("запи", &["write", "filesystem_write"]),
+    ("пиш", &["write", "filesystem_write"]),
+    ("созда", &["create", "write", "filesystem_write", "filesystem_mkdir"]),
+    ("сохран", &["write", "save", "filesystem_write"]),
+    ("исправ", &["patch", "edit", "filesystem_patch"]),
+    ("редакт", &["patch", "edit", "filesystem_patch"]),
+    ("патч", &["patch", "filesystem_patch"]),
+    ("замен", &["patch", "replace", "filesystem_patch"]),
+    ("спис", &["list", "filesystem_list"]),
+    ("покаж", &["show", "list"]),
+    ("директор", &["directory", "directories", "list", "mkdir", "filesystem_list", "filesystem_mkdir"]),
+    ("папк", &["directory", "directories", "list", "mkdir", "filesystem_list", "filesystem_mkdir"]),
+    ("каталог", &["directory", "directories", "list", "catalog", "filesystem_list"]),
+    ("дерев", &["list", "filesystem_list"]),
+    ("структур", &["list", "filesystem_list"]),
+    ("найд", &["search", "find", "grep", "filesystem_search"]),
+    ("поиск", &["search", "find", "grep", "filesystem_search"]),
+    ("поищ", &["search", "find", "grep", "filesystem_search"]),
+    ("ищ", &["search", "find", "filesystem_search"]),
+    ("удал", &["delete", "remove", "filesystem_delete"]),
+    ("сотр", &["delete", "remove", "filesystem_delete"]),
+    ("перемест", &["move", "rename", "filesystem_move"]),
+    ("перенес", &["move", "rename", "filesystem_move"]),
+    ("переимен", &["move", "rename", "filesystem_move"]),
+    ("копир", &["copy", "filesystem_copy"]),
+    ("скопир", &["copy", "filesystem_copy"]),
+    ("размер", &["stat", "metadata", "filesystem_stat"]),
+    ("метадан", &["stat", "metadata", "filesystem_stat"]),
+    // Git
+    ("гит", &["git", "repository"]),
+    ("репозитор", &["git", "repository"]),
+    ("статус", &["status", "git_status"]),
+    ("состоян", &["status", "git_status"]),
+    ("дифф", &["diff", "git_diff"]),
+    ("разниц", &["diff", "git_diff"]),
+    ("отлич", &["diff", "git_diff"]),
+    ("изменен", &["diff", "changed", "git_diff", "git_changed_files"]),
+    ("измен", &["patch", "diff", "changed", "git_diff", "git_changed_files", "filesystem_patch"]),
+    ("коммит", &["commit", "commits", "git_commit", "git_log", "git_show"]),
+    ("закоммит", &["commit", "git_commit"]),
+    ("истор", &["history", "log", "git_log"]),
+    ("журнал", &["history", "log", "logs", "git_log", "logs_tail"]),
+    ("лог", &["log", "logs", "logs_tail", "logs_grep", "git_log"]),
+    ("автор", &["blame", "ownership", "git_blame"]),
+    ("блейм", &["blame", "git_blame"]),
+    ("ветк", &["branch", "branches", "git_branch"]),
+    ("веток", &["branch", "branches", "git_branch"]),
+    ("слиян", &["merge", "git_merge"]),
+    ("смерж", &["merge", "git_merge"]),
+    ("мерж", &["merge", "git_merge"]),
+    ("сброс", &["reset", "git_reset"]),
+    ("откат", &["reset", "revert", "git_reset", "git_revert"]),
+    ("ребейз", &["rebase", "git_rebase"]),
+    ("перебаз", &["rebase", "git_rebase"]),
+    ("тег", &["tag", "tags", "git_tag"]),
+    ("стэш", &["stash", "stashes", "git_stash"]),
+    ("стеш", &["stash", "stashes", "git_stash"]),
+    ("спря", &["stash", "git_stash"]),
+    ("пул", &["pull", "git_pull"]),
+    ("подтян", &["pull", "git_pull"]),
+    ("пуш", &["push", "git_push"]),
+    ("запуш", &["push", "git_push"]),
+    ("ремоут", &["remote", "remotes", "git_remote"]),
+    ("ворктри", &["worktree", "git_worktree_create", "git_worktree_remove", "git_worktree_preflight"]),
+    // Shell / Script / Process / Cargo
+    ("команд", &["shell", "execute", "command", "shell_execute"]),
+    ("терминал", &["shell", "execute", "shell_execute"]),
+    ("консол", &["shell", "execute", "shell_execute"]),
+    ("выполн", &["execute", "run", "shell_execute", "process_run"]),
+    ("запуст", &["run", "execute", "start", "shell_execute", "process_run", "cargo_test"]),
+    ("скрипт", &["script", "scripts", "script_execute"]),
+    ("пайтон", &["script", "python", "script_execute"]),
+    ("питон", &["script", "python", "script_execute"]),
+    ("процесс", &["process", "run", "process_run"]),
+    ("программ", &["process", "app", "application", "process_run", "app_open", "app_list"]),
+    ("приложен", &["app", "applications", "open", "app_open", "app_list"]),
+    ("собери", &["build", "cargo", "cargo_build"]),
+    ("сборк", &["build", "cargo", "cargo_build"]),
+    ("скомпил", &["build", "check", "cargo", "cargo_build", "cargo_check"]),
+    ("тест", &["test", "tests", "cargo", "cargo_test"]),
+    ("протест", &["test", "cargo", "cargo_test"]),
+    ("провер", &["check", "test", "cargo", "cargo_check", "cargo_test", "goal_verify"]),
+    ("формат", &["fmt", "format", "cargo", "cargo_fmt"]),
+    ("линт", &["clippy", "lint", "cargo", "cargo_clippy"]),
+    // Browser / HTTP
+    ("браузер", &["browser", "web", "page", "browser_open", "browser_session_navigate"]),
+    ("сайт", &["browser", "web", "page", "url", "browser_open", "browser_session_navigate"]),
+    ("страниц", &["browser", "web", "page", "browser_open", "browser_extract", "browser_session_read"]),
+    ("откр", &["open", "read", "app_open", "browser_open", "filesystem_read"]),
+    ("ссылк", &["url", "browser", "http", "browser_open", "http_request"]),
+    ("скриншот", &["screenshot", "browser", "browser_session_screenshot"]),
+    ("снимок", &["screenshot", "browser", "browser_session_screenshot"]),
+    ("клик", &["click", "browser", "browser_session_click"]),
+    ("нажм", &["click", "browser", "browser_session_click"]),
+    ("запрос", &["http", "request", "http_request"]),
+    ("скач", &["http", "request", "pull", "http_request", "git_pull"]),
+    // Archive
+    ("архив", &["archive", "zip", "tar", "archive_create", "archive_extract", "archive_list"]),
+    ("упак", &["archive", "create", "zip", "archive_create"]),
+    ("сжа", &["archive", "create", "archive_create"]),
+    ("сожм", &["archive", "create", "archive_create"]),
+    ("распак", &["archive", "extract", "archive_extract"]),
+    ("извлек", &["archive", "extract", "browser_extract", "archive_extract"]),
+    // Memory / Goal / Agent / Workflow / Analysis / MCP
+    ("памят", &["memory", "search", "memory_search"]),
+    ("запомн", &["memory", "memory_search"]),
+    ("вспомн", &["memory", "search", "memory_search"]),
+    ("цел", &["goal", "goals", "goal_create", "goal_verify"]),
+    ("агент", &["agent", "subagent", "hive", "agent_run", "hive_delegate_agent"]),
+    ("субагент", &["agent", "subagent", "agent_run"]),
+    ("делег", &["delegate", "hive", "hive_delegate_agent"]),
+    ("улей", &["hive", "hive_delegate_agent", "hive_register_role"]),
+    ("рол", &["role", "hive", "hive_register_role"]),
+    ("сценар", &["workflow", "workflow_catalog", "workflow_start", "workflow_status", "workflow_cancel"]),
+    ("воркфлоу", &["workflow", "workflow_catalog", "workflow_start", "workflow_status", "workflow_cancel"]),
+    ("составн", &["workflow", "workflow_catalog", "workflow_start"]),
+    ("шаблон", &["workflow", "template", "workflow_catalog"]),
+    ("анализ", &["analysis", "computation", "analysis_run"]),
+    ("вычисл", &["analysis", "computation", "analysis_run"]),
+];
 
 #[cfg(test)]
 mod tests {
@@ -446,5 +612,101 @@ mod tests {
         assert_eq!(cache.len(), 1);
         cache.invalidate();
         assert_eq!(cache.len(), 0);
+    }
+
+    fn realistic_catalog() -> ToolCatalogProjection {
+        build_projection(
+            &[
+                manifest("analysis_run", "Run one bounded computation"),
+                manifest("app_list", "List the applications that app_open can open"),
+                manifest("app_open", "Open a desktop application"),
+                manifest("archive_create", "Create a tar.gz or zip archive"),
+                manifest("archive_extract", "Extract a tar.gz or zip archive"),
+                manifest("archive_list", "List contents of an archive"),
+                manifest("browser_extract", "Extract text from a web page"),
+                manifest("browser_open", "Open a web page and summarize its contents"),
+                manifest(
+                    "browser_session_screenshot",
+                    "Take a screenshot of the browser tab",
+                ),
+                manifest("cargo_test", "Run cargo test in the workspace"),
+                manifest("filesystem_list", "List files and directories in the workspace"),
+                manifest("filesystem_read", "Read UTF-8 files from the workspace"),
+                manifest(
+                    "filesystem_search",
+                    "Search workspace files by regex or substring",
+                ),
+                manifest("git_branch", "List, create, checkout, or delete git branches"),
+                manifest("git_commit", "Create a git commit"),
+                manifest("git_diff", "Show repository diff"),
+                manifest("git_log", "Show bounded repository history"),
+                manifest("git_show", "Show a bounded commit or object diff"),
+                manifest("git_status", "Show repository status"),
+                manifest("logs_tail", "Read last N lines from a log file"),
+                manifest("memory_search", "Search persistent memory entries"),
+            ],
+            "p",
+            "g",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn russian_commit_history_query_selects_git_log_without_alphabetical_fallback() {
+        let projection = realistic_catalog();
+        let result = select_deterministic(&projection, "покажи историю коммитов", 8).unwrap();
+
+        assert_eq!(result.fallback, None);
+        assert_eq!(result.selected_ids.first().map(String::as_str), Some("git_log"));
+        assert!(result.selected_ids.contains(&"git_show".to_string()));
+        assert!(!result.selected_ids.contains(&"analysis_run".to_string()));
+    }
+
+    #[test]
+    fn russian_queries_match_expected_tools_across_domains() {
+        let projection = realistic_catalog();
+
+        let cases = [
+            ("прочитай файл конфига", "filesystem_read"),
+            ("найди функцию в коде", "filesystem_search"),
+            ("покажи ветки репозитория", "git_branch"),
+            ("упакуй файлы в архив", "archive_create"),
+            ("распакуй архив", "archive_extract"),
+            ("посмотри последние строки логов", "logs_tail"),
+            ("запусти тесты проекта", "cargo_test"),
+            ("сделай скриншот страницы", "browser_session_screenshot"),
+            ("вспомни прошлые решения из памяти", "memory_search"),
+        ];
+
+        for (query, expected_tool) in cases {
+            let result = select_deterministic(&projection, query, 8).unwrap();
+            assert_eq!(result.fallback, None, "unexpected fallback for '{query}'");
+            assert!(
+                result.selected_ids.iter().any(|id| id == expected_tool),
+                "expected '{expected_tool}' for '{query}', got {:?}",
+                result.selected_ids
+            );
+        }
+    }
+
+    #[test]
+    fn unicode_descriptions_and_yo_match_directly() {
+        let projection = build_projection(
+            &[
+                manifest("alpha_tool", "Unrelated tool"),
+                manifest("weather_tool", "Погода и отчёт о температуре"),
+            ],
+            "p",
+            "g",
+        )
+        .unwrap();
+
+        let by_cyrillic = select_deterministic(&projection, "погода", 1).unwrap();
+        assert_eq!(by_cyrillic.fallback, None);
+        assert_eq!(by_cyrillic.selected_ids, ["weather_tool"]);
+
+        let by_yo = select_deterministic(&projection, "отчет", 1).unwrap();
+        assert_eq!(by_yo.fallback, None);
+        assert_eq!(by_yo.selected_ids, ["weather_tool"]);
     }
 }
