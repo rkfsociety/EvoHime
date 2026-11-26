@@ -6,12 +6,11 @@ import { toolLabel } from './tool-names'
 import { UiIcon } from './UiIcon'
 
 /**
- * One stretch of tool work as a stable summary line with an optional subline.
+ * One stretch of tool work as a stable summary line.
  *
  * The summary line always keeps the count and categories so the header never
- * flickers or jumps in width between consecutive tool calls. While a tool call
- * is actively running, the current action is shown beneath it until the user
- * expands the full list or the call finishes.
+ * flickers or jumps in height or width between consecutive tool calls. Details
+ * of individual calls are shown only when the user expands the list.
  */
 
 export interface ActivityLineProps {
@@ -24,10 +23,7 @@ export interface ActivityLineProps {
 export function ActivityLine({ calls, running, active = false }: ActivityLineProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [expandedCalls, setExpandedCalls] = useState<ReadonlySet<number>>(() => new Set())
-  const current = calls.at(-1)
   const inProgress = running || active
-  const isCurrentRunning = running || Boolean(current?.running)
-  const showCurrentSubline = !open && inProgress && isCurrentRunning && current !== undefined
 
   function toggleCall(index: number): void {
     setExpandedCalls((prev) => {
@@ -59,18 +55,6 @@ export function ActivityLine({ calls, running, active = false }: ActivityLinePro
           <UiIcon name={open ? 'chevron-down' : 'chevron-right'} size={12} />
         </span>
       </button>
-
-      {showCurrentSubline ? (
-        <div
-          className={`activity__current${running ? ' activity__current--live' : ''}`}
-          aria-live="polite"
-        >
-          <span className="activity__current-dot" aria-hidden="true" />
-          <span className="activity__current-text">
-            {translate(currentActionLabel(current))}
-          </span>
-        </div>
-      ) : null}
 
       {open ? (
         <ol className="activity__calls" aria-label={translate("Шаги работы модели")}>
@@ -107,34 +91,6 @@ export function ActivityLine({ calls, running, active = false }: ActivityLinePro
       ) : null}
     </div>
   )
-}
-
-function currentActionLabel(call: ToolCall): string {
-  const tool = toolLabel(call.tool) || 'действие'
-  const detail = liveDetail(call.output ?? '') || callDetail(call.output)
-  return detail ? `Выполняю: ${tool} — ${detail}` : `Выполняю: ${tool}`
-}
-
-function liveDetail(output: string): string {
-  const lines = output.split(/\r?\n/).reverse()
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    try {
-      const event = JSON.parse(trimmed) as {
-        item?: { type?: string; command?: string; text?: string }
-        type?: string
-      }
-      if (event.item?.type === 'command_execution' && event.item.command) {
-        return shorten(event.item.command)
-      }
-      if (event.item?.type === 'agent_message') return 'формирую ответ'
-      if (event.type === 'turn.started') return 'подготавливаю ответ'
-    } catch {
-      // A chunk can end in the middle of a JSONL record; wait for the next one.
-    }
-  }
-  return ''
 }
 
 /** Extract only useful navigation metadata for the always-visible progress row. */

@@ -14,17 +14,18 @@ import { ActivityLine } from '../src/renderer/src/ActivityLine'
 afterEach(() => cleanup())
 
 describe('activity line', () => {
-  it('keeps the summary line stable and shows the running action underneath', () => {
-    render(<ActivityLine calls={[{ tool: 'filesystem_read', output: null, running: true }]} running />)
+  it('keeps the summary line stable without a flickering subline while a call is running', () => {
+    render(<ActivityLine calls={[{ tool: 'filesystem_read', output: null, running: true }]} running active />)
 
     const summaryButton = screen.getByRole('button', { name: /1 действие · читаю файл/ })
     expect(summaryButton).toBeTruthy()
     expect(summaryButton.textContent).not.toContain('Выполняю:')
-    expect(screen.getByText('Выполняю: Читаю файл')).toBeTruthy()
+    expect(screen.queryByText(/Выполняю:/)).toBeNull()
+    expect(screen.queryByText(/Последнее:/)).toBeNull()
     expect(screen.queryByText('filesystem_read')).toBeNull()
   })
 
-  it('hides the "Последнее" subline between consecutive calls when nothing is currently running', () => {
+  it('hides any subline between consecutive calls when nothing is currently running', () => {
     render(
       <ActivityLine
         running={false}
@@ -40,10 +41,11 @@ describe('activity line', () => {
       screen.getByRole('button', { name: /2 действия · проверяю состояние репозитория, смотрю изменённые файлы/ })
     ).toBeTruthy()
     expect(screen.queryByText(/Последнее:/)).toBeNull()
+    expect(screen.queryByText(/Выполняю:/)).toBeNull()
     expect(screen.queryByText('Смотрю изменённые файлы')).toBeNull()
   })
 
-  it('hides the subline while the full call list is expanded', async () => {
+  it('shows running status only after expanding the full call list', async () => {
     render(
       <ActivityLine
         running
@@ -52,10 +54,11 @@ describe('activity line', () => {
       />
     )
 
-    expect(screen.getByText('Выполняю: Смотрю историю коммитов')).toBeTruthy()
+    expect(screen.queryByText(/Выполняю:/)).toBeNull()
+    expect(screen.queryByText('выполняется…')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: /1 действие · смотрю историю коммитов/ }))
-    expect(screen.queryByText('Выполняю: Смотрю историю коммитов')).toBeNull()
     expect(screen.getByRole('button', { name: /Смотрю историю коммитов/ })).toBeTruthy()
+    expect(screen.getByText('выполняется…')).toBeTruthy()
   })
 
   it('hides the call list initially, then expands the list and individual call outputs on demand', async () => {
@@ -98,10 +101,11 @@ describe('activity line', () => {
     expect(screen.queryByText('src-list-output')).toBeNull()
   })
 
-  it('falls back to the identifier of a tool it does not know', () => {
+  it('falls back to the identifier of a tool it does not know when expanded', async () => {
     render(<ActivityLine calls={[{ tool: 'custom.tool', output: null, running: true }]} running />)
 
-    expect(screen.getByText('Выполняю: custom.tool')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /1 действие · custom.tool/ }))
+    expect(screen.getByText('custom.tool')).toBeTruthy()
   })
 
   it('counts with the right Russian plural', () => {

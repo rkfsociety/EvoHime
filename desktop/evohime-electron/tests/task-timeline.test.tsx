@@ -880,7 +880,7 @@ describe('task timeline', () => {
 
     expect(screen.queryByText('Модель работает')).toBeNull()
     expect(screen.getByRole('button', { name: /1 действие · читаю файл/ })).toBeTruthy()
-    expect(screen.getByText('Выполняю: Читаю файл')).toBeTruthy()
+    expect(screen.queryByText(/Выполняю:/)).toBeNull()
     expect(screen.queryByRole('status', { name: 'Агент формирует ответ' })).toBeNull()
 
     // Между завершением инструмента и следующим шагом сводная строка не прыгает,
