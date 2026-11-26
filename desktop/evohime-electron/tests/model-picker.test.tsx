@@ -445,4 +445,35 @@ describe('model picker', () => {
       'unrated-alpha:free'
     ])
   })
+
+  it('does not overwrite an explicit chat-scoped model when provider refreshes or model is absent from catalog', async () => {
+    const onSelectChatModel = vi.fn()
+    const view = render(
+      <ModelPicker
+        connection="connected"
+        provider="literouter"
+        events={[
+          event('model.catalog', { mode: 'free', models: ['first:free', 'glm-5:free'] }),
+          event('model.config', { model: 'first:free' })
+        ]}
+        selectedModel="glm-5:free"
+        onSelectChatModel={onSelectChatModel}
+      />
+    )
+
+    view.rerender(
+      <ModelPicker
+        connection="connected"
+        provider="literouter"
+        events={[
+          event('model.catalog', { mode: 'free', models: ['first:free'] }),
+          event('model.config', { model: 'first:free' })
+        ]}
+        selectedModel="glm-5:free"
+        onSelectChatModel={onSelectChatModel}
+      />
+    )
+
+    await waitFor(() => expect(onSelectChatModel).not.toHaveBeenCalled())
+  })
 })

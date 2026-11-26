@@ -59,13 +59,15 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   const autoSelectionBlocked = useRef(false)
   const onModelChangeRef = useRef(onModelChange)
   onModelChangeRef.current = onModelChange
+  const selectedModelRef = useRef(selectedModel)
+  selectedModelRef.current = selectedModel
   const chatScoped = onSelectChatModel !== undefined
 
   useEffect(() => {
     setFallbackTier(null)
     setModels([])
     setModelDescriptors([])
-    setCurrent('')
+    setCurrent(chatScoped ? (selectedModelRef.current ?? '') : '')
     setCodexModels([])
     setCodexRateLimits([])
     setHideConfirmedUnsupported(false)
@@ -256,10 +258,11 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   useEffect(() => {
     const available = visibleModels.map((model) => model.value)
     if (!configLoaded || disabled || autoSelectionBlocked.current || available.length === 0) return
+    if (chatScoped && selectedModel !== undefined && selectedModel.length > 0) return
     if (current !== '' && catalogModels.some((model) => model.value === current)) return
     const first = available[0]
     if (first !== undefined) void select(first)
-  }, [catalogModels, configLoaded, current, disabled, select, visibleModels])
+  }, [catalogModels, chatScoped, configLoaded, current, disabled, select, selectedModel, visibleModels])
 
   if (!connected) {
     return null
