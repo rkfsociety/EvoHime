@@ -392,7 +392,7 @@ impl ContextRuntime {
         // 2. Сообщения превращаются в `ContextItem`. Pin повышает приоритет,
         //    но не гарантирует включение в контекст: при нехватке бюджета
         //    закреплённый item отбрасывается последним и с явной причиной.
-        let mut inputs = plan_inputs(task_id, session_id, messages, now);
+        let mut inputs = plan_inputs(task_id, session_id, messages, intent_prompt, now);
         for entry in scratchpad {
             let mut item = entry.to_context_item();
             item.task_id = task_id.to_string();
@@ -543,9 +543,12 @@ fn plan_inputs(
     task_id: &str,
     session_id: &str,
     messages: &[ChatMessage],
+    intent_prompt: &str,
     now: i64,
 ) -> Vec<PlanInput> {
-    // Индекс последнего user-сообщения: именно оно является текущим prompt.
+    // Индекс последнего user-сообщения: оно всегда остаётся актуальным шагом,
+    // а исходный `intent_prompt` текущей задачи тоже защищён от вытеснения,
+    // даже если Core добавил в конец служебные user-напоминания.
     let last_user = messages
         .iter()
         .enumerate()
@@ -565,7 +568,9 @@ fn plan_inputs(
         .map(|(index, message)| {
             let mut kind = kind_for(index, message);
             if message.role == ChatRole::User {
-                kind = if Some(index) == last_user {
+                kind = if Some(index) == last_user
+                    || (!intent_prompt.is_empty() && message.content == intent_prompt)
+                {
                     ItemKind::UserPrompt
                 } else {
                     ItemKind::History
@@ -1197,6 +1202,59 @@ mod tests {
             .messages
             .iter()
             .any(|message| message.content == "текущий вопрос"));
+    }
+
+    #[test]
+    fn task_intent_prompt_is_retained_when_core_appends_user_nudge() {
+        let mut runtime = runtime();
+        let original_prompt = "Сравни README.md и README.ru.md и внеси правку";
+        let big_tool_output = "строка файла\n".repeat(4_000);
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, original_prompt),
+            ChatMessage::assistant_tool_calls(
+                String::new(),
+                vec![evohime_model_gateway::NativeToolCall {
+                    id: "call_1".into(),
+                    name: "filesystem_read".into(),
+                    arguments: serde_json::json!({"path": "README.md"}).to_string(),
+                }],
+            ),
+            ChatMessage::tool_observation("call_1", big_tool_output),
+            ChatMessage::text(ChatRole::User, "Немедленно вызови filesystem_patch"),
+        ];
+        let assembled = runtime.assemble(ContextAssembleInput {
+            task_id: "task",
+            session_id: "session",
+            model_call_id: "call-1",
+            provider: "literouter",
+            model: "gpt-4o-mini",
+            now: 1_000_000,
+            messages: &messages,
+            specs: &[],
+            intent_prompt: original_prompt,
+            mutation_authorized: true,
+            open_questions: &[],
+            scratchpad: &[],
+            pinned_ids: &[],
+            force_reduction: true,
+            offload: &mut NoOffloadSink,
+            summarizer: &mut NoSummarizer,
+        });
+        assert!(
+            assembled
+                .messages
+                .iter()
+                .any(|message| message.content == original_prompt),
+            "original task prompt must never be dropped when Core appends a user nudge"
+        );
+        assert!(
+            assembled
+                .messages
+                .iter()
+                .any(|message| message.content == "Немедленно вызови filesystem_patch"),
+            "latest user nudge must also remain in context"
+        );
     }
 
     #[test]
