@@ -3104,7 +3104,8 @@ mod tests {
         }]);
         assert!(prompt.contains("Add proactive metrics endpoint"));
         assert!(prompt.contains("docs/development-plan.md:3"));
-        assert!(prompt.contains("eva_workspace_write_file"));
+        assert!(prompt.contains("hive_delegate_agent"));
+        assert!(prompt.contains("сама ничего не читай, не редактируй и не запускай"));
         assert!(prompt.contains("[x]"));
     }
 
@@ -3351,12 +3352,15 @@ mod tests {
         ];
         let prompt = proactive_evolution_prompt(&items);
 
-        assert!(prompt.contains("Ты — Королева Ева. Ты работаешь в автономном режиме."));
+        assert!(prompt.contains(
+            "Ты — Королева Ева. Ты работаешь в автономном режиме как чистый оркестратор."
+        ));
         assert!(prompt.contains("1. [docs/development-plan.md:4] Implement pulse task selection"));
         assert!(prompt.contains("2. [TODO.md:2] Refactor logging"));
         assert!(prompt.contains("Выбери РОВНО ОДНУ задачу"));
         assert!(prompt.contains("верни ответ \"SKIP\""));
-        assert!(prompt.contains("eva_workspace_write_file"));
+        assert!(prompt.contains("сама ничего не читай, не редактируй и не запускай"));
+        assert!(prompt.contains("hive_delegate_agent"));
         assert!(prompt.contains("FAILED: [причина]"));
     }
 
