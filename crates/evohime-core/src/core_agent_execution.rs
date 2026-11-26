@@ -901,15 +901,22 @@ impl ToolAgent {
             }
         };
         let workspace_root: std::path::PathBuf = workspace_root.into();
-        let eva_workspace_path = if hive_world && !read_only_subagent {
+        let hive_settings_loaded = if hive_world {
             match &self.journal {
-                Some(journal) => journal
-                    .hive_settings()
-                    .await
-                    .ok()
-                    .and_then(|settings| settings.eva_workspace_path().map(str::to_owned)),
+                Some(journal) => journal.hive_settings().await.ok(),
                 None => None,
             }
+        } else {
+            None
+        };
+        let hive_reasoning_effort = hive_settings_loaded
+            .as_ref()
+            .and_then(|settings| settings.hive_reasoning_effort.as_deref())
+            .and_then(evohime_model_gateway::ReasoningEffort::from_str_opt);
+        let eva_workspace_path = if hive_world && !read_only_subagent {
+            hive_settings_loaded
+                .as_ref()
+                .and_then(|settings| settings.eva_workspace_path().map(str::to_owned))
         } else {
             None
         };
@@ -1861,7 +1868,10 @@ impl ToolAgent {
                     max_output_tokens: None,
                     route_pin: session_route_pin.as_deref(),
                     selected_model: pinned_selected_model.as_deref(),
-                    reasoning_effort: session_binding.as_ref().and_then(|binding| binding.reasoning_effort),
+                    reasoning_effort: session_binding
+                        .as_ref()
+                        .and_then(|binding| binding.reasoning_effort)
+                        .or(hive_reasoning_effort),
                 }) => result?,
             };
             let _previous_request_id = std::mem::replace(

@@ -423,6 +423,9 @@ pub struct HiveStateSnapshot {
     /// Whether proactive evolution via the autonomous observation cycle is enabled.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
+    /// Optional thinking / reasoning effort level applied to all Hive models that support it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hive_reasoning_effort: Option<String>,
     /// Interval between Level 1 local observation cycles, in seconds.
     #[serde(default = "default_snapshot_local_observation_interval_secs")]
     pub local_observation_interval_secs: u64,
@@ -485,6 +488,7 @@ impl Default for HiveStateSnapshot {
             hive_provider_configs: settings.effective_provider_configs(false),
             hive_fallback_provider_configs: settings.effective_provider_configs(true),
             proactive_evolution_enabled: false,
+            hive_reasoning_effort: None,
             local_observation_interval_secs: settings.local_observation_interval_secs,
             llm_dispatch_interval_secs: settings.llm_dispatch_interval_secs,
             observation_status: HIVE_OBSERVATION_DISABLED.into(),

@@ -352,6 +352,7 @@ interface HiveStateView {
   readonly hiveProviderConfigs: Readonly<Record<string, HiveProviderRouteSettingsView>>
   readonly hiveFallbackProviderConfigs: Readonly<Record<string, HiveProviderRouteSettingsView>>
   readonly proactiveEvolutionEnabled: boolean
+  readonly hiveReasoningEffort: 'auto' | 'off' | 'low' | 'medium' | 'high'
   readonly observationStatus: string
   readonly nextWakeAtMs: number | null
 }
@@ -690,6 +691,13 @@ function parseHiveState(event: { readonly payload: string } | undefined): HiveSt
     hiveProviderConfigs: parseHiveProviderConfigsMap(root['hive_provider_configs']),
     hiveFallbackProviderConfigs: parseHiveProviderConfigsMap(root['hive_fallback_provider_configs']),
     proactiveEvolutionEnabled: root['proactive_evolution_enabled'] === true,
+    hiveReasoningEffort:
+      root['hive_reasoning_effort'] === 'off' ||
+      root['hive_reasoning_effort'] === 'low' ||
+      root['hive_reasoning_effort'] === 'medium' ||
+      root['hive_reasoning_effort'] === 'high'
+        ? root['hive_reasoning_effort']
+        : 'auto',
     observationStatus: text(root['observation_status'] ?? root['pulse_status'], 32),
     nextWakeAtMs: typeof root['next_wake_at_ms'] === 'number' && Number.isSafeInteger(root['next_wake_at_ms'])
       ? root['next_wake_at_ms']
@@ -1850,6 +1858,8 @@ export function HiveDashboard({
   const [hiveLimitsError, setHiveLimitsError] = useState<string | null>(null)
   const [hiveLimitsSaved, setHiveLimitsSaved] = useState(false)
   const [proactiveEvolutionEnabled, setProactiveEvolutionEnabled] = useState(false)
+  const [hiveReasoningEffort, setHiveReasoningEffort] = useState<'auto' | 'off' | 'low' | 'medium' | 'high'>('auto')
+  const [hiveReasoningBusy, setHiveReasoningBusy] = useState(false)
   const [proactiveEvolutionBusy, setProactiveEvolutionBusy] = useState(false)
   const [proactiveEvolutionError, setProactiveEvolutionError] = useState<string | null>(null)
   const [hiveSettingsOpen, setHiveSettingsOpen] = useState(false)
@@ -2136,7 +2146,8 @@ export function HiveDashboard({
   useEffect(() => {
     if (!hive) return
     setProactiveEvolutionEnabled(hive.proactiveEvolutionEnabled)
-  }, [hive?.proactiveEvolutionEnabled])
+    setHiveReasoningEffort(hive.hiveReasoningEffort)
+  }, [hive?.hiveReasoningEffort, hive?.proactiveEvolutionEnabled])
   const hiveSettingsResult = latest(events, 'hive_settings.saved')
   useEffect(() => {
     if (!hiveSettingsResult) return
@@ -2152,6 +2163,7 @@ export function HiveDashboard({
         hive_fallback_model?: string | null
         daily_budget_usd?: number | null
         proactive_evolution_enabled?: boolean
+        hive_reasoning_effort?: string | null
         error_code?: string
       }
       if (result.setting_key === 'hive_request_limits') {
@@ -2208,6 +2220,16 @@ export function HiveDashboard({
           setProactiveEvolutionEnabled(result.proactive_evolution_enabled)
         }
         setProactiveEvolutionError(result.accepted ? null : (result.error_code || 'Не удалось сохранить настройку.'))
+        return
+      }
+      if (result.setting_key === 'hive_reasoning_effort') {
+        const nextEffort = result.hive_reasoning_effort
+        setHiveReasoningEffort(
+          nextEffort === 'off' || nextEffort === 'low' || nextEffort === 'medium' || nextEffort === 'high'
+            ? nextEffort
+            : 'auto'
+        )
+        setProactiveEvolutionError(result.accepted ? null : (result.error_code || 'Не удалось сохранить уровень рассуждений.'))
         return
       }
       if (typeof result.daily_budget_usd === 'number' && Number.isFinite(result.daily_budget_usd)) {
@@ -2871,6 +2893,31 @@ export function HiveDashboard({
       setProactiveEvolutionBusy(false)
     }
   }, [api, requestSnapshot])
+
+  const changeHiveReasoningEffort = useCallback(async (nextEffort: 'auto' | 'off' | 'low' | 'medium' | 'high'): Promise<void> => {
+    if (!api) return
+    const previous = hiveReasoningEffort
+    setHiveReasoningBusy(true)
+    setProactiveEvolutionError(null)
+    setHiveReasoningEffort(nextEffort)
+    try {
+      const outcome = await api.invoke('core.setHiveSetting', {
+        key: 'hive_reasoning_effort',
+        value: nextEffort
+      })
+      if (!outcome.ok) {
+        setHiveReasoningEffort(previous)
+        setProactiveEvolutionError(outcome.message)
+        return
+      }
+      requestSnapshot()
+    } catch {
+      setHiveReasoningEffort(previous)
+      setProactiveEvolutionError('Не удалось сохранить уровень рассуждений: Core не ответил.')
+    } finally {
+      setHiveReasoningBusy(false)
+    }
+  }, [api, hiveReasoningEffort, requestSnapshot])
 
   const addWatchedRepository = useCallback(async (): Promise<void> => {
     if (!api) return
@@ -3834,6 +3881,24 @@ export function HiveDashboard({
                 disabled={!connected || proactiveEvolutionBusy}
                 onChange={(changeEvent) => void toggleProactiveEvolution(changeEvent.target.checked)}
               />
+            </label>
+            <label className="hive-settings-toggle" htmlFor="hive-reasoning-effort-select">
+              <span>{translate('Уровень рассуждений')}</span>
+              <select
+                id="hive-reasoning-effort-select"
+                aria-label={translate('Уровень рассуждений Улья')}
+                value={hiveReasoningEffort}
+                disabled={!connected || hiveReasoningBusy}
+                onChange={(changeEvent) =>
+                  void changeHiveReasoningEffort(changeEvent.target.value as 'auto' | 'off' | 'low' | 'medium' | 'high')
+                }
+              >
+                <option value="auto">{translate('Авто')}</option>
+                <option value="off">{translate('Выкл')}</option>
+                <option value="low">{translate('Низкий')}</option>
+                <option value="medium">{translate('Средний')}</option>
+                <option value="high">{translate('Высокий')}</option>
+              </select>
             </label>
             {proactiveEvolutionError ? (
               <p role="alert" className="hive-console__error">{translate(proactiveEvolutionError)}</p>

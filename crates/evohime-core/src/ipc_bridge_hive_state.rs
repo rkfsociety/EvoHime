@@ -393,6 +393,37 @@ impl IpcBridge {
         .map_err(|error| error.to_string())
     }
 
+    /// Validates and persists the Hive-wide thinking / reasoning effort level.
+    pub(crate) async fn save_hive_reasoning_effort(&self, value: &str) -> Result<Vec<u8>, String> {
+        let mut settings = self.journal.hive_settings().await?;
+        let normalized = match value.trim().to_ascii_lowercase().as_str() {
+            "" | "auto" => None,
+            "off" | "none" => Some("off".to_owned()),
+            "low" => Some("low".to_owned()),
+            "medium" => Some("medium".to_owned()),
+            "high" => Some("high".to_owned()),
+            _ => {
+                return serde_json::to_vec(&serde_json::json!({
+                    "accepted": false,
+                    "setting_key": "hive_reasoning_effort",
+                    "hive_reasoning_effort": settings.hive_reasoning_effort,
+                    "error_code": "hive_reasoning_effort must be auto, off, low, medium, or high",
+                }))
+                .map_err(|error| error.to_string());
+            }
+        };
+        settings.hive_reasoning_effort = normalized;
+        self.journal.save_hive_settings(&settings).await?;
+        self.notify_observation_settings_changed();
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+            "setting_key": "hive_reasoning_effort",
+            "hive_reasoning_effort": settings.hive_reasoning_effort,
+            "error_code": "",
+        }))
+        .map_err(|error| error.to_string())
+    }
+
     async fn save_hive_request_limits_batch(&self, value: &str) -> Result<Vec<u8>, String> {
         let key = "hive_request_limits";
         let Ok(update) = serde_json::from_str::<HiveRequestLimitsUpdate>(value) else {
@@ -668,6 +699,7 @@ impl IpcBridge {
                 self.save_hive_quota_reset(key, value).await
             }
             "proactive_evolution_enabled" => self.save_proactive_evolution_enabled(value).await,
+            "hive_reasoning_effort" => self.save_hive_reasoning_effort(value).await,
             other => serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
                 "eva_workspace_path": serde_json::Value::Null,
@@ -724,6 +756,7 @@ impl IpcBridge {
             hive_provider_configs: settings.effective_provider_configs(false),
             hive_fallback_provider_configs: settings.effective_provider_configs(true),
             proactive_evolution_enabled: settings.proactive_evolution_enabled,
+            hive_reasoning_effort: settings.hive_reasoning_effort.clone(),
             local_observation_interval_secs: settings.local_observation_interval_secs,
             llm_dispatch_interval_secs: settings.llm_dispatch_interval_secs,
             ..Default::default()

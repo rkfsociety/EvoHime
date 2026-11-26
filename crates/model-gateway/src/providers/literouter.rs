@@ -270,6 +270,7 @@ impl LiteRouterProvider {
         let max_retries = options.max_retries.unwrap_or(self.retry.max_retries);
 
         let mut attempt: u32 = 0;
+        let mut stripped_reasoning_param = false;
         loop {
             // Count every provider attempt, including retries, against the
             // free-tier budget and spread requests across the hour.
@@ -291,10 +292,24 @@ impl LiteRouterProvider {
                 Ok(response) => {
                     let status = response.status();
                     let retry_after = parse_retry_after_seconds(response.headers());
-                    let body = read_bounded_provider_error_body(response).await;
-                    let mut diagnostics = body.diagnostics;
+                    let error_body = read_bounded_provider_error_body(response).await;
+                    let mut diagnostics = error_body.diagnostics;
                     diagnostics.provider_attempts = attempt.saturating_add(1);
-                    let text = body.text;
+                    let text = error_body.text;
+                    if status.as_u16() == 400
+                        && !stripped_reasoning_param
+                        && (body.reasoning_effort.is_some() || body.thinking.is_some())
+                    {
+                        let lower = text.to_ascii_lowercase();
+                        if lower.contains("reasoning_effort")
+                            || (lower.contains("thinking") && !lower.contains("reasoning_content"))
+                        {
+                            body.reasoning_effort = None;
+                            body.thinking = None;
+                            stripped_reasoning_param = true;
+                            continue;
+                        }
+                    }
                     // Retain only fixed safe classification hints. Raw provider
                     // text is discarded before constructing any user-visible error.
                     let rate_limit_hint = classify_rate_limit(status, &text);
