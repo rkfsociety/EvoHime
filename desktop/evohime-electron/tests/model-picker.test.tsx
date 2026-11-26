@@ -116,7 +116,7 @@ describe('model picker', () => {
     )
 
     await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
-    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['mythomax-l2-13b:free0/100', 'usable:free'])
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['mythomax-l2-13b:free', 'usable:free'])
   })
 
   it('requests the configured tier and offers what the provider returned', async () => {
@@ -277,9 +277,9 @@ describe('model picker', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'mythomax-l2-13b:free0/100',
       'claude-haiku-4.5-cheap:free',
-      'gemma-3-27b-it:free'
+      'gemma-3-27b-it:free',
+      'mythomax-l2-13b:free'
     ])
     expect(screen.getByText(/tool_calls не подтверждён Core/i)).toBeTruthy()
   })
@@ -417,7 +417,7 @@ describe('model picker', () => {
     expect(screen.getByTestId('codex-composer-limits')).toBeTruthy()
   })
 
-  it('sorts rated models by descending integer score and displays 100-point rating', async () => {
+  it('pins starred favorite models to the top of the list without showing ratings', async () => {
     render(
       <ModelPicker
         connection="connected"
@@ -425,10 +425,9 @@ describe('model picker', () => {
           event('model.catalog', {
             mode: 'free',
             models: [
-              'unrated-alpha:free',
-              'qwen3-coder-30b-a3b-instruct:free',
-              'glm-5.3-cheap:free',
-              'deepseek-v3.1-stable:free'
+              'z-model:free',
+              'a-model:free',
+              'm-model:free'
             ]
           })
         ]}
@@ -437,13 +436,21 @@ describe('model picker', () => {
     )
 
     await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
-    const options = screen.getAllByRole('option').map((option) => option.textContent)
-    expect(options).toEqual([
-      'glm-5.3-cheap:free98/100',
-      'deepseek-v3.1-stable:free95/100',
-      'qwen3-coder-30b-a3b-instruct:free86/100',
-      'unrated-alpha:free'
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'a-model:free',
+      'm-model:free',
+      'z-model:free'
     ])
+
+    const starButtons = screen.getAllByRole('button', { name: 'Добавить в избранное' })
+    await userEvent.click(starButtons[2]!)
+
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'z-model:free',
+      'a-model:free',
+      'm-model:free'
+    ])
+    expect(screen.queryByText(/\/100/)).toBeNull()
   })
 
   it('does not overwrite an explicit chat-scoped model when provider refreshes or model is absent from catalog', async () => {

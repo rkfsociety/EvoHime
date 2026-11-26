@@ -187,7 +187,13 @@ export function TaskTimeline({
       ? stored
       : 'literouter'
   })
-  const [chatModel, setChatModel] = useState('')
+  const [chatModel, setChatModel] = useState(() => {
+    const storedProvider = window.localStorage.getItem('evohime.chat-provider-mode')
+    const initialProvider = storedProvider === 'codex_cli' || storedProvider === 'openai_compatible' || storedProvider === 'openai_responses' || storedProvider === 'literouter' || storedProvider === 'ollama'
+      ? storedProvider
+      : 'literouter'
+    return window.localStorage.getItem(`evohime.chat-model.${initialProvider}`) ?? ''
+  })
   const [chatIsolationMode, setChatIsolationMode] = useState<ChatIsolationMode>('shared_workspace')
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const [conversationLog, setConversationLog] = useState<ConversationProjectionState | null>(null)
@@ -218,11 +224,20 @@ export function TaskTimeline({
   const conversationLogRef = useRef<ConversationProjectionState | null>(null)
 
   useEffect(() => {
-    if (chat?.session?.provider) {
+    // Only apply persisted session fields when a real chat record is loaded.
+    // Clearing chatModel while `chat` is transiently null (for example during
+    // first-message chat creation or chat reload) caused ModelPicker to
+    // overwrite the user's chosen model with the first model in the catalog.
+    if (!chat) return
+    if (chat.session?.provider) {
       setProviderMode(chat.session.provider)
     }
-    setChatModel(chat?.session?.model ?? '')
-    setChatIsolationMode(chat?.session?.isolationMode ?? 'shared_workspace')
+    if (chat.session?.model) {
+      setChatModel(chat.session.model)
+    }
+    if (chat.session?.isolationMode) {
+      setChatIsolationMode(chat.session.isolationMode)
+    }
   }, [chat?.id, chat?.session?.isolationMode, chat?.session?.model, chat?.session?.provider])
 
   const persistChatSession = useCallback(
@@ -244,9 +259,10 @@ export function TaskTimeline({
   const handleChatProviderChange = useCallback(
     (next: ChatProviderMode) => {
       setProviderMode(next)
-      setChatModel('')
+      const remembered = window.localStorage.getItem(`evohime.chat-model.${next}`) ?? ''
+      setChatModel(remembered)
       if (next !== 'codex_cli') {
-        persistChatSession({ provider: next, model: '' })
+        persistChatSession({ provider: next, model: remembered })
       }
     },
     [persistChatSession]
@@ -255,9 +271,12 @@ export function TaskTimeline({
   const handleChatModelChange = useCallback(
     (nextModel: string) => {
       setChatModel(nextModel)
+      if (nextModel.length > 0) {
+        window.localStorage.setItem(`evohime.chat-model.${providerMode}`, nextModel)
+      }
       persistChatSession({ model: nextModel })
     },
-    [persistChatSession]
+    [persistChatSession, providerMode]
   )
 
   const handleChatIsolationChange = useCallback(
@@ -733,7 +752,18 @@ export function TaskTimeline({
         return false
       }
       targetChatId = created.value.id
-      setChat(created.value)
+      let initialChat = created.value
+      const initialSession: ChatSessionSettings = {
+        ...(providerMode !== 'codex_cli' ? { provider: providerMode } : {}),
+        ...(chatModel.length > 0 ? { model: chatModel } : {}),
+        ...(chatIsolationMode ? { isolationMode: chatIsolationMode } : {})
+      }
+      const savedSession = await api.invoke('chat.saveSessionSettings', {
+        chatId: targetChatId,
+        session: initialSession
+      })
+      if (savedSession.ok && savedSession.value) initialChat = savedSession.value
+      setChat(initialChat)
       onChatOpened(targetChatId)
     }
 

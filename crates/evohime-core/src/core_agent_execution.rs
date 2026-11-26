@@ -225,6 +225,16 @@ fn is_unbounded_step_mode(max_iterations: usize) -> bool {
     max_iterations >= crate::core_agent::DEFAULT_TOOL_ITERATIONS
 }
 
+fn commit_is_blocked_by_delivery_gate(
+    requirements: DeliveryRequirements,
+    verification_test_passed: bool,
+    diff_check_passed: bool,
+) -> bool {
+    requirements.commit
+        && ((requirements.verification && !verification_test_passed)
+            || (requirements.diff_check && !diff_check_passed))
+}
+
 /// Serializes guardrail-redacted tool arguments for the conversation trace and
 /// bounds them so one oversized value (for example an entire file body passed
 /// to `filesystem_write`) cannot push the `tool.started` event past the bounded
@@ -2433,9 +2443,11 @@ impl ToolAgent {
                     );
                 }
                 let commit_blocked = call.name == "git_commit"
-                    && delivery_requirements.commit
-                    && (!verification_test_passed
-                        || (delivery_requirements.diff_check && !diff_check_passed));
+                    && commit_is_blocked_by_delivery_gate(
+                        delivery_requirements,
+                        verification_test_passed,
+                        diff_check_passed,
+                    );
                 let outcome = if let Some(session_miss) = session_miss {
                     write_model_trace(
                         "tool.session_miss",
@@ -3191,7 +3203,8 @@ impl ToolAgent {
                         }
                     }
                 }
-                verification_done = verification_test_passed
+                verification_done = (!delivery_requirements.verification
+                    || verification_test_passed)
                     && (!delivery_requirements.diff_check || diff_check_passed);
                 // Temporary exception: patch context is typed by filesystem_patch in wave III.
                 // Until then this hint may inspect only that specific recovery marker.
@@ -4414,6 +4427,35 @@ mod conversation_history_tests {
             crate::core_agent::DEFAULT_TOOL_ITERATIONS
         ));
         assert!(is_unbounded_step_mode(64));
+    }
+
+    #[test]
+    fn commit_gate_allows_commit_when_tests_not_required() {
+        let doc_commit = super::DeliveryRequirements::from_prompt(
+            "Добавь ссылку в README.md и сделай git commit и git push в main.",
+        );
+        assert!(doc_commit.commit);
+        assert!(!doc_commit.verification);
+        assert!(!doc_commit.diff_check);
+        assert!(!commit_is_blocked_by_delivery_gate(
+            doc_commit, false, false
+        ));
+
+        let tested_commit = super::DeliveryRequirements::from_prompt(
+            "Исправь баг, проверь тесты и сделай git commit.",
+        );
+        assert!(tested_commit.commit);
+        assert!(tested_commit.verification);
+        assert!(commit_is_blocked_by_delivery_gate(
+            tested_commit,
+            false,
+            false
+        ));
+        assert!(!commit_is_blocked_by_delivery_gate(
+            tested_commit,
+            true,
+            false
+        ));
     }
 
     #[test]

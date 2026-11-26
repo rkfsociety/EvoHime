@@ -7,8 +7,6 @@ import { useShellApi } from './shell-api'
 import { CodexRateLimits } from './CodexRateLimits'
 import { catalogErrorMessage, safeCatalogErrorCode } from './catalog-error'
 import {
-  compareModelsByRating,
-  modelBenchmarkRating,
   modelMetadataHint,
   parseCoreModelDescriptor,
   type CoreModelDescriptor,
@@ -41,6 +39,27 @@ export interface ModelPickerProps {
 
 const MAX_CATALOG_AUTO_RETRIES = 3
 const CATALOG_RETRY_BASE_MS = 3000
+const FAVORITE_MODELS_STORAGE_KEY = 'evohime.favorite-models.v1'
+
+function loadFavoriteModels(): ReadonlySet<string> {
+  try {
+    const raw = window.localStorage.getItem(FAVORITE_MODELS_STORAGE_KEY)
+    if (!raw) return new Set()
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.filter((item): item is string => typeof item === 'string' && item.length > 0))
+  } catch {
+    return new Set()
+  }
+}
+
+function saveFavoriteModels(favorites: ReadonlySet<string>): void {
+  try {
+    window.localStorage.setItem(FAVORITE_MODELS_STORAGE_KEY, JSON.stringify([...favorites]))
+  } catch {
+    // Ignore storage quota or sandbox errors.
+  }
+}
 
 function isPermanentAuthFailure(status: CatalogStatus | null): boolean {
   if (!status) return false
@@ -56,6 +75,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   const connected = CONNECTED_STATES.includes(connection)
   const [fallbackTier, setFallbackTier] = useState<ModelTier | null>(null)
   const [models, setModels] = useState<readonly string[]>([])
+  const [favoriteModels, setFavoriteModels] = useState<ReadonlySet<string>>(() => loadFavoriteModels())
   const [modelDescriptors, setModelDescriptors] = useState<readonly CoreModelDescriptor[]>([])
   const [current, setCurrent] = useState('')
   const [codexModels, setCodexModels] = useState<readonly CodexModel[]>([])
@@ -174,7 +194,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       })
       : []
     setModelDescriptors(projectedModels)
-    setModels([...new Set(catalogModels)].sort(compareModelsByRating))
+    setModels([...new Set(catalogModels)].sort((left, right) => left.localeCompare(right)))
     const ollama = typeof parsed['ollama'] === 'object' && parsed['ollama'] !== null
       ? parsed['ollama'] as Record<string, unknown>
       : null
@@ -252,10 +272,37 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     [api, onSelectChatModel, provider]
   )
 
+  const toggleFavorite = useCallback((modelId: string) => {
+    setFavoriteModels((previous) => {
+      const next = new Set(previous)
+      if (next.has(modelId)) {
+        next.delete(modelId)
+      } else {
+        next.add(modelId)
+      }
+      saveFavoriteModels(next)
+      return next
+    })
+  }, [])
+
   const requiredCapability = use === 'agent' ? 'tool_calls' : 'chat'
-  const catalogModels = useMemo(() => provider === 'codex_cli'
-    ? codexModels.map((model) => ({ value: model.id, label: model.displayName || model.id, rating: modelBenchmarkRating(model.id) }))
-    : models.map((model) => ({ value: model, label: model, rating: modelBenchmarkRating(model) })), [codexModels, models, provider])
+  const catalogModels = useMemo(() => {
+    const raw = provider === 'codex_cli'
+      ? codexModels.map((model) => ({
+        value: model.id,
+        label: model.displayName || model.id,
+        favorite: favoriteModels.has(model.id)
+      }))
+      : models.map((model) => ({
+        value: model,
+        label: model,
+        favorite: favoriteModels.has(model)
+      }))
+    return [...raw].sort((left, right) => {
+      if (left.favorite !== right.favorite) return left.favorite ? -1 : 1
+      return left.label.localeCompare(right.label)
+    })
+  }, [codexModels, favoriteModels, models, provider])
   const visibleModels = useMemo(() => {
     if (provider === 'codex_cli' || !hideConfirmedUnsupported) return catalogModels
     return catalogModels.filter((model) => {
@@ -339,6 +386,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
         models={visibleModels}
         current={known || (discoveryUnsupported && current) ? current : ''}
         onSelect={(model) => void select(model)}
+        onToggleFavorite={toggleFavorite}
         disabled={disabled}
         {...(provider !== 'codex_cli' && models.length > 0
           ? {
@@ -402,6 +450,7 @@ interface ModelDropdownProps {
   readonly models: readonly ModelOption[]
   readonly current: string
   readonly onSelect: (model: string) => void
+  readonly onToggleFavorite: (model: string) => void
   readonly disabled?: boolean
   readonly capabilityFilter?: {
     readonly checked: boolean
@@ -413,7 +462,7 @@ interface ModelDropdownProps {
 interface ModelOption {
   readonly value: string
   readonly label: string
-  readonly rating: number | null
+  readonly favorite: boolean
 }
 
 interface CatalogStatus {
@@ -447,7 +496,7 @@ function catalogStatusLabel(status: CatalogStatus): string {
  * grey text on white inside the dark composer. This one is styled by the app,
  * and a catalogue of dozens of models needs a filter anyway.
  */
-function ModelDropdown({ models, current, onSelect, disabled = false, capabilityFilter }: ModelDropdownProps): React.JSX.Element {
+function ModelDropdown({ models, current, onSelect, onToggleFavorite, disabled = false, capabilityFilter }: ModelDropdownProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const root = useRef<HTMLDivElement | null>(null)
@@ -518,7 +567,7 @@ function ModelDropdown({ models, current, onSelect, disabled = false, capability
               <li className="model-picker__none">{translate("Ничего не найдено")}</li>
             ) : (
               visible.map((model) => (
-                <li key={model.value}>
+                <li key={model.value} className="model-picker__option-row">
                   <button
                     type="button"
                     role="option"
@@ -529,9 +578,19 @@ function ModelDropdown({ models, current, onSelect, disabled = false, capability
                     }}
                   >
                     <span className="model-picker__option-label">{translate(model.label)}</span>
-                    {model.rating !== null ? (
-                      <span className="model-picker__option-rating">{model.rating}/100</span>
-                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    className={`model-picker__star${model.favorite ? ' model-picker__star--active' : ''}`}
+                    aria-label={model.favorite ? translate('Убрать из избранного') : translate('Добавить в избранное')}
+                    aria-pressed={model.favorite}
+                    title={model.favorite ? translate('Убрать из избранного') : translate('Добавить в избранное')}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onToggleFavorite(model.value)
+                    }}
+                  >
+                    {model.favorite ? '★' : '☆'}
                   </button>
                 </li>
               ))
