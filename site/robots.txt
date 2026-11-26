@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://rkfsociety.github.io/EvoHime/sitemap.xml

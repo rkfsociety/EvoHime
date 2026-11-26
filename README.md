@@ -1,84 +1,74 @@
-# Ева
+[English](README.md) | [Русский](README.ru.md)
 
-### AI-помощница, которая помогает доводить задачи до результата
+# EvoHime (Eva)
 
-**EvoHime** — локальное приложение для Windows. Ева понимает контекст рабочего
-проекта, помогает разобраться в проблеме, предлагает решение и может выполнить
-необходимые действия вместе с тобой.
+### Local AI Agent for Windows — an AI Coding Assistant That Sees Tasks Through to Completion
 
-Это больше, чем обычный чат: у каждой задачи есть понятный ход работы,
-результат и контроль важных действий.
+**EvoHime** (Eva) is a **Local AI Agent for Windows** built on a **Rust + Electron** architecture with a secure **Supervised Runtime**. Eva understands your workspace context, helps diagnose problems, proposes clear solutions, and executes actions alongside you with explicit approval gates.
 
-## Что можно поручить Еве
+More than a basic chat window, EvoHime works as a structured **AI Coding Assistant** where every task has transparent progress, verifiable outcomes, and strict control over sensitive operations.
 
-- разобраться в коде, документах и структуре проекта;
-- найти причину ошибки и предложить способ исправления;
-- изменить нужные файлы и проверить результат;
-- подготовить план и получить несколько независимых мнений о нём;
-- продолжить работу с сохранённой историей чатов;
-- следить за памятью, фоновыми задачами и расписаниями;
-- просматривать открытые issues и pull requests публичных GitHub-репозиториев;
-- помочь восстановить проект, если что-то пошло не так.
+## What You Can Delegate to Eva
 
-## Как начать
+- explore codebases, documentation, and project structure;
+- find root causes of bugs and propose targeted fixes;
+- edit files and verify the results;
+- draft implementation plans and gather multiple independent reviews;
+- continue work across saved chat histories;
+- track persistent memory, background tasks, and scheduled runs;
+- inspect open issues and pull requests in public GitHub repositories;
+- assist with project recovery when something goes wrong.
 
-1. [Скачай маленький EvoHime-Setup.exe](https://github.com/rkfsociety/EvoHime/releases/download/installer/EvoHime-Setup.exe). Он докачает проверенный комплект модулей при первой установке или восстановлении.
-2. Установи приложение и запусти Еву с рабочего стола.
-3. Выбери папку проекта.
-4. Открой настройки провайдера и выбери источник и модель. Можно подключить
-   API-профиль или локальный Codex CLI.
-5. Опиши задачу обычными словами.
+## Getting Started
 
-Ева покажет ход работы. Перед изменением файлов, выполнением важных действий и
-другими чувствительными операциями она попросит подтверждение.
+1. [Download the lightweight EvoHime-Setup.exe](https://github.com/rkfsociety/EvoHime/releases/download/installer/EvoHime-Setup.exe). It fetches the verified module bundle during initial installation or repair.
+2. Install the app and launch Eva from your desktop.
+3. Select your project workspace folder.
+4. Open provider settings and choose a source and model — connect an API profile, local **Ollama**, or local Codex CLI.
+5. Describe your task in plain language.
 
-Язык интерфейса можно выбрать в настройках внешнего вида: русский или English.
-Выбор сохраняется на этом компьютере. Сообщения и содержимое самого чата
-остаются на языке, который использует модель.
+Eva displays every step of execution. Before editing files, running critical actions, or performing other sensitive operations, it always asks for your confirmation.
 
-## Провайдеры и модели
+You can switch the interface language in appearance settings between English and Russian. The choice is saved locally, while chat messages remain in whatever language the selected model uses.
 
-Доступны LiteRouter, OpenAI-compatible API, OpenAI Responses API, Ollama и
-локальный Codex CLI. Список моделей зависит от выбранного источника и
-обновляется в приложении. Для обычного чата можно выбрать другую модель прямо
-перед задачей.
+## Architecture: Rust + Electron & Supervised Runtime
 
-Для восстановления проекта нужно заранее выбрать провайдер и модель. Ева не
-запускает самоисправление автоматически: запуск, изменения, публикация
-результата и перезапуск подтверждаются отдельно.
+EvoHime separates UI rendering from execution and state ownership:
 
-## Расписание и рабочий обзор
+- **Electron Desktop UI** — responsive desktop interface that renders live task state over an authenticated local named pipe;
+- **Rust Core Runtime** — owns workspace access, tool execution, approval checks, and local SQLite storage;
+- **Supervised Runtime** — a dedicated Windows supervisor process manages lifecycle, Job Object isolation, and automatic recovery if the core crashes.
 
-Кнопка **«Запланировано»** показывает локальные задачи по расписанию: время,
-владельца, состояние и последний запуск. В рабочем обзоре доступны память,
-Pulse, дочерние задачи, инструменты и состояние проекта.
+## Providers and Models
 
-## Приватность и безопасность
+Supported backends include **Ollama**, **OpenAI-compatible API**, OpenAI Responses API, LiteRouter, and local Codex CLI. Available models depend on the selected provider and refresh directly inside the app. For regular chats, you can switch models right before starting a task.
 
-- рабочие данные и история хранятся локально на компьютере;
-- ключи API защищаются средствами Windows и не показываются в интерфейсе;
-- важные действия всегда требуют подтверждения;
-- Ева не меняет проект и не запускает восстановление без твоего действия;
-- если используется облачная модель, отправленный ей контекст обрабатывается по
-  правилам выбранного провайдера.
-- интеграция GitHub работает только с публичными репозиториями и отправляет
-  запросы только после выбора или обновления репозитория в настройках.
+For project recovery, select a provider and model in advance. Eva never triggers self-repair automatically: launch, edits, publishing, and restarts each require separate confirmation.
 
-## Требования
+## Scheduling and Workspace Overview
 
-- Windows 10 версии 2004 или новее либо Windows 11;
-- компьютер с 64-разрядной системой.
+The **Scheduled** button shows local recurring and one-shot tasks along with timing, owner, status, and last run. The workspace overview surfaces memory, Pulse, child tasks, tools, and overall project state.
 
-Отдельная установка вспомогательных программ для обычного использования не
-нужна. Один web-установщик `EvoHime-Setup.exe` используется и для первой
-установки, и для восстановления: он скачивает проверенный updater и затем
-совместимый набор модулей из GitHub.
-[Скачать установщик](https://github.com/rkfsociety/EvoHime/releases/tag/installer)
+## Privacy and Security
 
-## Поддержать проект
+- workspace data and chat history stay locally on your machine;
+- API keys are protected with Windows native encryption (DPAPI) and are never displayed in the UI;
+- sensitive operations always require explicit user confirmation;
+- Eva never modifies your project or starts recovery without your action;
+- when using a cloud model, sent context is handled under the selected provider's terms;
+- GitHub integration works only with public repositories and sends requests only after you select or refresh a repository in settings.
 
-Если хочешь поддержать развитие EvoHime, можно отправить USDT одним из двух
-способов.
+## System Requirements
+
+- Windows 10 version 2004 or later, or Windows 11;
+- 64-bit (x64) system.
+
+No external developer runtimes are required for regular use. The single web installer `EvoHime-Setup.exe` handles both initial installation and repair by downloading the verified updater and a compatible set of modules from GitHub.
+[Download installer](https://github.com/rkfsociety/EvoHime/releases/tag/installer)
+
+## Support the Project
+
+If you would like to support EvoHime development, you can send USDT via either network below.
 
 ### Ethereum (ERC20)
 
@@ -88,17 +78,12 @@ Pulse, дочерние задачи, инструменты и состояни
 
 `UQDnW88gMYJgD3J3sjuoFYctgKhn6ArisE8mnMCQfnYQ9UBx`
 
-Перед отправкой проверь, что выбрана правильная сеть.
+Please verify that you have selected the correct network before sending.
 
-## Участие в проекте
+## Contributing
 
-Идеи и воспроизводимые ошибки можно отправить через
-[issue](https://github.com/rkfsociety/EvoHime/issues). Перед этим ознакомься с
-[правилами участия](CONTRIBUTING.md), [кодексом поведения](CODE_OF_CONDUCT.md) и
-[политикой безопасности](SECURITY.md). Не публикуй в issue ключи, токены,
-персональные данные или рабочие exploit.
+You can submit ideas and reproducible bug reports via [GitHub Issues](https://github.com/rkfsociety/EvoHime/issues). Before posting, please review the [Contributing Guide](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md), and [Security Policy](SECURITY.md). Do not post API keys, tokens, personal data, or working exploits in issues.
 
-## Лицензия
+## License
 
-Проект распространяется по лицензии [MIT](LICENSE): используйте, изменяйте и
-распространяйте свободно. Программа поставляется «как есть», без гарантий.
+This project is licensed under the [MIT License](LICENSE) — free to use, modify, and distribute. The software is provided "as is", without warranty of any kind.

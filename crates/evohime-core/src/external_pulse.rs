@@ -237,7 +237,8 @@ mod tests {
                 | HiveObservationControlRequest::GetHoneycombWorld
                 | HiveObservationControlRequest::GetHoneycombDelta { .. }
                 | HiveObservationControlRequest::DispatchAgentTask { .. }
-                | HiveObservationControlRequest::PollTripArrival { .. } => {
+                | HiveObservationControlRequest::PollTripArrival { .. }
+                | HiveObservationControlRequest::CompleteAgentTask { .. } => {
                     HiveObservationSnapshot {
                         schema_version: 1,
                         owner: "hive_observation".to_owned(),

@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EvoHime (Eva) — Local AI Agent for Windows | Rust + Electron</title>
+  <meta name="description" content="EvoHime (Eva) is a Local AI Agent and AI Coding Assistant for Windows built on Rust + Electron with a secure Supervised Runtime, Ollama, and OpenAI-compatible API support." />
+  <meta name="keywords" content="EvoHime, Eva AI, Local AI Agent for Windows, AI Coding Assistant, Rust Electron AI, Supervised Runtime, Ollama Windows client, OpenAI-compatible API, local AI assistant" />
+  <meta name="robots" content="index, follow" />
+  <meta name="google-site-verification" content="nXuKXxqOBJxVA0rdEb19rdyQCHvmKgNvuwtyCwUnm6w" />
+  <meta name="yandex-verification" content="5f442615d060ff61" />
+  <link rel="canonical" href="https://rkfsociety.github.io/EvoHime/" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="EvoHime (Eva) — Local AI Agent for Windows" />
+  <meta property="og:description" content="Open-source Local AI Agent and AI Coding Assistant for Windows powered by Rust Core, Electron UI, and a Windows Supervised Runtime. Supports Ollama and OpenAI-compatible APIs." />
+  <meta property="og:url" content="https://rkfsociety.github.io/EvoHime/" />
+  <meta property="og:site_name" content="EvoHime" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="EvoHime (Eva) — Local AI Agent for Windows" />
+  <meta name="twitter:description" content="Local AI Agent for Windows with Rust Core, Electron UI, Supervised Runtime, Ollama, and OpenAI-compatible API support." />
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "EvoHime (Eva)",
+    "alternateName": "Eva AI Assistant",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Windows 10, Windows 11",
+    "softwareRequirements": "Windows 10 version 2004+ or Windows 11 (64-bit x64)",
+    "license": "https://opensource.org/licenses/MIT",
+    "url": "https://rkfsociety.github.io/EvoHime/",
+    "downloadUrl": "https://github.com/rkfsociety/EvoHime/releases/latest",
+    "codeRepository": "https://github.com/rkfsociety/EvoHime",
+    "description": "Local AI Agent for Windows built with Rust Core, Electron UI, and a secure Windows Supervised Runtime. Supports Ollama, OpenAI-compatible API, LiteRouter, and local Codex CLI.",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg: #0a0d12;
+      --bg-elevated: #11161f;
+      --bg-card: #151b26;
+      --border: #232c3d;
+      --border-accent: #33425c;
+      --text: #e6edf7;
+      --text-muted: #9aa7bd;
+      --accent: #60a5fa;
+      --accent-strong: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.22);
+      --emerald: #34d399;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--sans);
+      background:
+        radial-gradient(900px 480px at 50% -120px, var(--accent-glow), transparent 70%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(10, 13, 18, 0.82);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.05rem;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--emerald));
+      box-shadow: 0 0 12px var(--accent);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      font-size: 0.92rem;
+      color: var(--text-muted);
+    }
+
+    .nav-links a:hover {
+      color: var(--text);
+    }
+
+    /* Hero */
+    .hero {
+      padding: 88px 0 68px;
+      text-align: center;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-accent);
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.1rem, 5vw, 3.4rem);
+      line-height: 1.12;
+      letter-spacing: -0.03em;
+      max-width: 820px;
+      margin: 0 auto 20px;
+    }
+
+    .hero h1 span {
+      background: linear-gradient(120deg, #93c5fd, #60a5fa, #34d399);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: 1.12rem;
+      color: var(--text-muted);
+      max-width: 680px;
+      margin: 0 auto 36px;
+    }
+
+    .cta-group {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 14px;
+      margin-bottom: 48px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 13px 24px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.96rem;
+      transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-primary {
+      background: var(--accent-strong);
+      color: #ffffff;
+      box-shadow: 0 8px 24px rgba(59, 130, 246, 0.32);
+    }
+
+    .btn-primary:hover {
+      background: #2563eb;
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border-accent);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      background: #1a2230;
+    }
+
+    /* Architecture Preview */
+    .arch-box {
+      max-width: 780px;
+      margin: 0 auto;
+      text-align: left;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px 24px;
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      color: #c9d6ea;
+      overflow-x: auto;
+    }
+
+    .arch-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    .arch-box pre {
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    /* Sections */
+    section {
+      padding: 56px 0;
+    }
+
+    .section-header {
+      margin-bottom: 32px;
+    }
+
+    .section-header h2 {
+      font-size: clamp(1.5rem, 3vw, 2.05rem);
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+
+    .section-header p {
+      color: var(--text-muted);
+      max-width: 640px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      transition: border-color 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: var(--border-accent);
+    }
+
+    .card-tag {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      color: var(--emerald);
+      margin-bottom: 10px;
+    }
+
+    .card h3 {
+      font-size: 1.1rem;
+      margin-bottom: 10px;
+    }
+
+    .card p {
+      font-size: 0.94rem;
+      color: var(--text-muted);
+    }
+
+    /* Requirements & Security */
+    .split {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    .list {
+      list-style: none;
+      margin-top: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .list li {
+      position: relative;
+      padding-left: 20px;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .list li::before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-family: var(--mono);
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 36px 0;
+      margin-top: 32px;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .footer-inner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .footer-links a:hover {
+      color: var(--text);
+    }
+
+    @media (max-width: 640px) {
+      .nav-links {
+        display: none;
+      }
+      .hero {
+        padding: 56px 0 44px;
+      }
+      .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <a class="brand" href="https://rkfsociety.github.io/EvoHime/">
+        <span class="brand-dot" aria-hidden="true"></span>
+        <span>EvoHime</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#requirements">Requirements</a>
+        <a href="https://github.com/rkfsociety/EvoHime">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <div class="badge">Windows x64 • Rust Core • Electron UI • MIT License</div>
+        <h1>Local AI Agent for Windows with a <span>Supervised Runtime</span></h1>
+        <p>
+          <strong>EvoHime (Eva)</strong> is an open-source AI Coding Assistant that runs locally on Windows.
+          It understands your workspace, executes tasks with explicit approval gates, and connects to
+          <strong>Ollama</strong>, <strong>OpenAI-compatible APIs</strong>, LiteRouter, or local Codex CLI.
+        </p>
+
+        <div class="cta-group">
+          <a class="btn btn-primary" href="https://github.com/rkfsociety/EvoHime/releases/latest">
+            Download Latest Release
+          </a>
+          <a class="btn btn-secondary" href="https://github.com/rkfsociety/EvoHime">
+            View on GitHub
+          </a>
+        </div>
+
+        <div class="arch-box" id="architecture" aria-label="EvoHime process architecture">
+          <div class="arch-title">Process Isolation Architecture</div>
+<pre>EvoHime.exe               Electron desktop UI (IPC projection only)
+        │ named pipe (authenticated desktop-ipc-v1)
+evohime-core.exe          Rust Core runtime, tools, approvals, SQLite
+        ▲
+evohime-supervisor.exe    Windows Job Object, lifecycle &amp; crash recovery</pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="container">
+        <div class="section-header">
+          <h2>Built for Real Local Engineering Work</h2>
+          <p>
+            Every boundary is explicit: the UI never touches SQLite or your workspace directly,
+            and sensitive operations always pause for your approval.
+          </p>
+        </div>
+
+        <div class="grid">
+          <article class="card">
+            <span class="card-tag">01 / RUST CORE</span>
+            <h3>Rust Core Runtime</h3>
+            <p>
+              High-performance native Rust runtime owns workspace access, tool execution,
+              local SQLite state, and permission enforcement without external Node.js dependencies.
+            </p>
+          </article>
+
+          <article class="card">
+            <span class="card-tag">02 / ELECTRON UI</span>
+            <h3>Clean Desktop Interface</h3>
+            <p>
+              Focused Electron desktop client with English and Russian UI, live execution tracking,
+              scheduled task view, persistent memory overview, and saved chat histories.
+            </p>
+          </article>
+
+          <article class="card">
+            <span class="card-tag">03 / SUPERVISED RUNTIME</span>
+            <h3>Windows Supervisor &amp; Isolation</h3>
+            <p>
+              A dedicated supervisor process isolates the process tree via Windows Job Objects,
+              authenticates local named-pipe IPC, and recovers the core after unexpected crashes.
+            </p>
+          </article>
+
+          <article class="card">
+            <span class="card-tag">04 / FLEXIBLE PROVIDERS</span>
+            <h3>Ollama &amp; OpenAI-Compatible APIs</h3>
+            <p>
+              Run fully local models with Ollama or connect OpenAI-compatible APIs, OpenAI Responses API,
+              LiteRouter, and local Codex CLI — switch models right before any task.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="requirements">
+      <div class="container">
+        <div class="split">
+          <div class="card">
+            <h3>System Requirements</h3>
+            <ul class="list">
+              <li>Windows 10 (version 2004 or later) or Windows 11</li>
+              <li>64-bit (x64) architecture</li>
+              <li>No separate Node.js or Rust installation required for end users</li>
+              <li>Single web installer (<code>EvoHime-Setup.exe</code>) for install and repair</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <h3>Privacy &amp; Security by Design</h3>
+            <ul class="list">
+              <li>Workspace data and chat histories remain stored locally in SQLite</li>
+              <li>API keys are encrypted with Windows DPAPI and never shown in UI</li>
+              <li>File edits, commands, and recovery steps require explicit confirmation</li>
+              <li>Open-source under the MIT License for transparent auditing</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <div>© EvoHime — Open-source under the MIT License.</div>
+      <div class="footer-links">
+        <a href="https://github.com/rkfsociety/EvoHime">Repository</a>
+        <a href="https://github.com/rkfsociety/EvoHime/releases/latest">Releases</a>
+        <a href="https://github.com/rkfsociety/EvoHime/blob/main/README.md">README (EN)</a>
+        <a href="https://github.com/rkfsociety/EvoHime/blob/main/README.ru.md">README (RU)</a>
+        <a href="https://github.com/rkfsociety/EvoHime/issues">Issues</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
