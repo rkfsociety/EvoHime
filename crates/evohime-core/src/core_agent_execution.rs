@@ -107,13 +107,20 @@ fn model_tool_observation(
         return guarded_output.to_owned();
     };
 
-    serde_json::json!({
+    let mut payload = serde_json::json!({
         "preview": bounded_tool_output(guarded_output, MAX_MODEL_TOOL_PREVIEW_BYTES),
         "content_hash": content_hash,
         "expected_hash": content_hash,
         "revision": revision,
-    })
-    .to_string()
+    });
+    if let Some(obj) = payload.as_object_mut() {
+        for key in ["start_line", "end_line", "total_lines", "truncated"] {
+            if let Some(value) = structured.get(key) {
+                obj.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+    payload.to_string()
 }
 
 fn workspace_file_revision_key(path: &str) -> Option<String> {
@@ -309,8 +316,8 @@ fn mutation_nudge_message(available: &[String], steps_without_mutation: usize) -
     let has_patch = tools.contains(&"filesystem_patch");
     let has_write = tools.contains(&"filesystem_write");
     let mutation_guidance = match (has_patch, has_write) {
-        (true, true) => " Для точечной правки уже прочитанного файла используй filesystem_patch с контекстом его строк; для нового файла или полной замены — filesystem_write.",
-        (true, false) => " Для точечной правки уже прочитанного файла используй filesystem_patch с контекстом его строк.",
+        (true, true) => " Для точечной правки уже прочитанного файла используй filesystem_patch (передай old_text/new_text или unified diff patch); для нового файла или полной замены — filesystem_write.",
+        (true, false) => " Для точечной правки уже прочитанного файла используй filesystem_patch (передай old_text/new_text или unified diff patch).",
         (false, true) => " Для нового файла или полной замены используй filesystem_write.",
         (false, false) => "",
     };

@@ -308,7 +308,10 @@ async fn patch_context_recovery_on_wrong_hunk_start_inner() {
         json!({"path":"file.txt","patch":"@@ -5,1 +5,1 @@\n-line2\n+modified\n","expected_hash":"66663af9c7aa341431a8ee2ff27b72abd06c9218f517bb6fef948e4803c19e03"}),
     )
     .await;
-    assert!(result.is_err());
+    assert!(
+        result.is_ok(),
+        "unique hunk with shifted line number should recover and apply: {result:?}"
+    );
     let content = std::fs::read_to_string(dir.path().join("file.txt")).unwrap();
-    assert_eq!(content, "line1\nline2\nline3\n");
+    assert_eq!(content, "line1\nmodified\nline3\n");
 }

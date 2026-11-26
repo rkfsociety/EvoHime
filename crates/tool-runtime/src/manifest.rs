@@ -102,8 +102,14 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             &["path", "content"],
         ),
         "filesystem_patch" => object(
-            serde_json::json!({"path":string("Logical namespace/path"),"patch":string("Unified diff"),"expected_hash":string("SHA-256 hash from filesystem_read")}),
-            &["path", "patch", "expected_hash"],
+            serde_json::json!({
+                "path": string("Logical namespace/path"),
+                "patch": string("Unified diff (optional if old_text and new_text are provided)"),
+                "old_text": string("Exact text snippet to replace (simpler alternative to unified diff patch)"),
+                "new_text": string("Replacement text for old_text"),
+                "expected_hash": string("SHA-256 hash from filesystem_read")
+            }),
+            &["path", "expected_hash"],
         ),
         "filesystem_delete" => object(
             serde_json::json!({"path":string("Logical namespace/path"),"recursive":{"type":"boolean"},"expected_hash":string("SHA-256 hash of the file before deletion")}),
@@ -609,9 +615,11 @@ mod tests {
 
         assert_eq!(
             schema["required"],
-            serde_json::json!(["path", "patch", "expected_hash"])
+            serde_json::json!(["path", "expected_hash"])
         );
         assert_eq!(schema["properties"]["expected_hash"]["type"], "string");
+        assert_eq!(schema["properties"]["old_text"]["type"], "string");
+        assert_eq!(schema["properties"]["new_text"]["type"], "string");
     }
 
     #[test]

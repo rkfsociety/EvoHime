@@ -104,8 +104,9 @@ fn line_window(content: &str, offset: usize, limit: usize) -> LineWindow {
         if end_line != 0 {
             text.push('\n');
         }
-        text.push_str(line);
-        end_line = index + 1;
+        let line_no = index + 1;
+        text.push_str(&format!("{line_no}: {line}"));
+        end_line = line_no;
     }
     let truncated = end_line != 0 && end_line < total_lines;
     if truncated {
@@ -167,10 +168,10 @@ mod tests {
             (first.start_line, first.end_line, first.total_lines),
             (1, 2, 5)
         );
-        assert!(first.text.starts_with("l1\nl2\n..."));
+        assert!(first.text.starts_with("1: l1\n2: l2\n..."));
         let last = line_window(&content, 4, 10);
         assert!(!last.truncated);
-        assert_eq!(last.text, "l4\nl5");
+        assert_eq!(last.text, "4: l4\n5: l5");
         let beyond = line_window(&content, 9, 3);
         assert_eq!(
             (beyond.start_line, beyond.end_line, beyond.truncated),
