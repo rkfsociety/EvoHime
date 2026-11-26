@@ -2,7 +2,7 @@
 param(
   [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
   [string]$Out = (Join-Path $Root 'artifacts/runtime-stall-findings.json'),
-  [string]$Suppressions = (Join-Path $Root '.codex/runtime-stall-suppressions.json'),
+  [string]$Suppressions = (Join-Path $Root '.project/runtime-stall-suppressions.json'),
   [switch]$FailOnUnsuppressed
 )
 

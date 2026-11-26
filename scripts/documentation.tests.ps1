@@ -6,7 +6,7 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $forbiddenTargets = @(
     'docs/release-audit.md',
     'docs/repository-research.md',
-    '.codex/code-audit-plan.md'
+    '.project/code-audit-plan.md'
 )
 
 Push-Location $repo

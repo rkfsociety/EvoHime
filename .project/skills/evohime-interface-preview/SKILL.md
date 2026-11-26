@@ -41,7 +41,7 @@ bootstrap и существующий `node_modules`; не добавляй но
 | обычное окно, gate, Workbench, любая renderer-панель | `src/renderer/index.html`, соответствующий React-компонент и `styles.css`/локальный CSS | `shell` |
 | overlay, tray или native dialog | вызывающий main-файл и связанная renderer-поверхность | `shell`, затем открыть реальный trigger |
 
-`.codex/updater-window-preview.html` и `docs/update-window-design.md` можно
+`.project/updater-window-preview.html` и `docs/update-window-design.md` можно
 использовать только как design reference. Они не доказывают внешний вид
 текущего React/Electron UI.
 

@@ -1,7 +1,7 @@
 # Дизайн окна обновления EvoHime
 
 Утверждённый визуальный референс хранится в
-[`.codex/updater-window-preview.html`](../.codex/updater-window-preview.html).
+[`.project/updater-window-preview.html`](../.project/updater-window-preview.html).
 Это канонический макет для Electron package `updater\EvoHimeUpdater.exe`,
 который выпускается вместе с Rust worker единым модулем `updater`.
 

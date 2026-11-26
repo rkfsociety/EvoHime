@@ -111,7 +111,7 @@ jobs:
           $electron = Match '^(desktop/evohime-electron/|crates/desktop-ipc/proto/)'
           $tooling = Match '^(scripts/|\.github/workflows/)'
           $native = $rust -or $electron -or $tooling
-          $docs = Match '^(docs/|README\.md$|AGENTS\.md$|SECURITY\.md$|\.codex/|installer/.*\.(md|txt)$|crates/.*/README\.md$|tests/.*/README\.md$)'
+          $docs = Match '^(docs/|README\.md$|AGENTS\.md$|SECURITY\.md$|\.project/|installer/.*\.(md|txt)$|crates/.*/README\.md$|tests/.*/README\.md$)'
           $listener = Match '^(scripts/build-listener-runtime\.ps1|crates/evohime-listener/src/engine/whisper_dll\.rs|crates/evohime-listener/src/tools_dir\.rs|crates/evohime-listener/examples/)'
           $rustJson = ConvertTo-Json -InputObject @($selected | Sort-Object) -Compress
           $manifestJson = ConvertTo-Json -InputObject @($workspacePackages | Where-Object { $selected.Contains($_.name) } | Sort-Object name | ForEach-Object { [IO.Path]::GetRelativePath($env:GITHUB_WORKSPACE, $_.manifest_path).Replace('\','/') }) -Compress

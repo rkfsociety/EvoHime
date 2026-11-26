@@ -8,7 +8,7 @@ description: "Выполнить обязательный read-only baseline Evo
 ## Порядок
 
 До любых изменений прочитай актуальные корневые и вложенные `AGENTS.md`,
-`.codex/README.md`, содержимое `.codex/skills/`, `docs/README.md`,
+`.project/README.md`, содержимое `.project/skills/`, `docs/README.md`,
 `docs/plans/README.md`, `docs/architecture.md`, `docs/current-state.md`,
 `docs/release-evidence.md`, `SECURITY.md` и документы, на которые они ссылаются
 для текущей области.
@@ -21,7 +21,7 @@ description: "Выполнить обязательный read-only baseline Evo
   `git rev-list --left-right --count`; при необходимости только обнови
   remote-tracking refs безопасным fetch, но не делай merge/rebase/pull;
 - полный список dirty paths с классификацией «до задачи / относится к задаче»;
-- наличие `.codex` и Git-tracked проектных инструкций;
+- наличие `.project` и Git-tracked проектных инструкций;
 - текущий каталог незавершённых планов и точный комплект этапов целевого плана.
 
 ## Правила решения

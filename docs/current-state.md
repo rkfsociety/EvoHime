@@ -752,7 +752,7 @@ provider и model; выбранная пара сохраняется в ста�
 перезапуска рабочей сессии нет.
 
 Repair не редактирует выбранный пользователем workspace и не меняет
-установленный клиент. Защищены `AGENTS.md`, `.codex`, CI workflows, installer,
+установленный клиент. Защищены `AGENTS.md`, `.project`, CI workflows, installer,
 updater, supervisor, receipts, security-файлы и `.env*`. Push допускается только
 в настроенную ветку после подтверждения пользователя и зелёных проверок.
 

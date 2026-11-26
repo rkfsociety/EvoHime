@@ -6,7 +6,7 @@ artifacts/
 .evohime-cargo/
 .evohime-rustup/
 
-# Local Codex/plugin build output and removed legacy web workspace.
+# Local project/plugin build output and removed legacy web workspace.
 .evohime/
 frontend/
 node_modules/

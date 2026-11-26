@@ -12,7 +12,7 @@ description: Создать проверенный task-only git-коммит Ev
 на относящиеся к задаче и посторонние. Не используй `git add .`, `git add -A`,
 `git commit -am`, reset или checkout, если это может захватить чужие изменения.
 
-Особенно проверь, что в список попали новые `.codex/skills`, docs, plan
+Особенно проверь, что в список попали новые `.project/skills`, docs, plan
 deletions, `release-versions/<module>.txt` и только нужные исходники/CI.
 
 ## Коммит

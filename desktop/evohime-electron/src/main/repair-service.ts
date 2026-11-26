@@ -308,7 +308,7 @@ function safeError(error: unknown): string {
 
 function isProtectedRepairPath(path: string): boolean {
   const normalized = path.replaceAll('\\', '/').replace(/^\.\//, '').toLowerCase()
-  return normalized === 'agents.md' || normalized.startsWith('.codex/') ||
+  return normalized === 'agents.md' || normalized.startsWith('.project/') ||
     normalized.startsWith('.github/workflows/') || normalized.startsWith('installer/') ||
     normalized.startsWith('crates/evohime-updater/') || normalized.includes('supervisor') ||
     normalized.includes('receipt') || normalized.includes('security') || normalized.startsWith('.env')
