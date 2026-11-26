@@ -415,9 +415,16 @@ impl ToolAgent {
             inherited_permission_session_id: if read_only { None } else { context.session_id },
             child_plan_summary: parsed.plan_summary.clone(),
         };
+        let tool_guidance = if read_only {
+            ""
+        } else {
+            " Для чтения файлов, поиска и просмотра git-состояния всегда используй встроенные инструменты \
+             (filesystem_read, filesystem_list, filesystem_search, git_status, git_diff, git_log) — не вызывай \
+             shell_execute для чтения или осмотра файлов."
+        };
         let child_prompt = format!(
             "[Hive Role: {role}]\nВыполни строго свою часть задачи в рамках назначенной роли ({role}). \
-             Не выходи за пределы доступных инструментов и верни точный фактический отчёт.\n\n{}",
+             Не выходи за пределы доступных инструментов и верни точный фактический отчёт.{tool_guidance}\n\n{}",
             parsed.prompt
         );
 
