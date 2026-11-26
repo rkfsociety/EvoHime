@@ -407,6 +407,7 @@ describe('hive dashboard', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
     const providerSelect = within(dialog).getByLabelText('Провайдер Улья')
     const modelSelect = within(dialog).getByLabelText('Модель Улья')
     await userEvent.selectOptions(providerSelect, 'ollama')
@@ -467,7 +468,8 @@ describe('hive dashboard', () => {
     expect(await screen.findByText('$0.12 / $0.50')).toBeTruthy()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
-    expect(await screen.findByRole('dialog', { name: 'Настройки улья' })).toBeTruthy()
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Лимиты и бюджет' }))
 
     const budgetInput = await screen.findByRole('spinbutton', { name: 'Дневной лимит бюджета ($)' })
     await userEvent.clear(budgetInput)
@@ -503,8 +505,9 @@ describe('hive dashboard', () => {
       />
     )
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
-    expect(await screen.findByRole('dialog', { name: 'Настройки улья' })).toBeTruthy()
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
     expect(screen.queryByRole('textbox', { name: /eva_roadmap_path|планов/i })).toBeNull()
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Лимиты и бюджет' }))
 
     const toggle = await screen.findByRole('switch', { name: 'Проактивное саморазвитие' })
     expect((toggle as HTMLInputElement).checked).toBe(false)
@@ -1474,7 +1477,8 @@ describe('hive dashboard', () => {
     )
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
-    expect(await screen.findByRole('dialog', { name: 'Настройки улья' })).toBeTruthy()
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
 
     const keyInput = screen.getByLabelText('API-ключ Улья (обязателен для работы Улья)') as HTMLInputElement
     expect(keyInput.type).toBe('password')
@@ -1501,6 +1505,7 @@ describe('hive dashboard', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
 
     expect(within(dialog).queryByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeNull()
     expect(within(dialog).getByText('API-ключ сохранен ✓')).toBeTruthy()
@@ -1513,6 +1518,7 @@ describe('hive dashboard', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
 
     expect(within(dialog).getByText('API-ключ сохранен ✓')).toBeTruthy()
     expect(within(dialog).queryByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeNull()
@@ -1579,27 +1585,38 @@ describe('hive dashboard', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
 
     const providerSelect = within(dialog).getByLabelText('Провайдер Улья') as HTMLSelectElement
     const modelSelect = within(dialog).getByLabelText('Модель Улья') as HTMLSelectElement
-    const primaryLimitsGroup = within(dialog).getByRole('group', { name: 'Лимиты основного маршрута Улья' })
-    const primaryRpmInput = within(primaryLimitsGroup).getByLabelText('Лимиты основного маршрута Улья RPM') as HTMLInputElement
 
     expect(providerSelect.value).toBe('literouter')
     expect(modelSelect.value).toBe('glm-5.3-flash-cheap:free')
-    expect(primaryRpmInput.value).toBe('10')
 
-    await userEvent.selectOptions(providerSelect, 'deepseek')
-    expect(modelSelect.value).toBe('deepseek-chat')
-    expect(primaryRpmInput.value).toBe('60')
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Лимиты и бюджет' }))
+    const getPrimaryRpm = () => {
+      const primaryLimitsGroup = within(dialog).getByRole('group', { name: 'Лимиты основного маршрута Улья' })
+      return within(primaryLimitsGroup).getByLabelText('Лимиты основного маршрута Улья RPM') as HTMLInputElement
+    }
+    expect(getPrimaryRpm().value).toBe('10')
 
-    await userEvent.selectOptions(providerSelect, 'openai_responses')
-    expect(modelSelect.value).toBe('')
-    expect(primaryRpmInput.value).toBe('0')
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
+    await userEvent.selectOptions(within(dialog).getByLabelText('Провайдер Улья'), 'deepseek')
+    expect((within(dialog).getByLabelText('Модель Улья') as HTMLSelectElement).value).toBe('deepseek-chat')
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Лимиты и бюджет' }))
+    expect(getPrimaryRpm().value).toBe('60')
 
-    await userEvent.selectOptions(providerSelect, 'literouter')
-    expect(modelSelect.value).toBe('glm-5.3-flash-cheap:free')
-    expect(primaryRpmInput.value).toBe('10')
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
+    await userEvent.selectOptions(within(dialog).getByLabelText('Провайдер Улья'), 'openai_responses')
+    expect((within(dialog).getByLabelText('Модель Улья') as HTMLSelectElement).value).toBe('')
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Лимиты и бюджет' }))
+    expect(getPrimaryRpm().value).toBe('0')
+
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
+    await userEvent.selectOptions(within(dialog).getByLabelText('Провайдер Улья'), 'literouter')
+    expect((within(dialog).getByLabelText('Модель Улья') as HTMLSelectElement).value).toBe('glm-5.3-flash-cheap:free')
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Лимиты и бюджет' }))
+    expect(getPrimaryRpm().value).toBe('10')
   })
 
   it('ui_shows_api_key_input_when_editing', async () => {
@@ -1608,6 +1625,7 @@ describe('hive dashboard', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
     await userEvent.click(within(dialog).getByRole('button', { name: 'Изменить' }))
 
     expect(within(dialog).getByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeTruthy()
@@ -1626,6 +1644,7 @@ describe('hive dashboard', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
 
     const fallbackProviderSelect = within(dialog).getByLabelText('Резервный провайдер Улья')
     const fallbackModelSelect = within(dialog).getByLabelText('Резервная модель Улья')
@@ -1675,6 +1694,7 @@ describe('hive dashboard', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
 
     rerender(
       <HiveDashboard
@@ -1716,6 +1736,7 @@ describe('hive dashboard', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Лимиты и бюджет' }))
 
     const primary = within(dialog).getByRole('group', { name: 'Лимиты основного маршрута Улья' })
     const rpm = within(primary).getByLabelText('Лимиты основного маршрута Улья RPM') as HTMLInputElement
@@ -1826,6 +1847,7 @@ describe('hive dashboard', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
 
     const tierSelect = within(dialog).getByLabelText('Режим моделей Улья') as HTMLSelectElement
     expect(tierSelect.value).toBe('free')
@@ -1919,6 +1941,7 @@ describe('hive dashboard', () => {
       />
     )
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
     const modelSelect = within(dialog).getByLabelText('Модель Улья') as HTMLSelectElement
 
     const catalogError = await within(dialog).findByRole('alert')
@@ -2070,6 +2093,7 @@ describe('hive dashboard', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
 
     expect(within(dialog).queryByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeNull()
     expect(within(dialog).getByText('Загрузка настроек API-ключа…')).toBeTruthy()
@@ -2112,6 +2136,7 @@ describe('hive dashboard', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
 
     expect(await within(dialog).findByText('Ошибка загрузки настроек провайдера')).toBeTruthy()
     expect(within(dialog).queryByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeNull()
@@ -2129,6 +2154,7 @@ describe('hive dashboard', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Провайдеры' }))
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Изменить' }))
     const keyInput = within(dialog).getByLabelText('API-ключ Улья (обязателен для работы Улья)') as HTMLInputElement

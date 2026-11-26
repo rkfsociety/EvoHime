@@ -10044,10 +10044,53 @@ body {
 }
 
 .hive-settings-modal {
-  width: min(780px, 100%);
-  max-width: 780px;
+  width: min(1560px, 96vw);
+  max-width: 1560px;
   height: auto;
-  max-height: 100%;
+  max-height: 92vh;
+}
+
+.hive-settings-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 22px 0;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-raised) 55%, transparent);
+}
+
+.hive-settings-tab {
+  position: relative;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.hive-settings-tab:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--bg-raised) 70%, transparent);
+}
+
+.hive-settings-tab--active {
+  color: var(--fg);
+  background: var(--bg);
+  border-color: var(--border);
+  box-shadow: 0 1px 0 var(--bg);
+}
+
+.hive-settings-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
 }
 
 .hive-settings-modal__body {
@@ -10241,6 +10284,12 @@ body {
 .hive-settings-toggle input[type='checkbox']:disabled {
   opacity: .55;
   cursor: not-allowed;
+}
+
+@media (max-width: 960px) {
+  .hive-settings-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 680px) {

@@ -1875,6 +1875,7 @@ export function HiveDashboard({
   const [proactiveEvolutionBusy, setProactiveEvolutionBusy] = useState(false)
   const [proactiveEvolutionError, setProactiveEvolutionError] = useState<string | null>(null)
   const [hiveSettingsOpen, setHiveSettingsOpen] = useState(false)
+  const [hiveSettingsTab, setHiveSettingsTab] = useState<'projects' | 'providers' | 'limits'>('projects')
   const [hiveChatOpen, setHiveChatOpen] = useState(false)
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
   const [evaWorkspaceValidation, setEvaWorkspaceValidation] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle')
@@ -4196,10 +4197,41 @@ export function HiveDashboard({
                 </button>
               </div>
             </header>
+            <nav className="hive-settings-tabs" role="tablist" aria-label={translate('Разделы настроек улья')}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={hiveSettingsTab === 'projects'}
+                className={`hive-settings-tab${hiveSettingsTab === 'projects' ? ' hive-settings-tab--active' : ''}`}
+                onClick={() => setHiveSettingsTab('projects')}
+              >
+                {translate('Проекты')}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={hiveSettingsTab === 'providers'}
+                className={`hive-settings-tab${hiveSettingsTab === 'providers' ? ' hive-settings-tab--active' : ''}`}
+                onClick={() => setHiveSettingsTab('providers')}
+              >
+                {translate('Провайдеры')}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={hiveSettingsTab === 'limits'}
+                className={`hive-settings-tab${hiveSettingsTab === 'limits' ? ' hive-settings-tab--active' : ''}`}
+                onClick={() => setHiveSettingsTab('limits')}
+              >
+                {translate('Лимиты и бюджет')}
+              </button>
+            </nav>
             <div className="settings-modal__content hive-settings-modal__body">
-              <p className="hive-settings-modal__lead">
-                {translate('Укажи отдельный изолированный Git checkout. Ева сможет исследовать и исправлять только его; Core не изменяет установленный продукт.')}
-              </p>
+              {hiveSettingsTab === 'projects' ? (
+                <>
+                  <p className="hive-settings-modal__lead">
+                    {translate('Укажи отдельный изолированный Git checkout. Ева сможет исследовать и исправлять только его; Core не изменяет установленный продукт.')}
+                  </p>
 
               <section className="hive-settings-section">
                 <label className="hive-provider" htmlFor="eva-workspace-path-input">
@@ -4311,8 +4343,12 @@ export function HiveDashboard({
                   ) : null}
                 </div>
               </section>
+                </>
+              ) : null}
 
-              <section className="hive-settings-section">
+              {hiveSettingsTab === 'providers' ? (
+                <div className="hive-settings-columns">
+                  <section className="hive-settings-section">
                 <div className={`hive-settings-modal__grid${hiveProviderProfile.trim() === 'literouter' ? ' hive-settings-modal__grid--with-tier' : ''}`}>
                   <label className="hive-provider" htmlFor="hive-provider-profile-select">
                     <span>{translate('Провайдер Улья')}</span>
@@ -4596,32 +4632,38 @@ export function HiveDashboard({
                   <small role="status" className="hive-settings-hint">✓ {translate('Резервный API-ключ Улья сохранён')}</small>
                 ) : null}
               </section>
+                </div>
+              ) : null}
 
-              <section className="hive-settings-section">
-                <h3>{translate('Лимиты запросов и токенов Улья')}</h3>
-                <small className="hive-settings-hint">{translate('Настройки действуют только на изолированные основной и резервный маршруты Улья. Ноль означает без ограничения.')}</small>
-                <HiveRequestLimitsEditor
-                  title="Лимиты основного маршрута Улья"
-                  prefix="hive-primary"
-                  limits={hivePrimaryLimitsDraft}
-                  quota={hivePrimaryQuotaDraft}
-                  resetSchedule={hivePrimaryResetDraft}
-                  disabled={!connected || hiveLimitsBusy}
-                  onLimitsChange={setHivePrimaryLimitsDraft}
-                  onQuotaChange={setHivePrimaryQuotaDraft}
-                  onResetScheduleChange={setHivePrimaryResetDraft}
-                />
-                <HiveRequestLimitsEditor
-                  title="Лимиты резервного маршрута Улья"
-                  prefix="hive-fallback"
-                  limits={hiveFallbackLimitsDraft}
-                  quota={hiveFallbackQuotaDraft}
-                  resetSchedule={hiveFallbackResetDraft}
-                  disabled={!connected || hiveLimitsBusy}
-                  onLimitsChange={setHiveFallbackLimitsDraft}
-                  onQuotaChange={setHiveFallbackQuotaDraft}
-                  onResetScheduleChange={setHiveFallbackResetDraft}
-                />
+              {hiveSettingsTab === 'limits' ? (
+                <>
+                  <section className="hive-settings-section">
+                    <h3>{translate('Лимиты запросов и токенов Улья')}</h3>
+                    <small className="hive-settings-hint">{translate('Настройки действуют только на изолированные основной и резервный маршруты Улья. Ноль означает без ограничения.')}</small>
+                    <div className="hive-settings-columns">
+                      <HiveRequestLimitsEditor
+                        title="Лимиты основного маршрута Улья"
+                        prefix="hive-primary"
+                        limits={hivePrimaryLimitsDraft}
+                        quota={hivePrimaryQuotaDraft}
+                        resetSchedule={hivePrimaryResetDraft}
+                        disabled={!connected || hiveLimitsBusy}
+                        onLimitsChange={setHivePrimaryLimitsDraft}
+                        onQuotaChange={setHivePrimaryQuotaDraft}
+                        onResetScheduleChange={setHivePrimaryResetDraft}
+                      />
+                      <HiveRequestLimitsEditor
+                        title="Лимиты резервного маршрута Улья"
+                        prefix="hive-fallback"
+                        limits={hiveFallbackLimitsDraft}
+                        quota={hiveFallbackQuotaDraft}
+                        resetSchedule={hiveFallbackResetDraft}
+                        disabled={!connected || hiveLimitsBusy}
+                        onLimitsChange={setHiveFallbackLimitsDraft}
+                        onQuotaChange={setHiveFallbackQuotaDraft}
+                        onResetScheduleChange={setHiveFallbackResetDraft}
+                      />
+                    </div>
                 <div className="hive-settings-modal__grid hive-settings-modal__grid--balanced">
                   <label className="hive-provider" htmlFor="hive-max-context-tokens-input">
                     <span>{translate('Макс. размер контекста Улья (токены, 0 = авто)')}</span>
@@ -4719,6 +4761,8 @@ export function HiveDashboard({
                   <p role="alert" className="hive-console__error">{translate(proactiveEvolutionError)}</p>
                 ) : null}
               </section>
+                </>
+              ) : null}
             </div>
           </section>
         </div>
