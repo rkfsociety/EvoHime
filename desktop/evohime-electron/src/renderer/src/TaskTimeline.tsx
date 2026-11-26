@@ -11,6 +11,7 @@ import { buildTranscript } from './transcript'
 import { MarkdownMessage } from './MarkdownMessage'
 import { RecoveryBanner } from './RecoveryBanner'
 import { PermissionModePicker } from './PermissionModePicker'
+import { IsolationModePicker } from './IsolationModePicker'
 import { RoutingStatus } from './RoutingStatus'
 import { ChatProviderPicker } from './ChatProviderPicker'
 import { useProviderState } from './provider-state'
@@ -1267,20 +1268,11 @@ export function TaskTimeline({
               </div>
               {workspace !== null && chatId !== HIVE_SYSTEM_CHAT_ID ? (
                 <div className="composer__control-group">
-                  <ComposerIcon name="git-branch" className="composer__control-icon" />
-                  <label className="composer__isolation">
-                    <span className="sr-only">{translate("Изоляция файлов")}</span>
-                    <select
-                      aria-label={translate("Изоляция файлов")}
-                      value={chatIsolationMode}
-                      disabled={busy || !connected}
-                      onChange={(event) => handleChatIsolationChange(event.target.value as ChatIsolationMode)}
-                    >
-                      <option value="shared_workspace">{translate("Общая папка")}</option>
-                      <option value="isolated_worktree">{translate("Изолированный worktree")}</option>
-                    </select>
-                    <span className="composer__select-chevron" aria-hidden="true"><UiIcon name="chevron-down" size={12} /></span>
-                  </label>
+                  <IsolationModePicker
+                    value={chatIsolationMode}
+                    disabled={busy || !connected}
+                    onChange={handleChatIsolationChange}
+                  />
                 </div>
               ) : null}
               {!connected ? <p className="shell__reason">{translate("Core недоступен: запуск и управление задачей приостановлены.")}</p> : null}
