@@ -2151,8 +2151,11 @@ mod tests {
         }
     }
 
+    static HIVE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn apply_hive_route_overrides_rebuilds_hive_route_for_literouter() {
+        let _guard = HIVE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut routes = HashMap::new();
         routes.insert(
             "hive".to_string(),
@@ -2175,6 +2178,7 @@ mod tests {
 
     #[test]
     fn apply_hive_route_overrides_resets_rout_default_model_when_switching_to_literouter() {
+        let _guard = HIVE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut routes = HashMap::new();
         routes.insert(
             "hive".to_string(),
@@ -2243,8 +2247,7 @@ mod tests {
 
     #[test]
     fn apply_hive_route_overrides_uses_per_provider_keys_and_drops_unconfigured_provider() {
-        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = HIVE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let prev_keys = env::var("HIVE_API_KEYS_JSON").ok();
 
         env::set_var(
