@@ -24,7 +24,7 @@ More than a basic chat window, EvoHime works as a structured **AI Coding Assista
 1. [Download the lightweight EvoHime-Setup.exe](https://github.com/rkfsociety/EvoHime/releases/download/installer/EvoHime-Setup.exe). It fetches the verified module bundle during initial installation or repair.
 2. Install the app and launch Eva from your desktop.
 3. Select your project workspace folder.
-4. Open provider settings and choose a source and model — connect an API profile, local **Ollama**, or local Codex CLI.
+4. Open provider settings and choose a source and model — connect an API profile, **Google Gemini**, local **Ollama**, or local Codex CLI.
 5. Describe your task in plain language.
 
 Eva displays every step of execution. Before editing files, running critical actions, or performing other sensitive operations, it always asks for your confirmation.
