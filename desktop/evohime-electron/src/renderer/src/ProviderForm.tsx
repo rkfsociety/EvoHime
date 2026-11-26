@@ -281,7 +281,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   }, [apply, summary])
 
   useEffect(() => {
-    const event = [...events].reverse().find((item) => item.eventType === 'model.catalog')
+    const event = events.find((item) => item.eventType === 'model.catalog')
     if (!event) {
       setCatalogStatus(null)
       return
@@ -291,10 +291,18 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     const catalog = asRecord(projection?.['catalog'])
     const providerProjection = asRecord(projection?.['provider'])
     const expectedProvider = provider === 'openai_compatible' ? profileId : provider
-    const catalogProvider = typeof providerProjection?.['profile_id'] === 'string'
+    const catalogProviderId = typeof providerProjection?.['id'] === 'string'
+      ? providerProjection['id']
+      : null
+    const catalogProfileId = typeof providerProjection?.['profile_id'] === 'string'
       ? providerProjection['profile_id']
-      : typeof providerProjection?.['id'] === 'string' ? providerProjection['id'] : null
-    if (catalogProvider !== null && catalogProvider !== expectedProvider) {
+      : null
+    const matchesProvider =
+      (catalogProfileId === null && catalogProviderId === null) ||
+      catalogProfileId === expectedProvider ||
+      catalogProviderId === provider ||
+      catalogProviderId === expectedProvider
+    if (!matchesProvider) {
       setCatalogModels([])
       return
     }
@@ -316,12 +324,11 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
 
   useEffect(() => {
     if (!api || !['connected', 'replaying', 'resyncing'].includes(connection)) return
-    setCatalogModels([])
-    void api.invoke('core.listModelCatalog', { mode: tier })
+    void api.invoke('core.listModelCatalog', { mode: tier, provider })
   }, [api, connection, provider, tier])
 
   useEffect(() => {
-    const event = [...events].reverse().find((item) => item.eventType === 'free_access.probe')
+    const event = events.find((item) => item.eventType === 'free_access.probe')
     if (!event) return
     const result = parseJson(event.payload)
     const state = typeof result['state'] === 'string' ? result['state'] : 'unknown'
