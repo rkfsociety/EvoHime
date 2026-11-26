@@ -12,7 +12,8 @@ use tokio::fs;
 /// Registry identifier for sandboxed workspace deletion.
 pub const DELETE_NAME: &str = "filesystem_delete";
 /// Catalog summary for deletion; callers must obtain the configured approval.
-pub const DELETE_DESCRIPTION: &str = "Delete a file or directory (with confirmation required)";
+pub const DELETE_DESCRIPTION: &str =
+    "Delete a workspace file (requires expected_hash) or directory (requires recursive=true); confirmation required";
 /// Permission required to delete workspace entries.
 pub const DELETE_PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
 /// Maximum runtime for one delete operation.
@@ -85,13 +86,15 @@ pub async fn delete(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 /// Registry identifier for sandboxed file or directory moves.
 pub const MOVE_NAME: &str = "filesystem_move";
 /// Catalog summary for moving or renaming a workspace entry.
-pub const MOVE_DESCRIPTION: &str = "Move or rename a file or directory";
+pub const MOVE_DESCRIPTION: &str =
+    "Move or rename a workspace file (requires expected_hash) or directory";
 /// Permission required to move workspace entries.
 pub const MOVE_PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
 /// Maximum runtime for one move operation.
 pub const MOVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct MoveInput {
     from: String,
     to: String,
@@ -138,7 +141,8 @@ pub async fn move_file(ctx: &ToolContext, input: Value) -> Result<ToolResult, To
 /// Registry identifier for workspace copying.
 pub const COPY_NAME: &str = "filesystem_copy";
 /// Catalog summary for copying workspace files or directories.
-pub const COPY_DESCRIPTION: &str = "Copy a file or directory";
+pub const COPY_DESCRIPTION: &str =
+    "Copy a workspace file (requires expected_hash) or directory (requires recursive=true)";
 /// Permission required to create copied workspace content.
 pub const COPY_PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
 /// Maximum runtime for one copy operation.
@@ -451,6 +455,37 @@ mod tests {
 
         assert!(!src.exists());
         assert!(dst.exists());
+    }
+
+    #[tokio::test]
+    async fn move_file_rejects_unsupported_recursive_flag() {
+        let dir = tempdir().expect("tempdir");
+        let src = dir.path().join("src.txt");
+        std_fs::write(&src, "content").expect("write");
+
+        let ctx = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
+        };
+
+        let hash = hex::encode(sha2::Sha256::digest(b"content"));
+        let err = move_file(
+            &ctx,
+            json!({"from": "src.txt", "to": "dst.txt", "recursive": true, "expected_hash": hash}),
+        )
+        .await
+        .expect_err("move must reject unsupported recursive field");
+
+        assert!(matches!(err, ToolError::InvalidInput { .. }));
+        assert!(src.exists());
     }
 
     #[tokio::test]

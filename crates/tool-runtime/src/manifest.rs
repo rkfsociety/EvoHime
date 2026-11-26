@@ -98,7 +98,11 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             &["path"],
         ),
         "filesystem_write" => object(
-            serde_json::json!({"path":string("Logical namespace/path"),"content":string("Complete UTF-8 content"),"expected_hash":string("SHA-256 hash from filesystem_read")}),
+            serde_json::json!({
+                "path": string("Logical namespace/path"),
+                "content": string("Complete UTF-8 content"),
+                "expected_hash": string("Required when overwriting an existing file (SHA-256 content_hash from filesystem_read); omit when creating a new file")
+            }),
             &["path", "content"],
         ),
         "filesystem_patch" => object(
@@ -111,10 +115,23 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             }),
             &["path", "expected_hash"],
         ),
-        "filesystem_delete" => object(
-            serde_json::json!({"path":string("Logical namespace/path"),"recursive":{"type":"boolean"},"expected_hash":string("SHA-256 hash of the file before deletion")}),
-            &["path"],
-        ),
+        "filesystem_delete" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": string("Logical namespace/path"),
+                "recursive": {
+                    "type": "boolean",
+                    "description": "Required (true) when deleting a directory; omit or false for files"
+                },
+                "expected_hash": string("Required when deleting a file (SHA-256 content_hash from filesystem_read); omit when deleting a directory")
+            },
+            "required": ["path"],
+            "anyOf": [
+                {"required": ["expected_hash"]},
+                {"required": ["recursive"]}
+            ],
+            "additionalProperties": false
+        }),
         "git_worktree_create" => object(
             serde_json::json!({"worktree_id":string("Core-generated task worktree identity"),"base_commit":string("Validated Git commit/ref")}),
             &["worktree_id", "base_commit"],
@@ -127,12 +144,64 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"worktree_id":string("Core-generated task worktree identity"),"base_commit":string("Pinned base commit")}),
             &["worktree_id", "base_commit"],
         ),
-        "filesystem_move" | "filesystem_copy" => object(
-            serde_json::json!({"from":string("Logical namespace/path"),"to":string("Logical namespace/path"),"recursive":{"type":"boolean"},"expected_hash":string("SHA-256 hash of the source file")}),
+        "filesystem_move" => object(
+            serde_json::json!({
+                "from": string("Logical namespace/path"),
+                "to": string("Logical namespace/path"),
+                "expected_hash": string("Required when moving a file (SHA-256 content_hash from filesystem_read); omit when moving a directory")
+            }),
             &["from", "to"],
         ),
+        "filesystem_copy" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "from": string("Logical namespace/path"),
+                "to": string("Logical namespace/path"),
+                "recursive": {
+                    "type": "boolean",
+                    "description": "Required (true) when copying a directory; omit or false for files"
+                },
+                "expected_hash": string("Required when copying a file (SHA-256 content_hash from filesystem_read); omit when copying a directory")
+            },
+            "required": ["from", "to"],
+            "anyOf": [
+                {"required": ["expected_hash"]},
+                {"required": ["recursive"]}
+            ],
+            "additionalProperties": false
+        }),
         "filesystem_search" => object(
-            serde_json::json!({"query":string("Literal text (or ripgrep regex when regex=true)"),"path":string("Optional workspace path"),"glob":string("Optional glob"),"limit":integer(),"regex":{"type":"boolean","description":"Treat query as a regular expression (requires ripgrep); default false"},"ignore_case":{"type":"boolean","description":"Case-insensitive match; default false"}}),
+            serde_json::json!({
+                "query": {
+                    "description": "Literal text or list of texts to match (any matches; treated as ripgrep regex when regex=true)",
+                    "anyOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"type": "string"}, "minItems": 1}
+                    ]
+                },
+                "path": string("Optional workspace path"),
+                "glob": {
+                    "description": "Optional glob or list of globs to filter files (e.g. '*.rs' or ['*.rs', '*.toml'])",
+                    "anyOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"type": "string"}}
+                    ]
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000,
+                    "description": "Maximum matches to return (default 100, max 1000)"
+                },
+                "regex": {
+                    "type": "boolean",
+                    "description": "Treat query as a regular expression (requires ripgrep); default false"
+                },
+                "ignore_case": {
+                    "type": "boolean",
+                    "description": "Case-insensitive match; default false"
+                }
+            }),
             &["query"],
         ),
         "filesystem_list" => object(
@@ -291,10 +360,22 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"command":string("Executable name; launched directly without a shell"),"args":{"type":"array","items":{"type":"string"}},"cwd":string("Working directory inside the task workspace"),"timeout_ms":integer()}),
             &["command"],
         ),
-        "shell_execute" | "process.spawn" => object(
-            serde_json::json!({"program":string("Executable"),"args":{"type":"array","items":{"type":"string"}},"cwd":string("Working directory"),"timeout_ms":integer()}),
-            &["program"],
-        ),
+        "shell_execute" | "process.spawn" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "program": string("Executable name or path (preferred over legacy command); launched directly without a shell"),
+                "command": string("Legacy single command string (e.g. 'cargo test' or 'cd dir && cargo test'); prefer program + args"),
+                "args": {"type": "array", "items": {"type": "string"}},
+                "cwd": string("Working directory"),
+                "timeout_ms": integer()
+            },
+            "required": [],
+            "anyOf": [
+                {"required": ["program"]},
+                {"required": ["command"]}
+            ],
+            "additionalProperties": false
+        }),
         "script_execute" => object(
             serde_json::json!({
                 "interpreter": {"type":"string","enum":crate::tools::script::interpreter_ids(),"description":"Interpreter to run the script with"},
@@ -310,7 +391,12 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             &["path"],
         ),
         "logs_grep" => object(
-            serde_json::json!({"pattern":string("Literal text to find"),"path":string("Optional file or directory"),"case_insensitive":{"type":"boolean"},"invert_match":{"type":"boolean"},"context_lines":integer()}),
+            serde_json::json!({
+                "pattern": string("Literal text to find"),
+                "path": string("Optional file or directory"),
+                "case_insensitive": {"type": "boolean"},
+                "invert_match": {"type": "boolean"}
+            }),
             &["pattern"],
         ),
         "cargo_build" => object(
@@ -706,5 +792,114 @@ mod tests {
         assert_eq!(commit["properties"]["message"]["type"], "string");
         assert_eq!(commit["properties"]["paths"]["type"], "array");
         assert_eq!(commit["properties"]["paths"]["items"]["type"], "string");
+    }
+
+    #[test]
+    fn filesystem_search_schema_accepts_single_and_array_queries_and_globs() {
+        let schema = builtin_input_schema("filesystem_search");
+        let validator =
+            jsonschema::validator_for(&schema).expect("filesystem_search schema compiles");
+
+        for valid in [
+            serde_json::json!({"query": "needle"}),
+            serde_json::json!({"query": ["one", "two"], "glob": ["*.rs", "*.toml"], "limit": 50}),
+            serde_json::json!({"query": "needle", "glob": "*.md", "regex": true, "ignore_case": true}),
+        ] {
+            assert!(
+                validator.validate(&valid).is_ok(),
+                "expected valid filesystem_search input to pass schema: {valid}"
+            );
+        }
+
+        assert!(
+            validator
+                .validate(&serde_json::json!({"query": []}))
+                .is_err(),
+            "empty query array must be rejected by schema"
+        );
+        assert!(
+            validator
+                .validate(&serde_json::json!({"query": "needle", "limit": 1001}))
+                .is_err(),
+            "limit above 1000 must be rejected by schema"
+        );
+    }
+
+    #[test]
+    fn shell_execute_schema_accepts_program_or_legacy_command() {
+        let schema = builtin_input_schema("shell_execute");
+        let validator = jsonschema::validator_for(&schema).expect("shell_execute schema compiles");
+
+        assert!(validator
+            .validate(&serde_json::json!({"program": "git", "args": ["--version"]}))
+            .is_ok());
+        assert!(validator
+            .validate(&serde_json::json!({"command": "git --version"}))
+            .is_ok());
+        assert!(
+            validator.validate(&serde_json::json!({})).is_err(),
+            "shell_execute must require either program or command"
+        );
+    }
+
+    #[test]
+    fn filesystem_move_copy_delete_schemas_match_executor_contracts() {
+        let move_schema = builtin_input_schema("filesystem_move");
+        assert!(
+            move_schema["properties"].get("recursive").is_none(),
+            "filesystem_move must not advertise ignored recursive parameter"
+        );
+        let move_validator =
+            jsonschema::validator_for(&move_schema).expect("filesystem_move schema compiles");
+        assert!(move_validator
+            .validate(&serde_json::json!({"from": "a.txt", "to": "b.txt", "expected_hash": "abc"}))
+            .is_ok());
+        assert!(move_validator
+            .validate(&serde_json::json!({"from": "dir_a", "to": "dir_b"}))
+            .is_ok());
+        assert!(move_validator
+            .validate(&serde_json::json!({"from": "dir_a", "to": "dir_b", "recursive": true}))
+            .is_err());
+
+        let copy_schema = builtin_input_schema("filesystem_copy");
+        let copy_validator =
+            jsonschema::validator_for(&copy_schema).expect("filesystem_copy schema compiles");
+        assert!(copy_validator
+            .validate(&serde_json::json!({"from": "a.txt", "to": "b.txt", "expected_hash": "abc"}))
+            .is_ok());
+        assert!(copy_validator
+            .validate(&serde_json::json!({"from": "dir_a", "to": "dir_b", "recursive": true}))
+            .is_ok());
+        assert!(
+            copy_validator
+                .validate(&serde_json::json!({"from": "a.txt", "to": "b.txt"}))
+                .is_err(),
+            "filesystem_copy must require expected_hash (file) or recursive (directory)"
+        );
+
+        let delete_schema = builtin_input_schema("filesystem_delete");
+        let delete_validator =
+            jsonschema::validator_for(&delete_schema).expect("filesystem_delete schema compiles");
+        assert!(delete_validator
+            .validate(&serde_json::json!({"path": "a.txt", "expected_hash": "abc"}))
+            .is_ok());
+        assert!(delete_validator
+            .validate(&serde_json::json!({"path": "dir_a", "recursive": true}))
+            .is_ok());
+        assert!(
+            delete_validator
+                .validate(&serde_json::json!({"path": "a.txt"}))
+                .is_err(),
+            "filesystem_delete must require expected_hash (file) or recursive (directory)"
+        );
+    }
+
+    #[test]
+    fn logs_grep_schema_omits_ignored_context_lines_field() {
+        let schema = builtin_input_schema("logs_grep");
+        assert!(
+            schema["properties"].get("context_lines").is_none(),
+            "logs_grep must not advertise ignored context_lines parameter"
+        );
     }
 }
