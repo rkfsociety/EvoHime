@@ -46,15 +46,25 @@ export function ProjectSidebar({
   const [chats, setChats] = useState<readonly ChatSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [openProjectMenuPath, setOpenProjectMenuPath] = useState<string | null>(null)
+  const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null)
+  const [renamingChatId, setRenamingChatId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
   const projectsRef = useRef<HTMLElement | null>(null)
+  const chatsRef = useRef<HTMLUListElement | null>(null)
 
   useEffect(() => {
-    if (!openProjectMenuPath) return
+    if (!openProjectMenuPath && !openChatMenuId) return
     const onPointerDown = (event: MouseEvent): void => {
-      if (!projectsRef.current?.contains(event.target as Node)) setOpenProjectMenuPath(null)
+      const target = event.target as Node
+      if (openProjectMenuPath && !projectsRef.current?.contains(target)) setOpenProjectMenuPath(null)
+      if (openChatMenuId && !chatsRef.current?.contains(target)) setOpenChatMenuId(null)
     }
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setOpenProjectMenuPath(null)
+      if (event.key === 'Escape') {
+        setOpenProjectMenuPath(null)
+        setOpenChatMenuId(null)
+        setRenamingChatId(null)
+      }
     }
     document.addEventListener('mousedown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
@@ -62,7 +72,7 @@ export function ProjectSidebar({
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [openProjectMenuPath])
+  }, [openChatMenuId, openProjectMenuPath])
 
   const loadProjects = useCallback(async () => {
     if (!api) {
@@ -154,6 +164,7 @@ export function ProjectSidebar({
   const removeChat = useCallback(
     async (id: string) => {
       if (!api) return
+      setOpenChatMenuId(null)
       const outcome = await api.invoke('chat.remove', { chatId: id })
       if (!outcome.ok) return
       setChats(outcome.value)
@@ -161,6 +172,34 @@ export function ProjectSidebar({
       onChatsChanged?.()
     },
     [api, chatId, onChatChange, onChatsChanged]
+  )
+
+  const archiveChat = useCallback(
+    async (id: string) => {
+      if (!api) return
+      setOpenChatMenuId(null)
+      const outcome = await api.invoke('chat.archive', { chatId: id, archived: true })
+      if (!outcome.ok) return
+      setChats(outcome.value)
+      if (id === chatId) onChatChange(null)
+      onChatsChanged?.()
+    },
+    [api, chatId, onChatChange, onChatsChanged]
+  )
+
+  const commitRenameChat = useCallback(
+    async (id: string) => {
+      if (!api) return
+      const trimmed = renameDraft.trim()
+      setRenamingChatId(null)
+      if (trimmed.length === 0) return
+      const outcome = await api.invoke('chat.rename', { chatId: id, title: trimmed })
+      if (!outcome.ok || !outcome.value || typeof outcome.value.title !== 'string') return
+      const nextTitle = outcome.value.title
+      setChats((current) => current.map((item) => (item.id === id ? { ...item, title: nextTitle } : item)))
+      onChatsChanged?.()
+    },
+    [api, onChatsChanged, renameDraft]
   )
 
   const connected = CONNECTED_STATES.includes(connection)
@@ -300,29 +339,108 @@ export function ProjectSidebar({
       {chats.length === 0 ? (
         <p className="chat-rail__empty">{t('Чатов пока нет. Начни с нового чата.')}</p>
       ) : (
-        <ul className="chats__list">
-          {chats.map((chat) => (
-            <li key={chat.id}>
-              <button
-                type="button"
-                className="chats__item"
-                aria-current={chat.id === chatId ? 'true' : undefined}
-                onClick={() => onChatChange(chat.id)}
-                title={chat.title}
-              >
-                <span className="chats__item-icon" aria-hidden="true"><UiIcon name="message" size={13} /></span>
-                <span className="chats__item-title">{chat.title}</span>
-              </button>
-              <button
-                type="button"
-                className="chats__remove"
-                onClick={() => void removeChat(chat.id)}
-                aria-label={t('Удалить чат {title}').replace('{title}', chat.title)}
-              >
-                <UiIcon name="x" size={12} />
-              </button>
-            </li>
-          ))}
+        <ul className="chats__list" ref={chatsRef}>
+          {chats.map((chat) => {
+            const chatMenuOpen = openChatMenuId === chat.id
+            const isRenaming = renamingChatId === chat.id
+            return (
+              <li key={chat.id} className="chats__row">
+                {isRenaming ? (
+                  <input
+                    type="text"
+                    className="chats__rename-input"
+                    aria-label={t('Новое название чата')}
+                    value={renameDraft}
+                    autoFocus
+                    maxLength={80}
+                    onChange={(event) => setRenameDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        void commitRenameChat(chat.id)
+                      } else if (event.key === 'Escape') {
+                        setRenamingChatId(null)
+                      }
+                    }}
+                    onBlur={() => void commitRenameChat(chat.id)}
+                  />
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="chats__item"
+                      aria-current={chat.id === chatId ? 'true' : undefined}
+                      onClick={() => onChatChange(chat.id)}
+                      title={chat.title}
+                    >
+                      <span className="chats__item-icon" aria-hidden="true"><UiIcon name="message" size={13} /></span>
+                      <span className="chats__item-title">{chat.title}</span>
+                    </button>
+                    <div className="chat-rail__project-actions chat-rail__chat-actions">
+                      <button
+                        type="button"
+                        className="chat-rail__project-action"
+                        aria-label={t('Действия с чатом {title}').replace('{title}', chat.title)}
+                        aria-expanded={chatMenuOpen}
+                        title={t('Действия с чатом')}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setOpenChatMenuId(chatMenuOpen ? null : chat.id)
+                        }}
+                      >
+                        <UiIcon name="more-horizontal" size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="chat-rail__project-action"
+                        aria-label={t('Архивировать чат {title}').replace('{title}', chat.title)}
+                        title={t('Архивировать чат')}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void archiveChat(chat.id)
+                        }}
+                      >
+                        <UiIcon name="archive" size={13} />
+                      </button>
+                    </div>
+                  </>
+                )}
+                {chatMenuOpen ? (
+                  <div className="chat-rail__project-menu" role="menu" aria-label={t('Действия с чатом {title}').replace('{title}', chat.title)}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setOpenChatMenuId(null)
+                        setRenamingChatId(chat.id)
+                        setRenameDraft(chat.title)
+                      }}
+                    >
+                      <UiIcon name="chat" size={13} />
+                      <span>{t('Переименовать')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => void archiveChat(chat.id)}
+                    >
+                      <UiIcon name="archive" size={13} />
+                      <span>{t('Архивировать')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="chat-rail__project-menu-danger"
+                      onClick={() => void removeChat(chat.id)}
+                    >
+                      <UiIcon name="x" size={13} />
+                      <span>{t('Удалить чат')}</span>
+                    </button>
+                  </div>
+                ) : null}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

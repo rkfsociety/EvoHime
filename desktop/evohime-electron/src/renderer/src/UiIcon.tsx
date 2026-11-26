@@ -1,6 +1,7 @@
 export type UiIconName =
   | 'activity'
   | 'alert-triangle'
+  | 'archive'
   | 'box'
   | 'chat'
   | 'check'
@@ -306,6 +307,13 @@ export function UiIcon({ name, size = 16, className = '' }: UiIconProps): React.
           <circle cx="5" cy="12" r="1.3" fill="currentColor" stroke="none" />
           <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
           <circle cx="19" cy="12" r="1.3" fill="currentColor" stroke="none" />
+        </svg>
+      )
+    case 'archive':
+      return (
+        <svg {...common}>
+          <rect x="3" y="4" width="18" height="4" rx="1" />
+          <path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" />
         </svg>
       )
   }

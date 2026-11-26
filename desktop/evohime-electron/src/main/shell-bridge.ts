@@ -1747,9 +1747,11 @@ function dispatch(
     }
 
     case 'chat.list': {
-      const workspacePath = asOptionalWorkspacePath(asRecord(payload)['workspacePath'])
+      const value = asRecord(payload)
+      const workspacePath = asOptionalWorkspacePath(value['workspacePath'])
       if (workspacePath === undefined) return failure('invalid-payload', 'Некорректный путь проекта.')
-      return chatOperation(chats.list(workspacePath), log, (value) => ({ ok: true, value }))
+      const includeArchived = value['includeArchived'] === true
+      return chatOperation(chats.list(workspacePath, includeArchived), log, (result) => ({ ok: true, value: result }))
     }
 
     case 'chat.create': {
@@ -1776,6 +1778,30 @@ function dispatch(
         return failure('invalid-payload', 'Некорректное сообщение чата.')
       }
       return chatOperation(chats.appendPrompt(chatId, taskId, prompt, clientMessageId), log, (value) => ({ ok: true, value }))
+    }
+
+    case 'chat.rename': {
+      const value = asRecord(payload)
+      const chatId = asBoundedString(value['chatId'])
+      const title = asBoundedString(value['title'])
+      if (chatId === null || title === null || title.trim().length === 0) {
+        return failure('invalid-payload', 'Укажи непустое название чата.')
+      }
+      return chatOperation(chats.renameChat(chatId, title), log, (chat) =>
+        ({ ok: true, value: chat })
+      )
+    }
+
+    case 'chat.archive': {
+      const value = asRecord(payload)
+      const chatId = asBoundedString(value['chatId'])
+      if (chatId === null) return failure('invalid-payload', 'Некорректный идентификатор чата.')
+      const archived = value['archived'] !== false
+      return chatOperation(
+        chats.setArchived(chatId, archived).then((chat) => (chat ? chats.list(chat.workspacePath) : [])),
+        log,
+        (result) => ({ ok: true, value: result })
+      )
     }
 
     case 'chat.remove': {

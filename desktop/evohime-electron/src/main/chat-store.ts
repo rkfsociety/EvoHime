@@ -83,11 +83,11 @@ export class ChatStore {
   }
 
   /** Chats of one workspace, or standalone chats, most recently used first. */
-  async list(workspacePath: string | null): Promise<ChatSummary[]> {
+  async list(workspacePath: string | null, includeArchived = false): Promise<ChatSummary[]> {
     const normalized = normalizeChatWorkspacePath(workspacePath)
     if (normalized === undefined) return []
     return (await this.read())
-      .chats.filter((chat) => samePath(chat.workspacePath, normalized))
+      .chats.filter((chat) => samePath(chat.workspacePath, normalized) && (includeArchived || !chat.archived))
       .sort((left, right) => right.updatedMs - left.updatedMs)
       .map(summarize)
   }
@@ -184,6 +184,35 @@ export class ChatStore {
         messages: [...chat.messages, message].slice(-MAX_MESSAGES_PER_CHAT)
       }
       await this.write({ chats: current.map((item) => (item.id === chatId ? next : item)) })
+      return next
+    })
+  }
+
+  async renameChat(chatId: string, title: string): Promise<ChatRecord | null> {
+    const trimmed = title.trim().slice(0, MAX_TITLE_CHARS)
+    if (trimmed.length === 0) return null
+    return this.mutate(async () => {
+      const current = (await this.read()).chats
+      const existing = current.find((chat) => chat.id === chatId)
+      if (!existing) return null
+      const next: ChatRecord = { ...existing, title: trimmed }
+      await this.write({ chats: current.map((chat) => (chat.id === chatId ? next : chat)) })
+      return next
+    })
+  }
+
+  async setArchived(chatId: string, archived: boolean): Promise<ChatRecord | null> {
+    return this.mutate(async () => {
+      const current = (await this.read()).chats
+      const existing = current.find((chat) => chat.id === chatId)
+      if (!existing) return null
+      const next: ChatRecord = archived
+        ? { ...existing, archived: true }
+        : (() => {
+            const { archived: _omitted, ...rest } = existing
+            return rest
+          })()
+      await this.write({ chats: current.map((chat) => (chat.id === chatId ? next : chat)) })
       return next
     })
   }
@@ -411,6 +440,7 @@ function summarize(chat: ChatRecord): ChatSummary {
     title: chat.title,
     updatedMs: chat.updatedMs,
     messageCount: chat.messages.length,
+    ...(chat.archived ? { archived: true } : {}),
     ...(chat.session ? { session: chat.session } : {})
   }
 }
@@ -455,6 +485,7 @@ function parseChat(value: unknown): ChatRecord | null {
     taskIds: taskIds.slice(-MAX_MESSAGES_PER_CHAT),
     messages,
     workbenchPresentation: parseWorkbenchPresentation(record['workbenchPresentation']),
+    ...(record['archived'] === true ? { archived: true } : {}),
     ...(session !== undefined ? { session } : {})
   }
 }

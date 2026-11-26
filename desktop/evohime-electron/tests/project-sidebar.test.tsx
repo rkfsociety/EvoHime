@@ -31,6 +31,17 @@ beforeEach(() => {
         chats = [{ ...created, messageCount: 0 }, ...chats]
         return ok(created)
       }
+      if (command === 'chat.rename') {
+        const { chatId, title } = payload as { chatId: string; title: string }
+        chats = chats.map((chat) => (chat.id === chatId ? { ...chat, title } : chat))
+        const updated = chats.find((chat) => chat.id === chatId) ?? null
+        return ok(updated ? { ...updated, createdMs: updated.updatedMs, taskIds: [], messages: [], workbenchPresentation: { activeTab: 'tasks', splitRatio: 0.5, collapsed: false } } : null)
+      }
+      if (command === 'chat.archive') {
+        const { chatId, archived } = payload as { chatId: string; archived?: boolean }
+        chats = archived === false ? chats : chats.filter((chat) => chat.id !== chatId)
+        return ok(chats)
+      }
       if (command === 'chat.remove') {
         const { chatId } = payload as { chatId: string }
         chats = chats.filter((chat) => chat.id !== chatId)
@@ -96,9 +107,25 @@ describe('project sidebar', () => {
   it('notifies the shell when a chat is removed so the home screen refreshes', async () => {
     const onChatsChanged = vi.fn()
     const { props } = renderSidebar({ chatId: 'chat-1', onChatsChanged })
-    await userEvent.click(await screen.findByRole('button', { name: 'Удалить чат Изучи проект' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Действия с чатом Изучи проект' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Удалить чат' }))
     expect(calls).toContainEqual({ command: 'chat.remove', payload: { chatId: 'chat-1' } })
     expect(props.onChatChange).toHaveBeenCalledWith(null)
     expect(onChatsChanged).toHaveBeenCalledTimes(1)
+  })
+
+  it('archives and renames a chat from the sidebar actions', async () => {
+    const onChatsChanged = vi.fn()
+    const { props } = renderSidebar({ chatId: 'chat-1', onChatsChanged })
+    await userEvent.click(await screen.findByRole('button', { name: 'Действия с чатом Изучи проект' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Переименовать' }))
+    const renameInput = screen.getByRole('textbox', { name: 'Новое название чата' })
+    await userEvent.clear(renameInput)
+    await userEvent.type(renameInput, 'Новое имя{enter}')
+    expect(calls).toContainEqual({ command: 'chat.rename', payload: { chatId: 'chat-1', title: 'Новое имя' } })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Архивировать чат Новое имя' }))
+    expect(calls).toContainEqual({ command: 'chat.archive', payload: { chatId: 'chat-1', archived: true } })
+    expect(props.onChatChange).toHaveBeenCalledWith(null)
   })
 })

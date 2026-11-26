@@ -939,6 +939,7 @@ export interface ChatRecord {
   readonly taskIds: readonly string[]
   readonly messages: readonly ChatMessage[]
   readonly workbenchPresentation: WorkbenchPresentation
+  readonly archived?: boolean
   readonly session?: ChatSessionSettings
 }
 
@@ -955,6 +956,7 @@ export interface ChatSummary {
   readonly title: string
   readonly updatedMs: number
   readonly messageCount: number
+  readonly archived?: boolean
   readonly session?: ChatSessionSettings
 }
 
@@ -1635,6 +1637,8 @@ export const RENDERER_COMMANDS = [
   'chat.getWorkbenchPresentation',
   'chat.saveWorkbenchPresentation',
   'chat.saveSessionSettings',
+  'chat.rename',
+  'chat.archive',
   'chat.remove',
   'review.pickPlan',
   'review.start',
@@ -2133,10 +2137,12 @@ export interface CommandPayloads {
   }
   'identity.get': Record<string, never>
   'repository.get': { workspacePath: string }
-  'chat.list': { workspacePath: string | null }
+  'chat.list': { workspacePath: string | null; includeArchived?: boolean }
   'chat.create': { workspacePath: string | null }
   'chat.open': { chatId: string }
   'chat.appendPrompt': { chatId: string; taskId: string; clientMessageId?: string; prompt: string }
+  'chat.rename': { chatId: string; title: string }
+  'chat.archive': { chatId: string; archived?: boolean }
   'chat.remove': { chatId: string }
   'chat.getWorkbenchPresentation': { chatId: string }
   'chat.saveWorkbenchPresentation': { chatId: string; presentation: WorkbenchPresentation }
@@ -2654,6 +2660,8 @@ export interface CommandResults {
   'chat.create': ChatRecord
   'chat.open': ChatRecord | null
   'chat.appendPrompt': ChatRecord | null
+  'chat.rename': ChatRecord | null
+  'chat.archive': readonly ChatSummary[]
   'chat.remove': readonly ChatSummary[]
   'chat.getWorkbenchPresentation': WorkbenchPresentation
   'chat.saveWorkbenchPresentation': WorkbenchPresentation
