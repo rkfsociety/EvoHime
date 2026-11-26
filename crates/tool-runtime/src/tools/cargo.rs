@@ -356,8 +356,14 @@ struct BoundedCommandOutput {
 }
 
 async fn run_bounded_command(command: &mut Command) -> std::io::Result<BoundedCommandOutput> {
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    command
+        .kill_on_drop(true)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = command.spawn()?;
+    let _process_guard =
+        crate::execution_policy_profiles::ProcessGuard::attach_process_tree(&mut child)?;
     let stdout = child
         .stdout
         .take()
@@ -440,5 +446,13 @@ mod tests {
         writer_task.await.unwrap();
         assert_eq!(output.len(), MAX_CARGO_OUTPUT_BYTES + 1);
         assert_eq!(bounded_text(&output).len(), MAX_CARGO_OUTPUT_BYTES);
+    }
+
+    #[tokio::test]
+    async fn cargo_bounded_command_timeout_kills_child() {
+        crate::tools::assert_timeout_terminates_child(|mut cmd| async move {
+            run_bounded_command(&mut cmd).await
+        })
+        .await;
     }
 }

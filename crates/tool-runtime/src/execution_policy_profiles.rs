@@ -417,6 +417,30 @@ impl ProcessGuard {
             job: None,
         })
     }
+
+    /// Attaches a platform process-tree guard to an already spawned child so
+    /// dropping the future (for example on timeout or cancellation) terminates
+    /// the child and its descendants on Windows.
+    pub(crate) fn attach_process_tree(child: &mut Child) -> io::Result<Self> {
+        #[cfg(windows)]
+        {
+            match WindowsJobObject::create_and_assign(child) {
+                Ok(job) => Ok(Self { job: Some(job) }),
+                Err(error) => {
+                    if child.try_wait().ok().flatten().is_some() {
+                        Ok(Self { job: None })
+                    } else {
+                        Err(error)
+                    }
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = child;
+            Ok(Self {})
+        }
+    }
 }
 
 #[cfg(windows)]

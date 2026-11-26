@@ -514,8 +514,14 @@ struct BoundedCommandOutput {
 }
 
 async fn run_bounded_command(command: &mut Command) -> io::Result<BoundedCommandOutput> {
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    command
+        .kill_on_drop(true)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = command.spawn()?;
+    let _process_guard =
+        crate::execution_policy_profiles::ProcessGuard::attach_process_tree(&mut child)?;
     let stdout = child
         .stdout
         .take()
@@ -721,5 +727,13 @@ mod tests {
             .expect_err("unsafe archive must be rejected");
         assert!(error.to_string().contains("escapes destination"));
         assert!(!dir.path().join("escaped.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn archive_bounded_command_timeout_kills_child() {
+        crate::tools::assert_timeout_terminates_child(|mut cmd| async move {
+            run_bounded_command(&mut cmd).await
+        })
+        .await;
     }
 }

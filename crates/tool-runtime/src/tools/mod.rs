@@ -106,3 +106,71 @@ where
         },
     }
 }
+
+#[cfg(test)]
+pub(crate) async fn assert_timeout_terminates_child<F, Fut, T>(run: F)
+where
+    F: FnOnce(tokio::process::Command) -> Fut,
+    Fut: std::future::Future<Output = std::io::Result<T>>,
+{
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ready = dir.path().join("ready");
+    let survived = dir.path().join("survived");
+
+    #[cfg(windows)]
+    let command = {
+        let mut cmd = tokio::process::Command::new("cmd");
+        cmd.current_dir(dir.path());
+        cmd.args([
+            "/C",
+            "echo ready>ready & ping -n 2 127.0.0.1 >nul & echo survived>survived",
+        ]);
+        cmd
+    };
+
+    #[cfg(not(windows))]
+    let command = {
+        let mut cmd = tokio::process::Command::new("sh");
+        cmd.current_dir(dir.path());
+        cmd.args([
+            "-c",
+            "printf ready > ready; sleep 1; printf survived > survived",
+        ]);
+        cmd
+    };
+
+    {
+        let fut = run(command);
+        tokio::pin!(fut);
+
+        let wait_ready = async {
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+            while !ready.exists() {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "child process did not signal readiness in time"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        };
+
+        tokio::select! {
+            res = &mut fut => panic!("child process finished before timeout (ok={})", res.is_ok()),
+            _ = wait_ready => {}
+        }
+
+        let timed_out = tokio::time::timeout(std::time::Duration::from_millis(50), fut).await;
+        assert!(
+            timed_out.is_err(),
+            "expected timeout to cancel child future"
+        );
+    }
+
+    // Wait longer than the child's sleep (~1s) to verify it was actually terminated.
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    assert!(
+        !survived.exists(),
+        "child process survived after timeout and wrote {}",
+        survived.display()
+    );
+}

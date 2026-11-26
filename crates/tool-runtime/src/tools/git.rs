@@ -708,8 +708,14 @@ pub(crate) struct BoundedGitOutput {
 }
 
 pub(crate) async fn run_bounded_git(command: &mut Command) -> std::io::Result<BoundedGitOutput> {
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    command
+        .kill_on_drop(true)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = command.spawn()?;
+    let _process_guard =
+        crate::execution_policy_profiles::ProcessGuard::attach_process_tree(&mut child)?;
     let stdout = child
         .stdout
         .take()
@@ -1395,5 +1401,13 @@ mod tests {
                 "fix: bug\n\nSigned-off-by: Dev <dev@example.com>\n{EVOHIME_CO_AUTHOR_TRAILER}"
             )
         );
+    }
+
+    #[tokio::test]
+    async fn git_bounded_command_timeout_kills_child() {
+        crate::tools::assert_timeout_terminates_child(|mut cmd| async move {
+            run_bounded_git(&mut cmd).await
+        })
+        .await;
     }
 }
