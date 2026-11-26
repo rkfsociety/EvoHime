@@ -8,6 +8,13 @@
     "message": {
       "type": "string",
       "description": "Commit message"
+    },
+    "paths": {
+      "type": "array",
+      "description": "Explicit task-only workspace-relative paths to stage and commit. If omitted, commits only already staged changes.",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "additionalProperties": false

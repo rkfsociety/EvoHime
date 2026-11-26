@@ -887,7 +887,7 @@ pub(crate) fn build_agent_system_prompt(tool_names: &[String]) -> String {
             git_rules.push("затем git_diff для проверки изменений");
         }
         if has("git_commit") {
-            git_rules.push("git_commit — только с task-only сообщением и после успешной проверки");
+            git_rules.push("git_commit — только с task-only сообщением, явным списком paths текущей задачи (или уже staged изменениями) и после успешной проверки");
         }
         if has("git_pull") {
             git_rules.push("git_pull — для обновления checkout");
@@ -1276,7 +1276,7 @@ pub(crate) fn delivery_next_step_for_agent(
     } else if !progress.verification_done && requirements.verification {
         "НЕМЕДЛЕННО вызови shell_execute с полным JSON-объектом, например {\"program\":\"cargo\",\"args\":[\"test\"],\"cwd\":\".\"}. Не вызывай shell_execute с пустыми аргументами и не пиши отчёт."
     } else if !progress.commit_done && requirements.commit {
-        "НЕМЕДЛЕННО вызови git_commit с task-only сообщением. Не пиши отчёт."
+        "НЕМЕДЛЕННО вызови git_commit с task-only сообщением и явным списком paths текущей задачи. Не пиши отчёт."
     } else {
         "НЕМЕДЛЕННО вызови следующий нужный read-only инструмент с полным JSON и продолжи исследование. Не пиши отчёт."
     }

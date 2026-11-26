@@ -193,7 +193,14 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             &["goal_id", "criterion_id", "evidence_summary"],
         ),
         "git_commit" => object(
-            serde_json::json!({"message":string("Commit message")}),
+            serde_json::json!({
+                "message": string("Commit message"),
+                "paths": {
+                    "type": "array",
+                    "items": string("Workspace-relative file path to stage and commit"),
+                    "description": "Explicit task-only workspace-relative paths to stage and commit. If omitted, commits only already staged changes."
+                }
+            }),
             &["message"],
         ),
         // Each Git tool declares its own closed schema. A shared superset used
@@ -692,5 +699,12 @@ mod tests {
         let show = builtin_input_schema("git_show");
         assert_eq!(show["properties"]["reference"]["type"], "string");
         assert_eq!(show["properties"]["stat_only"]["type"], "boolean");
+
+        let commit = builtin_input_schema("git_commit");
+        assert_eq!(commit["additionalProperties"], false);
+        assert_eq!(commit["required"], serde_json::json!(["message"]));
+        assert_eq!(commit["properties"]["message"]["type"], "string");
+        assert_eq!(commit["properties"]["paths"]["type"], "array");
+        assert_eq!(commit["properties"]["paths"]["items"]["type"], "string");
     }
 }

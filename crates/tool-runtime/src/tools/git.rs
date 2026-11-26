@@ -99,8 +99,11 @@ struct DiffInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CommitInput {
     message: String,
+    #[serde(default)]
+    paths: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -188,7 +191,8 @@ fn is_git_trailer_line(line: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
 }
 
-/// Stages all workspace changes and creates a commit with the supplied message.
+/// Commits either the explicitly supplied workspace-relative `paths` or the
+/// already staged index changes, never staging unrelated working-tree files.
 pub async fn commit(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let input: CommitInput =
         serde_json::from_value(input).map_err(|error| ToolError::InvalidInput {
@@ -196,21 +200,160 @@ pub async fn commit(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
             message: error.to_string(),
         })?;
 
-    run_git(ctx, &["add", "-A"]).await?;
     let message = with_evohime_co_author(&input.message);
-    match run_git(ctx, &["commit", "-m", &message]).await {
+    let commit_result = if let Some(raw_paths) = input.paths.as_deref() {
+        let paths = validate_commit_paths(ctx, raw_paths)?;
+        let mut add_args = Vec::with_capacity(paths.len() + 2);
+        add_args.push("add");
+        add_args.push("--");
+        add_args.extend(paths.iter().map(String::as_str));
+        run_git(ctx, &add_args).await?;
+
+        let mut commit_args = Vec::with_capacity(paths.len() + 5);
+        commit_args.extend(["commit", "-m", message.as_str(), "--only", "--"]);
+        commit_args.extend(paths.iter().map(String::as_str));
+        run_git(ctx, &commit_args).await
+    } else {
+        match inspect_staged_state(ctx).await? {
+            StagedState::CleanWorktree => {
+                return Ok(nothing_to_commit_result());
+            }
+            StagedState::NoStagedButDirtyWorktree => {
+                return Err(ToolError::InvalidInput {
+                    tool: COMMIT_NAME.to_string(),
+                    message: "no staged changes to commit; pass explicit `paths` for task files or stage them first".to_string(),
+                });
+            }
+            StagedState::HasStaged => run_git(ctx, &["commit", "-m", &message]).await,
+        }
+    };
+
+    match commit_result {
         Ok(result) => Ok(result),
         Err(ToolError::Execution(message))
             if message.contains("nothing to commit")
-                || message.contains("nothing added to commit") =>
+                || message.contains("nothing added to commit")
+                || message.contains("no changes added to commit") =>
         {
-            Ok(ToolResult {
-                output: "Изменений для коммита нет; коммит не требовался".to_string(),
-                structured: json!({"status": "nothing_to_commit", "ok": false}),
-            })
+            Ok(nothing_to_commit_result())
         }
         Err(error) => Err(error),
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StagedState {
+    CleanWorktree,
+    NoStagedButDirtyWorktree,
+    HasStaged,
+}
+
+fn nothing_to_commit_result() -> ToolResult {
+    ToolResult {
+        output: "Изменений для коммита нет; коммит не требовался".to_string(),
+        structured: json!({"status": "nothing_to_commit", "ok": false}),
+    }
+}
+
+async fn inspect_staged_state(ctx: &ToolContext) -> Result<StagedState, ToolError> {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(&ctx.workspace_root).args([
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=normal",
+    ]);
+    let output = run_bounded_git(&mut command)
+        .await
+        .map_err(|error| ToolError::Execution(format!("failed to inspect git status: {error}")))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(ToolError::Execution(format!(
+            "git status --porcelain=v1 failed: {stderr}"
+        )));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut has_any_entry = false;
+    for line in stdout.lines() {
+        if line.len() < 2 {
+            continue;
+        }
+        has_any_entry = true;
+        let index_code = line.as_bytes()[0];
+        if index_code != b' ' && index_code != b'?' && index_code != b'!' {
+            return Ok(StagedState::HasStaged);
+        }
+    }
+    if has_any_entry {
+        Ok(StagedState::NoStagedButDirtyWorktree)
+    } else {
+        Ok(StagedState::CleanWorktree)
+    }
+}
+
+fn validate_commit_paths(ctx: &ToolContext, paths: &[String]) -> Result<Vec<String>, ToolError> {
+    if paths.is_empty() {
+        return Err(ToolError::InvalidInput {
+            tool: COMMIT_NAME.to_string(),
+            message: "paths must be a non-empty list of workspace-relative paths".to_string(),
+        });
+    }
+    let sandbox = ctx.sandbox()?;
+    let mut validated = Vec::with_capacity(paths.len());
+    for raw in paths {
+        let trimmed = raw.trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with('-')
+            || trimmed.starts_with(':')
+            || trimmed.contains(['\0', '\r', '\n', '*', '?', '['])
+        {
+            return Err(ToolError::InvalidInput {
+                tool: COMMIT_NAME.to_string(),
+                message: format!(
+                    "invalid commit path `{raw}`: must be a workspace-relative path without flags, pathspec magic, or wildcards"
+                ),
+            });
+        }
+        let candidate = std::path::Path::new(trimmed);
+        if candidate.is_absolute() {
+            return Err(ToolError::InvalidInput {
+                tool: COMMIT_NAME.to_string(),
+                message: format!("commit path `{raw}` must be workspace-relative"),
+            });
+        }
+        let mut has_normal = false;
+        for component in candidate.components() {
+            match component {
+                std::path::Component::Normal(_) => has_normal = true,
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_) => {
+                    return Err(ToolError::InvalidInput {
+                        tool: COMMIT_NAME.to_string(),
+                        message: format!(
+                            "commit path `{raw}` must stay within the workspace without `..`"
+                        ),
+                    });
+                }
+            }
+        }
+        if !has_normal {
+            return Err(ToolError::InvalidInput {
+                tool: COMMIT_NAME.to_string(),
+                message: format!(
+                    "commit path `{raw}` must name a specific file or subdirectory, not `.`"
+                ),
+            });
+        }
+        let full = ctx.workspace_root.join(candidate);
+        if std::fs::symlink_metadata(&full).is_ok() {
+            sandbox.resolve_existing_for_tool(trimmed, COMMIT_NAME)?;
+        } else {
+            sandbox.resolve_for_write(trimmed)?;
+        }
+        validated.push(trimmed.to_string());
+    }
+    Ok(validated)
 }
 
 /// Pulls from the configured remote using fast-forward-only semantics.
@@ -770,9 +913,12 @@ mod tests {
     async fn history_and_inspection_tools_return_repository_evidence() {
         let (_dir, ctx, _) = init_repo();
         std_fs::write(ctx.workspace_root.join("notes.txt"), "hello\nworld\n").expect("write");
-        let commit = commit(&ctx, json!({"message": "Add notes"}))
-            .await
-            .expect("commit");
+        let commit = commit(
+            &ctx,
+            json!({"message": "Add notes", "paths": ["notes.txt"]}),
+        )
+        .await
+        .expect("commit");
 
         let log_result = log(&ctx, json!({"max_count": 5})).await.expect("log");
         assert!(log_result.output.contains("Add notes"));
@@ -820,7 +966,8 @@ mod tests {
         let result = commit(
             &ctx,
             json!({
-                "message": "Add notes"
+                "message": "Add notes",
+                "paths": ["notes.txt"]
             }),
         )
         .await
@@ -1046,7 +1193,8 @@ mod tests {
         let result = commit(
             &ctx,
             json!({
-                "message": "Add notes"
+                "message": "Add notes",
+                "paths": ["notes.txt"]
             }),
         )
         .await
@@ -1062,6 +1210,172 @@ mod tests {
             .await
             .expect("git show");
         assert!(body.output.contains(EVOHIME_CO_AUTHOR_TRAILER));
+    }
+
+    #[tokio::test]
+    async fn commit_with_explicit_paths_ignores_unrelated_worktree_and_staged_changes() {
+        let (_dir, ctx, _) = init_repo();
+        std_fs::write(ctx.workspace_root.join("seed.txt"), "seed\n").expect("write");
+        run(ctx.workspace_root.as_path(), &["git", "add", "seed.txt"]);
+        run(
+            ctx.workspace_root.as_path(),
+            &["git", "commit", "-m", "seed"],
+        );
+
+        std_fs::write(ctx.workspace_root.join("task.txt"), "task\n").expect("write");
+        std_fs::write(ctx.workspace_root.join("unrelated_unstaged.txt"), "u\n").expect("write");
+        std_fs::write(ctx.workspace_root.join("unrelated_staged.txt"), "s\n").expect("write");
+        run(
+            ctx.workspace_root.as_path(),
+            &["git", "add", "unrelated_staged.txt"],
+        );
+
+        commit(
+            &ctx,
+            json!({
+                "message": "feat: task only",
+                "paths": ["task.txt"]
+            }),
+        )
+        .await
+        .expect("commit succeeds");
+
+        let committed_files = run_git(&ctx, &["show", "--name-only", "--format=", "HEAD"])
+            .await
+            .expect("git show");
+        assert_eq!(committed_files.output.trim(), "task.txt");
+
+        let status_after = run_git(&ctx, &["status", "--porcelain=v1"])
+            .await
+            .expect("git status");
+        assert!(
+            status_after.output.contains("A  unrelated_staged.txt"),
+            "pre-staged unrelated file must stay staged, not committed: {}",
+            status_after.output
+        );
+        assert!(
+            status_after.output.contains("?? unrelated_unstaged.txt"),
+            "unrelated unstaged file must remain untracked: {}",
+            status_after.output
+        );
+    }
+
+    #[tokio::test]
+    async fn commit_without_paths_commits_only_pre_staged_changes() {
+        let (_dir, ctx, _) = init_repo();
+        std_fs::write(ctx.workspace_root.join("staged.txt"), "staged\n").expect("write");
+        std_fs::write(ctx.workspace_root.join("unstaged.txt"), "unstaged\n").expect("write");
+        run(ctx.workspace_root.as_path(), &["git", "add", "staged.txt"]);
+
+        commit(&ctx, json!({"message": "feat: staged only"}))
+            .await
+            .expect("commit succeeds");
+
+        let committed_files = run_git(&ctx, &["show", "--name-only", "--format=", "HEAD"])
+            .await
+            .expect("git show");
+        assert_eq!(committed_files.output.trim(), "staged.txt");
+
+        let status_after = run_git(&ctx, &["status", "--porcelain=v1"])
+            .await
+            .expect("git status");
+        assert!(status_after.output.contains("?? unstaged.txt"));
+    }
+
+    #[tokio::test]
+    async fn commit_without_paths_rejects_when_index_is_empty_and_worktree_dirty() {
+        let (_dir, ctx, _) = init_repo();
+        std_fs::write(ctx.workspace_root.join("notes.txt"), "hello\n").expect("write");
+
+        let error = commit(&ctx, json!({"message": "should reject"}))
+            .await
+            .expect_err("must reject unstaged-only worktree without paths");
+        assert!(
+            matches!(error, ToolError::InvalidInput { .. }),
+            "expected InvalidInput, got {error:?}"
+        );
+
+        let staged = run_git(&ctx, &["diff", "--cached", "--name-only"])
+            .await
+            .expect("git diff --cached");
+        assert!(
+            !staged.output.contains("notes.txt"),
+            "rejected commit must not stage files"
+        );
+    }
+
+    #[tokio::test]
+    async fn commit_rejects_unsafe_or_broad_paths_without_modifying_index() {
+        let (_dir, ctx, _) = init_repo();
+        std_fs::write(ctx.workspace_root.join("notes.txt"), "hello\n").expect("write");
+
+        for bad_paths in [
+            json!([]),
+            json!(["."]),
+            json!(["./"]),
+            json!(["-A"]),
+            json!([":/"]),
+            json!(["*.txt"]),
+            json!(["../outside.txt"]),
+            json!(["notes.txt", "../outside.txt"]),
+        ] {
+            let error = commit(&ctx, json!({"message": "bad paths", "paths": bad_paths}))
+                .await
+                .expect_err("must reject unsafe or broad commit paths");
+            assert!(
+                matches!(
+                    error,
+                    ToolError::InvalidInput { .. } | ToolError::WorkspaceBoundaryDenied(_)
+                ),
+                "unexpected error: {error:?}"
+            );
+        }
+
+        let status_after = run_git(&ctx, &["status", "--porcelain=v1"])
+            .await
+            .expect("git status");
+        assert!(
+            status_after.output.contains("?? notes.txt"),
+            "index must remain untouched after rejected paths: {}",
+            status_after.output
+        );
+    }
+
+    #[tokio::test]
+    async fn commit_with_explicit_paths_commits_deleted_tracked_file() {
+        let (_dir, ctx, _) = init_repo();
+        std_fs::write(ctx.workspace_root.join("obsolete.txt"), "old\n").expect("write");
+        run(
+            ctx.workspace_root.as_path(),
+            &["git", "add", "obsolete.txt"],
+        );
+        run(
+            ctx.workspace_root.as_path(),
+            &["git", "commit", "-m", "add obsolete"],
+        );
+
+        std_fs::remove_file(ctx.workspace_root.join("obsolete.txt")).expect("remove");
+        std_fs::write(ctx.workspace_root.join("other.txt"), "keep\n").expect("write");
+
+        commit(
+            &ctx,
+            json!({
+                "message": "chore: remove obsolete",
+                "paths": ["obsolete.txt"]
+            }),
+        )
+        .await
+        .expect("commit deletion succeeds");
+
+        let committed_files = run_git(&ctx, &["show", "--name-only", "--format=", "HEAD"])
+            .await
+            .expect("git show");
+        assert_eq!(committed_files.output.trim(), "obsolete.txt");
+
+        let status_after = run_git(&ctx, &["status", "--porcelain=v1"])
+            .await
+            .expect("git status");
+        assert!(status_after.output.contains("?? other.txt"));
     }
 
     #[test]

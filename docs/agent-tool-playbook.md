@@ -29,7 +29,7 @@ filesystem_mkdir  {"path":"docs/new-dir"}
 filesystem_stat   {"path":"docs/README.md"}
 git_status        {}                                    # без обёртки input
 git_diff          {"path":"crates/tool-runtime"}        # единственное поле — path
-git_commit        {"message":"..."}                     # сам выполняет git add -A
+git_commit        {"message":"...","paths":["a/b.rs"]}  # только указанные пути или уже staged
 process_run       {"command":"git","args":["diff","--check"],"cwd":"."}
 shell_execute     {"program":"git","args":["status"],"cwd":"."}
 script_execute    {"interpreter":"powershell","script":"scripts/check.ps1","args":["-Verbose"],"cwd":"."}
@@ -48,6 +48,11 @@ provider-запрос без преобразований.
 `git_status` не принимает аргументов: передавай ровно `{}`. При любой обёртке
 (`{"input":{}}`), лишнем поле или непустом объекте Core вернёт `InvalidInput`
 с подсказкой передать пустой объект.
+
+`git_commit` не выполняет `git add -A`: передавай явный список `paths` с файлами
+текущей задачи (workspace-relative пути без `.`, `..`, масок и флагов) либо
+заранее проиндексированные изменения. Если `paths` не передан, индекс пуст, а в
+рабочем дереве есть незафиксированные файлы, вызов вернёт `InvalidInput`.
 
 `filesystem_search` дополнительно принимает синонимы `pattern` и `text` для
 `query`, строку или массив в `glob`, и флаг `regex`. Поиск литеральный по

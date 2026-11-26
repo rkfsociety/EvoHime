@@ -1525,18 +1525,27 @@ fn approval_preview(
             }
         }
         tools::git::COMMIT_NAME => {
-            let (details, truncated) = bounded_preview(
-                input
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default(),
-            );
+            let message = input
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let paths = input
+                .get("paths")
+                .and_then(Value::as_array)
+                .map(|items| items.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+                .unwrap_or_default();
+            let preview_text = if paths.is_empty() {
+                message.to_string()
+            } else {
+                format!("{message}\npaths: {}", paths.join(", "))
+            };
+            let (details, truncated) = bounded_preview(&preview_text);
             ApprovalPreview {
                 kind: "git_commit".into(),
                 summary: "Создать git-коммит".into(),
                 command: command.map(str::to_string),
                 cwd: None,
-                path: None,
+                path: (paths.len() == 1).then(|| paths[0].to_string()),
                 details: (!details.is_empty()).then_some(details),
                 truncated,
             }
