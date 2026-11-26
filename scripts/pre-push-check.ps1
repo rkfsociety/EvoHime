@@ -1,11 +1,16 @@
 #Requires -Version 7.0
+param(
+  # Итоговая точка сравнения. По умолчанию origin/main; HEAD~1 удобен для локальной
+  # проверки последнего коммита, когда origin/main уже совпадает с HEAD.
+  [string]$BaseRef = 'origin/main'
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
 try {
-  $baseRef = 'origin/main'
+  $baseRef = $BaseRef
   git rev-parse --verify $baseRef *> $null
   if ($LASTEXITCODE -ne 0) {
     $baseRef = 'HEAD~1'
@@ -45,6 +50,48 @@ try {
     & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'module-router.tests.ps1')
     if ($LASTEXITCODE -ne 0) {
       throw 'module-router.tests.ps1 failed.'
+    }
+  }
+
+  # Узкие тесты изменившихся Rust-крейтов: ловят расхождение тестов с кодом
+  # (например, с изменившимися текстами промптов) до пуша, а не в CI после него.
+  $rustCrateDirs = @($changedFiles |
+    ForEach-Object { if ($_ -match '^crates/([^/]+)/') { $Matches[1] } } |
+    Sort-Object -Unique)
+  if ($rustCrateDirs.Count -gt 0) {
+    Write-Host 'pre-push-check: resolving changed crates via cargo metadata...'
+    $metadataJson = cargo metadata --locked --format-version 1 | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+      throw 'cargo metadata failed.'
+    }
+    $dirToPackage = @{}
+    foreach ($package in $metadataJson.packages) {
+      $manifestPath = ($package.manifest_path -replace '\\', '/')
+      if ($manifestPath -match '/crates/([^/]+)/Cargo.toml$') {
+        $hasLibTarget = [bool]($package.targets | Where-Object {
+          $_.kind -contains 'lib' -or $_.kind -contains 'rlib'
+        })
+        $dirToPackage[$Matches[1]] = [PSCustomObject]@{ Name = $package.name; HasLib = $hasLibTarget }
+      }
+    }
+    foreach ($crateDir in $rustCrateDirs) {
+      if (-not $dirToPackage.ContainsKey($crateDir)) { continue }
+      $packageName = $dirToPackage[$crateDir].Name
+      if ($dirToPackage[$crateDir].HasLib) {
+        $cargoArgs = @('test', '--locked', '-p', $packageName, '--lib')
+      } else {
+        # Крейт без lib-цели: прогоняем его bin/test-цели без флага --lib.
+        $cargoArgs = @('test', '--locked', '-p', $packageName)
+      }
+      if ($changedFiles | Where-Object { $_ -like ('crates/' + $crateDir + '/tests/*') }) {
+        $cargoArgs += '--tests'
+      }
+      Write-Host ("pre-push-check: running narrow tests for crate '{0}' (cargo {1})..." -f $packageName, ($cargoArgs -join ' '))
+      cargo @cargoArgs *> $null
+      if ($LASTEXITCODE -ne 0) {
+        cargo @cargoArgs
+        throw ("Narrow tests failed for crate '{0}'. Fix before push." -f $packageName)
+      }
     }
   }
 
