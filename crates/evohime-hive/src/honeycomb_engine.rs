@@ -371,7 +371,8 @@ impl HoneycombEngine {
         let expired: Vec<String> = self
             .trip_arrivals_ms
             .iter()
-            .filter_map(|(trip_id, &arrival_ms)| (now_ms >= arrival_ms).then(|| trip_id.clone()))
+            .filter(|&(_, &arrival_ms)| now_ms >= arrival_ms)
+            .map(|(trip_id, _)| trip_id.clone())
             .collect();
         for trip_id in expired {
             self.finish_arrived_trip(&trip_id, now_ms);
