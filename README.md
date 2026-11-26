@@ -41,7 +41,7 @@ EvoHime separates UI rendering from execution and state ownership:
 
 ## Providers and Models
 
-Supported backends include **Ollama**, **OpenAI-compatible API**, OpenAI Responses API, LiteRouter, and local Codex CLI. Available models depend on the selected provider and refresh directly inside the app. For regular chats, you can switch models right before starting a task.
+Supported backends include **Ollama**, **OpenAI-compatible API**, OpenAI Responses API, **Google Gemini**, **DeepSeek**, LiteRouter, and local Codex CLI. Available models depend on the selected provider and refresh directly inside the app. For regular chats, you can switch models right before starting a task.
 
 For project recovery, select a provider and model in advance. Eva never triggers self-repair automatically: launch, edits, publishing, and restarts each require separate confirmation.
 
