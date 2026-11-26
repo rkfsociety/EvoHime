@@ -20,6 +20,7 @@ import type { SettingsTab } from './SettingsModal'
 import { RecoveryBanner } from './RecoveryBanner'
 import { ProviderStateProvider } from './provider-state'
 import { BrandLotus } from './BrandLotus'
+import { EvaIcon } from './EvaIcon'
 import { UiIcon, type UiIconName } from './UiIcon'
 import { applyAppearance, loadAppearance, saveAppearance, type AppearanceSettings } from './appearance'
 import { setAppLocale, translate, useT } from './i18n'
@@ -123,6 +124,7 @@ export function App(): React.JSX.Element {
   // «Восстановление событий» → «Синхронизация состояния» и без аларм-баннеров
   // о «потерянной» связи, которая ещё не устанавливалась.
   const [everConnected, setEverConnected] = useState(false)
+  const [bootBypassed, setBootBypassed] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (state === null) return
@@ -268,9 +270,33 @@ export function App(): React.JSX.Element {
   const showSummary = chatId !== null || summaryVisible
   const showSidePanels = showSummary || workbenchVisible || browserVisible
 
+  const showBootSplash = !everConnected && !bootBypassed
+
   return (
     <ProviderStateProvider>
-    <div className={`shell${traceOpen ? ' shell--trace-open' : ''}${sidebarCollapsed ? ' shell--sidebar-collapsed' : ''}`}>
+    {showBootSplash ? (
+      <div className="boot-splash" role="status" aria-live="polite" aria-label={t('Запуск EvoHime')}>
+        <div className="boot-splash__card">
+          <div className="boot-splash__emblem" aria-hidden="true">
+            <span className="boot-splash__ring" />
+            <span className="boot-splash__ring boot-splash__ring--inner" />
+            <EvaIcon className="boot-splash__logo" />
+          </div>
+          <h1 className="boot-splash__title">EvoHime</h1>
+          <p className="boot-splash__status">{t(STATE_LABELS[displayConnection])}</p>
+          {(displayConnection === 'fatal' || displayConnection === 'version-mismatch') ? (
+            <button
+              type="button"
+              className="boot-splash__bypass"
+              onClick={() => setBootBypassed(true)}
+            >
+              {t('Открыть интерфейс')}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    ) : null}
+    <div className={`shell${traceOpen ? ' shell--trace-open' : ''}${sidebarCollapsed ? ' shell--sidebar-collapsed' : ''}${showBootSplash ? ' shell--booting' : ''}`}>
       <nav className="sidebar" aria-label={t('Чаты и навигация')}>
         <div className="sidebar__brand">
           <button

@@ -10587,3 +10587,97 @@ body {
   border-radius: 50%;
   flex: none;
 }
+
+.shell--booting {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 42%, rgb(141 130 232 / 12%), transparent 56%), var(--bg);
+  color: var(--fg);
+}
+
+.boot-splash__card {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.boot-splash__emblem {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+}
+
+.boot-splash__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgb(141 130 232 / 18%);
+  border-top-color: var(--accent);
+  animation: boot-spin 1.4s linear infinite;
+}
+
+.boot-splash__ring--inner {
+  inset: 10px;
+  border-color: rgb(141 130 232 / 12%);
+  border-bottom-color: var(--success);
+  animation: boot-spin-reverse 2.1s linear infinite;
+}
+
+.boot-splash__logo {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  animation: boot-pulse 2.2s ease-in-out infinite;
+}
+
+.boot-splash__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.boot-splash__status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.boot-splash__bypass {
+  margin-top: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.boot-splash__bypass:hover {
+  background: var(--bg-hover);
+}
+
+@keyframes boot-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes boot-spin-reverse {
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes boot-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.92; }
+  50% { transform: scale(1.06); opacity: 1; }
+}

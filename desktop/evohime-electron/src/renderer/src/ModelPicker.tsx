@@ -39,6 +39,17 @@ export interface ModelPickerProps {
   readonly disabled?: boolean
 }
 
+const MAX_CATALOG_AUTO_RETRIES = 3
+const CATALOG_RETRY_BASE_MS = 3000
+
+function isPermanentAuthFailure(status: CatalogStatus | null): boolean {
+  if (!status) return false
+  return status.failureCode === 'unauthorized'
+    || status.failureCode === 'invalid_api_key'
+    || status.credentialStatus === 'missing'
+    || status.credentialStatus === 'invalid'
+}
+
 export function ModelPicker({ connection, events, provider = 'literouter', use = 'agent', onModelChange, selectedModel, onSelectChatModel, disabled = false }: ModelPickerProps & { readonly provider?: ChatProviderMode }): React.JSX.Element | null {
   const api = useShellApi()
   const { shared, summary } = useProviderState()
@@ -54,6 +65,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   const [error, setError] = useState<string | null>(null)
   const [selectionError, setSelectionError] = useState<string | null>(null)
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null)
+  const [catalogRetryCount, setCatalogRetryCount] = useState(0)
   const [configLoaded, setConfigLoaded] = useState(false)
   const pendingSelection = useRef<string | null>(null)
   const autoSelectionBlocked = useRef(false)
@@ -75,6 +87,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     setError(null)
     setSelectionError(null)
     setCatalogStatus(null)
+    setCatalogRetryCount(0)
     setConfigLoaded(false)
     pendingSelection.current = null
     autoSelectionBlocked.current = false
@@ -264,11 +277,41 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     if (first !== undefined) void select(first)
   }, [catalogModels, chatScoped, configLoaded, current, disabled, select, selectedModel, visibleModels])
 
+  const discoveryUnsupported = catalogStatus?.state === 'discovery_unsupported'
+  const retryingCatalog = error !== null
+    && !discoveryUnsupported
+    && connected
+    && provider !== 'codex_cli'
+    && tier !== null
+    && !isPermanentAuthFailure(catalogStatus)
+    && catalogRetryCount < MAX_CATALOG_AUTO_RETRIES
+
+  useEffect(() => {
+    if (error === null) {
+      setCatalogRetryCount(0)
+      return
+    }
+    if (!retryingCatalog || !api || tier === null) return
+    const delayMs = CATALOG_RETRY_BASE_MS * (2 ** catalogRetryCount)
+    const timer = window.setTimeout(() => {
+      setCatalogRetryCount((count) => count + 1)
+      void api.invoke('core.listModelCatalog', { mode: tier, provider })
+    }, delayMs)
+    return () => window.clearTimeout(timer)
+  }, [api, catalogRetryCount, error, provider, retryingCatalog, tier])
+
   if (!connected) {
     return null
   }
 
-  const discoveryUnsupported = catalogStatus?.state === 'discovery_unsupported'
+  if (retryingCatalog) {
+    return (
+      <span className="model-picker model-picker--retrying" role="status">
+        {translate('Загрузка моделей…')}
+      </span>
+    )
+  }
+
   if (error !== null && !discoveryUnsupported) {
     // A catalogue failure is almost always a missing or rejected key; say so
     // where the user is, instead of leaving an empty dropdown.

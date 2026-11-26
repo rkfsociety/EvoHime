@@ -476,4 +476,35 @@ describe('model picker', () => {
 
     await waitFor(() => expect(onSelectChatModel).not.toHaveBeenCalled())
   })
+
+  it('automatically retries transient catalogue errors before showing a failure message', async () => {
+    vi.useFakeTimers()
+    try {
+      render(
+        <ModelPicker
+          connection="connected"
+          provider="literouter"
+          events={[
+            event('model.catalog', {
+              mode: 'free',
+              models: [],
+              error: 'Request timed out',
+              provider_catalog: {
+                catalog: { state: 'unavailable', failure_code: 'timeout' }
+              }
+            })
+          ]}
+        />
+      )
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(screen.getByRole('status').textContent).toContain('Загрузка моделей')
+      await vi.advanceTimersByTimeAsync(3000)
+
+      const catalogCalls = calls.filter((call) => call.command === 'core.listModelCatalog')
+      expect(catalogCalls.length).toBeGreaterThanOrEqual(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
