@@ -625,6 +625,7 @@ fn build_start_task(request: HiveTaskDispatchRequest) -> generated::StartTask {
         model: String::new(),
         permission_mode: String::new(),
         isolation_mode: String::new(),
+        reasoning_effort: String::new(),
     }
 }
 
