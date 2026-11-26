@@ -103,6 +103,21 @@ describe('responsive shell layout contract', () => {
     expect(stylesheet).toContain('.statusbar {\n    height: auto;\n    min-height: 26px;\n    flex-wrap: wrap;')
   })
 
+  it('hides program status plates without reserving layout space', () => {
+    expect(stylesheet).toContain("grid-template-areas: 'sidebar main';")
+    for (const selector of [
+      '.status-pill',
+      '.listening-pill',
+      '.chat-rail__connection',
+      '.routing-status',
+      '.recovery-banner',
+      '.update-indicator',
+      '.statusbar'
+    ]) {
+      expect(stylesheet).toContain(`${selector},`)
+    }
+  })
+
   it('keeps row actions reachable by keyboard and touch', () => {
     expect(stylesheet).toContain('.projects__row:focus-within .projects__forget')
     expect(stylesheet).toContain('.chats__list li:focus-within .chats__remove')
