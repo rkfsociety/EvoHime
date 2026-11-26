@@ -47,6 +47,10 @@ pub enum Permission {
     FilesystemWrite,
     /// Execute a shell command.
     ShellExecute,
+    /// Run an allow-listed interpreter script from the workspace
+    /// (PowerShell, Python, Node). Each run requires an approval unless the
+    /// user switches the capability mode explicitly.
+    ScriptExecute,
     /// Inspect repository state and history.
     GitRead,
     /// Change repository state or publish changes.
@@ -358,6 +362,7 @@ impl PermissionEngine {
         modes.insert(Permission::FilesystemRead, PermissionMode::Allow);
         modes.insert(Permission::FilesystemWrite, PermissionMode::Ask);
         modes.insert(Permission::ShellExecute, PermissionMode::Ask);
+        modes.insert(Permission::ScriptExecute, PermissionMode::Ask);
         modes.insert(Permission::GitRead, PermissionMode::Allow);
         modes.insert(Permission::GitWrite, PermissionMode::Ask);
         modes.insert(Permission::BrowserAccess, PermissionMode::Ask);
@@ -412,6 +417,7 @@ impl PermissionEngine {
             Permission::FilesystemRead,
             Permission::FilesystemWrite,
             Permission::ShellExecute,
+            Permission::ScriptExecute,
             Permission::GitRead,
             Permission::GitWrite,
             Permission::BrowserAccess,

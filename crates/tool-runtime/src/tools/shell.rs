@@ -1,5 +1,6 @@
 use crate::execution_policy_profiles::{
     apply_environment, validate_process_egress, ExecutionPolicyProfile, ProcessGuard,
+    ResolvedExecutionProfile,
 };
 use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
@@ -73,9 +74,98 @@ pub async fn execute(
         Some(path) => sandbox.resolve_existing(path)?,
         None => sandbox.root().to_path_buf(),
     };
-    let mut command = Command::new(&program);
+    let run = run_bounded_process(
+        ctx,
+        &program,
+        &args,
+        cwd,
+        resolved.timeout(input.timeout_ms),
+        &resolved,
+        cancellation,
+    )
+    .await?;
+    let BoundedRun {
+        program: run_program,
+        cwd: run_cwd,
+        stdout,
+        stderr,
+        exit_code,
+    } = run;
+    let output = format!(
+        "program: {}\ncwd: {}\nexit_code: {}\nstdout:\n{}\nstderr:\n{}",
+        run_program,
+        run_cwd.display(),
+        exit_code
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "terminated".to_string()),
+        if stdout.is_empty() {
+            "<empty>"
+        } else {
+            &stdout
+        },
+        if stderr.is_empty() {
+            "<empty>"
+        } else {
+            &stderr
+        }
+    );
+    let ok = exit_code == Some(0);
+    Ok(ToolResult {
+        output,
+        structured: json!({
+            "program": run_program,
+            "cwd": run_cwd.display().to_string(),
+            "stdout": stdout,
+            "stderr": stderr,
+            "exit_code": exit_code,
+            "timed_out": false,
+            "ok": ok,
+            "resolved_profile": {
+                "profile_id": resolved.profile.profile_id,
+                "version": resolved.profile.version,
+                "hash": resolved.profile_hash,
+                "backend": resolved.backend
+            }
+        }),
+    })
+}
+
+/// Collected result of one bounded child process run.
+pub(crate) struct BoundedRun {
+    /// Program that was executed.
+    pub program: String,
+    /// Working directory the child ran in.
+    pub cwd: std::path::PathBuf,
+    /// Truncated standard output.
+    pub stdout: String,
+    /// Truncated standard error.
+    pub stderr: String,
+    /// Process exit code, or `None` when terminated by a signal.
+    pub exit_code: Option<i32>,
+}
+
+/// Spawns one direct child process under the resolved execution profile and
+/// collects its bounded output with cooperative cancellation.
+///
+/// Shared by the direct program runner and the script interpreter runner;
+/// invocation is always a program plus argument list, never a shell line.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for spawn failures, cancellation, timeout, process
+/// wait failures, or I/O errors while collecting output.
+pub(crate) async fn run_bounded_process(
+    ctx: &ToolContext,
+    program: &str,
+    args: &[String],
+    cwd: std::path::PathBuf,
+    duration: Duration,
+    resolved: &ResolvedExecutionProfile,
+    cancellation: CancellationToken,
+) -> Result<BoundedRun, ToolError> {
+    let mut command = Command::new(program);
     command
-        .args(&args)
+        .args(args)
         .current_dir(cwd.clone())
         .kill_on_drop(true)
         .stdin(Stdio::null())
@@ -85,9 +175,8 @@ pub async fn execute(
     let mut child = command
         .spawn()
         .map_err(|e| ToolError::Execution(format!("spawn failed: {e}")))?;
-    let _process_guard = ProcessGuard::attach(&child, &resolved)
+    let _process_guard = ProcessGuard::attach(&child, resolved)
         .map_err(|e| ToolError::Execution(format!("execution backend unavailable: {e}")))?;
-    let duration = resolved.timeout(input.timeout_ms);
 
     let stdout = child
         .stdout
@@ -133,43 +222,12 @@ pub async fn execute(
         .chars()
         .take(resolved.profile.max_output_bytes)
         .collect::<String>();
-    let exit_code = status.code();
-    let output = format!(
-        "program: {}\ncwd: {}\nexit_code: {}\nstdout:\n{}\nstderr:\n{}",
-        program,
-        cwd.display(),
-        exit_code
-            .map(|code| code.to_string())
-            .unwrap_or_else(|| "terminated".to_string()),
-        if stdout.is_empty() {
-            "<empty>"
-        } else {
-            &stdout
-        },
-        if stderr.is_empty() {
-            "<empty>"
-        } else {
-            &stderr
-        }
-    );
-    let ok = exit_code == Some(0);
-    Ok(ToolResult {
-        output,
-        structured: json!({
-            "program": program,
-            "cwd": cwd.display().to_string(),
-            "stdout": stdout,
-            "stderr": stderr,
-            "exit_code": exit_code,
-            "timed_out": false,
-            "ok": ok,
-            "resolved_profile": {
-                "profile_id": resolved.profile.profile_id,
-                "version": resolved.profile.version,
-                "hash": resolved.profile_hash,
-                "backend": resolved.backend
-            }
-        }),
+    Ok(BoundedRun {
+        program: program.to_owned(),
+        cwd,
+        stdout,
+        stderr,
+        exit_code: status.code(),
     })
 }
 

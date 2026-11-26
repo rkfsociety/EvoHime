@@ -67,7 +67,10 @@ pub fn classify_call_risk(tool_name: &str, _input: &Value) -> ToolRiskLevel {
         // уровень `shell_execute`, у которого произвольная командная строка.
         | "app_open" => ToolRiskLevel::Medium,
 
-        "shell_execute" | "git_push" => ToolRiskLevel::High,
+        // `script_execute` запускает произвольный код из файла воркспейса, поэтому
+        // его влияние такое же широкое, как у `shell_execute`.
+        "shell_execute" | "git_push" | "process_run" | "eva_workspace_run_command"
+        | "script_execute" => ToolRiskLevel::High,
 
         _ => ToolRiskLevel::Medium,
     }
@@ -134,7 +137,13 @@ mod tests {
 
     #[test]
     fn classifies_high_risk_tools() {
-        for tool in ["shell_execute", "git_push"] {
+        for tool in [
+            "shell_execute",
+            "git_push",
+            "process_run",
+            "eva_workspace_run_command",
+            "script_execute",
+        ] {
             assert_eq!(classify_call_risk(tool, &json!({})), ToolRiskLevel::High);
         }
     }

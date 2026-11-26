@@ -288,6 +288,16 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"program":string("Executable"),"args":{"type":"array","items":{"type":"string"}},"cwd":string("Working directory"),"timeout_ms":integer()}),
             &["program"],
         ),
+        "script_execute" => object(
+            serde_json::json!({
+                "interpreter": {"type":"string","enum":crate::tools::script::interpreter_ids(),"description":"Interpreter to run the script with"},
+                "script": string("Workspace-relative path to the script file"),
+                "args": {"type":"array","items":{"type":"string"},"description":"Extra arguments passed to the script"},
+                "cwd": string("Optional workspace-relative working directory"),
+                "timeout_ms": integer()
+            }),
+            &["interpreter", "script"],
+        ),
         "logs_tail" => object(
             serde_json::json!({"path":string("Workspace-relative log path"),"lines":integer()}),
             &["path"],

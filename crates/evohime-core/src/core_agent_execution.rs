@@ -36,7 +36,7 @@ fn subagent_tool_allowed(name: &str) -> bool {
 fn hive_world_permission_modes() -> [(
     evohime_permissions::Permission,
     evohime_permissions::PermissionMode,
-); 8] {
+); 9] {
     use evohime_permissions::{Permission, PermissionMode};
     [
         (Permission::FilesystemRead, PermissionMode::Allow),
@@ -44,6 +44,7 @@ fn hive_world_permission_modes() -> [(
         (Permission::MemorySearch, PermissionMode::Allow),
         (Permission::FilesystemWrite, PermissionMode::Ask),
         (Permission::ShellExecute, PermissionMode::Ask),
+        (Permission::ScriptExecute, PermissionMode::Ask),
         (Permission::GitWrite, PermissionMode::Ask),
         (Permission::BrowserAccess, PermissionMode::Ask),
         (Permission::McpCall, PermissionMode::Ask),
@@ -67,6 +68,7 @@ async fn apply_read_only_subagent_modes(
     for permission in [
         Permission::FilesystemWrite,
         Permission::ShellExecute,
+        Permission::ScriptExecute,
         Permission::GitWrite,
         Permission::BrowserAccess,
         Permission::McpCall,
@@ -1041,6 +1043,12 @@ impl ToolAgent {
             reconcile_delivery_requirements(&mut delivery_requirements, mutation_intent);
         let mut authorized_manifests = Vec::new();
         for (name, decision) in &preflight {
+            // Retired tools remain registered so stored conversations get the
+            // typed `legacy_disabled` refusal, but they must never be offered
+            // to the model: every dispatch attempt would fail.
+            if evohime_tool_runtime::RETIRED_TOOL_IDS.contains(name) {
+                continue;
+            }
             let self_development_tool_is_requested = eva_workspace_isolated
                 && name.starts_with(evohime_tool_runtime::self_development::TOOL_PREFIX);
             if tool_preflight_can_be_offered(
@@ -3465,6 +3473,7 @@ async fn apply_session_permission_mode(
         Permission::FilesystemRead,
         Permission::FilesystemWrite,
         Permission::ShellExecute,
+        Permission::ScriptExecute,
         Permission::GitRead,
         Permission::GitWrite,
         Permission::BrowserAccess,
@@ -3498,6 +3507,7 @@ async fn grant_session_plan_execution_permissions(
         Permission::FilesystemWrite,
         Permission::GitWrite,
         Permission::ShellExecute,
+        Permission::ScriptExecute,
     ] {
         permissions
             .set_session_mode(session_id, permission, PermissionMode::Allow)
@@ -3737,6 +3747,7 @@ mod tests {
         for permission in [
             Permission::FilesystemWrite,
             Permission::ShellExecute,
+            Permission::ScriptExecute,
             Permission::GitWrite,
             Permission::BrowserAccess,
             Permission::McpCall,

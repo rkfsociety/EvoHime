@@ -190,6 +190,7 @@ impl ToolDefinition {
                         p,
                         Permission::FilesystemWrite
                             | Permission::ShellExecute
+                            | Permission::ScriptExecute
                             | Permission::GitWrite
                     )
                 })
@@ -255,6 +256,14 @@ pub enum ToolPreflightDecision {
         preview: ApprovalPreview,
     },
 }
+
+/// Number of tools registered by [`ToolRegistry::bootstrap`].
+///
+/// Single source of truth for diagnostics that compare registered tools with
+/// the expected declared surface. A test asserts equality with the actual
+/// bootstrap result, so updating `bootstrap` without this constant fails the
+/// test suite.
+pub const BUILTIN_TOOL_COUNT: usize = 80;
 
 /// Registry for builtin tools, policy checks, approvals, and dispatch.
 #[derive(Clone)]
@@ -335,6 +344,12 @@ impl ToolRegistry {
             description: tools::shell::DESCRIPTION,
             permissions: tools::shell::PERMISSIONS,
             timeout: tools::shell::TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::script::NAME,
+            description: tools::script::DESCRIPTION,
+            permissions: tools::script::PERMISSIONS,
+            timeout: tools::script::TIMEOUT,
         });
         registry.register(ToolDefinition {
             name: tools::git::STATUS_NAME,
@@ -974,127 +989,7 @@ impl ToolRegistry {
             }
         }
 
-        let execution = async {
-            match name {
-                name if name.starts_with(tools::self_development::TOOL_PREFIX) => {
-                    let mut gate = ctx.self_development_test_gate.lock().await;
-                    tools::self_development::execute(ctx, name, input, &mut gate).await
-                }
-                name if crate::developer_utilities::ALL_NAMES.contains(&name) => {
-                    crate::developer_utilities::execute(ctx, name, input).await
-                }
-                tools::analysis::NAME => {
-                    tools::analysis::execute(ctx, input, self.kernel_host.as_ref()).await
-                }
-                tools::workflow::CATALOG_NAME
-                | tools::workflow::START_NAME
-                | tools::workflow::STATUS_NAME
-                | tools::workflow::CANCEL_NAME => tools::workflow::execute(ctx, input).await,
-                tools::filesystem::NAME => tools::filesystem::execute(ctx, input).await,
-                tools::write::NAME => tools::write::execute(ctx, input).await,
-                tools::patch::NAME => tools::patch::execute(ctx, input).await,
-                tools::search::NAME => tools::search::execute(ctx, input).await,
-                tools::list::NAME => tools::list::execute(ctx, input).await,
-                tools::shell::NAME => tools::shell::execute(ctx, input, cancellation.clone()).await,
-                tools::git::STATUS_NAME => tools::git::status(ctx, input).await,
-                tools::git::DIFF_NAME => tools::git::diff(ctx, input).await,
-                tools::git::COMMIT_NAME => tools::git::commit(ctx, input).await,
-                tools::git::PULL_NAME => tools::git::pull(ctx, input).await,
-                tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
-                tools::git::LOG_NAME => tools::git::log(ctx, input).await,
-                tools::git::SHOW_NAME => tools::git::show(ctx, input).await,
-                tools::git::BLAME_NAME => tools::git::blame(ctx, input).await,
-                tools::git::CHANGED_FILES_NAME => tools::git::changed_files(ctx, input).await,
-                tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
-                tools::memory::NAME => tools::memory::execute(ctx, input).await,
-                tools::goal::CREATE_NAME => tools::goal::execute_create(ctx, input).await,
-                tools::goal::NAME => tools::goal::execute(ctx, input).await,
-                tools::agent::NAME
-                | tools::agent::HIVE_DELEGATE_NAME
-                | tools::agent::HIVE_REGISTER_ROLE_NAME => tools::agent::execute(ctx, input).await,
-                tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
-                tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
-                tools::browser_session::NAVIGATE_NAME => {
-                    tools::browser_session::legacy_disabled(ctx, input).await
-                }
-                tools::browser_session::READ_NAME => {
-                    tools::browser_session::legacy_disabled(ctx, input).await
-                }
-                tools::browser_session::CLICK_NAME => {
-                    tools::browser_session::legacy_disabled(ctx, input).await
-                }
-                tools::browser_session::SCREENSHOT_NAME => {
-                    tools::browser_session::legacy_disabled(ctx, input).await
-                }
-                tools::browser_session::TYPE_NAME => {
-                    tools::browser_session::legacy_disabled(ctx, input).await
-                }
-                tools::browser_session::CLOSE_NAME => {
-                    tools::browser_session::legacy_disabled(ctx, input).await
-                }
-                tools::http::NAME => tools::http::fetch(ctx, input).await,
-
-                // Advanced Git Operations
-                tools::git_advanced::BRANCH_NAME => tools::git_advanced::branch(ctx, input).await,
-                tools::git_advanced::MERGE_NAME => tools::git_advanced::merge(ctx, input).await,
-                tools::git_advanced::RESET_NAME => tools::git_advanced::reset(ctx, input).await,
-                tools::git_advanced::REVERT_NAME => tools::git_advanced::revert(ctx, input).await,
-                tools::git_advanced::CHERRY_PICK_NAME => {
-                    tools::git_advanced::cherry_pick(ctx, input).await
-                }
-                tools::git_advanced::REBASE_NAME => tools::git_advanced::rebase(ctx, input).await,
-                tools::git_advanced::TAG_NAME => tools::git_advanced::tag(ctx, input).await,
-                tools::git_advanced::STASH_NAME => tools::git_advanced::stash(ctx, input).await,
-                tools::git_advanced::REMOTE_NAME => tools::git_advanced::remote(ctx, input).await,
-
-                // Advanced Filesystem Operations
-                tools::filesystem_advanced::DELETE_NAME => {
-                    tools::filesystem_advanced::delete(ctx, input).await
-                }
-                tools::git_worktree::CREATE_NAME => tools::git_worktree::create(ctx, input).await,
-                tools::git_worktree::REMOVE_NAME => tools::git_worktree::remove(ctx, input).await,
-                tools::git_worktree::PREFLIGHT_NAME => {
-                    tools::git_worktree::preflight(ctx, input).await
-                }
-                tools::filesystem_advanced::MOVE_NAME => {
-                    tools::filesystem_advanced::move_file(ctx, input).await
-                }
-                tools::filesystem_advanced::COPY_NAME => {
-                    tools::filesystem_advanced::copy(ctx, input).await
-                }
-                tools::filesystem_advanced::STAT_NAME => {
-                    tools::filesystem_advanced::stat(ctx, input).await
-                }
-                tools::filesystem_advanced::MKDIR_NAME => {
-                    tools::filesystem_advanced::mkdir(ctx, input).await
-                }
-
-                // Desktop Applications
-                tools::app::OPEN_NAME => tools::app::open(ctx, input).await,
-                tools::app::LIST_NAME => tools::app::list(ctx, input).await,
-
-                // Process Operations
-                tools::process::NAME => tools::process::execute(ctx, input).await,
-
-                // Cargo/Rust Build Tools
-                tools::cargo::BUILD_NAME => tools::cargo::build(ctx, input).await,
-                tools::cargo::TEST_NAME => tools::cargo::test(ctx, input).await,
-                tools::cargo::FMT_NAME => tools::cargo::fmt(ctx, input).await,
-                tools::cargo::CLIPPY_NAME => tools::cargo::clippy(ctx, input).await,
-                tools::cargo::CHECK_NAME => tools::cargo::check(ctx, input).await,
-
-                // Archive Operations
-                tools::archive::CREATE_NAME => tools::archive::create(ctx, input).await,
-                tools::archive::EXTRACT_NAME => tools::archive::extract(ctx, input).await,
-                tools::archive::LIST_NAME => tools::archive::list(ctx, input).await,
-
-                // Logs Operations
-                tools::logs::TAIL_NAME => tools::logs::tail(ctx, input).await,
-                tools::logs::GREP_NAME => tools::logs::grep(ctx, input).await,
-
-                _ => Err(ToolError::UnknownTool(name.to_string())),
-            }
-        };
+        let execution = self.dispatch_builtin(ctx, name, input, cancellation.clone());
 
         tokio::select! {
             _ = cancellation.cancelled() => Err(ToolError::Execution("tool cancelled".to_string())),
@@ -1102,6 +997,138 @@ impl ToolRegistry {
                 Ok(result) => result,
                 Err(_) => Err(ToolError::TimedOut(definition.timeout)),
             },
+        }
+    }
+
+    /// Runs the builtin adapter for one resolved tool id.
+    ///
+    /// The policy path and the post-approval path share this single
+    /// dispatcher, so a tool cannot become executable on one path and
+    /// UnknownTool on the other.
+    async fn dispatch_builtin(
+        &self,
+        ctx: &ToolContext,
+        name: &str,
+        input: Value,
+        cancellation: CancellationToken,
+    ) -> Result<ToolResult, ToolError> {
+        match name {
+            name if name.starts_with(tools::self_development::TOOL_PREFIX) => {
+                let mut gate = ctx.self_development_test_gate.lock().await;
+                tools::self_development::execute(ctx, name, input, &mut gate).await
+            }
+            name if crate::developer_utilities::ALL_NAMES.contains(&name) => {
+                crate::developer_utilities::execute(ctx, name, input).await
+            }
+            tools::analysis::NAME => {
+                tools::analysis::execute(ctx, input, self.kernel_host.as_ref()).await
+            }
+            tools::workflow::CATALOG_NAME
+            | tools::workflow::START_NAME
+            | tools::workflow::STATUS_NAME
+            | tools::workflow::CANCEL_NAME => tools::workflow::execute(ctx, input).await,
+            tools::filesystem::NAME => tools::filesystem::execute(ctx, input).await,
+            tools::write::NAME => tools::write::execute(ctx, input).await,
+            tools::patch::NAME => tools::patch::execute(ctx, input).await,
+            tools::search::NAME => tools::search::execute(ctx, input).await,
+            tools::list::NAME => tools::list::execute(ctx, input).await,
+            tools::shell::NAME => tools::shell::execute(ctx, input, cancellation.clone()).await,
+            tools::script::NAME => tools::script::execute(ctx, input, cancellation.clone()).await,
+            tools::git::STATUS_NAME => tools::git::status(ctx, input).await,
+            tools::git::DIFF_NAME => tools::git::diff(ctx, input).await,
+            tools::git::COMMIT_NAME => tools::git::commit(ctx, input).await,
+            tools::git::PULL_NAME => tools::git::pull(ctx, input).await,
+            tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
+            tools::git::LOG_NAME => tools::git::log(ctx, input).await,
+            tools::git::SHOW_NAME => tools::git::show(ctx, input).await,
+            tools::git::BLAME_NAME => tools::git::blame(ctx, input).await,
+            tools::git::CHANGED_FILES_NAME => tools::git::changed_files(ctx, input).await,
+            tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
+            tools::memory::NAME => tools::memory::execute(ctx, input).await,
+            tools::goal::CREATE_NAME => tools::goal::execute_create(ctx, input).await,
+            tools::goal::NAME => tools::goal::execute(ctx, input).await,
+            tools::agent::NAME
+            | tools::agent::HIVE_DELEGATE_NAME
+            | tools::agent::HIVE_REGISTER_ROLE_NAME => tools::agent::execute(ctx, input).await,
+            tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
+            tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
+            tools::browser_session::NAVIGATE_NAME => {
+                tools::browser_session::legacy_disabled(ctx, input).await
+            }
+            tools::browser_session::READ_NAME => {
+                tools::browser_session::legacy_disabled(ctx, input).await
+            }
+            tools::browser_session::CLICK_NAME => {
+                tools::browser_session::legacy_disabled(ctx, input).await
+            }
+            tools::browser_session::SCREENSHOT_NAME => {
+                tools::browser_session::legacy_disabled(ctx, input).await
+            }
+            tools::browser_session::TYPE_NAME => {
+                tools::browser_session::legacy_disabled(ctx, input).await
+            }
+            tools::browser_session::CLOSE_NAME => {
+                tools::browser_session::legacy_disabled(ctx, input).await
+            }
+            tools::http::NAME => tools::http::fetch(ctx, input).await,
+
+            // Advanced Git Operations
+            tools::git_advanced::BRANCH_NAME => tools::git_advanced::branch(ctx, input).await,
+            tools::git_advanced::MERGE_NAME => tools::git_advanced::merge(ctx, input).await,
+            tools::git_advanced::RESET_NAME => tools::git_advanced::reset(ctx, input).await,
+            tools::git_advanced::REVERT_NAME => tools::git_advanced::revert(ctx, input).await,
+            tools::git_advanced::CHERRY_PICK_NAME => {
+                tools::git_advanced::cherry_pick(ctx, input).await
+            }
+            tools::git_advanced::REBASE_NAME => tools::git_advanced::rebase(ctx, input).await,
+            tools::git_advanced::TAG_NAME => tools::git_advanced::tag(ctx, input).await,
+            tools::git_advanced::STASH_NAME => tools::git_advanced::stash(ctx, input).await,
+            tools::git_advanced::REMOTE_NAME => tools::git_advanced::remote(ctx, input).await,
+
+            // Advanced Filesystem Operations
+            tools::filesystem_advanced::DELETE_NAME => {
+                tools::filesystem_advanced::delete(ctx, input).await
+            }
+            tools::git_worktree::CREATE_NAME => tools::git_worktree::create(ctx, input).await,
+            tools::git_worktree::REMOVE_NAME => tools::git_worktree::remove(ctx, input).await,
+            tools::git_worktree::PREFLIGHT_NAME => tools::git_worktree::preflight(ctx, input).await,
+            tools::filesystem_advanced::MOVE_NAME => {
+                tools::filesystem_advanced::move_file(ctx, input).await
+            }
+            tools::filesystem_advanced::COPY_NAME => {
+                tools::filesystem_advanced::copy(ctx, input).await
+            }
+            tools::filesystem_advanced::STAT_NAME => {
+                tools::filesystem_advanced::stat(ctx, input).await
+            }
+            tools::filesystem_advanced::MKDIR_NAME => {
+                tools::filesystem_advanced::mkdir(ctx, input).await
+            }
+
+            // Desktop Applications
+            tools::app::OPEN_NAME => tools::app::open(ctx, input).await,
+            tools::app::LIST_NAME => tools::app::list(ctx, input).await,
+
+            // Process Operations
+            tools::process::NAME => tools::process::execute(ctx, input).await,
+
+            // Cargo/Rust Build Tools
+            tools::cargo::BUILD_NAME => tools::cargo::build(ctx, input).await,
+            tools::cargo::TEST_NAME => tools::cargo::test(ctx, input).await,
+            tools::cargo::FMT_NAME => tools::cargo::fmt(ctx, input).await,
+            tools::cargo::CLIPPY_NAME => tools::cargo::clippy(ctx, input).await,
+            tools::cargo::CHECK_NAME => tools::cargo::check(ctx, input).await,
+
+            // Archive Operations
+            tools::archive::CREATE_NAME => tools::archive::create(ctx, input).await,
+            tools::archive::EXTRACT_NAME => tools::archive::extract(ctx, input).await,
+            tools::archive::LIST_NAME => tools::archive::list(ctx, input).await,
+
+            // Logs Operations
+            tools::logs::TAIL_NAME => tools::logs::tail(ctx, input).await,
+            tools::logs::GREP_NAME => tools::logs::grep(ctx, input).await,
+
+            _ => Err(ToolError::UnknownTool(name.to_string())),
         }
     }
 
@@ -1158,123 +1185,17 @@ impl ToolRegistry {
                 }
                 None => self.permissions.check_scoped(*permission, &check).await,
             };
+            // A durable receipt approval is the authorization for this call: Core
+            // claims it before invoking this method. `NeedsApproval` is
+            // therefore expected when the approval did not open a session-wide
+            // mode (`BrowserAccess` and `McpCall` never do), so the loop only
+            // re-applies hard policy denials that appeared between the intent
+            // and the execution.
             if matches!(decision, evohime_permissions::PermissionDecision::Denied) {
                 return Err(ToolError::PermissionDenied(*permission));
             }
         }
-        let execution = async {
-            match name {
-                name if name.starts_with(tools::self_development::TOOL_PREFIX) => {
-                    let mut gate = ctx.self_development_test_gate.lock().await;
-                    tools::self_development::execute(ctx, name, input, &mut gate).await
-                }
-                name if crate::developer_utilities::ALL_NAMES.contains(&name) => {
-                    crate::developer_utilities::execute(ctx, name, input).await
-                }
-                tools::analysis::NAME => {
-                    tools::analysis::execute(ctx, input, self.kernel_host.as_ref()).await
-                }
-                tools::filesystem::NAME => tools::filesystem::execute(ctx, input).await,
-                tools::write::NAME => tools::write::execute(ctx, input).await,
-                tools::patch::NAME => tools::patch::execute(ctx, input).await,
-                tools::search::NAME => tools::search::execute(ctx, input).await,
-                tools::list::NAME => tools::list::execute(ctx, input).await,
-                tools::shell::NAME => tools::shell::execute(ctx, input, cancellation.clone()).await,
-                tools::git::STATUS_NAME => tools::git::status(ctx, input).await,
-                tools::git::DIFF_NAME => tools::git::diff(ctx, input).await,
-                tools::git::COMMIT_NAME => tools::git::commit(ctx, input).await,
-                tools::git::PULL_NAME => tools::git::pull(ctx, input).await,
-                tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
-                tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
-                tools::memory::NAME => tools::memory::execute(ctx, input).await,
-                tools::goal::CREATE_NAME => tools::goal::execute_create(ctx, input).await,
-                tools::goal::NAME => tools::goal::execute(ctx, input).await,
-                tools::agent::NAME
-                | tools::agent::HIVE_DELEGATE_NAME
-                | tools::agent::HIVE_REGISTER_ROLE_NAME => tools::agent::execute(ctx, input).await,
-                tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
-                tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
-                tools::browser_session::NAVIGATE_NAME => {
-                    tools::browser_session::legacy_disabled(ctx, input).await
-                }
-                tools::browser_session::READ_NAME => {
-                    tools::browser_session::legacy_disabled(ctx, input).await
-                }
-                tools::browser_session::CLICK_NAME => {
-                    tools::browser_session::legacy_disabled(ctx, input).await
-                }
-                tools::browser_session::SCREENSHOT_NAME => {
-                    tools::browser_session::legacy_disabled(ctx, input).await
-                }
-                tools::browser_session::TYPE_NAME => {
-                    tools::browser_session::legacy_disabled(ctx, input).await
-                }
-                tools::browser_session::CLOSE_NAME => {
-                    tools::browser_session::legacy_disabled(ctx, input).await
-                }
-                tools::http::NAME => tools::http::fetch(ctx, input).await,
-
-                // Advanced Git Operations
-                tools::git_advanced::BRANCH_NAME => tools::git_advanced::branch(ctx, input).await,
-                tools::git_advanced::MERGE_NAME => tools::git_advanced::merge(ctx, input).await,
-                tools::git_advanced::RESET_NAME => tools::git_advanced::reset(ctx, input).await,
-                tools::git_advanced::REVERT_NAME => tools::git_advanced::revert(ctx, input).await,
-                tools::git_advanced::CHERRY_PICK_NAME => {
-                    tools::git_advanced::cherry_pick(ctx, input).await
-                }
-                tools::git_advanced::REBASE_NAME => tools::git_advanced::rebase(ctx, input).await,
-                tools::git_advanced::TAG_NAME => tools::git_advanced::tag(ctx, input).await,
-                tools::git_advanced::STASH_NAME => tools::git_advanced::stash(ctx, input).await,
-                tools::git_advanced::REMOTE_NAME => tools::git_advanced::remote(ctx, input).await,
-
-                // Advanced Filesystem Operations
-                tools::filesystem_advanced::DELETE_NAME => {
-                    tools::filesystem_advanced::delete(ctx, input).await
-                }
-                tools::git_worktree::CREATE_NAME => tools::git_worktree::create(ctx, input).await,
-                tools::git_worktree::REMOVE_NAME => tools::git_worktree::remove(ctx, input).await,
-                tools::git_worktree::PREFLIGHT_NAME => {
-                    tools::git_worktree::preflight(ctx, input).await
-                }
-                tools::filesystem_advanced::MOVE_NAME => {
-                    tools::filesystem_advanced::move_file(ctx, input).await
-                }
-                tools::filesystem_advanced::COPY_NAME => {
-                    tools::filesystem_advanced::copy(ctx, input).await
-                }
-                tools::filesystem_advanced::STAT_NAME => {
-                    tools::filesystem_advanced::stat(ctx, input).await
-                }
-                tools::filesystem_advanced::MKDIR_NAME => {
-                    tools::filesystem_advanced::mkdir(ctx, input).await
-                }
-
-                // Desktop Applications
-                tools::app::OPEN_NAME => tools::app::open(ctx, input).await,
-                tools::app::LIST_NAME => tools::app::list(ctx, input).await,
-
-                // Process Operations
-                tools::process::NAME => tools::process::execute(ctx, input).await,
-
-                // Cargo/Rust Build Tools
-                tools::cargo::BUILD_NAME => tools::cargo::build(ctx, input).await,
-                tools::cargo::TEST_NAME => tools::cargo::test(ctx, input).await,
-                tools::cargo::FMT_NAME => tools::cargo::fmt(ctx, input).await,
-                tools::cargo::CLIPPY_NAME => tools::cargo::clippy(ctx, input).await,
-                tools::cargo::CHECK_NAME => tools::cargo::check(ctx, input).await,
-
-                // Archive Operations
-                tools::archive::CREATE_NAME => tools::archive::create(ctx, input).await,
-                tools::archive::EXTRACT_NAME => tools::archive::extract(ctx, input).await,
-                tools::archive::LIST_NAME => tools::archive::list(ctx, input).await,
-
-                // Logs Operations
-                tools::logs::TAIL_NAME => tools::logs::tail(ctx, input).await,
-                tools::logs::GREP_NAME => tools::logs::grep(ctx, input).await,
-
-                _ => Err(ToolError::UnknownTool(name.to_string())),
-            }
-        };
+        let execution = self.dispatch_builtin(ctx, name, input, cancellation.clone());
         tokio::select! {
             _ = cancellation.cancelled() => Err(ToolError::Execution("tool cancelled".to_string())),
             result = tokio::time::timeout(definition.timeout, execution) => match result {
@@ -1618,6 +1539,40 @@ fn approval_preview(
                 path: None,
                 details: (!details.is_empty()).then_some(details),
                 truncated,
+            }
+        }
+        tools::script::NAME => {
+            let interpreter = input
+                .get("interpreter")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let script = input
+                .get("script")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .replace('\\', "/");
+            let arguments = input
+                .get("args")
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            let invocation = format!("{interpreter} {script} {arguments}")
+                .trim()
+                .to_string();
+            ApprovalPreview {
+                kind: "command".into(),
+                summary: format!("Запустить скрипт: {script}"),
+                command: Some(invocation),
+                cwd,
+                path: (!script.is_empty()).then_some(script),
+                details: None,
+                truncated: false,
             }
         }
         _ => {

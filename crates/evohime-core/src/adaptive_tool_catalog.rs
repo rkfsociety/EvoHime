@@ -352,7 +352,10 @@ const CROSS_LINGUAL_PREFIXES: &[(&str, &[&str])] = &[
     ("содержим", &["read", "filesystem_read"]),
     ("запи", &["write", "filesystem_write"]),
     ("пиш", &["write", "filesystem_write"]),
-    ("созда", &["create", "write", "filesystem_write", "filesystem_mkdir"]),
+    (
+        "созда",
+        &["create", "write", "filesystem_write", "filesystem_mkdir"],
+    ),
     ("сохран", &["write", "save", "filesystem_write"]),
     ("исправ", &["patch", "edit", "filesystem_patch"]),
     ("редакт", &["patch", "edit", "filesystem_patch"]),
@@ -360,9 +363,38 @@ const CROSS_LINGUAL_PREFIXES: &[(&str, &[&str])] = &[
     ("замен", &["patch", "replace", "filesystem_patch"]),
     ("спис", &["list", "filesystem_list"]),
     ("покаж", &["show", "list"]),
-    ("директор", &["directory", "directories", "list", "mkdir", "filesystem_list", "filesystem_mkdir"]),
-    ("папк", &["directory", "directories", "list", "mkdir", "filesystem_list", "filesystem_mkdir"]),
-    ("каталог", &["directory", "directories", "list", "catalog", "filesystem_list"]),
+    (
+        "директор",
+        &[
+            "directory",
+            "directories",
+            "list",
+            "mkdir",
+            "filesystem_list",
+            "filesystem_mkdir",
+        ],
+    ),
+    (
+        "папк",
+        &[
+            "directory",
+            "directories",
+            "list",
+            "mkdir",
+            "filesystem_list",
+            "filesystem_mkdir",
+        ],
+    ),
+    (
+        "каталог",
+        &[
+            "directory",
+            "directories",
+            "list",
+            "catalog",
+            "filesystem_list",
+        ],
+    ),
     ("дерев", &["list", "filesystem_list"]),
     ("структур", &["list", "filesystem_list"]),
     ("найд", &["search", "find", "grep", "filesystem_search"]),
@@ -386,12 +418,31 @@ const CROSS_LINGUAL_PREFIXES: &[(&str, &[&str])] = &[
     ("дифф", &["diff", "git_diff"]),
     ("разниц", &["diff", "git_diff"]),
     ("отлич", &["diff", "git_diff"]),
-    ("изменен", &["diff", "changed", "git_diff", "git_changed_files"]),
-    ("измен", &["patch", "diff", "changed", "git_diff", "git_changed_files", "filesystem_patch"]),
-    ("коммит", &["commit", "commits", "git_commit", "git_log", "git_show"]),
+    (
+        "изменен",
+        &["diff", "changed", "git_diff", "git_changed_files"],
+    ),
+    (
+        "измен",
+        &[
+            "patch",
+            "diff",
+            "changed",
+            "git_diff",
+            "git_changed_files",
+            "filesystem_patch",
+        ],
+    ),
+    (
+        "коммит",
+        &["commit", "commits", "git_commit", "git_log", "git_show"],
+    ),
     ("закоммит", &["commit", "git_commit"]),
     ("истор", &["history", "log", "git_log"]),
-    ("журнал", &["history", "log", "logs", "git_log", "logs_tail"]),
+    (
+        "журнал",
+        &["history", "log", "logs", "git_log", "logs_tail"],
+    ),
     ("лог", &["log", "logs", "logs_tail", "logs_grep", "git_log"]),
     ("автор", &["blame", "ownership", "git_blame"]),
     ("блейм", &["blame", "git_blame"]),
@@ -413,59 +464,202 @@ const CROSS_LINGUAL_PREFIXES: &[(&str, &[&str])] = &[
     ("пуш", &["push", "git_push"]),
     ("запуш", &["push", "git_push"]),
     ("ремоут", &["remote", "remotes", "git_remote"]),
-    ("ворктри", &["worktree", "git_worktree_create", "git_worktree_remove", "git_worktree_preflight"]),
+    (
+        "ворктри",
+        &[
+            "worktree",
+            "git_worktree_create",
+            "git_worktree_remove",
+            "git_worktree_preflight",
+        ],
+    ),
     // Shell / Script / Process / Cargo
     ("команд", &["shell", "execute", "command", "shell_execute"]),
     ("терминал", &["shell", "execute", "shell_execute"]),
     ("консол", &["shell", "execute", "shell_execute"]),
-    ("выполн", &["execute", "run", "shell_execute", "process_run"]),
-    ("запуст", &["run", "execute", "start", "shell_execute", "process_run", "cargo_test"]),
+    (
+        "выполн",
+        &["execute", "run", "shell_execute", "process_run"],
+    ),
+    (
+        "запуст",
+        &[
+            "run",
+            "execute",
+            "start",
+            "shell_execute",
+            "process_run",
+            "cargo_test",
+        ],
+    ),
     ("скрипт", &["script", "scripts", "script_execute"]),
     ("пайтон", &["script", "python", "script_execute"]),
     ("питон", &["script", "python", "script_execute"]),
     ("процесс", &["process", "run", "process_run"]),
-    ("программ", &["process", "app", "application", "process_run", "app_open", "app_list"]),
-    ("приложен", &["app", "applications", "open", "app_open", "app_list"]),
+    (
+        "программ",
+        &[
+            "process",
+            "app",
+            "application",
+            "process_run",
+            "app_open",
+            "app_list",
+        ],
+    ),
+    (
+        "приложен",
+        &["app", "applications", "open", "app_open", "app_list"],
+    ),
     ("собери", &["build", "cargo", "cargo_build"]),
     ("сборк", &["build", "cargo", "cargo_build"]),
-    ("скомпил", &["build", "check", "cargo", "cargo_build", "cargo_check"]),
+    (
+        "скомпил",
+        &["build", "check", "cargo", "cargo_build", "cargo_check"],
+    ),
     ("тест", &["test", "tests", "cargo", "cargo_test"]),
     ("протест", &["test", "cargo", "cargo_test"]),
-    ("провер", &["check", "test", "cargo", "cargo_check", "cargo_test", "goal_verify"]),
+    (
+        "провер",
+        &[
+            "check",
+            "test",
+            "cargo",
+            "cargo_check",
+            "cargo_test",
+            "goal_verify",
+        ],
+    ),
     ("формат", &["fmt", "format", "cargo", "cargo_fmt"]),
     ("линт", &["clippy", "lint", "cargo", "cargo_clippy"]),
     // Browser / HTTP
-    ("браузер", &["browser", "web", "page", "browser_open", "browser_session_navigate"]),
-    ("сайт", &["browser", "web", "page", "url", "browser_open", "browser_session_navigate"]),
-    ("страниц", &["browser", "web", "page", "browser_open", "browser_extract", "browser_session_read"]),
-    ("откр", &["open", "read", "app_open", "browser_open", "filesystem_read"]),
-    ("ссылк", &["url", "browser", "http", "browser_open", "http_request"]),
-    ("скриншот", &["screenshot", "browser", "browser_session_screenshot"]),
-    ("снимок", &["screenshot", "browser", "browser_session_screenshot"]),
+    (
+        "браузер",
+        &[
+            "browser",
+            "web",
+            "page",
+            "browser_open",
+            "browser_session_navigate",
+        ],
+    ),
+    (
+        "сайт",
+        &[
+            "browser",
+            "web",
+            "page",
+            "url",
+            "browser_open",
+            "browser_session_navigate",
+        ],
+    ),
+    (
+        "страниц",
+        &[
+            "browser",
+            "web",
+            "page",
+            "browser_open",
+            "browser_extract",
+            "browser_session_read",
+        ],
+    ),
+    (
+        "откр",
+        &[
+            "open",
+            "read",
+            "app_open",
+            "browser_open",
+            "filesystem_read",
+        ],
+    ),
+    (
+        "ссылк",
+        &["url", "browser", "http", "browser_open", "http_request"],
+    ),
+    (
+        "скриншот",
+        &["screenshot", "browser", "browser_session_screenshot"],
+    ),
+    (
+        "снимок",
+        &["screenshot", "browser", "browser_session_screenshot"],
+    ),
     ("клик", &["click", "browser", "browser_session_click"]),
     ("нажм", &["click", "browser", "browser_session_click"]),
     ("запрос", &["http", "request", "http_request"]),
-    ("скач", &["http", "request", "pull", "http_request", "git_pull"]),
+    (
+        "скач",
+        &["http", "request", "pull", "http_request", "git_pull"],
+    ),
     // Archive
-    ("архив", &["archive", "zip", "tar", "archive_create", "archive_extract", "archive_list"]),
+    (
+        "архив",
+        &[
+            "archive",
+            "zip",
+            "tar",
+            "archive_create",
+            "archive_extract",
+            "archive_list",
+        ],
+    ),
     ("упак", &["archive", "create", "zip", "archive_create"]),
     ("сжа", &["archive", "create", "archive_create"]),
     ("сожм", &["archive", "create", "archive_create"]),
     ("распак", &["archive", "extract", "archive_extract"]),
-    ("извлек", &["archive", "extract", "browser_extract", "archive_extract"]),
+    (
+        "извлек",
+        &["archive", "extract", "browser_extract", "archive_extract"],
+    ),
     // Memory / Goal / Agent / Workflow / Analysis / MCP
     ("памят", &["memory", "search", "memory_search"]),
     ("запомн", &["memory", "memory_search"]),
     ("вспомн", &["memory", "search", "memory_search"]),
     ("цел", &["goal", "goals", "goal_create", "goal_verify"]),
-    ("агент", &["agent", "subagent", "hive", "agent_run", "hive_delegate_agent"]),
+    (
+        "агент",
+        &[
+            "agent",
+            "subagent",
+            "hive",
+            "agent_run",
+            "hive_delegate_agent",
+        ],
+    ),
     ("субагент", &["agent", "subagent", "agent_run"]),
     ("делег", &["delegate", "hive", "hive_delegate_agent"]),
-    ("улей", &["hive", "hive_delegate_agent", "hive_register_role"]),
+    (
+        "улей",
+        &["hive", "hive_delegate_agent", "hive_register_role"],
+    ),
     ("рол", &["role", "hive", "hive_register_role"]),
-    ("сценар", &["workflow", "workflow_catalog", "workflow_start", "workflow_status", "workflow_cancel"]),
-    ("воркфлоу", &["workflow", "workflow_catalog", "workflow_start", "workflow_status", "workflow_cancel"]),
-    ("составн", &["workflow", "workflow_catalog", "workflow_start"]),
+    (
+        "сценар",
+        &[
+            "workflow",
+            "workflow_catalog",
+            "workflow_start",
+            "workflow_status",
+            "workflow_cancel",
+        ],
+    ),
+    (
+        "воркфлоу",
+        &[
+            "workflow",
+            "workflow_catalog",
+            "workflow_start",
+            "workflow_status",
+            "workflow_cancel",
+        ],
+    ),
+    (
+        "составн",
+        &["workflow", "workflow_catalog", "workflow_start"],
+    ),
     ("шаблон", &["workflow", "template", "workflow_catalog"]),
     ("анализ", &["analysis", "computation", "analysis_run"]),
     ("вычисл", &["analysis", "computation", "analysis_run"]),
@@ -630,13 +824,19 @@ mod tests {
                     "Take a screenshot of the browser tab",
                 ),
                 manifest("cargo_test", "Run cargo test in the workspace"),
-                manifest("filesystem_list", "List files and directories in the workspace"),
+                manifest(
+                    "filesystem_list",
+                    "List files and directories in the workspace",
+                ),
                 manifest("filesystem_read", "Read UTF-8 files from the workspace"),
                 manifest(
                     "filesystem_search",
                     "Search workspace files by regex or substring",
                 ),
-                manifest("git_branch", "List, create, checkout, or delete git branches"),
+                manifest(
+                    "git_branch",
+                    "List, create, checkout, or delete git branches",
+                ),
                 manifest("git_commit", "Create a git commit"),
                 manifest("git_diff", "Show repository diff"),
                 manifest("git_log", "Show bounded repository history"),
@@ -657,7 +857,10 @@ mod tests {
         let result = select_deterministic(&projection, "покажи историю коммитов", 8).unwrap();
 
         assert_eq!(result.fallback, None);
-        assert_eq!(result.selected_ids.first().map(String::as_str), Some("git_log"));
+        assert_eq!(
+            result.selected_ids.first().map(String::as_str),
+            Some("git_log")
+        );
         assert!(result.selected_ids.contains(&"git_show".to_string()));
         assert!(!result.selected_ids.contains(&"analysis_run".to_string()));
     }

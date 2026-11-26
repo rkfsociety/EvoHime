@@ -1117,8 +1117,29 @@ fn set_all_modes_never_touches_microphone_listen() {
                 "set_all_modes({mode:?}) changed the microphone capability"
             );
             assert_eq!(engine.mode(Permission::ShellExecute).await, mode);
+            assert_eq!(engine.mode(Permission::ScriptExecute).await, mode);
         }
     });
+}
+
+#[test]
+fn script_execute_defaults_to_ask_and_serializes_snake_case() {
+    block_on(async {
+        let engine = PermissionEngine::new();
+        assert_eq!(
+            engine.mode(Permission::ScriptExecute).await,
+            PermissionMode::Ask,
+            "script runs must require approval until the user opens the mode"
+        );
+        assert_eq!(
+            engine.check(Permission::ScriptExecute).await,
+            PermissionDecision::NeedsApproval
+        );
+    });
+    assert_eq!(
+        serde_json::to_string(&Permission::ScriptExecute).unwrap(),
+        "\"script_execute\""
+    );
 }
 
 #[test]

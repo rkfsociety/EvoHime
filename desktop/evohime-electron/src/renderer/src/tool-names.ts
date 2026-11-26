@@ -35,7 +35,8 @@ const TOOL_LABELS: Record<string, string> = {
   http_fetch: 'Запрашиваю данные по сети',
   mcp_call: 'Обращаюсь к внешнему сервису',
   memory_search: 'Ищу в памяти',
-  shell_execute: 'Выполняю команду'
+  shell_execute: 'Выполняю команду',
+  script_execute: 'Запускаю скрипт'
 }
 
 const SHELL_COMMAND_PREFIX = 'shell_execute: '

@@ -34,6 +34,8 @@ pub mod memory;
 pub mod patch;
 /// Bounded process inspection and lifecycle tools.
 pub mod process;
+/// Allow-listed interpreter script execution for workspace scripts.
+pub mod script;
 /// Sandboxed workspace content search.
 pub mod search;
 /// Isolated Queen self-development tools.

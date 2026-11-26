@@ -89,14 +89,13 @@ fn self_development_tools_are_only_available_to_the_queen() {
 fn bootstrap_registers_filesystem_read() {
     let registry = ToolRegistry::bootstrap();
     let tools = registry.list();
-    // Bound instead of an exact literal: adding a declared tool must not churn
-    // this assertion, while a shrinking surface still fails the test. The
-    // current declared surface is 73 tools (60 direct + 9 developer utilities
-    // + 4 workflow tools).
-    assert!(
-        tools.len() >= 73,
-        "declared tool surface shrank: {} tools",
-        tools.len()
+    // Exact-count bound: adding or removing a declared tool must update
+    // `BUILTIN_TOOL_COUNT` in the same change, so diagnostics keep a truthful
+    // expected surface.
+    assert_eq!(
+        tools.len(),
+        crate::BUILTIN_TOOL_COUNT,
+        "declared tool surface drifted from BUILTIN_TOOL_COUNT"
     );
     for name in [
         "agent_run",
@@ -1203,4 +1202,95 @@ fn analysis_run_rejects_invalid_shape_before_reaching_the_host() {
         assert!(matches!(error, ToolError::InvalidInput { .. }));
         assert_eq!(host.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
     });
+}
+
+fn test_context(workspace: &std::path::Path) -> ToolContext {
+    ToolContext {
+        workspace_root: workspace.to_path_buf(),
+        task_id: Uuid::nil(),
+        session_id: None,
+        progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
+    }
+}
+
+#[test]
+fn post_approval_path_reaches_every_policy_dispatch_arm() {
+    run_async_test_with_large_stack(async {
+        let registry = ToolRegistry::bootstrap();
+        let dir = tempfile::tempdir().expect("workspace");
+        let context = test_context(dir.path());
+
+        // `workflow_catalog` is allowed by policy but its adapter deliberately
+        // refuses outside the Core workflow runtime. Before the shared
+        // dispatcher the post-approval table had no workflow arm, so the same
+        // call surfaced as `UnknownTool` and the model could not recover.
+        let error = registry
+            .execute_after_durable_approval(
+                &context,
+                "workflow_catalog",
+                serde_json::json!({}),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .expect_err("the workflow adapter cannot run without Core");
+        assert!(
+            !matches!(error, ToolError::UnknownTool(_)),
+            "workflow call must reach the adapter, got {error:?}"
+        );
+
+        // Read-only git tools were the other arm missing from the
+        // approval-flavoured table. Outside a repository the adapter still
+        // reports its own failure, not an unknown tool.
+        let error = registry
+            .execute_after_durable_approval(
+                &context,
+                "git_changed_files",
+                serde_json::json!({}),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .expect_err("the temporary workspace is not a git repository");
+        assert!(
+            !matches!(error, ToolError::UnknownTool(_)),
+            "git read call must reach the adapter, got {error:?}"
+        );
+    });
+}
+
+#[test]
+fn script_execute_preview_shows_the_exact_interpreter_invocation() {
+    let preview = approval_preview(
+        "script_execute",
+        "workspace",
+        None,
+        &serde_json::json!({
+            "interpreter": "python",
+            "script": "tools/check.py",
+            "args": ["--fast"]
+        }),
+    );
+    assert_eq!(preview.kind, "command");
+    assert_eq!(
+        preview.command.as_deref(),
+        Some("python tools/check.py --fast")
+    );
+    assert_eq!(preview.path.as_deref(), Some("tools/check.py"));
+}
+
+#[test]
+fn retired_browser_tools_stay_registered_for_legacy_refusal() {
+    let registry = ToolRegistry::bootstrap();
+    let names = registry.list();
+    for name in crate::RETIRED_TOOL_IDS {
+        assert!(
+            names.iter().any(|tool| tool.name == *name),
+            "{name} must stay registered for stored legacy calls"
+        );
+    }
 }

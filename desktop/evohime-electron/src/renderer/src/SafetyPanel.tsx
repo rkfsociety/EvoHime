@@ -37,6 +37,7 @@ const SHARED_CAPABILITIES: readonly { readonly id: string; readonly label: strin
   { id: 'filesystem_read', label: 'Чтение файлов рабочей области' },
   { id: 'filesystem_write', label: 'Запись файлов рабочей области' },
   { id: 'shell_execute', label: 'Запуск команд' },
+  { id: 'script_execute', label: 'Запуск скриптов' },
   { id: 'git_read', label: 'Чтение Git' },
   { id: 'git_write', label: 'Запись в Git' },
   { id: 'browser_access', label: 'Доступ в сеть' },

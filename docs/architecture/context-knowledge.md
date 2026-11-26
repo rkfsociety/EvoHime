@@ -404,6 +404,16 @@ filesystem_patch Core подставляет хеш последнего усп�
 отклоняется проверкой хеша на границе записи. Оба mutating-инструмента возвращают
 новый content_hash и revision после успешного изменения.
 
+Известное ограничение: `canonical_policy_subject` в `ToolRegistry` резолвит
+path-инструменты через `WorkspaceSandbox` (`<root>/<logical>`), а
+`revision_safe_workspace_files` для префиксов `uploads/`, `outputs/` и `scratch/`
+пишет в `<root>/.evohime/<namespace>/<rest>`. Поэтому абсолютное deny-правило,
+записанное для physical `.evohime/outputs/...`, не совпадает с логическим
+аргументом `outputs/...`; режимы разрешений по типу операции при этом
+применяются одинаково. Чтение namespaced-пути вне `.evohime` дополнительно
+опирается на эвристику `find_unique_suffix`, которая отказывает при
+неоднозначном совпадении.
+
 ## Workspace Bootstrap Manifest v1 (план 64)
 
 Core принимает versioned `WorkspaceBootstrapManifest` только через

@@ -79,6 +79,7 @@ pub(crate) const FULL_ACCESS_WORKING_SET: &[&str] = &[
     "filesystem_mkdir",
     "filesystem_stat",
     "shell_execute",
+    "script_execute",
     "git_status",
     "git_diff",
     "git_commit",
@@ -614,6 +615,12 @@ pub(crate) fn catalog_preflight_input(tool_name: &str) -> serde_json::Value {
         }),
         "eva_workspace_run_command" => serde_json::json!({ "command": "cargo test --lib" }),
         "eva_workspace_git" => serde_json::json!({ "action": "status" }),
+        // Probe input matches the declared `script_execute` schema; preflight
+        // resolves policy only and never starts the interpreter.
+        "script_execute" => serde_json::json!({
+            "interpreter": "powershell",
+            "script": "."
+        }),
         _ => serde_json::json!({}),
     }
 }
@@ -677,6 +684,26 @@ pub(crate) fn request_mentions_workflow(prompt: &str) -> bool {
         .any(|marker| prompt.contains(marker))
 }
 
+/// Определяет запросы, где модели пригодится запуск скриптов.
+///
+/// Маркеры широкие намеренно: лишний инструмент в каталоге безвреден,
+/// а его отсутствие ломает задачу.
+pub(crate) fn request_mentions_scripts(prompt: &str) -> bool {
+    let prompt = prompt.to_lowercase();
+    [
+        "скрипт",
+        "script",
+        ".ps1",
+        "powershell",
+        "pwsh",
+        "python",
+        ".py",
+        "node",
+    ]
+    .iter()
+    .any(|marker| prompt.contains(marker))
+}
+
 pub(crate) fn adaptive_catalog_query(prompt: &str, mutation_intent: bool) -> String {
     let mut query = prompt.to_owned();
     if requires_workspace_research_catalog(prompt) {
@@ -685,6 +712,9 @@ pub(crate) fn adaptive_catalog_query(prompt: &str, mutation_intent: bool) -> Str
     if request_mentions_workflow(prompt) {
         query.push(' ');
         query.push_str(&WORKFLOW_TOOL_IDS.join(" "));
+    }
+    if request_mentions_scripts(prompt) {
+        query.push_str(" script_execute");
     }
     if mutation_intent {
         query.push_str(

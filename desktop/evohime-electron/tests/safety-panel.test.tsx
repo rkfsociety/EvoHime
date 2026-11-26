@@ -39,7 +39,7 @@ describe('панель безопасности', () => {
     render(<SafetyPanel connection="connected" events={[]} />)
     expect(screen.getByText('Постоянное слушание микрофона')).toBeTruthy()
     expect(screen.getByText(/Смена общего режима доступа его не трогает/i)).toBeTruthy()
-    expect(screen.getAllByText('следует общему режиму доступа над полем ввода').length).toBe(8)
+    expect(screen.getAllByText('следует общему режиму доступа над полем ввода').length).toBe(9)
   })
 
   it('включение микрофона идёт той же командой, что и панель «Слух»', async () => {

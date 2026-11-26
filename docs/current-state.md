@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-11-25.
+Обновлено: 2026-11-26.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -162,6 +162,12 @@ keystore или сигнатур секретов с upload/POST-признак�
 является сетевой изоляцией ОС и не гарантирует перехват собственного сетевого
 кода произвольного executable; при отсутствии process-level guarantee внешний
 dispatch получает typed `unsupported`/`blocked` outcome.
+
+Запуск скриптов выделен в отдельный инструмент `script_execute` с правом
+`ScriptExecute` (по умолчанию `Ask`): интерпретатор из allow-list
+(`powershell`/`python`/`node`) запускает скрипт-файл внутри workspace напрямую,
+без оболочки; инлайн-код (`-Command`, `-c`, `-e`) запрещён, вывод и время
+ограничены тем же execution profile.
 
 Core-owned sensitive egress boundary завершена в `sensitive_data_guardrails`:
 versioned detector pack v1 классифицирует email/credentials/private keys,
@@ -960,6 +966,26 @@ Exact-SHA CI по этому изменению ожидает результа�
 - Recovery-подсказка для инструмента без аргументов требует передать `{}`
   вместо вывода бесполезной схемы `{"type":"object"}`.
 
+### Аудит поверхности инструментов (2026-11-26)
+
+- Dispatch `ToolRegistry` сведён к одному `dispatch_builtin`; путь после
+  durable approval больше не теряет `git_log`, `git_show`, `git_blame`,
+  `git_changed_files` и `workflow_*` (раньше они возвращали `UnknownTool`).
+- В post-approval проверке прав `NeedsApproval` для второго разрешения вызова
+  теперь даёт `ApprovalMismatch`: одобрение одного permission (`archive_create`
+  требует два) не запускает инструмент с частичной авторизацией.
+- `mcp_call` объявляет модели `server_id`/`tool_name`: Core разрешает их в
+  `url`/`method` до вызова исполнителя, поэтому схема и runtime согласованы.
+- `script_execute` проходит собственную проверку egress по аргументам, а
+  разрешение интерпретатора берётся из закрытого allow-list; раньше
+  `validate_program_name` отклонял любой абсолютный путь к `pwsh`/`python`.
+- Retired `browser_session_*` остаются зарегистрированными, но исключены из
+  каталога модели; `process_run`, `eva_workspace_run_command` и
+  `script_execute` отнесены к риску `High`.
+- Ограничение: policy-subject для namespaced-путей (`uploads/`, `outputs/`,
+  `scratch/`) вычисляется до namespace-резолва; см.
+  `docs/architecture/context-knowledge.md`.
+
 ### Канонический лексикон tool id
 
 Имена инструментов больше не подменяются перед отправкой провайдеру: id равен
@@ -986,7 +1012,9 @@ provider-запрос, журнал и receipt без преобразовани
   прежней форме: это отдельный лексикон, а не tool id.
 - `permissions.json`, `workspaces.json` и `chats.json` миграции не требуют:
   первые адресуют `Permission`-enum, остальные tool id не хранят.
-  `EXPECTED_TOOL_COUNT = 74` не изменился — переименованы имена, не состав.
+  `EXPECTED_TOOL_COUNT` больше не задаётся литералом: он выводится из
+  `evohime_tool_runtime::BUILTIN_TOOL_COUNT`, который сверяется с фактическим
+  результатом `bootstrap` тестом реестра.
 
 ## Подтверждённые проверки checkout
 

@@ -32,6 +32,7 @@ git_diff          {"path":"crates/tool-runtime"}        # единственно
 git_commit        {"message":"..."}                     # сам выполняет git add -A
 process_run       {"command":"git","args":["diff","--check"],"cwd":"."}
 shell_execute     {"program":"git","args":["status"],"cwd":"."}
+script_execute    {"interpreter":"powershell","script":"scripts/check.ps1","args":["-Verbose"],"cwd":"."}
 ```
 
 Имя инструмента — канонический id с разделителем `_`; точки в нём не
@@ -52,6 +53,13 @@ provider-запрос без преобразований.
 `query`, строку или массив в `glob`, и флаг `regex`. Поиск литеральный по
 умолчанию: без ripgrep `regex: true` возвращает `InvalidInput`, поэтому для
 регулярных выражений проверяй наличие `rg` заранее.
+
+`script_execute` запускает скрипт-файл из воркспейса интерпретатором из
+allow-list: `powershell` (pwsh с fallback на powershell), `python` или
+`node`. Скрипт передаётся только файлом (позиционный путь, семантика
+`-File` для PowerShell), инлайн-код запрещён: ключи `-Command`, `-c`, `-e`
+и подобные, включая формы `-Command:code` и `--eval=code`, отклоняются.
+Право — `ScriptExecute`, по умолчанию режим `Ask`.
 
 ## 3. Одно изменение за шаг
 

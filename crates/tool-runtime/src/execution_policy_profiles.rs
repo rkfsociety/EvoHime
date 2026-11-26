@@ -124,7 +124,7 @@ impl ExecutionPolicyProfile {
     /// assert!(profile.validate().is_ok());
     /// ```
     pub fn default_for(tool: &str) -> Result<Self, ExecutionPolicyError> {
-        if !matches!(tool, "shell_execute" | "process_run") {
+        if !matches!(tool, "shell_execute" | "process_run" | "script_execute") {
             return Err(ExecutionPolicyError::UnsupportedTool);
         }
         Ok(Self {
@@ -295,8 +295,46 @@ pub fn validate_process_egress(program: &str, args: &[String]) -> Result<(), Exe
         })
         .collect::<Vec<_>>()
         .join(" ");
-    if without_exe.contains(".trycloudflare.com") {
+    if egress_markers_present(&normalized, &without_exe) {
         return Err(ExecutionPolicyError::EgressDenied);
+    }
+    Ok(())
+}
+
+/// Screens script arguments with the same egress markers as a direct command.
+///
+/// [`validate_program_name`] deliberately bans shell interpreters for
+/// `shell_execute`. `script_execute` instead picks its interpreter from a
+/// closed allow-list, so the binary is not caller-selected; only the arguments
+/// still need the bounded secret-exfiltration check.
+pub fn validate_script_arguments(args: &[String]) -> Result<(), ExecutionPolicyError> {
+    let normalized = args
+        .iter()
+        .map(|arg| arg.to_ascii_lowercase().replace('\\', "/"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let without_exe = args
+        .iter()
+        .map(|arg| {
+            let lower = arg.to_ascii_lowercase().replace('\\', "/");
+            lower
+                .strip_suffix(".exe")
+                .map(str::to_owned)
+                .unwrap_or(lower)
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    if egress_markers_present(&normalized, &without_exe) {
+        return Err(ExecutionPolicyError::EgressDenied);
+    }
+    Ok(())
+}
+
+/// Returns whether argument text combines likely secret sources with outbound
+/// transfer indicators.
+fn egress_markers_present(normalized: &str, without_exe: &str) -> bool {
+    if without_exe.contains(".trycloudflare.com") {
+        return true;
     }
 
     let sensitive_source = [
@@ -320,10 +358,7 @@ pub fn validate_process_egress(program: &str, args: &[String]) -> Result<(), Exe
     ]
     .iter()
     .any(|marker| normalized.contains(marker));
-    if sensitive_source && outbound_transfer {
-        return Err(ExecutionPolicyError::EgressDenied);
-    }
-    Ok(())
+    sensitive_source && outbound_transfer
 }
 
 impl ResolvedExecutionProfile {

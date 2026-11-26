@@ -57,6 +57,7 @@ pub(crate) fn builtin_role_allowed_tools(role: &str) -> Option<Vec<String>> {
             "git_status",
             "git_diff",
             "shell_execute",
+            "script_execute",
         ],
         "tester" => &[
             "filesystem_list",
@@ -65,6 +66,7 @@ pub(crate) fn builtin_role_allowed_tools(role: &str) -> Option<Vec<String>> {
             "git_status",
             "git_diff",
             "shell_execute",
+            "script_execute",
         ],
         "releaser" => &[
             "filesystem_list",
@@ -74,6 +76,7 @@ pub(crate) fn builtin_role_allowed_tools(role: &str) -> Option<Vec<String>> {
             "git_log",
             "git_commit",
             "shell_execute",
+            "script_execute",
         ],
         _ => return None,
     };

@@ -55,7 +55,7 @@ pub use manifest::{
 /// Registry, tool context, preflight, and result contracts.
 pub use registry::{
     ApprovalRequired, ToolContext, ToolDefinition, ToolError, ToolPreflightDecision, ToolProgress,
-    ToolRegistry, ToolResult,
+    ToolRegistry, ToolResult, BUILTIN_TOOL_COUNT,
 };
 /// Tool risk classification API.
 pub use risk::{classify_call_risk, ToolRiskLevel};
@@ -104,3 +104,7 @@ pub use tools::process;
 pub use tools::self_development;
 /// Patch, search, shell, and file-writing adapters.
 pub use tools::{patch, search, shell, write};
+
+/// Registered tool ids that exist only for compatibility diagnostics and must
+/// never be offered to the model.
+pub use tools::browser_session::RETIRED_NAMES as RETIRED_TOOL_IDS;

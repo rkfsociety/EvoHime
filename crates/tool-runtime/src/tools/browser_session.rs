@@ -42,6 +42,20 @@ pub const TYPE_TIMEOUT: Duration = Duration::from_secs(30);
 pub const CLOSE_NAME: &str = "browser_session_close";
 pub const CLOSE_DESCRIPTION: &str = "Close the task's persistent browser tab";
 pub const CLOSE_PERMISSIONS: &[Permission] = &[Permission::BrowserAccess];
+
+/// Identifiers of the retired raw-CDP browser tools.
+///
+/// They stay registered so stored conversations and legacy text calls receive
+/// the typed `legacy_disabled` refusal, but Core must not advertise them to the
+/// model: a tool that always fails is worse than an absent one.
+pub const RETIRED_NAMES: &[&str] = &[
+    NAVIGATE_NAME,
+    READ_NAME,
+    CLICK_NAME,
+    SCREENSHOT_NAME,
+    TYPE_NAME,
+    CLOSE_NAME,
+];
 pub const CLOSE_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Return a stable fail-closed error for the retired legacy tool names.

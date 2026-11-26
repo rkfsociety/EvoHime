@@ -33,8 +33,10 @@ use tokio::sync::{mpsc, oneshot};
 const PROTOCOL_MAJOR: u32 = 1;
 /// Number of tools `ToolRegistry::bootstrap()` is expected to register.
 /// Used only as a Doctor health signal (fewer than expected => Warn), never
-/// to gate functionality.
-const EXPECTED_TOOL_COUNT: u32 = 74;
+/// to gate functionality. Kept equal to `BUILTIN_TOOL_COUNT` from
+/// `evohime-tool-runtime`, which is asserted against the real bootstrap
+/// result by a registry test.
+const EXPECTED_TOOL_COUNT: u32 = evohime_tool_runtime::BUILTIN_TOOL_COUNT as u32;
 /// Minor version of the authenticated desktop IPC protocol.
 const PROTOCOL_MINOR: u32 = 0;
 /// Maximum number of checkpoint events replayed in one IPC response.
