@@ -24,7 +24,7 @@ describe('activity line', () => {
     expect(screen.queryByText('filesystem_read')).toBeNull()
   })
 
-  it('keeps the latest action underneath between consecutive calls while the stretch is still active', () => {
+  it('hides the "Последнее" subline between consecutive calls when nothing is currently running', () => {
     render(
       <ActivityLine
         running={false}
@@ -39,7 +39,8 @@ describe('activity line', () => {
     expect(
       screen.getByRole('button', { name: /2 действия · проверяю состояние репозитория, смотрю изменённые файлы/ })
     ).toBeTruthy()
-    expect(screen.getByText('Последнее: Смотрю изменённые файлы')).toBeTruthy()
+    expect(screen.queryByText(/Последнее:/)).toBeNull()
+    expect(screen.queryByText('Смотрю изменённые файлы')).toBeNull()
   })
 
   it('hides the subline while the full call list is expanded', async () => {

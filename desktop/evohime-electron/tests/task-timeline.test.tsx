@@ -884,7 +884,7 @@ describe('task timeline', () => {
     expect(screen.queryByRole('status', { name: 'Агент формирует ответ' })).toBeNull()
 
     // Между завершением инструмента и следующим шагом сводная строка не прыгает,
-    // под ней остаётся последнее действие, а индикатор трёх точек не моргает.
+    // подпись «Последнее: ...» не показывается, а индикатор трёх точек не моргает.
     view.rerender(
       <TaskTimeline
         connection="connected"
@@ -902,7 +902,8 @@ describe('task timeline', () => {
     )
 
     expect(screen.getByRole('button', { name: /1 действие · читаю файл/ })).toBeTruthy()
-    expect(screen.getByText('Последнее: Читаю файл')).toBeTruthy()
+    expect(screen.queryByText(/Последнее:/)).toBeNull()
+    expect(screen.queryByText('Выполняю: Читаю файл')).toBeNull()
     expect(screen.queryByRole('status', { name: 'Агент формирует ответ' })).toBeNull()
 
     expect(screen.queryByText('Остановить', { selector: 'button' })).toBeNull()

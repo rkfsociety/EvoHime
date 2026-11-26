@@ -9,9 +9,9 @@ import { UiIcon } from './UiIcon'
  * One stretch of tool work as a stable summary line with an optional subline.
  *
  * The summary line always keeps the count and categories so the header never
- * flickers or jumps in width between consecutive tool calls. While the stretch
- * is still active, the current (or latest) action is shown steadily beneath it
- * until the user expands the full list or the stretch completes.
+ * flickers or jumps in width between consecutive tool calls. While a tool call
+ * is actively running, the current action is shown beneath it until the user
+ * expands the full list or the call finishes.
  */
 
 export interface ActivityLineProps {
@@ -26,7 +26,8 @@ export function ActivityLine({ calls, running, active = false }: ActivityLinePro
   const [expandedCalls, setExpandedCalls] = useState<ReadonlySet<number>>(() => new Set())
   const current = calls.at(-1)
   const inProgress = running || active
-  const showCurrentSubline = !open && inProgress && current !== undefined
+  const isCurrentRunning = running || Boolean(current?.running)
+  const showCurrentSubline = !open && inProgress && isCurrentRunning && current !== undefined
 
   function toggleCall(index: number): void {
     setExpandedCalls((prev) => {
@@ -66,7 +67,7 @@ export function ActivityLine({ calls, running, active = false }: ActivityLinePro
         >
           <span className="activity__current-dot" aria-hidden="true" />
           <span className="activity__current-text">
-            {translate(currentActionLabel(current, running))}
+            {translate(currentActionLabel(current))}
           </span>
         </div>
       ) : null}
@@ -108,11 +109,10 @@ export function ActivityLine({ calls, running, active = false }: ActivityLinePro
   )
 }
 
-function currentActionLabel(call: ToolCall, isRunning: boolean): string {
+function currentActionLabel(call: ToolCall): string {
   const tool = toolLabel(call.tool) || 'действие'
   const detail = liveDetail(call.output ?? '') || callDetail(call.output)
-  const prefix = isRunning || call.running ? 'Выполняю' : 'Последнее'
-  return detail ? `${prefix}: ${tool} — ${detail}` : `${prefix}: ${tool}`
+  return detail ? `Выполняю: ${tool} — ${detail}` : `Выполняю: ${tool}`
 }
 
 function liveDetail(output: string): string {
