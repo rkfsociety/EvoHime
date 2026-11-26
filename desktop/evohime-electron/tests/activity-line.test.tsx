@@ -14,11 +14,47 @@ import { ActivityLine } from '../src/renderer/src/ActivityLine'
 afterEach(() => cleanup())
 
 describe('activity line', () => {
-  it('names the running tool in Russian', () => {
+  it('keeps the summary line stable and shows the running action underneath', () => {
     render(<ActivityLine calls={[{ tool: 'filesystem_read', output: null, running: true }]} running />)
 
+    const summaryButton = screen.getByRole('button', { name: /1 действие · читаю файл/ })
+    expect(summaryButton).toBeTruthy()
+    expect(summaryButton.textContent).not.toContain('Выполняю:')
     expect(screen.getByText('Выполняю: Читаю файл')).toBeTruthy()
     expect(screen.queryByText('filesystem_read')).toBeNull()
+  })
+
+  it('keeps the latest action underneath between consecutive calls while the stretch is still active', () => {
+    render(
+      <ActivityLine
+        running={false}
+        active
+        calls={[
+          { tool: 'git_status', output: 'clean', running: false },
+          { tool: 'git_changed_files', output: 'src/app.ts', running: false }
+        ]}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: /2 действия · проверяю состояние репозитория, смотрю изменённые файлы/ })
+    ).toBeTruthy()
+    expect(screen.getByText('Последнее: Смотрю изменённые файлы')).toBeTruthy()
+  })
+
+  it('hides the subline while the full call list is expanded', async () => {
+    render(
+      <ActivityLine
+        running
+        active
+        calls={[{ tool: 'git_log', output: null, running: true }]}
+      />
+    )
+
+    expect(screen.getByText('Выполняю: Смотрю историю коммитов')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /1 действие · смотрю историю коммитов/ }))
+    expect(screen.queryByText('Выполняю: Смотрю историю коммитов')).toBeNull()
+    expect(screen.getByRole('button', { name: /Смотрю историю коммитов/ })).toBeTruthy()
   })
 
   it('hides the call list initially, then expands the list and individual call outputs on demand', async () => {

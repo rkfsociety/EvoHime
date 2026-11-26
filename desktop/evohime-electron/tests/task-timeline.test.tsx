@@ -879,7 +879,32 @@ describe('task timeline', () => {
     )
 
     expect(screen.queryByText('Модель работает')).toBeNull()
+    expect(screen.getByRole('button', { name: /1 действие · читаю файл/ })).toBeTruthy()
     expect(screen.getByText('Выполняю: Читаю файл')).toBeTruthy()
+    expect(screen.queryByRole('status', { name: 'Агент формирует ответ' })).toBeNull()
+
+    // Между завершением инструмента и следующим шагом сводная строка не прыгает,
+    // под ней остаётся последнее действие, а индикатор трёх точек не моргает.
+    view.rerender(
+      <TaskTimeline
+        connection="connected"
+        events={[
+          event('tool.output', { tool_name: 'filesystem_read', output: 'ok' }, taskId),
+          event('tool.started', { tool_name: 'filesystem_read' }, taskId)
+        ]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    expect(screen.getByRole('button', { name: /1 действие · читаю файл/ })).toBeTruthy()
+    expect(screen.getByText('Последнее: Читаю файл')).toBeTruthy()
+    expect(screen.queryByRole('status', { name: 'Агент формирует ответ' })).toBeNull()
+
     expect(screen.queryByText('Остановить', { selector: 'button' })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Остановить задачу' }))
     await waitFor(() => expect(calls.at(-1)?.command).toBe('core.stopTask'))

@@ -1650,15 +1650,18 @@ body {
 }
 
 .activity {
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
+  min-width: 0;
 }
 
 .activity__summary {
   display: flex;
   align-items: center;
   gap: 7px;
+  width: fit-content;
   max-width: 100%;
+  min-width: 0;
   padding: 2px 3px;
   border: none;
   border-radius: var(--radius-sm);
@@ -1695,14 +1698,57 @@ body {
 
 .activity__label {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 .activity__chevron {
+  flex: 0 0 auto;
   color: var(--fg-faint);
   font-size: 10px;
+}
+
+.activity__current {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 20px;
+  padding: 1px 4px 2px 22px;
+  color: var(--fg-faint);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.activity__current-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+  opacity: 0.65;
+  transition: background-color 180ms ease, opacity 180ms ease;
+}
+
+.activity__current--live .activity__current-dot {
+  background: var(--accent);
+  animation: activity-current-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes activity-current-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+.activity__current-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .activity__calls {

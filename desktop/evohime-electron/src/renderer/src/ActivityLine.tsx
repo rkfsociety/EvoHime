@@ -6,22 +6,27 @@ import { toolLabel } from './tool-names'
 import { UiIcon } from './UiIcon'
 
 /**
- * One stretch of tool work as a single line.
+ * One stretch of tool work as a stable summary line with an optional subline.
  *
- * While the agent works the line names what it is doing right now; once the
- * stretch ends it collapses to a count the user can expand to read the actual
- * outputs. This keeps a long run of calls from pushing the answer off screen.
+ * The summary line always keeps the count and categories so the header never
+ * flickers or jumps in width between consecutive tool calls. While the stretch
+ * is still active, the current (or latest) action is shown steadily beneath it
+ * until the user expands the full list or the stretch completes.
  */
 
 export interface ActivityLineProps {
   readonly calls: readonly ToolCall[]
   readonly running: boolean
+  /** True while this activity stretch is still the active tail of a running task. */
+  readonly active?: boolean
 }
 
-export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.Element {
+export function ActivityLine({ calls, running, active = false }: ActivityLineProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [expandedCalls, setExpandedCalls] = useState<ReadonlySet<number>>(() => new Set())
   const current = calls.at(-1)
+  const inProgress = running || active
+  const showCurrentSubline = !open && inProgress && current !== undefined
 
   function toggleCall(index: number): void {
     setExpandedCalls((prev) => {
@@ -36,7 +41,7 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
   }
 
   return (
-    <div className={`activity${running ? ' activity--running' : ''}`}>
+    <div className={`activity${inProgress ? ' activity--running' : ''}`}>
       <button
         type="button"
         className="activity__summary"
@@ -44,17 +49,27 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
         aria-expanded={open}
       >
         <span className="activity__icon" aria-hidden="true">
-          <UiIcon name={running ? 'loader' : 'check'} size={14} />
+          <UiIcon name={inProgress ? 'loader' : 'check'} size={14} />
         </span>
         <span className="activity__label">
-          {translate(running
-            ? liveLabel(current)
-            : summarize(calls))}
+          {translate(summarize(calls))}
         </span>
         <span className="activity__chevron" aria-hidden="true">
           <UiIcon name={open ? 'chevron-down' : 'chevron-right'} size={12} />
         </span>
       </button>
+
+      {showCurrentSubline ? (
+        <div
+          className={`activity__current${running ? ' activity__current--live' : ''}`}
+          aria-live="polite"
+        >
+          <span className="activity__current-dot" aria-hidden="true" />
+          <span className="activity__current-text">
+            {translate(currentActionLabel(current, running))}
+          </span>
+        </div>
+      ) : null}
 
       {open ? (
         <ol className="activity__calls" aria-label={translate("Шаги работы модели")}>
@@ -93,10 +108,11 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
   )
 }
 
-function liveLabel(call: ToolCall | undefined): string {
-  const tool = toolLabel(call?.tool ?? '') || 'действие'
-  const detail = liveDetail(call?.output ?? '')
-  return detail ? `Выполняю: ${tool} — ${detail}` : `Выполняю: ${tool}`
+function currentActionLabel(call: ToolCall, isRunning: boolean): string {
+  const tool = toolLabel(call.tool) || 'действие'
+  const detail = liveDetail(call.output ?? '') || callDetail(call.output)
+  const prefix = isRunning || call.running ? 'Выполняю' : 'Последнее'
+  return detail ? `${prefix}: ${tool} — ${detail}` : `${prefix}: ${tool}`
 }
 
 function liveDetail(output: string): string {

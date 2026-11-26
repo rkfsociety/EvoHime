@@ -46,7 +46,13 @@ interface ComposerAttachment {
 
 type TimelineItemDescriptor =
   | { readonly key: string; readonly kind: 'user'; readonly message: ChatMessage; readonly delivery: OptimisticConversationMessage | null }
-  | { readonly key: string; readonly kind: 'transcript'; readonly entry: ReturnType<typeof buildTranscript>['entries'][number]; readonly keySuffix: string }
+  | {
+      readonly key: string
+      readonly kind: 'transcript'
+      readonly entry: ReturnType<typeof buildTranscript>['entries'][number]
+      readonly keySuffix: string
+      readonly activeActivity: boolean
+    }
 
 interface TaskEventIndexCache {
   readonly scope: string
@@ -653,24 +659,52 @@ export function TaskTimeline({
     }
   }, [api, chatIsolationMode, chatModel, conversationLog, providerMode, setConversationProjection, workspace])
 
+  const running = activeTaskId !== null && (startingTaskId === activeTaskId || !finished)
+
   const timelineItems = useMemo(() => {
     if (conversation.length > 0) {
-      return conversation.flatMap(({ message, transcript, delivery }): TimelineItemDescriptor[] => {
+      return conversation.flatMap(({ message, transcript, delivery }, messageIndex): TimelineItemDescriptor[] => {
         const messageId = `user-${message.taskId}-${message.atMs}`
+        const isLastConversationTurn = messageIndex === conversation.length - 1
         return [
           { key: messageId, kind: 'user', message, delivery },
           ...transcript.entries.map((entry, index) => {
             const keySuffix = `${message.taskId}-${index}`
-            return { key: `${entry.kind}-${entry.id}-${keySuffix}`, kind: 'transcript' as const, entry, keySuffix }
+            const activeActivity =
+              entry.kind === 'activity'
+              && isLastConversationTurn
+              && index === transcript.entries.length - 1
+              && !transcript.finished
+              && running
+              && !visibleApproval
+            return {
+              key: `${entry.kind}-${entry.id}-${keySuffix}`,
+              kind: 'transcript' as const,
+              entry,
+              keySuffix,
+              activeActivity
+            }
           })
         ]
       })
     }
     return entries.map((entry, index) => {
       const keySuffix = String(index)
-      return { key: `${entry.kind}-${entry.id}-${keySuffix}`, kind: 'transcript' as const, entry, keySuffix }
+      const activeActivity =
+        entry.kind === 'activity'
+        && index === entries.length - 1
+        && !finished
+        && running
+        && !visibleApproval
+      return {
+        key: `${entry.kind}-${entry.id}-${keySuffix}`,
+        kind: 'transcript' as const,
+        entry,
+        keySuffix,
+        activeActivity
+      }
     })
-  }, [conversation, entries])
+  }, [conversation, entries, finished, running, visibleApproval])
 
   const timelineItemKeys = useMemo(
     () => timelineItems.map((item) => item.key),
@@ -682,7 +716,14 @@ export function TaskTimeline({
   const renderedTimelineItems = useMemo(
     () => renderedTimelineDescriptors.map((item) => {
       if (item.kind === 'transcript') {
-        return renderTranscriptEntry(item.entry, item.keySuffix, entryTimes, copiedMessageId, setCopiedMessageId)
+        return renderTranscriptEntry(
+          item.entry,
+          item.keySuffix,
+          entryTimes,
+          copiedMessageId,
+          setCopiedMessageId,
+          item.activeActivity
+        )
       }
       const messageId = item.key
       const { message, delivery } = item
@@ -954,7 +995,6 @@ export function TaskTimeline({
 
   const connected = CONNECTED_STATES.includes(connection)
   const canStart = connected && !busy && (prompt.trim().length > 0 || attachments.length > 0 && !goalMode)
-  const running = activeTaskId !== null && (startingTaskId === activeTaskId || !finished)
   // Запрос разрешения может прийти раньше любой другой записи ленты.
   const empty =
     entries.length === 0 && sentPrompt === null && visibleApproval === null && conversation.length === 0
@@ -1004,9 +1044,7 @@ export function TaskTimeline({
                 <li className="chat__window-spacer" aria-hidden="true" style={{ height: `${(timelineItems.length - renderedTimelineStart - renderedTimelineItems.length) * TIMELINE_ITEM_HEIGHT_ESTIMATE_PX}px` }} />
               ) : null)}
 
-              {conversation.length > 0 && running && !visibleApproval && !conversation.at(-1)?.transcript.entries.some(
-                (entry) => entry.kind === 'activity' && entry.running
-              ) ? (
+              {conversation.length > 0 && running && !visibleApproval && conversation.at(-1)?.transcript.entries.at(-1)?.kind !== 'activity' ? (
                 <li className="message message--working" role="status" aria-label={translate("Агент формирует ответ")}>
                   <span className="working-indicator" aria-hidden="true">
                     <span />
@@ -1272,7 +1310,8 @@ function renderTranscriptEntry(
   keySuffix: string,
   entryTimes: React.MutableRefObject<Map<string, number>>,
   copiedMessageId: string | null,
-  onCopy: (id: string) => void
+  onCopy: (id: string) => void,
+  activeActivity = false
 ): React.JSX.Element {
   if (entry.kind === 'approval') {
     return (
@@ -1285,7 +1324,7 @@ function renderTranscriptEntry(
   if (entry.kind === 'activity') {
     return (
       <li key={`${entry.kind}-${entry.id}-${keySuffix}`} className="message message--activity">
-        <ActivityLine calls={entry.calls} running={entry.running} />
+        <ActivityLine calls={entry.calls} running={entry.running} active={activeActivity} />
       </li>
     )
   }
