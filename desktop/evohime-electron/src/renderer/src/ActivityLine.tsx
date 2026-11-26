@@ -20,7 +20,20 @@ export interface ActivityLineProps {
 
 export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const [expandedCalls, setExpandedCalls] = useState<ReadonlySet<number>>(() => new Set())
   const current = calls.at(-1)
+
+  function toggleCall(index: number): void {
+    setExpandedCalls((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) {
+        next.delete(index)
+      } else {
+        next.add(index)
+      }
+      return next
+    })
+  }
 
   return (
     <div className={`activity${running ? ' activity--running' : ''}`}>
@@ -43,28 +56,37 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
         </span>
       </button>
 
-      <ol className="activity__calls" aria-label={translate("Шаги работы модели")}>
-        {calls.map((call, index) => (
-          <li key={`${call.tool}-${index}`} className="activity__call">
-            <span className="activity__call-icon" aria-hidden="true">{call.running ? '◌' : '·'}</span>
-            <span className="activity__call-copy">
-              <span className="activity__tool">{translate(toolLabel(call.tool))}</span>
-              {callDetail(call.output) ? <span className="activity__detail">{translate(callDetail(call.output))}</span> : null}
-            </span>
-            {call.running ? (
-              <span className="activity__pending">{translate("выполняется…")}</span>
-            ) : null}
-          </li>
-        ))}
-      </ol>
-
       {open ? (
-        <ol className="activity__outputs" aria-label={translate("Результаты шагов")}>
-          {calls.map((call, index) => (
-            <li key={`${call.tool}-${index}`}>
-              <pre className="activity__output">{call.output || translate("без вывода")}</pre>
-            </li>
-          ))}
+        <ol className="activity__calls" aria-label={translate("Шаги работы модели")}>
+          {calls.map((call, index) => {
+            const isExpanded = expandedCalls.has(index)
+            const detail = callDetail(call.output)
+            return (
+              <li key={`${call.tool}-${index}`} className="activity__call">
+                <button
+                  type="button"
+                  className="activity__call-toggle"
+                  onClick={() => toggleCall(index)}
+                  aria-expanded={isExpanded}
+                >
+                  <span className="activity__call-icon" aria-hidden="true">{call.running ? '◌' : '·'}</span>
+                  <span className="activity__call-copy">
+                    <span className="activity__tool">{translate(toolLabel(call.tool))}</span>
+                    {detail ? <span className="activity__detail">{translate(detail)}</span> : null}
+                  </span>
+                  {call.running ? (
+                    <span className="activity__pending">{translate("выполняется…")}</span>
+                  ) : null}
+                  <span className="activity__chevron" aria-hidden="true">
+                    <UiIcon name={isExpanded ? 'chevron-down' : 'chevron-right'} size={12} />
+                  </span>
+                </button>
+                {isExpanded ? (
+                  <pre className="activity__output">{call.output || translate("без вывода")}</pre>
+                ) : null}
+              </li>
+            )
+          })}
         </ol>
       ) : null}
     </div>

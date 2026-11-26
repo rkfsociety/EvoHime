@@ -21,24 +21,44 @@ describe('activity line', () => {
     expect(screen.queryByText('filesystem_read')).toBeNull()
   })
 
-  it('sums a finished stretch into one line and opens details on click', async () => {
+  it('hides the call list initially, then expands the list and individual call outputs on demand', async () => {
     render(
       <ActivityLine
         running={false}
         calls={[
-          { tool: 'filesystem_list', output: 'src', running: false },
+          { tool: 'filesystem_list', output: 'src-list-output', running: false },
           { tool: 'filesystem_read', output: '# EvoHime', running: false }
         ]}
       />
     )
 
-    expect(screen.getByText('2 действия · смотрю содержимое папки, читаю файл')).toBeTruthy()
-    // Output stays hidden until asked for.
+    const summaryButton = screen.getByRole('button', {
+      name: /2 действия · смотрю содержимое папки, читаю файл/
+    })
+    expect(summaryButton).toBeTruthy()
+    expect(summaryButton.getAttribute('aria-expanded')).toBe('false')
+
+    // Neither the list of calls nor their outputs are visible until expanded.
+    expect(screen.queryByText('Смотрю содержимое папки')).toBeNull()
+    expect(screen.queryByText('Читаю файл')).toBeNull()
+    expect(screen.queryByText('src-list-output')).toBeNull()
     expect(screen.queryByText('# EvoHime')).toBeNull()
 
-    await userEvent.click(screen.getByRole('button'))
+    await userEvent.click(summaryButton)
 
+    expect(summaryButton.getAttribute('aria-expanded')).toBe('true')
+    const listStep = screen.getByRole('button', { name: /Смотрю содержимое папки/ })
+    const readStep = screen.getByRole('button', { name: /Читаю файл/ })
+    expect(listStep.getAttribute('aria-expanded')).toBe('false')
+    expect(readStep.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText('src-list-output')).toBeNull()
+    expect(screen.queryByText('# EvoHime')).toBeNull()
+
+    await userEvent.click(readStep)
+
+    expect(readStep.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText('# EvoHime')).toBeTruthy()
+    expect(screen.queryByText('src-list-output')).toBeNull()
   })
 
   it('falls back to the identifier of a tool it does not know', () => {

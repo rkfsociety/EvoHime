@@ -1718,11 +1718,32 @@ body {
 
 .activity__call {
   display: flex;
-  align-items: baseline;
-  gap: 7px;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
   color: var(--fg-muted);
   font-size: 12px;
+}
+
+.activity__call-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 6px 2px 3px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity__call-toggle:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
 }
 
 .activity__call-icon {
@@ -1760,18 +1781,9 @@ body {
   font-size: 12px;
 }
 
-.activity__outputs {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin: 3px 0 2px;
-  padding: 0 0 0 21px;
-  list-style: none;
-}
-
 .activity__output {
   max-height: 220px;
-  margin: 0;
+  margin: 0 0 2px 17px;
   padding: 10px;
   overflow: auto;
   background: var(--bg-sunken);
