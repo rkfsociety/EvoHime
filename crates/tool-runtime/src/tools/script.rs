@@ -546,4 +546,24 @@ mod tests {
         let resolved = resolve_on_path("definitely-not-a-real-binary-evohime");
         assert_eq!(resolved, "definitely-not-a-real-binary-evohime");
     }
+
+    #[test]
+    fn script_cwd_accepts_dot_as_workspace_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: uuid::Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
+        };
+
+        let resolved = resolve_workspace_script(&ctx, ".").expect("`.` must resolve to root");
+        assert_eq!(resolved, dir.path().canonicalize().unwrap());
+    }
 }

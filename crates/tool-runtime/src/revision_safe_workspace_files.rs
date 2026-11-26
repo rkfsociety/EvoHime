@@ -139,6 +139,16 @@ fn resolve(
     if write {
         std::fs::create_dir_all(&root).map_err(RevisionError::Io)?;
     }
+    if relative_path
+        .components()
+        .all(|c| matches!(c, std::path::Component::CurDir))
+    {
+        if !write {
+            reject_symlink(&root)?;
+        }
+        let canonical_root = root.canonicalize()?;
+        return Ok((namespace, ".".to_owned(), canonical_root));
+    }
     let candidate = root.join(relative_path);
     let parent = candidate.parent().ok_or(RevisionError::InvalidPath)?;
     let existing_parent = if write {
@@ -478,5 +488,19 @@ mod tests {
             Err(RevisionError::Escape)
         ));
         assert_eq!(std::fs::read(&target).unwrap(), b"content");
+    }
+
+    #[test]
+    fn resolve_logical_accepts_current_dir_as_namespace_root() {
+        let dir = tempdir().unwrap();
+        let ctx = context(dir.path());
+        let expected_root = dir.path().canonicalize().unwrap();
+
+        for dot in [".", "./", "workspace/."] {
+            let (ns, rel, resolved) = resolve_logical(&ctx, dot, false).expect(dot);
+            assert_eq!(ns, Namespace::Workspace);
+            assert_eq!(rel, ".");
+            assert_eq!(resolved, expected_root);
+        }
     }
 }
