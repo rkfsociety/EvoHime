@@ -118,11 +118,12 @@ function computeLanePose(
 
 export interface TrafficSimulationState {
   readonly vehicles: Map<string, ActiveVehicle>
+  readonly completedDispatchIds: Set<string>
   lastRevision: number
 }
 
 export function createTrafficSimulationState(): TrafficSimulationState {
-  return { vehicles: new Map(), lastRevision: -1 }
+  return { vehicles: new Map(), completedDispatchIds: new Set(), lastRevision: -1 }
 }
 
 function resolveAgentCellNodeId(
@@ -184,10 +185,13 @@ export function stepTrafficSimulation(
   dtSec: number,
   timeSec: number,
   timeScale: number,
-  onDispatchArrived?: (dispatchId: string) => void
+  onDispatchArrived?: (dispatchId: string) => void,
+  oneShotDispatches = false
 ): void {
+  const isOneShot = oneShotDispatches || Boolean(onDispatchArrived)
   if (world.paused || world.activeDispatches.length === 0) {
     state.vehicles.clear()
+    state.completedDispatchIds.clear()
     state.lastRevision = world.revision
     return
   }
@@ -204,10 +208,15 @@ export function stepTrafficSimulation(
       state.vehicles.delete(existingId)
     }
   }
+  for (const completedId of state.completedDispatchIds) {
+    if (!activeIds.has(completedId)) {
+      state.completedDispatchIds.delete(completedId)
+    }
+  }
 
   let spawnIndex = 0
   for (const dispatch of world.activeDispatches) {
-    if (state.vehicles.has(dispatch.id)) {
+    if (state.vehicles.has(dispatch.id) || state.completedDispatchIds.has(dispatch.id)) {
       spawnIndex += 1
       continue
     }
@@ -216,9 +225,9 @@ export function stepTrafficSimulation(
       spawnIndex += 1
       continue
     }
-    // При одноразовых реальных поездках машина выезжает строго от старта (Цитадели);
+    // При одноразовых реальных поездках машина выезжает строго от старта (Цитадели или дома агента);
     // в режиме бесконечной симуляции сдвигаем старт, чтобы машины не скапливались.
-    const initialSegment = onDispatchArrived ? 0 : (spawnIndex * 2) % (waypoints.length - 1)
+    const initialSegment = isOneShot ? 0 : (spawnIndex * 2) % (waypoints.length - 1)
     const startNode = graph.nodes.get(waypoints[initialSegment] ?? '')
     const nextNode = graph.nodes.get(waypoints[initialSegment + 1] ?? '')
     if (!startNode || !nextNode) {
@@ -226,7 +235,7 @@ export function stepTrafficSimulation(
       continue
     }
     const initialSegLen = Math.max(1, Math.hypot(nextNode.x - startNode.x, nextNode.y - startNode.y))
-    const initialProgress = onDispatchArrived ? 0 : Math.min(initialSegLen * 0.45, ((spawnIndex % 3) + 1) * 18)
+    const initialProgress = isOneShot ? 0 : Math.min(initialSegLen * 0.45, ((spawnIndex % 3) + 1) * 18)
     const initEdge = graph.adjacency.get(waypoints[initialSegment] ?? '')?.find((e) => e.toId === waypoints[initialSegment + 1])?.edge
     const initPose = computeLanePose(
       startNode.x,
@@ -339,7 +348,7 @@ export function stepTrafficSimulation(
         vehicle.segmentIndex += 1
         crossedSegment = true
         if (vehicle.segmentIndex >= vehicle.waypoints.length - 1) {
-          if (onDispatchArrived) {
+          if (isOneShot) {
             arrivedDispatchIds.push(vehicle.dispatchId)
             break
           }
@@ -431,10 +440,11 @@ export function stepTrafficSimulation(
     }
   }
 
-  if (onDispatchArrived && arrivedDispatchIds.length > 0) {
+  if (isOneShot && arrivedDispatchIds.length > 0) {
     for (const dispatchId of arrivedDispatchIds) {
+      state.completedDispatchIds.add(dispatchId)
       state.vehicles.delete(dispatchId)
-      onDispatchArrived(dispatchId)
+      onDispatchArrived?.(dispatchId)
     }
   }
 }

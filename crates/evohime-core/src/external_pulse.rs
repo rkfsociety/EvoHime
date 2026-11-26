@@ -81,6 +81,19 @@ impl ExternalHiveObservationProxy {
         .await
     }
 
+    /// Dispatches a return vehicle from the delegated agent back to the Queen Citadel.
+    pub async fn complete_agent_task(
+        &self,
+        role: &str,
+        topic: &str,
+    ) -> Result<evohime_hive_contract::honeycomb::HoneycombTripStatus, String> {
+        self.send_json_request(HiveObservationControlRequest::CompleteAgentTask {
+            role: role.to_owned(),
+            topic: topic.to_owned(),
+        })
+        .await
+    }
+
     async fn send_request(
         &self,
         request: HiveObservationControlRequest,

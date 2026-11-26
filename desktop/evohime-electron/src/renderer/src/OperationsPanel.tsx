@@ -3293,129 +3293,11 @@ export function HiveDashboard({
       && (event.eventType !== 'tool.output' || /^(resource not found|tool execution failed|permission denied)/i.test(String(eventBody(event)['output'] ?? '')))),
     observedAt, observedAtMs, 40, true, hiveChatTaskIds, observedAtForHiveEvent, hive?.activeAgents
   ).map((entry) => ({ ...entry, text: entry.text.replace(/ · (?:eva-pulse-[\w-]+|task-[\w-]+)$/, '') }))
-  const revealedActivityIdsRef = useRef<Set<string>>(new Set())
-  const activityBaselineInitializedRef = useRef(false)
-  const pendingActivityQueueRef = useRef<HiveLogEntry[]>([])
-  const queuedActivityIdsRef = useRef<Set<string>>(new Set())
-  const waitingDispatchIdRef = useRef<string | null>(null)
-  const activityArrivalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [revealedActivityVersion, setRevealedActivityVersion] = useState(0)
-  const [activeActivityDispatch, setActiveActivityDispatch] = useState<import('@shared/hive-city-map').HoneycombVehicleDispatch | null>(null)
-
   const activeAgentsCount = hive?.activeAgents.length ?? 0
 
-  const buildActivityDispatch = useCallback((entry: HiveLogEntry): import('@shared/hive-city-map').HoneycombVehicleDispatch | null => {
-    if (!proactiveEvolutionEnabled || paused || activeAgentsCount === 0) return null
-    const currentWorld = honeycombWorldRef.current
-    if (!currentWorld || currentWorld.cities.length === 0) return null
-    const primaryCity = currentWorld.cities.find((c) => c.id === currentWorld.primaryCityId) ?? currentWorld.cities[0]
-    if (!primaryCity) return null
-
-    const lower = entry.text.toLowerCase()
-    const isTerminalOrError = entry.level === 'warning'
-      || /ошибк|остановлен|не смогл|прерван|отмен|завершена|stopped|failed|error/i.test(lower)
-    if (isTerminalOrError) return null
-
-    const preferredRole: import('@shared/hive-city-map').HoneycombAgentRole =
-      /читает|анализ|ищет|проверяет|исслед/i.test(lower)
-        ? 'analyst'
-        : /делегир|план|стратег/i.test(lower)
-          ? 'strategist'
-          : 'executor'
-    const targetSector =
-      primaryCity.sectors.find((s) => s.role === preferredRole)
-      ?? primaryCity.sectors[0]
-    const targetNodeId =
-      targetSector?.id
-      ?? primaryCity.modules[0]?.id
-      ?? `${primaryCity.id}:ring:1:n:6`
-    const agentId = targetSector?.agents[0]?.id ?? `queen-activity-${preferredRole}`
-
-    return {
-      id: `activity-${entry.id}`,
-      cityId: primaryCity.id,
-      agentId,
-      role: preferredRole,
-      cargo: preferredRole === 'analyst' ? 'analysis' : preferredRole === 'strategist' ? 'decision' : 'task',
-      fromNodeId: `${primaryCity.id}:citadel`,
-      toNodeId: targetNodeId,
-      startedAtMs: Date.now()
-    }
-  }, [activeAgentsCount, paused, proactiveEvolutionEnabled])
-
-  const advanceActivityQueue = useCallback((): void => {
-    while (waitingDispatchIdRef.current === null && pendingActivityQueueRef.current.length > 0) {
-      const next = pendingActivityQueueRef.current.shift()
-      if (!next) break
-      queuedActivityIdsRef.current.delete(next.id)
-      revealedActivityIdsRef.current.add(next.id)
-      setRevealedActivityVersion((v) => v + 1)
-
-      const dispatch = buildActivityDispatch(next)
-      if (dispatch) {
-        waitingDispatchIdRef.current = dispatch.id
-        setActiveActivityDispatch(dispatch)
-        if (activityArrivalTimerRef.current !== null) {
-          clearTimeout(activityArrivalTimerRef.current)
-        }
-        activityArrivalTimerRef.current = setTimeout(() => {
-          if (waitingDispatchIdRef.current === dispatch.id) {
-            waitingDispatchIdRef.current = null
-            setActiveActivityDispatch(null)
-            activityArrivalTimerRef.current = null
-            advanceActivityQueue()
-          }
-        }, 12_000)
-        return
-      }
-    }
-  }, [buildActivityDispatch])
-
-  const handleSceneDispatchArrived = useCallback((dispatchId: string): void => {
-    if (waitingDispatchIdRef.current !== dispatchId) return
-    if (activityArrivalTimerRef.current !== null) {
-      clearTimeout(activityArrivalTimerRef.current)
-      activityArrivalTimerRef.current = null
-    }
-    waitingDispatchIdRef.current = null
-    setActiveActivityDispatch(null)
-    advanceActivityQueue()
-  }, [advanceActivityQueue])
-
-  useEffect(() => {
-    if (!activityBaselineInitializedRef.current) {
-      activityBaselineInitializedRef.current = true
-      for (const entry of rawActivity) {
-        revealedActivityIdsRef.current.add(entry.id)
-      }
-      setRevealedActivityVersion((v) => v + 1)
-      return
-    }
-    const newEntries = rawActivity.filter(
-      (entry) => !revealedActivityIdsRef.current.has(entry.id) && !queuedActivityIdsRef.current.has(entry.id)
-    )
-    if (newEntries.length === 0) return
-    // rawActivity отсортирован от новых к старым, в очередь ставим в хронологическом порядке.
-    for (const entry of [...newEntries].reverse()) {
-      queuedActivityIdsRef.current.add(entry.id)
-      pendingActivityQueueRef.current.push(entry)
-    }
-    advanceActivityQueue()
-  }, [advanceActivityQueue, rawActivity])
-
-  useEffect(() => {
-    return () => {
-      if (activityArrivalTimerRef.current !== null) {
-        clearTimeout(activityArrivalTimerRef.current)
-      }
-    }
-  }, [])
-
   const activity = useMemo(
-    () => rawActivity.filter(
-      (entry) => revealedActivityIdsRef.current.has(entry.id) && !clearedLogIdSet.has(entry.id)
-    ),
-    [clearedLogIdSet, rawActivity, revealedActivityVersion]
+    () => rawActivity.filter((entry) => !clearedLogIdSet.has(entry.id)),
+    [clearedLogIdSet, rawActivity]
   )
   const latestLogId = logs[0]?.id ?? null
   useEffect(() => {
@@ -3626,16 +3508,6 @@ export function HiveDashboard({
   const sceneWorld = useMemo<import('@shared/hive-city-map').HoneycombWorldState | undefined>(() => {
     if (!honeycombWorld) return undefined
     const hasLiveHiveWork = proactiveEvolutionEnabled && !paused && (queenWorking || activeAgentsCount > 0)
-    if (activeActivityDispatch && hasLiveHiveWork && activeAgentsCount > 0) {
-      return {
-        ...honeycombWorld,
-        paused: false,
-        activeDispatches: [
-          ...honeycombWorld.activeDispatches.filter((d) => d.id !== activeActivityDispatch.id),
-          activeActivityDispatch
-        ]
-      }
-    }
     if (!hasLiveHiveWork || activeAgentsCount === 0) {
       return {
         ...honeycombWorld,
@@ -3644,7 +3516,7 @@ export function HiveDashboard({
       }
     }
     return honeycombWorld
-  }, [activeActivityDispatch, activeAgentsCount, honeycombWorld, paused, proactiveEvolutionEnabled, queenWorking])
+  }, [activeAgentsCount, honeycombWorld, paused, proactiveEvolutionEnabled, queenWorking])
 
   return (
     <section className="hive-console" aria-label={translate('Улей (Hive)')}>
@@ -3663,7 +3535,7 @@ export function HiveDashboard({
             cityMap={cityMap}
             suppressLegacyPanorama
             activeAgents={hive?.activeAgents ?? EMPTY_ACTIVE_AGENTS}
-            onDispatchArrived={handleSceneDispatchArrived}
+            oneShotDispatches
           />
         </section>
 

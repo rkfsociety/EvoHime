@@ -62,4 +62,12 @@ pub enum HiveObservationControlRequest {
         /// Dispatched vehicle trip identifier returned by `DispatchAgentTask`.
         trip_id: String,
     },
+    /// Dispatches a return vehicle from the agent cell back to the Queen Citadel
+    /// carrying the stage result (`report`, `analysis`, `decision`).
+    CompleteAgentTask {
+        /// Delegated Hive role slug (e.g. `researcher`, `planner`, `implementer`).
+        role: String,
+        /// Short task topic used when dispatching the agent.
+        topic: String,
+    },
 }

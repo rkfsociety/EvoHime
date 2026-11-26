@@ -149,22 +149,14 @@ fn role_requires_mutation_session(role: &str, allowed_tools: &[String]) -> bool 
     })
 }
 
-async fn wait_for_hive_vehicle_delivery(
-    role: &str,
-    topic: &str,
+async fn wait_for_trip_arrival(
+    proxy: &crate::external_pulse::ExternalHiveObservationProxy,
+    initial: evohime_hive_contract::honeycomb::HoneycombTripStatus,
     cancellation: &tokio_util::sync::CancellationToken,
 ) -> bool {
     const DELIVERY_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
     const MAX_DELIVERY_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 
-    let proxy = crate::external_pulse::ExternalHiveObservationProxy::new();
-    let initial = match proxy.dispatch_agent_task(role, topic).await {
-        Ok(status) => status,
-        Err(_) => {
-            // When evohime-hive-daemon is not running (e.g. unit tests or CLI), do not block delegation.
-            return true;
-        }
-    };
     if initial.arrived || initial.trip_id.is_empty() {
         return true;
     }
@@ -187,6 +179,34 @@ async fn wait_for_hive_vehicle_delivery(
             Err(_) => return true,
         }
     }
+}
+
+async fn wait_for_hive_vehicle_delivery(
+    role: &str,
+    topic: &str,
+    cancellation: &tokio_util::sync::CancellationToken,
+) -> bool {
+    let proxy = crate::external_pulse::ExternalHiveObservationProxy::new();
+    let initial = match proxy.dispatch_agent_task(role, topic).await {
+        Ok(status) => status,
+        Err(_) => {
+            // When evohime-hive-daemon is not running (e.g. unit tests or CLI), do not block delegation.
+            return true;
+        }
+    };
+    wait_for_trip_arrival(&proxy, initial, cancellation).await
+}
+
+async fn wait_for_hive_vehicle_return(
+    role: &str,
+    topic: &str,
+    cancellation: &tokio_util::sync::CancellationToken,
+) {
+    let proxy = crate::external_pulse::ExternalHiveObservationProxy::new();
+    let Ok(initial) = proxy.complete_agent_task(role, topic).await else {
+        return;
+    };
+    let _ = wait_for_trip_arrival(&proxy, initial, cancellation).await;
 }
 
 fn validate_role_slug(raw: &str) -> Result<String, ToolError> {
@@ -440,6 +460,7 @@ impl ToolAgent {
 
         match result {
             Ok(summary) => {
+                wait_for_hive_vehicle_return(&role, &display_name, cancellation).await;
                 self.record_child_workflow_projection(
                     parent_task_id,
                     &child_task_id,

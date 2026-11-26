@@ -66,6 +66,7 @@ export interface HiveCitySceneProps {
   readonly activeAgents?: readonly HiveCityAgentHint[] | undefined
   readonly queenOptimized?: boolean | undefined
   readonly onDispatchArrived?: ((dispatchId: string) => void) | undefined
+  readonly oneShotDispatches?: boolean | undefined
 }
 
 interface AnimatedCellPose {
@@ -144,7 +145,8 @@ export function HiveCityScene({
   queenWorking = false,
   queenOverlay,
   timeScale = 1,
-  onDispatchArrived
+  onDispatchArrived,
+  oneShotDispatches = false
 }: HiveCitySceneProps): React.JSX.Element {
   const normalizedStatus = status.trim() || 'idle'
   const world = useMemo(
@@ -173,6 +175,7 @@ export function HiveCityScene({
   const roadGraphRef = useRef(roadGraph)
   const timeScaleRef = useRef(timeScale)
   const onDispatchArrivedRef = useRef(onDispatchArrived)
+  const oneShotDispatchesRef = useRef(oneShotDispatches)
 
   worldRef.current = world
   placementsRef.current = placements
@@ -180,6 +183,7 @@ export function HiveCityScene({
   roadGraphRef.current = roadGraph
   timeScaleRef.current = timeScale
   onDispatchArrivedRef.current = onDispatchArrived
+  oneShotDispatchesRef.current = oneShotDispatches
 
   const [zoomUi, setZoomUi] = useState(0.45)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -278,7 +282,8 @@ export function HiveCityScene({
         dtSec,
         simTimeSec,
         currentScale,
-        onDispatchArrivedRef.current
+        onDispatchArrivedRef.current,
+        oneShotDispatchesRef.current
       )
 
       const dpr = window.devicePixelRatio || 1

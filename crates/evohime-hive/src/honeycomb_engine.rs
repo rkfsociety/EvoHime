@@ -52,6 +52,16 @@ impl RelayStage {
         }
     }
 
+    /// Returns the cargo carried back from the agent to the Queen upon stage completion.
+    pub const fn return_cargo(self) -> HoneycombCargoType {
+        match self {
+            Self::Execution => HoneycombCargoType::Report,
+            Self::Analysis => HoneycombCargoType::Analysis,
+            Self::Strategy => HoneycombCargoType::Decision,
+            Self::DecisionCoordination => HoneycombCargoType::Task,
+        }
+    }
+
     /// Advances to the next stage in the Queen's relay cycle.
     pub const fn next(self) -> Self {
         match self {
@@ -77,6 +87,7 @@ pub struct HoneycombEngine {
     last_remodel_at_ms: HashMap<String, i64>,
     last_structure_hashes: HashMap<String, String>,
     trip_arrivals_ms: HashMap<String, i64>,
+    return_trip_ids: BTreeSet<String>,
     paused_since_ms: Option<i64>,
     next_id_seq: u64,
 }
@@ -99,6 +110,7 @@ impl HoneycombEngine {
             last_remodel_at_ms: HashMap::new(),
             last_structure_hashes: HashMap::new(),
             trip_arrivals_ms: HashMap::new(),
+            return_trip_ids: BTreeSet::new(),
             paused_since_ms: None,
             next_id_seq: 1,
         };
@@ -136,6 +148,7 @@ impl HoneycombEngine {
         self.world.queen_working = next_queen_working;
         if should_park {
             self.world.active_dispatches.clear();
+            self.return_trip_ids.clear();
             for city in &mut self.world.cities {
                 for sector in &mut city.sectors {
                     for agent in &mut sector.agents {
@@ -224,6 +237,7 @@ impl HoneycombEngine {
     }
 
     /// Polls whether the vehicle for `trip_id` has arrived at its destination cell.
+    /// Once arrived, clears the active dispatch so the vehicle parks until the next leg.
     pub fn poll_trip_arrival(&mut self, trip_id: &str, now_ms: i64) -> HoneycombTripStatus {
         self.sync_pause_clock(now_ms);
         let agent_id = self
@@ -233,7 +247,187 @@ impl HoneycombEngine {
             .find(|d| d.id == trip_id)
             .map(|d| d.agent_id.clone())
             .unwrap_or_default();
-        self.build_trip_status(trip_id, &agent_id, now_ms)
+        let status = self.build_trip_status(trip_id, &agent_id, now_ms);
+        if status.arrived {
+            self.finish_arrived_trip(trip_id, now_ms);
+        }
+        status
+    }
+
+    /// Dispatches a return vehicle from the delegated agent's cell back to the Queen
+    /// Citadel carrying the stage output (`report`, `analysis`, or `decision`).
+    pub fn complete_delegation(
+        &mut self,
+        role: &str,
+        topic: &str,
+        now_ms: i64,
+    ) -> Result<HoneycombTripStatus, HiveDbError> {
+        if self.world.paused {
+            return Ok(HoneycombTripStatus {
+                trip_id: String::new(),
+                agent_id: String::new(),
+                arrived: true,
+                eta_ms: 0,
+            });
+        }
+        self.sync_pause_clock(now_ms);
+        let stage = relay_stage_for_role_slug(role);
+        let target_role = stage.role();
+        let primary_id = self.world.primary_city_id.clone();
+
+        let matched = self
+            .world
+            .cities
+            .iter()
+            .find(|c| c.id == primary_id)
+            .and_then(|city| {
+                let exact =
+                    city.sectors
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, s)| s.role == target_role)
+                        .find_map(|(sector_idx, s)| {
+                            s.agents.iter().find(|a| a.topic == topic).map(|a| {
+                                (a.id.clone(), s.id.clone(), sector_idx, city.sectors.len())
+                            })
+                        });
+                exact.or_else(|| {
+                    city.sectors
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, s)| s.role == target_role)
+                        .find_map(|(sector_idx, s)| {
+                            s.agents.first().map(|a| {
+                                (a.id.clone(), s.id.clone(), sector_idx, city.sectors.len())
+                            })
+                        })
+                })
+            });
+
+        let Some((agent_id, sector_id, sector_idx, sector_count)) = matched else {
+            return Ok(HoneycombTripStatus {
+                trip_id: String::new(),
+                agent_id: String::new(),
+                arrived: true,
+                eta_ms: 0,
+            });
+        };
+
+        // Remove any prior active dispatch for this agent before starting the return trip.
+        let mut stale_ids = Vec::new();
+        self.world.active_dispatches.retain(|existing| {
+            if existing.agent_id == agent_id {
+                stale_ids.push(existing.id.clone());
+                false
+            } else {
+                true
+            }
+        });
+        for stale in stale_ids {
+            self.trip_arrivals_ms.remove(&stale);
+            self.return_trip_ids.remove(&stale);
+        }
+
+        let trip_id = self.alloc_id("return");
+        let dispatch = HoneycombVehicleDispatch {
+            id: trip_id.clone(),
+            city_id: primary_id.clone(),
+            agent_id: agent_id.clone(),
+            role: target_role,
+            cargo: stage.return_cargo(),
+            from_node_id: sector_id,
+            to_node_id: format!("{primary_id}:citadel"),
+            final_target_node_id: None,
+            started_at_ms: now_ms,
+        };
+
+        if let Some(city) = self.world.cities.iter_mut().find(|c| c.id == primary_id) {
+            for sector in &mut city.sectors {
+                if let Some(agent) = sector.agents.iter_mut().find(|a| a.id == agent_id) {
+                    agent.busy = true;
+                    agent.active_trip_id = Some(trip_id.clone());
+                }
+            }
+        }
+
+        let travel_ms = self.estimate_trip_travel_ms(sector_idx, sector_count, now_ms);
+        self.trip_arrivals_ms
+            .insert(trip_id.clone(), now_ms.saturating_add(travel_ms));
+        self.return_trip_ids.insert(trip_id.clone());
+        self.world.active_dispatches.push(dispatch.clone());
+        self.commit_events(
+            &[HoneycombMutationEvent::VehicleDispatch { dispatch }],
+            now_ms,
+        )?;
+        Ok(self.build_trip_status(&trip_id, &agent_id, now_ms))
+    }
+
+    /// Clears any dispatched trips whose travel deadline has elapsed.
+    pub fn sweep_arrived_trips(&mut self, now_ms: i64) {
+        if self.world.paused {
+            return;
+        }
+        self.sync_pause_clock(now_ms);
+        let expired: Vec<String> = self
+            .trip_arrivals_ms
+            .iter()
+            .filter_map(|(trip_id, &arrival_ms)| (now_ms >= arrival_ms).then(|| trip_id.clone()))
+            .collect();
+        for trip_id in expired {
+            self.finish_arrived_trip(&trip_id, now_ms);
+        }
+    }
+
+    /// Returns `true` when the primary city already contains an agent with `(role, topic)`.
+    pub fn has_agent(&self, role: HoneycombAgentRole, topic: &str) -> bool {
+        self.world
+            .cities
+            .iter()
+            .find(|c| c.id == self.world.primary_city_id)
+            .map(|city| {
+                city.sectors
+                    .iter()
+                    .filter(|s| s.role == role)
+                    .any(|s| s.agents.iter().any(|a| a.topic == topic))
+            })
+            .unwrap_or(false)
+    }
+
+    fn finish_arrived_trip(&mut self, trip_id: &str, now_ms: i64) {
+        if self.world.paused {
+            return;
+        }
+        let Some(&arrival_ms) = self.trip_arrivals_ms.get(trip_id) else {
+            return;
+        };
+        if now_ms < arrival_ms {
+            return;
+        }
+        self.trip_arrivals_ms.remove(trip_id);
+        let is_return = self.return_trip_ids.remove(trip_id);
+        let Some(pos) = self
+            .world
+            .active_dispatches
+            .iter()
+            .position(|d| d.id == trip_id)
+        else {
+            return;
+        };
+        let removed = self.world.active_dispatches.remove(pos);
+        for city in &mut self.world.cities {
+            for sector in &mut city.sectors {
+                if let Some(agent) = sector.agents.iter_mut().find(|a| a.id == removed.agent_id) {
+                    if agent.active_trip_id.as_deref() == Some(trip_id) {
+                        agent.active_trip_id = None;
+                    }
+                    if is_return {
+                        agent.busy = false;
+                    }
+                }
+            }
+        }
+        self.world.revision = self.world.revision.saturating_add(1);
+        let _ = self.db.save_world_state(&self.world);
     }
 
     fn build_trip_status(&self, trip_id: &str, agent_id: &str, now_ms: i64) -> HoneycombTripStatus {
@@ -903,7 +1097,8 @@ fn city_outer_hex_radius(city: &HoneycombCity) -> f64 {
     content_radius / (std::f64::consts::FRAC_PI_6).cos()
 }
 
-fn relay_stage_for_role_slug(role: &str) -> RelayStage {
+/// Maps a delegated role slug (English or Russian) to its [`RelayStage`].
+pub fn relay_stage_for_role_slug(role: &str) -> RelayStage {
     let lower = role.trim().to_ascii_lowercase();
     if lower.contains("analyst")
         || lower.contains("reviewer")
@@ -1196,5 +1391,45 @@ mod tests {
         let done = engine.poll_trip_arrival(&initial.trip_id, 60_000);
         assert!(done.arrived);
         assert_eq!(done.eta_ms, 0);
+        assert!(engine.world().active_dispatches.is_empty());
+    }
+
+    #[test]
+    fn delegation_round_trip_drives_outbound_and_return_with_matching_role() {
+        let db = HiveDatabase::open_in_memory().expect("in-memory db");
+        let mut engine = HoneycombEngine::open(db, Some("C:/github/EvoHime"), &[]).expect("open");
+
+        let outbound = engine
+            .dispatch_for_delegation("researcher", "Исследователь Марк", 1_000)
+            .expect("outbound");
+        assert!(!outbound.arrived);
+        assert_eq!(engine.world().active_dispatches.len(), 1);
+        let out_dispatch = &engine.world().active_dispatches[0];
+        assert_eq!(out_dispatch.role, HoneycombAgentRole::Executor);
+        assert_eq!(out_dispatch.cargo, HoneycombCargoType::Task);
+        assert_eq!(out_dispatch.from_node_id, "city-eva:citadel");
+        let sector_id = out_dispatch.to_node_id.clone();
+
+        let arrived = engine.poll_trip_arrival(&outbound.trip_id, 60_000);
+        assert!(arrived.arrived);
+        assert!(engine.world().active_dispatches.is_empty());
+
+        let ret = engine
+            .complete_delegation("researcher", "Исследователь Марк", 61_000)
+            .expect("return trip");
+        assert!(!ret.arrived);
+        assert_eq!(engine.world().active_dispatches.len(), 1);
+        let ret_dispatch = &engine.world().active_dispatches[0];
+        assert_eq!(ret_dispatch.role, HoneycombAgentRole::Executor);
+        assert_eq!(ret_dispatch.cargo, HoneycombCargoType::Report);
+        assert_eq!(ret_dispatch.from_node_id, sector_id);
+        assert_eq!(ret_dispatch.to_node_id, "city-eva:citadel");
+
+        let ret_done = engine.poll_trip_arrival(&ret.trip_id, 120_000);
+        assert!(ret_done.arrived);
+        assert!(engine.world().active_dispatches.is_empty());
+        let agent = &engine.world().cities[0].sectors[0].agents[0];
+        assert!(!agent.busy);
+        assert!(agent.active_trip_id.is_none());
     }
 }

@@ -1915,6 +1915,16 @@ impl HoneycombRuntime {
         Some(guard.poll_trip_arrival(trip_id, now_ms))
     }
 
+    fn complete_delegation(
+        &self,
+        role: &str,
+        topic: &str,
+        now_ms: i64,
+    ) -> Option<evohime_hive_contract::honeycomb::HoneycombTripStatus> {
+        let mut guard = self.engine.lock().ok()?;
+        guard.complete_delegation(role, topic, now_ms).ok()
+    }
+
     fn sync_maintenance(&self, state: &HiveStateSnapshot, settings: &HiveSettings, now_ms: i64) {
         let Ok(mut guard) = self.engine.lock() else {
             return;
@@ -1926,6 +1936,7 @@ impl HoneycombRuntime {
         let (hive_active, waiting_for_limits, queen_working) = resolve_honeycomb_mode(state);
         let _ = guard.set_active_mode(hive_active, waiting_for_limits, queen_working);
         guard.sync_pause_clock(now_ms);
+        guard.sweep_arrived_trips(now_ms);
 
         if hive_active && !waiting_for_limits {
             // Сканирование и перестройка модулей проектов (с кулдауном 5 мин внутри движка).
@@ -1948,20 +1959,17 @@ impl HoneycombRuntime {
 
             if !state.active_agents.is_empty() {
                 for agent in state.active_agents.iter().take(4) {
-                    let stage = if agent.role.contains("аналит") || agent.role.contains("analyst")
-                    {
-                        evohime_hive::honeycomb_engine::RelayStage::Analysis
-                    } else if agent.role.contains("стратег") || agent.role.contains("plan") {
-                        evohime_hive::honeycomb_engine::RelayStage::Strategy
-                    } else {
-                        evohime_hive::honeycomb_engine::RelayStage::Execution
-                    };
-                    let topic = if agent.current_action.trim().is_empty() {
-                        agent.role.as_str()
-                    } else {
-                        agent.current_action.as_str()
-                    };
-                    let _ = guard.dispatch_relay_step(stage, topic, None, now_ms);
+                    let stage =
+                        evohime_hive::honeycomb_engine::relay_stage_for_role_slug(&agent.role);
+                    let topic = agent
+                        .display_name
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|name| !name.is_empty())
+                        .unwrap_or(agent.role.as_str());
+                    if !guard.has_agent(stage.role(), topic) {
+                        let _ = guard.dispatch_relay_step(stage, topic, None, now_ms);
+                    }
                 }
             }
         }
@@ -2165,6 +2173,23 @@ where
         }
         HiveObservationControlRequest::PollTripArrival { trip_id } => {
             let Some(status) = honeycomb.poll_trip_arrival(&trip_id, unix_now_ms()) else {
+                return;
+            };
+            let response_bytes = match serde_json::to_vec(&status) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    tracing::error!(error = %error, "failed to serialize HoneycombTripStatus");
+                    return;
+                }
+            };
+            let _ = tokio::time::timeout(
+                OBSERVATION_CONTROL_WRITE_TIMEOUT,
+                transport::write_frame(&mut stream, &response_bytes),
+            )
+            .await;
+        }
+        HiveObservationControlRequest::CompleteAgentTask { role, topic } => {
+            let Some(status) = honeycomb.complete_delegation(&role, &topic, unix_now_ms()) else {
                 return;
             };
             let response_bytes = match serde_json::to_vec(&status) {
