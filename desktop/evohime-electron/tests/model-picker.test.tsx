@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -497,9 +497,13 @@ describe('model picker', () => {
         />
       )
 
-      await vi.advanceTimersByTimeAsync(0)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
       expect(screen.getByRole('status').textContent).toContain('Загрузка моделей')
-      await vi.advanceTimersByTimeAsync(3000)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
 
       const catalogCalls = calls.filter((call) => call.command === 'core.listModelCatalog')
       expect(catalogCalls.length).toBeGreaterThanOrEqual(2)

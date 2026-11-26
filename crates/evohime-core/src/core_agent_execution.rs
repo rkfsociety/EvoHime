@@ -1620,7 +1620,7 @@ impl ToolAgent {
             if !unbounded_steps && iteration > self.max_iterations {
                 break;
             }
-            if unbounded_steps && iteration > 0 && iteration % self.max_iterations == 0 {
+            if unbounded_steps && iteration > 0 && iteration.is_multiple_of(self.max_iterations) {
                 write_model_trace(
                     "task.step_window_cooldown",
                     serde_json::json!({
