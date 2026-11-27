@@ -171,33 +171,47 @@ const READ_ONLY_SIGNATURE_PREFIXES: &[&str] = &[
     "git_changed_files:",
 ];
 
-/// Bounded set of recent tool-call signatures used to suppress duplicate work.
+/// Bounded window of recent tool-call signatures used to suppress duplicate work.
 pub struct RecentToolCalls {
     capacity: usize,
+    max_occurrences: usize,
     order: VecDeque<String>,
-    present: HashMap<String, ()>,
+    counts: HashMap<String, usize>,
 }
 
 impl RecentToolCalls {
-    /// Creates a recent-call window with the given maximum capacity.
+    /// Creates a recent-call window that blocks the first repeat (`max_occurrences = 1`).
     pub fn new(capacity: usize) -> Self {
+        Self::with_max_occurrences(capacity, 1)
+    }
+
+    /// Creates a recent-call window allowing up to `max_occurrences` identical calls.
+    pub fn with_max_occurrences(capacity: usize, max_occurrences: usize) -> Self {
         Self {
             capacity,
+            max_occurrences: max_occurrences.max(1),
             order: VecDeque::new(),
-            present: HashMap::new(),
+            counts: HashMap::new(),
         }
     }
 
-    /// Remembers a signature unless it is already present in the current window.
+    /// Remembers a signature unless it already reached `max_occurrences` in the window.
     pub fn remember(&mut self, signature: String) -> bool {
-        if self.present.contains_key(&signature) {
+        let count = self.counts.get(&signature).copied().unwrap_or(0);
+        if count >= self.max_occurrences {
             return false;
         }
-        self.present.insert(signature.clone(), ());
+        *self.counts.entry(signature.clone()).or_insert(0) += 1;
         self.order.push_back(signature);
         while self.order.len() > self.capacity {
             if let Some(old) = self.order.pop_front() {
-                self.present.remove(&old);
+                if let Some(existing) = self.counts.get_mut(&old) {
+                    if *existing <= 1 {
+                        self.counts.remove(&old);
+                    } else {
+                        *existing -= 1;
+                    }
+                }
             }
         }
         true
@@ -208,12 +222,13 @@ impl RecentToolCalls {
     /// Called after a successful mutation: re-reading the same path is the
     /// normal way to verify an edit and must not be treated as a duplicate.
     pub fn forget_reads(&mut self) {
+        let counts = &mut self.counts;
         self.order.retain(|signature| {
             let keep = !READ_ONLY_SIGNATURE_PREFIXES
                 .iter()
                 .any(|prefix| signature.starts_with(prefix));
             if !keep {
-                self.present.remove(signature);
+                counts.remove(signature);
             }
             keep
         });
@@ -262,6 +277,18 @@ mod recent_tests {
         assert!(
             !recent.remember("git_commit:{\"message\":\"x\"}".into()),
             "a mutation keeps its duplicate window"
+        );
+    }
+
+    #[test]
+    fn with_max_occurrences_allows_configured_repeats_before_blocking() {
+        let mut recent = RecentToolCalls::with_max_occurrences(8, 3);
+        assert!(recent.remember("git_status:{}".into()));
+        assert!(recent.remember("git_status:{}".into()));
+        assert!(recent.remember("git_status:{}".into()));
+        assert!(
+            !recent.remember("git_status:{}".into()),
+            "4th identical call inside window must be blocked"
         );
     }
 }

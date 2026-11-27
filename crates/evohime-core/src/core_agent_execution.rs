@@ -1613,8 +1613,13 @@ impl ToolAgent {
         let mut context_overrides: std::collections::HashMap<
             String,
             crate::context_budget::ModelContextOverrides,
-        > = evohime_model_gateway::config::model_rate_limits_from_env()
-            .unwrap_or_default()
+        > = self
+            .gateway
+            .default_route_rate_limits()
+            .cloned()
+            .unwrap_or_else(|| {
+                evohime_model_gateway::config::model_rate_limits_from_env().unwrap_or_default()
+            })
             .into_iter()
             .filter_map(|(model_name, limit)| {
                 let max_context_tokens = limit.context_length_tokens.filter(|&v| v > 0);
@@ -1674,7 +1679,9 @@ impl ToolAgent {
             }
         }
 
-        let mut recent_tool_calls = recovery::RecentToolCalls::new(6);
+        // Разрешаем до 3 одинаковых вызовов в окне, чтобы случайная перепроверка
+        // (например, повторный git_status) не сбивала модель; блокируем только цикл.
+        let mut recent_tool_calls = recovery::RecentToolCalls::with_max_occurrences(8, 3);
         let mut observed_file_revisions = std::collections::HashMap::<String, String>::new();
         let mut consecutive_failures = HashMap::<String, u32>::new();
         let mut escalation_remaining = HashMap::<String, u32>::new();
