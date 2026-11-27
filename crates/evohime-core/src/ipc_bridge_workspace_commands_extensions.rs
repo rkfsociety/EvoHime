@@ -1,6 +1,25 @@
 use super::*;
 
 impl IpcBridge {
+    async fn invoke_required_service(
+        &self,
+        capability_name: &str,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, IpcBridgeError> {
+        let request_id = format!("ipc-{capability_name}");
+        match self
+            .module_registry
+            .invoke_if_ready(request_id, capability_name, payload, None, |_| Ok(()))
+            .await
+        {
+            Some(Ok(value)) => Ok(value),
+            Some(Err(err)) => Err(FrameError::Io(err.to_string()).into()),
+            None => {
+                Err(FrameError::Io(format!("service_module_unavailable:{capability_name}")).into())
+            }
+        }
+    }
+
     pub(crate) async fn dispatch_runtime_intervention_pipeline(
         &self,
         operation: String,
@@ -330,10 +349,8 @@ impl IpcBridge {
             let input: serde_json::Value = serde_json::from_slice(&payload_bytes)
                 .map_err(|_| FrameError::Io("invalid_project_knowledge_notebook".into()))?;
             let validated = self
-                .module_registry
-                .invoke_if_ready("rag.notebook_validate", input, None)
-                .await
-                .map_err(|err| FrameError::Io(err.to_string()))?;
+                .invoke_required_service("rag.notebook_validate", input)
+                .await?;
             payload_bytes =
                 serde_json::to_vec(&validated).map_err(|err| FrameError::Io(err.to_string()))?;
         }
@@ -369,14 +386,11 @@ impl IpcBridge {
             let notebook: serde_json::Value = serde_json::from_slice(&stored_bytes)
                 .map_err(|_| FrameError::Io("corrupt_notebook".into()))?;
             let pin = self
-                .module_registry
-                .invoke_if_ready(
+                .invoke_required_service(
                     "rag.notebook_pin",
                     serde_json::json!({ "notebook": notebook, "run_id": run_id }),
-                    None,
                 )
-                .await
-                .map_err(|err| FrameError::Io(err.to_string()))?;
+                .await?;
             payload_bytes =
                 serde_json::to_vec(&pin).map_err(|err| FrameError::Io(err.to_string()))?;
         }
@@ -401,10 +415,8 @@ impl IpcBridge {
             let notebook: serde_json::Value = serde_json::from_slice(&out_bytes)
                 .map_err(|_| FrameError::Io("corrupt_notebook".into()))?;
             let validated = self
-                .module_registry
-                .invoke_if_ready("rag.notebook_validate", notebook, None)
-                .await
-                .map_err(|err| FrameError::Io(err.to_string()))?;
+                .invoke_required_service("rag.notebook_validate", notebook)
+                .await?;
             let id = validated.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let revision = validated
                 .get("revision")
@@ -471,10 +483,8 @@ impl IpcBridge {
             let input: serde_json::Value = serde_json::from_slice(&payload_bytes)
                 .map_err(|_| FrameError::Io("invalid_voice_input_dictation".into()))?;
             let validated = self
-                .module_registry
-                .invoke_if_ready("voice.dictation_validate", input, None)
-                .await
-                .map_err(|err| FrameError::Io(err.to_string()))?;
+                .invoke_required_service("voice.dictation_validate", input)
+                .await?;
             payload_bytes =
                 serde_json::to_vec(&validated).map_err(|err| FrameError::Io(err.to_string()))?;
         }
@@ -503,10 +513,8 @@ impl IpcBridge {
             let stored_value: serde_json::Value = serde_json::from_slice(&stored_bytes)
                 .map_err(|_| FrameError::Io("corrupt_dictation_profile".into()))?;
             let availability = self
-                .module_registry
-                .invoke_if_ready("voice.dictation_availability", stored_value, None)
-                .await
-                .map_err(|err| FrameError::Io(err.to_string()))?;
+                .invoke_required_service("voice.dictation_availability", stored_value)
+                .await?;
             return serde_json::to_vec(&availability)
                 .map_err(|err| FrameError::Io(err.to_string()))
                 .map_err(IpcBridgeError::from);
@@ -522,10 +530,8 @@ impl IpcBridge {
             let input: serde_json::Value = serde_json::from_slice(&payload_bytes)
                 .map_err(|_| FrameError::Io("invalid_offline_consolidation".into()))?;
             let validated = self
-                .module_registry
-                .invoke_if_ready("memory.consolidation_validate", input, None)
-                .await
-                .map_err(|err| FrameError::Io(err.to_string()))?;
+                .invoke_required_service("memory.consolidation_validate", input)
+                .await?;
             payload_bytes =
                 serde_json::to_vec(&validated).map_err(|err| FrameError::Io(err.to_string()))?;
         }
@@ -561,10 +567,8 @@ impl IpcBridge {
             let cycle: serde_json::Value = serde_json::from_slice(&stored_bytes)
                 .map_err(|_| FrameError::Io("corrupt_consolidation_cycle".into()))?;
             let projection = self
-                .module_registry
-                .invoke_if_ready("memory.consolidation_evaluate", cycle.clone(), None)
-                .await
-                .map_err(|err| FrameError::Io(err.to_string()))?;
+                .invoke_required_service("memory.consolidation_evaluate", cycle.clone())
+                .await?;
             payload_bytes = serde_json::to_vec(&serde_json::json!({
                 "run_id": run_id,
                 "revision": cycle.get("revision").and_then(|v| v.as_u64()).unwrap_or(0),
@@ -594,10 +598,8 @@ impl IpcBridge {
             let cycle: serde_json::Value = serde_json::from_slice(&out_bytes)
                 .map_err(|_| FrameError::Io("corrupt_consolidation_cycle".into()))?;
             let evaluated = self
-                .module_registry
-                .invoke_if_ready("memory.consolidation_evaluate", cycle, None)
-                .await
-                .map_err(|err| FrameError::Io(err.to_string()))?;
+                .invoke_required_service("memory.consolidation_evaluate", cycle)
+                .await?;
             return serde_json::to_vec(&evaluated)
                 .map_err(|err| FrameError::Io(err.to_string()))
                 .map_err(IpcBridgeError::from);
@@ -1797,18 +1799,15 @@ impl IpcBridge {
             let record: serde_json::Value = serde_json::from_slice(&payload_bytes)
                 .map_err(|_| FrameError::Io("invalid_experience_record".into()))?;
             let validated = self
-                .module_registry
-                .invoke_if_ready(
+                .invoke_required_service(
                     "memory.replay_validate",
                     serde_json::json!({
                         "scope": request.scope,
                         "scope_id": request.scope_id,
                         "record": record
                     }),
-                    None,
                 )
-                .await
-                .map_err(|err| FrameError::Io(err.to_string()))?;
+                .await?;
             payload_bytes =
                 serde_json::to_vec(&validated).map_err(|err| FrameError::Io(err.to_string()))?;
         }
@@ -1842,14 +1841,11 @@ impl IpcBridge {
                 .cloned()
                 .unwrap_or_else(|| serde_json::json!([]));
             let projected = self
-                .module_registry
-                .invoke_if_ready(
+                .invoke_required_service(
                     "memory.replay_context",
                     serde_json::json!({ "records": records }),
-                    None,
                 )
-                .await
-                .map_err(|err| FrameError::Io(err.to_string()))?;
+                .await?;
             return serde_json::to_vec(&projected)
                 .map_err(|err| FrameError::Io(err.to_string()))
                 .map_err(IpcBridgeError::from);
