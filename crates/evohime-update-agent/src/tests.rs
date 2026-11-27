@@ -1194,6 +1194,12 @@ fn stage_updates_downloads_modules_in_candidate_order() {
 
     let shell_zip = build_zip(&[("EvoHime.exe", b"mz"), ("resources/app.asar", b"asar")]);
     let ui_zip = build_zip(&[("index.html", b"<!doctype html>")]);
+    let assets_zip = build_zip(&[("manifest.json", br#"{"schema_version":1}"#)]);
+    let assets_dir = tempfile::tempdir().expect("tempdir");
+    let assets_zip_path = assets_dir.path().join("core-assets.zip");
+    std::fs::write(&assets_zip_path, &assets_zip).expect("write core-assets zip");
+    super::extract_core_assets(&assets_zip_path, &assets_dir.path().join("out"))
+        .expect("core-assets should extract without index.html");
 
     let make_candidate = |module: &str, artifact: &str, bytes: &[u8]| UpdateCandidate {
         module: module.to_owned(),

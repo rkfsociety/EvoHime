@@ -117,22 +117,35 @@ pub(super) fn extract_ui_bundle(archive_path: &Path, destination: &Path) -> Resu
 }
 
 pub(super) fn extract_core_assets(archive_path: &Path, destination: &Path) -> Result<(), String> {
-    extract_ui_bundle(archive_path, destination)?;
-    if !destination.join("manifest.json").is_file() {
+    let result = (|| {
+        extract_zip_bounded(archive_path, destination, "core-assets archive")?;
+        if !destination.join("manifest.json").is_file() {
+            return Err("updater: core-assets archive не содержит manifest.json".to_owned());
+        }
+        Ok(())
+    })();
+    if result.is_err() {
         let _ = fs::remove_dir_all(destination);
-        return Err("updater: core-assets archive не содержит manifest.json".to_owned());
     }
-    Ok(())
+    result
 }
 
 pub(super) fn extract_ui_bundle_inner(
     archive_path: &Path,
     destination: &Path,
 ) -> Result<(), String> {
+    extract_zip_bounded(archive_path, destination, "UI archive")?;
+    if !destination.join("index.html").is_file() {
+        return Err("updater: UI archive не содержит index.html".to_owned());
+    }
+    Ok(())
+}
+
+fn extract_zip_bounded(archive_path: &Path, destination: &Path, label: &str) -> Result<(), String> {
     let archive_file = fs::File::open(archive_path).map_err(|error| error.to_string())?;
     let mut archive = zip::ZipArchive::new(archive_file).map_err(|error| error.to_string())?;
     if archive.len() > MAX_ARCHIVE_ENTRIES {
-        return Err("updater: UI archive содержит слишком много записей".to_owned());
+        return Err(format!("updater: {label} содержит слишком много записей"));
     }
     if destination.exists() {
         fs::remove_dir_all(destination).map_err(|error| error.to_string())?;
@@ -143,13 +156,13 @@ pub(super) fn extract_ui_bundle_inner(
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
         if entry.is_symlink() {
-            return Err("updater: UI archive содержит symlink".to_owned());
+            return Err(format!("updater: {label} содержит symlink"));
         }
         let raw_name = entry.name().map_err(|error| error.to_string())?;
         let relative = normalize_enclosed_archive_path(&raw_name, entry.enclosed_name())
-            .ok_or_else(|| "updater: UI archive содержит небезопасный путь".to_owned())?;
+            .ok_or_else(|| format!("updater: {label} содержит небезопасный путь"))?;
         if !extracted_paths.insert(relative.to_owned()) {
-            return Err("updater: UI archive содержит повторяющийся путь".to_owned());
+            return Err(format!("updater: {label} содержит повторяющийся путь"));
         }
         let target = destination.join(relative);
         if entry.is_dir() {
@@ -161,21 +174,18 @@ pub(super) fn extract_ui_bundle_inner(
             let mut file = fs::File::create(&target).map_err(|error| error.to_string())?;
             let remaining = MAX_ARCHIVE_UNCOMPRESSED_BYTES
                 .checked_sub(extracted_bytes)
-                .ok_or_else(|| "updater: UI archive превышает лимит распаковки".to_owned())?;
+                .ok_or_else(|| format!("updater: {label} превышает лимит распаковки"))?;
             if entry.size() > remaining {
-                return Err("updater: UI archive превышает лимит распаковки".to_owned());
+                return Err(format!("updater: {label} превышает лимит распаковки"));
             }
             let written = copy_reader_bounded(&mut entry, &mut file, remaining)?;
             if written != entry.size() {
-                return Err("updater: UI archive содержит усечённый файл".to_owned());
+                return Err(format!("updater: {label} содержит усечённый файл"));
             }
             extracted_bytes = extracted_bytes
                 .checked_add(written)
                 .ok_or_else(|| "updater: размер распаковки переполнен".to_owned())?;
         }
-    }
-    if !destination.join("index.html").is_file() {
-        return Err("updater: UI archive не содержит index.html".to_owned());
     }
     Ok(())
 }
