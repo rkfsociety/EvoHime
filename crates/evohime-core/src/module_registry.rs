@@ -333,6 +333,23 @@ impl ModuleRegistry {
             .cloned()
     }
 
+    /// Returns all registered capabilities across currently `Ready` modules
+    /// for projection into Core's tool catalog.
+    pub fn list_ready_capabilities(&self) -> Vec<(String, ServiceCapabilityDescriptor)> {
+        let Ok(guard) = self.state.read() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for module in guard.modules.values() {
+            if matches!(module.availability, ModuleAvailability::Ready) {
+                for cap in &module.descriptor.capabilities {
+                    out.push((module.descriptor.service_id.clone(), cap.clone()));
+                }
+            }
+        }
+        out
+    }
+
     /// Authorizes via `authorize_permissions` and invokes `capability_name` on
     /// its owning module.
     pub async fn invoke<F>(

@@ -81,7 +81,19 @@ impl ServiceHandler for RagMemoryService {
                     .ok_or_else(|| {
                         ServiceContractError::invalid_input("query must be a non-empty string")
                     })?;
-                Ok(serde_json::json!({ "query": query, "matches": [] }))
+                let root = payload
+                    .get("root")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or(".");
+                let mut hits = Vec::new();
+                collect_rag_hits(std::path::Path::new(root), query, &mut hits, 20);
+                hits.sort_by(|a, b| b.1.cmp(&a.1));
+                let matches = hits
+                    .into_iter()
+                    .map(|(path, score)| serde_json::json!({ "path": path, "score": score }))
+                    .collect::<Vec<_>>();
+                Ok(serde_json::json!({ "query": query, "matches": matches }))
             }
             "memory.extract" => {
                 let text = payload
@@ -96,6 +108,51 @@ impl ServiceHandler for RagMemoryService {
             other => Err(ServiceContractError::not_found(format!(
                 "unknown rag-memory capability: {other}"
             ))),
+        }
+    }
+}
+
+fn collect_rag_hits(
+    dir: &std::path::Path,
+    query: &str,
+    out: &mut Vec<(String, usize)>,
+    limit: usize,
+) {
+    if out.len() >= limit {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let needle = query.to_lowercase();
+    for entry in entries.flatten() {
+        if out.len() >= limit {
+            break;
+        }
+        let path = entry.path();
+        let name = entry.file_name();
+        if matches!(
+            name.to_string_lossy().as_ref(),
+            ".git" | "target" | "node_modules" | ".evohime"
+        ) {
+            continue;
+        }
+        if path.is_dir() {
+            collect_rag_hits(&path, query, out, limit);
+        } else if path.is_file() {
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.len() > 256 * 1024 {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let score = text.to_lowercase().matches(&needle).count();
+            if score > 0 {
+                out.push((path.to_string_lossy().into_owned(), score));
+            }
         }
     }
 }
