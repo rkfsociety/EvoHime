@@ -946,7 +946,10 @@ fn sync_uninstall_metadata_updates_display_icon_only_when_install_location_match
     };
     assert_eq!(read_status, ERROR_SUCCESS);
     let len = (buf_bytes as usize / 2).saturating_sub(1);
-    assert_eq!(String::from_utf16_lossy(&buf[..len]), icon.to_string_lossy());
+    assert_eq!(
+        String::from_utf16_lossy(&buf[..len]),
+        icon.to_string_lossy()
+    );
 
     unsafe {
         RegCloseKey(hkey);

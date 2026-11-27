@@ -116,7 +116,7 @@ fn existing_size(path: &Path) -> Option<u64> {
     fs::metadata(path).ok().map(|meta| meta.len())
 }
 
-/// Удаляет устаревшие логи: суточные каталоги старше [`LOG_RETENTION_DAYS`]
+/// Удаляет устаревшие логи: суточные каталоги старше `LOG_RETENTION_DAYS`
 /// валидной даты и корневые файлы старой плоской раскладки, к которым писали
 /// прежние версии продукта. Каталоги, не разбирающиеся в валидную дату, не
 /// трогаются — под очистку не должен попасть лишний каталог пользователя.
@@ -215,7 +215,7 @@ pub(crate) fn day_catalog_epoch(name: &str) -> Option<i64> {
 /// A dated logger (see [`open_dated`](Self::open_dated)) writes into the log
 /// directory's current-day catalog, switches to the next catalog when the UTC
 /// day changes and rotates to `stem.<n>.jsonl` when a segment reaches
-/// [`LOG_SEGMENT_MAX_BYTES`].
+/// `LOG_SEGMENT_MAX_BYTES`.
 pub struct StructuredLogger {
     state: Mutex<LoggerInner>,
 }

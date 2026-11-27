@@ -49,7 +49,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             subject_id,
             payload,
             expected_version,
-            idempotency_key,
+            idempotency_key: _,
             reply,
         } => {
             let event_operation = operation.clone();

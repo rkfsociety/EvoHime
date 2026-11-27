@@ -27,7 +27,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         "register" => {
                             let d: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_operator_definition".to_string())?;
                             let id = d.get("id").and_then(|v| v.as_str()).ok_or_else(|| "invalid_operator_definition".to_string())?;
-                            let version = d.get("version").and_then(|v| v.as_u64()).ok_or_else(|| "invalid_operator_definition".to_string())?;
+                            let version = d.get("version").and_then(|v| v.as_u64())
+                                .and_then(|v| u32::try_from(v).ok())
+                                .ok_or_else(|| "invalid_operator_definition".to_string())?;
                             let content_hash = d.get("content_hash").and_then(|v| v.as_str()).ok_or_else(|| "invalid_operator_definition".to_string())?;
                             let j = serde_json::to_vec(&d).map_err(|_| "serialization_failed".to_string())?;
                             store::put(database.connection(), id, version, content_hash, &j, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?;

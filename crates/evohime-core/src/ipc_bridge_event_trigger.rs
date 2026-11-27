@@ -97,7 +97,11 @@ impl IpcBridge {
         };
         let mut sequence = self.journal.latest_sequence().await.max(0);
         let mut runtime = crate::event_trigger_runtime::Runtime::default();
+        #[cfg(windows)]
         let (watch_sender, mut watch_receiver) =
+            tokio::sync::mpsc::channel::<WorkspaceWatchMessage>(128);
+        #[cfg(not(windows))]
+        let (_watch_sender, mut watch_receiver) =
             tokio::sync::mpsc::channel::<WorkspaceWatchMessage>(128);
         #[cfg(windows)]
         let mut watchers: std::collections::HashMap<std::path::PathBuf, WorkspaceWatcher> =
@@ -137,6 +141,8 @@ impl IpcBridge {
                         WorkspaceWatchMessage::Closed(root) => {
                             #[cfg(windows)]
                             if let Some(watcher) = watchers.remove(&root) { watcher.stop(); }
+                            #[cfg(not(windows))]
+                            let _ = root;
                         }
                     }
                 }
