@@ -351,6 +351,23 @@ fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static 
     }
 }
 
+/// Bounds a tool error message for an IPC error response payload.
+///
+/// The message is diagnostic only; the typed `error_code` carries the
+/// classification. Keeping the text bounded stops a pathological tool error
+/// (for example a very long path embedded in the message) from inflating a
+/// single response frame.
+fn bounded_error_message(error: &evohime_tool_runtime::ToolError) -> String {
+    const MAX_MESSAGE_CHARS: usize = 512;
+    let message = error.to_string();
+    if message.chars().count() <= MAX_MESSAGE_CHARS {
+        return message;
+    }
+    let mut bounded: String = message.chars().take(MAX_MESSAGE_CHARS).collect();
+    bounded.push('…');
+    bounded
+}
+
 /// Decodes a typed execution-ledger row (план 08-1/08-2, `payload` = JSON
 /// `ExecutionEventV1`) into the additive IPC projection (план 08-3). Never
 /// panics on malformed payload — returns `None` so the caller falls back to

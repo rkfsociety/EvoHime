@@ -19,7 +19,7 @@ impl IpcBridge {
             .as_ref()
             .ok_or_else(|| FrameError::Io("Git tools are not configured".into()))?;
         let context = ToolContext {
-            workspace_root: std::path::PathBuf::from(workspace_path),
+            workspace_root: std::path::PathBuf::from(&workspace_path),
             task_id: uuid::Uuid::nil(),
             session_id: None,
             progress_tx: None,
@@ -30,10 +30,34 @@ impl IpcBridge {
                 evohime_tool_runtime::self_development::TestGate::default(),
             )),
         };
-        let result = tools
-            .execute(&context, tool_name, input)
-            .await
-            .map_err(|error| FrameError::Io(error.to_string()))?;
+        let result = tools.execute(&context, tool_name, input).await;
+        // A failed git read (missing repository, bad path) is a command
+        // failure, not a transport failure: turning it into `FrameError` here
+        // used to kill the whole IPC connection and put the shell into a
+        // reconnect loop while a workspace was not a git repository.
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                let error_code = bounded_tool_error_code(&error);
+                tracing::info!(
+                    workspace = %workspace_path,
+                    tool = tool_name,
+                    error_code,
+                    "ipc.git_read_failed"
+                );
+                return serde_json::to_vec(&serde_json::json!({
+                    "output": String::new(),
+                    "structured": {
+                        "error_code": error_code,
+                        "error_message": bounded_error_message(&error),
+                    },
+                    "truncated": false,
+                    "max_bytes": max_bytes,
+                    "error_code": error_code,
+                }))
+                .map_err(|error| FrameError::Io(error.to_string()).into());
+            }
+        };
         let bytes = result.output.as_bytes();
         let truncated = bytes.len() > max_bytes;
         let output = if truncated {

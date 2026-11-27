@@ -800,6 +800,55 @@ async fn serves_bounded_git_status_and_diff_through_core_tools() {
 }
 
 #[tokio::test]
+async fn git_read_failure_is_an_error_response_and_not_a_connection_drop() {
+    // A workspace that is not a git repository used to turn the tool error
+    // into a frame error, which killed the IPC connection and pushed the
+    // shell into a reconnect loop. The read must instead answer with an
+    // error payload the client can render while the connection stays alive.
+    let root = std::env::temp_dir().join(format!("evohime-ipc-git-missing-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("workspace root");
+    let journal_path =
+        std::env::temp_dir().join(format!("evohime-ipc-git-missing-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&journal_path);
+    let journal = EventJournal::open(&journal_path).expect("journal opens");
+    let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+    let tools = Arc::new(ToolRegistry::bootstrap());
+    let bridge = IpcBridge::with_coordinator_and_approvals(
+        journal,
+        coordinator,
+        ApprovalCoordinator::default(),
+        tools,
+        None,
+        None,
+    );
+
+    let payload = bridge
+        .dispatch_git_read(
+            root.display().to_string(),
+            "git_status",
+            serde_json::Value::Null,
+            128,
+        )
+        .await
+        .expect("a failed git read still answers instead of dropping the frame");
+    let json: serde_json::Value = serde_json::from_slice(&payload).expect("error json");
+    assert_eq!(json["error_code"], "execution_failed");
+    assert!(
+        json["structured"]["error_message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("not a git repository"),
+        "the diagnostic keeps the git stderr: {json}"
+    );
+    assert_eq!(json["structured"]["error_code"], "execution_failed");
+    assert_eq!(json["truncated"], false);
+
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_file(journal_path);
+}
+
+#[tokio::test]
 async fn conversation_event_log_ipc_pages_and_live_events_are_typed_and_redacted() {
     let directory = tempfile::tempdir().expect("temp directory");
     let path = directory.path().join("conversation-ipc.db");
