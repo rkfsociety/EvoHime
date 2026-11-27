@@ -30,6 +30,7 @@ evohime-listener-ipc = { path = "../evohime-listener-ipc" }
 evohime-receipts = { path = "../evohime-receipts" }
 evohime-model-provenance = { path = "../evohime-model-provenance" }
 evohime-remote = { path = "../evohime-remote" }
+evohime-service-contract = { path = "../evohime-service-contract" }
 prost = "0.14"
 futures-util = "0.3"
 serde_json = { workspace = true }

@@ -1,0 +1,131 @@
+{
+  "schema": "evohime.modules-manifest.v1",
+  "modules": [
+    {
+      "id": "shell-host",
+      "kind": "native",
+      "artifact": "EvoHime.exe",
+      "restart": "shell",
+      "version_file": "release-versions/shell-host.txt",
+      "workflow": ".github/workflows/shell-host.yml",
+      "dependencies": ["ui-bundle", "core", "supervisor", "transaction", "verifier"]
+    },
+    {
+      "id": "ui-bundle",
+      "kind": "bundle",
+      "artifact": "ui-bundle.zip",
+      "restart": "shell",
+      "version_file": "release-versions/ui-bundle.txt",
+      "workflow": ".github/workflows/ui-bundle.yml",
+      "dependencies": []
+    },
+    {
+      "id": "core",
+      "kind": "native",
+      "artifact": "evohime-core.exe",
+      "restart": "core",
+      "version_file": "release-versions/core.txt",
+      "workflow": ".github/workflows/core.yml",
+      "dependencies": ["supervisor", "core-assets"]
+    },
+    {
+      "id": "core-assets",
+      "kind": "assets",
+      "artifact": "core-assets.zip",
+      "restart": "none",
+      "version_file": "release-versions/core-assets.txt",
+      "workflow": ".github/workflows/core-assets.yml",
+      "dependencies": []
+    },
+    {
+      "id": "supervisor",
+      "kind": "native",
+      "artifact": "evohime-supervisor.exe",
+      "restart": "supervisor",
+      "version_file": "release-versions/supervisor.txt",
+      "workflow": ".github/workflows/supervisor.yml",
+      "dependencies": ["transaction", "verifier"]
+    },
+    {
+      "id": "cli",
+      "kind": "native",
+      "artifact": "eva.exe",
+      "restart": "none",
+      "version_file": "release-versions/cli.txt",
+      "workflow": ".github/workflows/cli.yml",
+      "dependencies": ["core"]
+    },
+    {
+      "id": "analysis-worker",
+      "kind": "native",
+      "artifact": "evohime-analysis-worker.exe",
+      "restart": "core",
+      "version_file": "release-versions/analysis-worker.txt",
+      "workflow": ".github/workflows/analysis-worker.yml",
+      "dependencies": ["core"]
+    },
+    {
+      "id": "listener",
+      "kind": "native",
+      "artifact": "evohime-listener.exe",
+      "restart": "listener",
+      "version_file": "release-versions/listener.txt",
+      "workflow": ".github/workflows/listener.yml",
+      "dependencies": ["core", "listener-runtime"]
+    },
+    {
+      "id": "listener-runtime",
+      "kind": "bundle",
+      "artifact": "listener-runtime.zip",
+      "restart": "listener",
+      "version_file": "release-versions/listener-runtime.txt",
+      "workflow": ".github/workflows/listener-module.yml",
+      "dependencies": []
+    },
+    {
+      "id": "transaction",
+      "kind": "native",
+      "artifact": "evohime-transaction.exe",
+      "restart": "transaction",
+      "version_file": "release-versions/transaction.txt",
+      "workflow": ".github/workflows/transaction.yml",
+      "dependencies": []
+    },
+    {
+      "id": "verifier",
+      "kind": "native",
+      "artifact": "evohime-verify.exe",
+      "restart": "none",
+      "version_file": "release-versions/verifier.txt",
+      "workflow": ".github/workflows/verifier.yml",
+      "dependencies": []
+    },
+    {
+      "id": "updater",
+      "kind": "bundle",
+      "artifact": "updater.zip",
+      "restart": "updater",
+      "version_file": "release-versions/updater.txt",
+      "workflow": ".github/workflows/update-agent.yml",
+      "dependencies": []
+    },
+    {
+      "id": "hive",
+      "kind": "native",
+      "artifact": "evohime-hive-daemon.exe",
+      "restart": "hive",
+      "version_file": "release-versions/hive.txt",
+      "workflow": ".github/workflows/hive.yml",
+      "dependencies": []
+    },
+    {
+      "id": "installer",
+      "kind": "installer",
+      "artifact": "EvoHime-Setup.exe",
+      "restart": "none",
+      "version_file": "release-versions/installer.txt",
+      "workflow": ".github/workflows/installer.yml",
+      "dependencies": []
+    }
+  ]
+}

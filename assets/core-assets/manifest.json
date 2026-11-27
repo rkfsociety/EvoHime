@@ -1,0 +1,9 @@
+{
+  "schema": "evohime.core-assets.v1",
+  "bundle_version": "0.0.1",
+  "assets": {
+    "prompts_dir": "prompts",
+    "recipes_dir": "recipes",
+    "policies_dir": "policies"
+  }
+}

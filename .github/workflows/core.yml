@@ -14,6 +14,7 @@ on:
       - 'crates/tool-runtime/**'
       - 'crates/evohime-local-storage/**'
       - 'crates/evohime-receipts/**'
+      - 'crates/evohime-service-contract/**'
       - 'crates/desktop-ipc/**'
       - 'Cargo.toml'
       - 'Cargo.lock'

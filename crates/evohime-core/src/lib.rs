@@ -357,6 +357,8 @@ pub mod automation_scheduler;
 pub mod automation_simulation;
 #[cfg(test)]
 mod core_tests;
+pub mod core_assets;
 pub mod durable_background_execution;
 pub(crate) mod durable_background_execution_runtime;
+pub mod module_registry;
 pub mod target_contract;

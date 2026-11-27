@@ -1,0 +1,59 @@
+name: core-assets module
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'assets/core-assets/**'
+      - 'release-versions/core-assets.txt'
+      - '.github/workflows/core-assets.yml'
+
+concurrency:
+  group: evohime-module-${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Core assets — validate and package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate core-assets manifest
+        shell: pwsh
+        run: |
+          $manifestPath = Join-Path $env:GITHUB_WORKSPACE 'assets\core-assets\manifest.json'
+          if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw "Missing manifest: $manifestPath" }
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          if ($manifest.schema -ne 'evohime.core-assets.v1') { throw "Unexpected schema: $($manifest.schema)" }
+          $source = Join-Path $env:GITHUB_WORKSPACE 'assets\core-assets'
+          Compress-Archive -Path (Join-Path $source '*') -DestinationPath (Join-Path $env:GITHUB_WORKSPACE 'core-assets.zip') -Force
+      - uses: actions/upload-artifact@v7
+        with:
+          name: module-core-assets
+          path: core-assets.zip
+          if-no-files-found: error
+
+  publish:
+    name: Core assets — release
+    needs: package
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: module-core-assets
+          path: assets-output
+      - name: Publish core-assets release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'release-versions\core-assets.txt') -Raw).Trim()
+          ./scripts/module-release.ps1 -Module core-assets -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE 'assets-output\core-assets.zip')

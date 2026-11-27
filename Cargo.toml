@@ -21,6 +21,7 @@ members = [
   "crates/evohime-receipts",
   "crates/evohime-model-provenance",
   "crates/evohime-remote",
+  "crates/evohime-service-contract",
   "crates/evohime-cli-protocol",
   "crates/evohime-cli",
   "crates/evohime-cli-contract",
