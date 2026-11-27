@@ -591,6 +591,7 @@ pub fn apply_ui_bundle_staged_with_restart(
         restore_ui_pointer(&active, previous_pointer.as_deref())?;
         return Err(error);
     }
+    sync_uninstall_metadata(install_root);
     Ok(())
 }
 
@@ -1064,7 +1065,9 @@ impl UpdateTransaction {
     pub fn commit(&self) -> io::Result<()> {
         self.write_state(TransactionPhase::Committed)?;
         fs::remove_dir_all(&self.backup_dir)?;
-        fs::remove_file(&self.state_path)
+        fs::remove_file(&self.state_path)?;
+        sync_uninstall_metadata(&self.install_dir);
+        Ok(())
     }
 
     /// Restores backed-up files and removes transaction state after rollback.
@@ -1315,6 +1318,150 @@ fn wait_for_process_exit(pid: u32, limit: Duration) {
 
 #[cfg(not(windows))]
 fn wait_for_process_exit(_pid: u32, _limit: Duration) {}
+
+const UNINSTALL_SUBKEY: &str =
+    "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B4EA9A84-7F33-4D1A-9C74-1C1B6D8A8A4B}_is1";
+
+fn resolve_uninstall_icon_path(install_dir: &Path) -> Option<PathBuf> {
+    let candidates = [
+        install_dir
+            .join("updater")
+            .join("resources")
+            .join("evohime-agent.ico"),
+        install_dir.join("resources").join("evohime-agent.ico"),
+    ];
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+fn normalize_windows_path_str(raw: &str) -> String {
+    raw.trim()
+        .trim_end_matches(['\\', '/'])
+        .replace('/', "\\")
+        .to_ascii_lowercase()
+}
+
+fn paths_match_windows(left: &str, right: &Path) -> bool {
+    let left_norm = normalize_windows_path_str(left);
+    let right_norm = normalize_windows_path_str(&right.to_string_lossy());
+    !left_norm.is_empty() && left_norm == right_norm
+}
+
+fn sync_uninstall_metadata(install_dir: &Path) {
+    let Some(icon_path) = resolve_uninstall_icon_path(install_dir) else {
+        return;
+    };
+    sync_uninstall_metadata_in_subkey(UNINSTALL_SUBKEY, install_dir, &icon_path);
+}
+
+#[cfg(windows)]
+fn sync_uninstall_metadata_in_subkey(subkey: &str, install_dir: &Path, icon_path: &Path) {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegGetValueW, RegOpenKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
+        KEY_QUERY_VALUE, KEY_SET_VALUE, REG_SZ, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ,
+    };
+
+    struct RegKeyGuard(HKEY);
+    impl Drop for RegKeyGuard {
+        fn drop(&mut self) {
+            if !self.0.is_null() {
+                // SAFETY: `self.0` is an open registry key handle returned by `RegOpenKeyExW`.
+                unsafe {
+                    RegCloseKey(self.0);
+                }
+            }
+        }
+    }
+
+    fn to_wide_null(value: &OsStr) -> Vec<u16> {
+        value.encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    let subkey_wide = to_wide_null(OsStr::new(subkey));
+    let mut hkey: HKEY = std::ptr::null_mut();
+    // SAFETY: `subkey_wide` is NUL-terminated and `hkey` receives the opened handle.
+    let status = unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            subkey_wide.as_ptr(),
+            0,
+            KEY_QUERY_VALUE | KEY_SET_VALUE,
+            &mut hkey,
+        )
+    };
+    if status != ERROR_SUCCESS || hkey.is_null() {
+        return;
+    }
+    let _guard = RegKeyGuard(hkey);
+
+    let install_location_name = to_wide_null(OsStr::new("InstallLocation"));
+    let mut bytes_needed: u32 = 0;
+    // SAFETY: querying required buffer size for `InstallLocation` on an open handle.
+    let size_status = unsafe {
+        RegGetValueW(
+            hkey,
+            std::ptr::null(),
+            install_location_name.as_ptr(),
+            RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut bytes_needed,
+        )
+    };
+    if size_status != ERROR_SUCCESS || bytes_needed == 0 || bytes_needed > 32_768 {
+        return;
+    }
+
+    let mut buffer = vec![0u16; (bytes_needed as usize).div_ceil(2)];
+    let mut actual_bytes = (buffer.len() * 2) as u32;
+    // SAFETY: `buffer` has `actual_bytes` capacity for `RegGetValueW`.
+    let read_status = unsafe {
+        RegGetValueW(
+            hkey,
+            std::ptr::null(),
+            install_location_name.as_ptr(),
+            RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ,
+            std::ptr::null_mut(),
+            buffer.as_mut_ptr().cast(),
+            &mut actual_bytes,
+        )
+    };
+    if read_status != ERROR_SUCCESS {
+        return;
+    }
+    let wide_len = (actual_bytes as usize / 2).min(buffer.len());
+    let trimmed = match buffer[..wide_len].iter().position(|&unit| unit == 0) {
+        Some(end) => &buffer[..end],
+        None => &buffer[..wide_len],
+    };
+    let installed_location = String::from_utf16_lossy(trimmed);
+    if !paths_match_windows(&installed_location, install_dir) {
+        return;
+    }
+
+    let value_name = to_wide_null(OsStr::new("DisplayIcon"));
+    let icon_wide = to_wide_null(icon_path.as_os_str());
+    let byte_len = match u32::try_from(icon_wide.len().saturating_mul(2)) {
+        Ok(len) => len,
+        Err(_) => return,
+    };
+    // SAFETY: `value_name` and `icon_wide` are NUL-terminated UTF-16 strings with exact byte length.
+    unsafe {
+        let _ = RegSetValueExW(
+            hkey,
+            value_name.as_ptr(),
+            0,
+            REG_SZ,
+            icon_wide.as_ptr().cast(),
+            byte_len,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn sync_uninstall_metadata_in_subkey(_subkey: &str, _install_dir: &Path, _icon_path: &Path) {}
 
 fn restore_file(source: &Path, destination: &Path) -> io::Result<()> {
     if !source.is_file() {

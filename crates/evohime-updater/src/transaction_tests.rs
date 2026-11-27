@@ -809,3 +809,148 @@ fn ui_bundle_validation_failure_keeps_health_marker() {
     assert!(health.is_file());
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn resolve_uninstall_icon_prefers_updater_resources() {
+    let root = temp_dir("uninstall-icon-resolve");
+    let install = root.join("install");
+    let root_icon = install.join("resources").join("evohime-agent.ico");
+    let updater_icon = install
+        .join("updater")
+        .join("resources")
+        .join("evohime-agent.ico");
+    fs::create_dir_all(root_icon.parent().unwrap()).unwrap();
+    fs::write(&root_icon, "root-ico").unwrap();
+    assert_eq!(
+        super::resolve_uninstall_icon_path(&install).as_deref(),
+        Some(root_icon.as_path())
+    );
+
+    fs::create_dir_all(updater_icon.parent().unwrap()).unwrap();
+    fs::write(&updater_icon, "updater-ico").unwrap();
+    assert_eq!(
+        super::resolve_uninstall_icon_path(&install).as_deref(),
+        Some(updater_icon.as_path())
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn windows_install_location_comparison_ignores_trailing_slash_and_case() {
+    assert!(super::paths_match_windows(
+        r"C:\Users\USSR\AppData\Local\Programs\EvoHime\",
+        Path::new(r"c:\users\ussr\appdata\local\programs\evohime"),
+    ));
+    assert!(!super::paths_match_windows(
+        r"C:\Users\USSR\AppData\Local\Programs\EvoHime\",
+        Path::new(r"C:\Temp\other-install"),
+    ));
+}
+
+#[cfg(windows)]
+#[test]
+fn sync_uninstall_metadata_updates_display_icon_only_when_install_location_matches() {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegCreateKeyW, RegDeleteTreeW, RegGetValueW, RegSetValueExW, HKEY,
+        HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ,
+    };
+
+    fn wide(value: &str) -> Vec<u16> {
+        OsStr::new(value)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    }
+
+    let root = temp_dir("registry-sync");
+    let install = root.join("EvoHime");
+    let icon = install
+        .join("updater")
+        .join("resources")
+        .join("evohime-agent.ico");
+    fs::create_dir_all(icon.parent().unwrap()).unwrap();
+    fs::write(&icon, "ico").unwrap();
+
+    let subkey = format!(
+        "Software\\EvoHime\\TestUninstallSync_{}_{}",
+        std::process::id(),
+        super::timestamp_nanos()
+    );
+    let subkey_w = wide(&subkey);
+    let mut hkey: HKEY = std::ptr::null_mut();
+    let created = unsafe { RegCreateKeyW(HKEY_CURRENT_USER, subkey_w.as_ptr(), &mut hkey) };
+    assert_eq!(created, ERROR_SUCCESS);
+
+    let loc_name = wide("InstallLocation");
+    let mismatched_loc = wide(r"C:\Some\Other\Location\");
+    unsafe {
+        assert_eq!(
+            RegSetValueExW(
+                hkey,
+                loc_name.as_ptr(),
+                0,
+                REG_SZ,
+                mismatched_loc.as_ptr().cast(),
+                (mismatched_loc.len() * 2) as u32,
+            ),
+            ERROR_SUCCESS
+        );
+    }
+    super::sync_uninstall_metadata_in_subkey(&subkey, &install, &icon);
+    let display_icon_name = wide("DisplayIcon");
+    let mut bytes: u32 = 0;
+    let missing_status = unsafe {
+        RegGetValueW(
+            hkey,
+            std::ptr::null(),
+            display_icon_name.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut bytes,
+        )
+    };
+    assert_ne!(missing_status, ERROR_SUCCESS);
+
+    let matched_loc = wide(&format!("{}\\", install.display()));
+    unsafe {
+        assert_eq!(
+            RegSetValueExW(
+                hkey,
+                loc_name.as_ptr(),
+                0,
+                REG_SZ,
+                matched_loc.as_ptr().cast(),
+                (matched_loc.len() * 2) as u32,
+            ),
+            ERROR_SUCCESS
+        );
+    }
+    super::sync_uninstall_metadata_in_subkey(&subkey, &install, &icon);
+
+    let mut buf = vec![0u16; 512];
+    let mut buf_bytes = (buf.len() * 2) as u32;
+    let read_status = unsafe {
+        RegGetValueW(
+            hkey,
+            std::ptr::null(),
+            display_icon_name.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut buf_bytes,
+        )
+    };
+    assert_eq!(read_status, ERROR_SUCCESS);
+    let len = (buf_bytes as usize / 2).saturating_sub(1);
+    assert_eq!(String::from_utf16_lossy(&buf[..len]), icon.to_string_lossy());
+
+    unsafe {
+        RegCloseKey(hkey);
+        RegDeleteTreeW(HKEY_CURRENT_USER, subkey_w.as_ptr());
+    }
+    fs::remove_dir_all(root).unwrap();
+}
