@@ -116,7 +116,7 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 сокращение оставшихся модулей требует миграции их фактических потребителей
 в доменные фасады.
 
-## Core-owned A2A remote-agent bridge (plan 180, implementation stages 1–3)
+## Core-owned A2A remote-agent bridge (plan 180 — закрыт 2026-11-27)
 
 `crates/evohime-core/src/external_agent_a2a.rs` добавляет bounded Core-owned
 contract для outbound A2A remote-agent backend как protocol/backend extension
@@ -136,10 +136,13 @@ task bindings; миграция `v181.rs` создаёт `a2a_remote_profiles`,
 `validate_preset`. Runtime facade выполняет только outbound profile-owned
 discovery/submit/status/cancel с bounded body, redirect-off и post-DNS
 SSRF/private-address gate; remote artifacts принимаются только inline после
-quota/MIME/hash validation. Authenticated external-agent IPC предоставляет
-redacted A2A operations, а restart recovery переводит nonterminal bindings в
-reconcile-only states. Inbound listener, dynamic discovery, credential
-forwarding и второй runtime/scheduler/storage authority отсутствуют.
+quota/MIME/hash validation. Authenticated external-agent IPC сохраняет task
+bindings в SQLite, предоставляет redacted A2A operations, а при старте Core
+переводит nonterminal bindings в `unknown_outcome`/`unavailable` (reconcile-only).
+Electron `shell-bridge.ts` и `ExternalCodingAgentAdapterPanel` пробрасывают и
+показывают только bounded A2A-метаданные без HTTP/auth в renderer. Inbound
+listener, dynamic discovery, credential forwarding и второй
+runtime/scheduler/storage authority отсутствуют.
 
 ## Image generation and editing
 
@@ -1090,7 +1093,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Статус очереди на момент синхронизации
 
-Незавершённый каталог содержит план `180` и планы `184–188`; планы `01–179`, `181`, `183` и `189` закрыты. Планы `102`,
+Незавершённый каталог содержит планы `184–188`; планы `01–181`, `183` и `189` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md` и `docs/architecture/*.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а

@@ -1764,6 +1764,12 @@ export const RENDERER_COMMANDS = [
   'externalCodingAgentAdapter.status',
   'externalCodingAgentAdapter.start',
   'externalCodingAgentAdapter.cancel',
+  'externalCodingAgentAdapter.a2aStatus',
+  'externalCodingAgentAdapter.a2aProfileUpsert',
+  'externalCodingAgentAdapter.a2aRefreshCard',
+  'externalCodingAgentAdapter.a2aRegisterTask',
+  'externalCodingAgentAdapter.a2aTransition',
+  'externalCodingAgentAdapter.a2aReconcile',
   'agentClientProtocolBridge.list',
   'agentClientProtocolBridge.status',
   'agentClientProtocolBridge.handshake',
@@ -2406,6 +2412,12 @@ export interface CommandPayloads {
   'externalCodingAgentAdapter.status': { requestId: string; ownerScope: string; idempotencyKey: string }
   'externalCodingAgentAdapter.start': { requestId: string; ownerScope: string; idempotencyKey: string; runId: string; conversationId: string; executableRef: string }
   'externalCodingAgentAdapter.cancel': { requestId: string; ownerScope: string; idempotencyKey: string; runId: string }
+  'externalCodingAgentAdapter.a2aStatus': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'externalCodingAgentAdapter.a2aProfileUpsert': { requestId: string; ownerScope: string; idempotencyKey: string; profile: Record<string, unknown> }
+  'externalCodingAgentAdapter.a2aRefreshCard': { requestId: string; ownerScope: string; idempotencyKey: string; profileId: string; cardJson: string; ttlMs: number }
+  'externalCodingAgentAdapter.a2aRegisterTask': { requestId: string; ownerScope: string; idempotencyKey: string; profileId: string; delegationId: string; parentGrantRef: string; capability: string; objective: string; requiredPrivacy: string; taskIdempotencyKey: string; artifactBudget: number; capsuleId: string; contextRefs: string[]; parentGrantHash: string; policyHash: string }
+  'externalCodingAgentAdapter.a2aTransition': { requestId: string; ownerScope: string; idempotencyKey: string; bindingId: string; state: string; expectedRevision: number }
+  'externalCodingAgentAdapter.a2aReconcile': { requestId: string; ownerScope: string; idempotencyKey: string; bindingId: string; remoteTaskId: string; expectedRevision: number }
   'agentClientProtocolBridge.list': { requestId: string; ownerScope: string; idempotencyKey: string }
   'agentClientProtocolBridge.status': { requestId: string; ownerScope: string; idempotencyKey: string }
   'agentClientProtocolBridge.handshake': { requestId: string; ownerScope: string; idempotencyKey: string; protocolVersion: number; agentIdentity: string; capabilities: string[] }
@@ -2801,6 +2813,12 @@ export interface CommandResults {
   'externalCodingAgentAdapter.status': { accepted: boolean }
   'externalCodingAgentAdapter.start': { accepted: boolean }
   'externalCodingAgentAdapter.cancel': { accepted: boolean }
+  'externalCodingAgentAdapter.a2aStatus': { accepted: boolean }
+  'externalCodingAgentAdapter.a2aProfileUpsert': { accepted: boolean }
+  'externalCodingAgentAdapter.a2aRefreshCard': { accepted: boolean }
+  'externalCodingAgentAdapter.a2aRegisterTask': { accepted: boolean }
+  'externalCodingAgentAdapter.a2aTransition': { accepted: boolean }
+  'externalCodingAgentAdapter.a2aReconcile': { accepted: boolean }
   'agentClientProtocolBridge.list': { accepted: boolean }
   'agentClientProtocolBridge.status': { accepted: boolean }
   'agentClientProtocolBridge.handshake': { accepted: boolean }

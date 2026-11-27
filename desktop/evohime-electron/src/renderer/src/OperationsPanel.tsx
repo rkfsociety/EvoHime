@@ -745,11 +745,6 @@ function sameRepositoryPath(left: string, right: string): boolean {
   return a.length > 0 && a === b
 }
 
-function shortRepositoryPath(path: string): string {
-  const parts = path.replace(/\\/g, '/').split('/').filter(Boolean)
-  return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : path
-}
-
 /** Percentage of a hive counter against its ceiling, clamped to 0–100. */
 function hivePercent(value: number, ceiling: number): number {
   if (ceiling <= 0) return 0

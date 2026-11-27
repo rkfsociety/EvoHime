@@ -186,3 +186,63 @@ fn nonterminal_bindings_exclude_terminal_states_in_creation_order() {
         vec!["b-run", "b-unknown"]
     );
 }
+
+#[test]
+fn restart_recovery_marks_known_id_unknown_outcome_and_without_id_unavailable() {
+    let connection = schema();
+    for (id, remote_id, state, created, delegation) in [
+        ("b-known", Some("remote-1"), "running", 1, "d-1"),
+        ("b-noid", None, "submitting", 2, "d-2"),
+        ("b-done", Some("remote-3"), "completed", 3, "d-3"),
+    ] {
+        upsert_task_binding(
+            &connection,
+            A2aTaskBindingInput {
+                binding_id: id,
+                delegation_id: delegation,
+                remote_task_id: remote_id,
+                state,
+                reconciliation: "not_required",
+                attempt: 1,
+                idempotency_key: "idem",
+                request_hash: "req",
+                capsule_hash: "cap",
+                policy_hash: "pol",
+                revision: 1,
+                created_at_ms: created,
+                updated_at_ms: created,
+                content_hash: "h",
+            },
+        )
+        .unwrap();
+    }
+    let updated = recover_nonterminal_bindings_on_restart(&connection, 999).unwrap();
+    assert_eq!(updated, 2);
+
+    let known_state: (String, String, i64) = connection
+        .query_row(
+            "SELECT state,reconciliation,revision FROM a2a_task_bindings WHERE binding_id='b-known'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(known_state, ("unknown_outcome".into(), "pending".into(), 2));
+
+    let noid_state: (String, i64) = connection
+        .query_row(
+            "SELECT state,revision FROM a2a_task_bindings WHERE binding_id='b-noid'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(noid_state, ("unavailable".into(), 2));
+
+    let done_state: (String, i64) = connection
+        .query_row(
+            "SELECT state,revision FROM a2a_task_bindings WHERE binding_id='b-done'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(done_state, ("completed".into(), 1));
+}

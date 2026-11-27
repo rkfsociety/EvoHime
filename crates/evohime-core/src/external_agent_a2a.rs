@@ -867,11 +867,11 @@ pub fn transition_remote_task(
             )
             | (
                 InputRequired,
-                Submitted | Rejected | Failed | CancelRequested | Cancelled
+                Submitted | Rejected | Failed | CancelRequested | Cancelled | UnknownOutcome
             )
             | (
                 AuthRequired,
-                Submitted | Rejected | Failed | CancelRequested | Cancelled
+                Submitted | Rejected | Failed | CancelRequested | Cancelled | UnknownOutcome
             )
             | (
                 Running,

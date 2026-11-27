@@ -353,6 +353,27 @@ impl IpcBridge {
                     chrono::Utc::now().timestamp_millis(),
                 ) {
                     Ok((request, capsule, binding)) => {
+                        if let Ok(database) = self.journal.database().try_lock() {
+                            let _ = evohime_local_storage::external_agent_a2a_store::upsert_task_binding(
+                                database.connection(),
+                                evohime_local_storage::external_agent_a2a_store::A2aTaskBindingInput {
+                                    binding_id: &binding.binding_id,
+                                    delegation_id: &binding.delegation_id,
+                                    remote_task_id: binding.remote_task_id.as_deref(),
+                                    state: serde_json::to_string(&binding.state).unwrap_or_default().trim_matches('"'),
+                                    reconciliation: serde_json::to_string(&binding.reconciliation).unwrap_or_default().trim_matches('"'),
+                                    attempt: binding.attempt,
+                                    idempotency_key: &binding.idempotency_key,
+                                    request_hash: &binding.request_hash,
+                                    capsule_hash: &binding.capsule_hash,
+                                    policy_hash: &binding.policy_hash,
+                                    revision: binding.revision,
+                                    created_at_ms: binding.created_at_ms,
+                                    updated_at_ms: binding.updated_at_ms,
+                                    content_hash: &binding.content_hash,
+                                },
+                            );
+                        }
                         projection = serde_json::json!({
                             "protocol": "a2a",
                             "binding_id": binding.binding_id,
@@ -1393,5 +1414,159 @@ impl IpcBridge {
         };
         transport::write_frame(writer, &event.encode_to_vec()).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod a2a_ipc_tests {
+    use super::*;
+    use crate::external_agent_a2a::{
+        build_profile, RemoteAgentEndpoint, RemoteAgentProfile, SCHEMA_VERSION,
+    };
+    use crate::external_coding_agent_adapter::{ExternalAgentProtocolKind, A2A_PROTOCOL_VERSION};
+    use evohime_model_gateway::PrivacyClass;
+
+    fn cmd(op: &str, payload: Vec<u8>, key: &str) -> generated::ExternalCodingAgentAdapterCommand {
+        generated::ExternalCodingAgentAdapterCommand {
+            schema_version: crate::external_coding_agent_adapter::CONTRACT_VERSION,
+            request_id: format!("req-{key}"),
+            owner_scope: "external-coding-agent-adapter".into(),
+            operation: op.into(),
+            payload,
+            expected_version: 0,
+            idempotency_key: key.into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn a2a_ipc_lifecycle_persists_redacted_metadata_and_recovers_on_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("a2a-ipc.db");
+        let bridge = IpcBridge::new(EventJournal::open(&db_path).unwrap());
+
+        let profile = build_profile(RemoteAgentProfile {
+            schema_version: SCHEMA_VERSION,
+            id: "ipc.agent".into(),
+            revision: 1,
+            display_name: "IPC Agent".into(),
+            protocol_kind: ExternalAgentProtocolKind::A2a {
+                protocol_version: A2A_PROTOCOL_VERSION,
+            },
+            endpoint: RemoteAgentEndpoint {
+                origin: "https://agents.example.com".into(),
+                allow_loopback: false,
+                allowed_ports: vec![],
+            },
+            auth_profile_ref: Some("auth.slot".into()),
+            skill_allowlist: vec!["code.review".into()],
+            capability_allowlist: vec!["agent.execute".into()],
+            privacy_ceiling: PrivacyClass::Sensitive,
+            concurrency_limit: 1,
+            enabled: true,
+            content_hash: String::new(),
+        })
+        .unwrap();
+
+        let upsert = bridge
+            .dispatch_external_coding_agent_adapter(cmd(
+                "a2a_profile_upsert",
+                serde_json::to_vec(&profile).unwrap(),
+                "k1",
+            ))
+            .await;
+        assert_eq!(upsert["status"], "ok");
+        assert_eq!(upsert["projection_json"]["raw_payload"], false);
+        assert_eq!(upsert["projection_json"]["credentials"], false);
+
+        let card = bridge
+            .dispatch_external_coding_agent_adapter(cmd(
+                "a2a_refresh_card",
+                serde_json::to_vec(&serde_json::json!({
+                    "profile_id": "ipc.agent",
+                    "card_json": r#"{"skills":[{"id":"code.review","capability":"agent.execute"}],"auth_schemes":["bearer"]}"#,
+                    "ttl_ms": 60_000
+                }))
+                .unwrap(),
+                "k2",
+            ))
+            .await;
+        assert_eq!(card["status"], "ok");
+        assert_eq!(card["projection_json"]["raw_payload"], false);
+
+        let reg = bridge
+            .dispatch_external_coding_agent_adapter(cmd(
+                "a2a_register_task",
+                serde_json::to_vec(&serde_json::json!({
+                    "profile_id": "ipc.agent",
+                    "delegation_id": "del-ipc-1",
+                    "parent_grant_ref": "grant-1",
+                    "capability": "agent.execute",
+                    "objective": "top secret raw objective must not appear",
+                    "required_privacy": "sensitive",
+                    "idempotency_key": "idem-ipc-1",
+                    "artifact_budget": 2,
+                    "capsule_id": "cap-ipc-1",
+                    "context_refs": ["ns.default"],
+                    "parent_grant_hash": "a".repeat(64),
+                    "policy_hash": "b".repeat(64)
+                }))
+                .unwrap(),
+                "k3",
+            ))
+            .await;
+        assert_eq!(reg["status"], "ok");
+        let reg_text = reg.to_string();
+        assert!(!reg_text.contains("top secret raw objective"));
+        assert_eq!(reg["projection_json"]["raw_payload"], false);
+
+        let trans = bridge
+            .dispatch_external_coding_agent_adapter(cmd(
+                "a2a_transition",
+                serde_json::to_vec(&serde_json::json!({
+                    "binding_id": "binding:del-ipc-1",
+                    "state": "submitting",
+                    "expected_revision": 1
+                }))
+                .unwrap(),
+                "k4",
+            ))
+            .await;
+        assert_eq!(trans["status"], "ok");
+
+        let rec = bridge
+            .dispatch_external_coding_agent_adapter(cmd(
+                "a2a_reconcile",
+                serde_json::to_vec(&serde_json::json!({
+                    "binding_id": "binding:del-ipc-1",
+                    "remote_task_id": "remote-task-1",
+                    "expected_revision": 2
+                }))
+                .unwrap(),
+                "k5",
+            ))
+            .await;
+        assert_eq!(rec["status"], "ok");
+
+        let status = bridge
+            .dispatch_external_coding_agent_adapter(cmd("a2a_status", Vec::new(), "k6"))
+            .await;
+        assert_eq!(status["status"], "ok");
+        assert_eq!(status["projection_json"]["profile_count"], 1);
+        assert_eq!(status["projection_json"]["binding_count"], 1);
+
+        // Simulate Core restart: reopening the journal transitions the nonterminal
+        // known-ID binding to `unknown_outcome` in SQLite.
+        drop(bridge);
+        let restarted = IpcBridge::new(EventJournal::open(&db_path).unwrap());
+        let db = restarted.journal.database().lock().await;
+        let pending =
+            evohime_local_storage::external_agent_a2a_store::list_nonterminal_bindings(
+                db.connection(),
+                10,
+            )
+            .unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].state, "unknown_outcome");
+        assert_eq!(pending[0].remote_task_id.as_deref(), Some("remote-task-1"));
     }
 }

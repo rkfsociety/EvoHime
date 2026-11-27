@@ -14,8 +14,8 @@
 
 ## Закрытые направления
 Временные plan-файлы закрытых направлений удалены после переноса их контракта
-и evidence в канонические документы. К закрытым относятся планы `01–179`,
-`181`, `183`, `189–190` (включая `144`), `192`, `196`, `197`, `198`, `199`, `200` и `201`; планы `127–130` закрыты как MVP-контуры
+и evidence в канонические документы. К закрытым относятся планы `01–181`,
+`183`, `189–190` (включая `144`), `192`, `196`, `197`, `198`, `199`, `200` и `201`; планы `127–130` закрыты как MVP-контуры
 с явно сохранёнными `unavailable` deployment/adapter gates. Их отсутствие
 из каталога не означает отсутствие контракта: он находится в
 `architecture.md`, `docs/architecture/*.md` и `current-state.md`.
@@ -27,7 +27,6 @@
 
 | План | Тема | Состояние |
 | --- | --- | --- |
-| 180 | [Core-owned A2A Bridge](180-0-core-a2a-bridge.md) | active; этапы 180.1–180.3 реализованы, ожидает 180.4 (CI/release evidence и закрытие) |
 | 184 | [Core-owned Execution-Trace Evaluation](184-0-core-execution-trace-evaluation.md) | active; trace contract/legacy digest есть, 184.2 capture не подключён |
 | 185 | [Core-owned Behavioral Simulation Harness](185-0-core-behavioral-simulation-harness.md) | active; исторический источник issue #161; blocking dependency 184 |
 | 186 | [Core-owned Local Typed-Decision Fast Path](186-0-core-local-typed-decision-fast-path.md) | active; исторический источник issue #162 |
@@ -38,13 +37,13 @@
 | 194 | [Background Jobs Control Center](194-0-core-background-jobs-control-center.md) | active; UX/IPC поверх реализованного background-execution/v1 |
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
 
-Незавершённые numbered plans: `180`, `184–188`, `191` и `193–195`.
+Незавершённые numbered plans: `184–188`, `191` и `193–195`.
 
 Номера `149–172`, `182–183` и `196–201` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая
 работа получает следующий свободный номер только после проверки дубликатов и
-зависимостей; следующий номер — `202`, текущий active catalog — `180`,
-`184–188`, `191` и `193–195`. Номера issues в активных планах — исторические
+зависимостей; следующий номер — `202`, текущий active catalog — `184–188`,
+`191` и `193–195`. Номера issues в активных планах — исторические
 идентификаторы постановок и не являются текущим источником статуса или
 критерием закрытия.
 

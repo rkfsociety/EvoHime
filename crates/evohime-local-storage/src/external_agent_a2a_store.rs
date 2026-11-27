@@ -347,6 +347,33 @@ pub fn binding_revision(
         .optional()?)
 }
 
+/// Transitions every nonterminal binding after a Core restart.
+///
+/// Bindings with a known `remote_task_id` move to `unknown_outcome` with
+/// `pending` reconciliation so callers reconcile only the same remote task;
+/// bindings without a `remote_task_id` become `unavailable`. Terminal bindings
+/// are left untouched.
+pub fn recover_nonterminal_bindings_on_restart(
+    connection: &Connection,
+    now_ms: i64,
+) -> Result<usize, StorageError> {
+    let known = connection.execute(
+        "UPDATE a2a_task_bindings
+         SET state='unknown_outcome', reconciliation='pending', revision=revision+1, updated_at_ms=?1
+         WHERE remote_task_id IS NOT NULL
+           AND state NOT IN ('completed','rejected','failed','cancelled','unavailable','unknown_outcome')",
+        [now_ms],
+    )?;
+    let unknown = connection.execute(
+        "UPDATE a2a_task_bindings
+         SET state='unavailable', revision=revision+1, updated_at_ms=?1
+         WHERE remote_task_id IS NULL
+           AND state NOT IN ('completed','rejected','failed','cancelled','unavailable')",
+        [now_ms],
+    )?;
+    Ok(known + unknown)
+}
+
 /// Returns the largest provenance payload this store will accept.
 pub const MAX_STORED_PROVENANCE_BYTES: usize = MAX_PROVENANCE_JSON_BYTES;
 

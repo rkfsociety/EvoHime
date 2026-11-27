@@ -3703,3 +3703,11 @@ or Electron checks is made here.
 - `compatible release manifest`: [45905760804](https://github.com/rkfsociety/EvoHime/actions/runs/45905760804) (`success`)
 
 Зависимость `evohime-core -> evohime-hive` удалена; `evohime-core` зависит только от `evohime-hive-contract`. Временные файлы планов `199`, `200`, `201` удалены из `docs/plans/`.
+
+## Plan 180 — Core-owned A2A Remote-Agent Bridge Closure (2026-11-27)
+
+План `180` (`180.1–180.4`) полностью реализован и закрыт:
+- Core & Storage: доработано сохранение созданных task bindings в SQLite при `a2a_register_task`, добавлен `recover_nonterminal_bindings_on_restart` при старте `IpcBridge`, `InputRequired`/`AuthRequired` разрешают переход в `UnknownOutcome` при восстановлении после рестарта, добавлены `fetch_card` и pre-check `Content-Length` в `A2aHttpTransport`.
+- Electron IPC & UI: `shell-bridge.ts` и `shared/api.ts` пробрасывают `externalCodingAgentAdapter.a2aStatus`, `a2aProfileUpsert`, `a2aRefreshCard`, `a2aRegisterTask`, `a2aTransition`, `a2aReconcile`; `ExternalCodingAgentAdapterPanel.tsx` отображает bounded A2A-сводку без HTTP/auth в renderer. Попутно удалена неиспользуемая `shortRepositoryPath` в `OperationsPanel.tsx` (TS6133).
+- Локально подтверждены: `cargo test -p evohime-local-storage --lib external_agent_a2a` (6/6), `cargo test -p evohime-core --lib a2a` (16/16, включая fake HTTP transport и IPC lifecycle/restart recovery), `npm run check:protocol`, `npm run typecheck`, `npx vitest run tests/external-coding-agent-adapter.test.tsx` (1/1).
+- Обновлены `release-versions/core.txt` (`0.0.000556`), `release-notes/core.md` и `release-notes/ui-bundle.md` (`0.0.0295`). Временные файлы `docs/plans/180-*.md` удалены; полная сборка и публикация модулей выполняются в CI после push.

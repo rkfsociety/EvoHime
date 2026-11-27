@@ -212,6 +212,12 @@ impl IpcBridge {
     }
 
     pub(crate) fn manager_for(journal: &EventJournal) -> Arc<ReceiptKeyManager> {
+        if let Ok(database) = journal.database().try_lock() {
+            let _ = evohime_local_storage::external_agent_a2a_store::recover_nonterminal_bindings_on_restart(
+                database.connection(),
+                chrono::Utc::now().timestamp_millis(),
+            );
+        }
         let data_dir = journal
             .database_path()
             .parent()

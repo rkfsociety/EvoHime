@@ -127,13 +127,13 @@ impl Default for A2aHttpTransport {
 }
 
 impl A2aHttpTransport {
-    async fn request_json(
+    async fn request_bytes(
         &self,
         profile: &RemoteAgentProfile,
         method: reqwest::Method,
         path: &str,
         body: Option<serde_json::Value>,
-    ) -> Result<serde_json::Value, A2aRuntimeError> {
+    ) -> Result<Vec<u8>, A2aRuntimeError> {
         validate_endpoint(&profile.endpoint)?;
         let base = reqwest::Url::parse(&profile.endpoint.origin)
             .map_err(|_| A2aRuntimeError::Transport("invalid_origin".into()))?;
@@ -180,6 +180,12 @@ impl A2aHttpTransport {
                 response.status().as_u16()
             )));
         }
+        if response
+            .content_length()
+            .is_some_and(|len| len as usize > MAX_CARD_RESPONSE_BYTES)
+        {
+            return Err(A2aRuntimeError::CardTooLarge);
+        }
         let body = response
             .bytes()
             .await
@@ -187,7 +193,31 @@ impl A2aHttpTransport {
         if body.len() > MAX_CARD_RESPONSE_BYTES {
             return Err(A2aRuntimeError::CardTooLarge);
         }
-        serde_json::from_slice(&body).map_err(|_| A2aRuntimeError::InvalidCard)
+        Ok(body.to_vec())
+    }
+
+    async fn request_json(
+        &self,
+        profile: &RemoteAgentProfile,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, A2aRuntimeError> {
+        let bytes = self.request_bytes(profile, method, path, body).await?;
+        serde_json::from_slice(&bytes).map_err(|_| A2aRuntimeError::InvalidCard)
+    }
+
+    /// Fetches and validates a bounded agent card from the profile-owned origin.
+    pub async fn fetch_card(
+        &self,
+        profile: &RemoteAgentProfile,
+        fetched_at_ms: i64,
+        ttl_ms: i64,
+    ) -> Result<RemoteAgentCardSnapshot, A2aRuntimeError> {
+        let bytes = self
+            .request_bytes(profile, reqwest::Method::GET, ".well-known/agent.json", None)
+            .await?;
+        parse_card_response(profile, &bytes, fetched_at_ms, ttl_ms)
     }
 
     /// Submits a hash-bound delegation and returns a typed transport outcome.
@@ -577,6 +607,235 @@ mod tests {
         assert_eq!(
             transport_state(TransportOutcome::UnknownOutcome),
             RemoteTaskState::UnknownOutcome
+        );
+    }
+
+    #[test]
+    fn recover_after_restart_covers_all_nonterminal_and_terminal_states() {
+        let mut registry = A2aRuntimeRegistry::default();
+        let p = profile();
+        registry.register_profile(p.clone()).unwrap();
+        let body = br#"{"skills":[{"id":"code.review","capability":"agent.execute"}],"auth_schemes":["bearer"]}"#;
+        registry
+            .refresh_card(&p.id, body, 10, 60_000)
+            .unwrap();
+
+        let states = [
+            ("reg", RemoteTaskState::Registered, None),
+            ("submitting", RemoteTaskState::Submitting, None),
+            ("submitted", RemoteTaskState::Submitted, Some("r-sub")),
+            ("input", RemoteTaskState::InputRequired, Some("r-inp")),
+            ("auth", RemoteTaskState::AuthRequired, Some("r-auth")),
+            ("running", RemoteTaskState::Running, Some("r-run")),
+            ("cancel_req", RemoteTaskState::CancelRequested, Some("r-can")),
+            ("done", RemoteTaskState::Completed, Some("r-done")),
+            ("rejected", RemoteTaskState::Rejected, Some("r-rej")),
+            ("failed", RemoteTaskState::Failed, Some("r-fail")),
+            ("cancelled", RemoteTaskState::Cancelled, Some("r-cx")),
+        ];
+
+        for (idx, (suffix, target_state, remote_id)) in states.iter().enumerate() {
+            let delegation_id = format!("del-{suffix}");
+            let (_, _, binding) = registry
+                .register_task(
+                    &p.id,
+                    delegation_id.clone(),
+                    "grant-1".into(),
+                    "agent.execute".into(),
+                    "inspect",
+                    PrivacyClass::Sensitive,
+                    format!("idem-{suffix}"),
+                    2,
+                    format!("cap-{suffix}"),
+                    vec!["ns.default".into()],
+                    "a".repeat(64),
+                    "b".repeat(64),
+                    100 + idx as i64,
+                )
+                .unwrap();
+            let mut rev = binding.revision;
+            if *target_state != RemoteTaskState::Registered {
+                let b = registry
+                    .transition(&binding.binding_id, RemoteTaskState::Submitting, rev, 200)
+                    .unwrap();
+                rev = b.revision;
+            }
+            if let Some(rid) = remote_id {
+                let b = registry
+                    .reconcile(&binding.binding_id, (*rid).to_owned(), rev, 210)
+                    .unwrap();
+                let b = registry
+                    .transition(&binding.binding_id, RemoteTaskState::Submitted, b.revision, 211)
+                    .unwrap();
+                rev = b.revision;
+            }
+            if !matches!(
+                target_state,
+                RemoteTaskState::Registered | RemoteTaskState::Submitting | RemoteTaskState::Submitted
+            ) {
+                if *target_state == RemoteTaskState::Completed {
+                    let b = registry
+                        .transition(&binding.binding_id, RemoteTaskState::Running, rev, 215)
+                        .unwrap();
+                    rev = b.revision;
+                } else if *target_state == RemoteTaskState::Cancelled {
+                    let b = registry
+                        .transition(
+                            &binding.binding_id,
+                            RemoteTaskState::CancelRequested,
+                            rev,
+                            215,
+                        )
+                        .unwrap();
+                    rev = b.revision;
+                }
+                registry
+                    .transition(&binding.binding_id, *target_state, rev, 220)
+                    .unwrap();
+            }
+        }
+
+        let recovered = registry.recover_after_restart(500);
+        assert_eq!(recovered.len(), 7);
+        assert_eq!(
+            registry.bindings["binding:del-reg"].state,
+            RemoteTaskState::Unavailable
+        );
+        assert_eq!(
+            registry.bindings["binding:del-submitting"].state,
+            RemoteTaskState::Unavailable
+        );
+        for suffix in ["submitted", "input", "auth", "running", "cancel_req"] {
+            assert_eq!(
+                registry.bindings[&format!("binding:del-{suffix}")].state,
+                RemoteTaskState::UnknownOutcome
+            );
+        }
+        assert_eq!(
+            registry.bindings["binding:del-done"].state,
+            RemoteTaskState::Completed
+        );
+        assert_eq!(
+            registry.bindings["binding:del-cancelled"].state,
+            RemoteTaskState::Cancelled
+        );
+    }
+
+    async fn spawn_one_shot_http(response: String) -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        addr
+    }
+
+    fn loopback_profile(port: u16) -> RemoteAgentProfile {
+        crate::external_agent_a2a::build_profile(RemoteAgentProfile {
+            schema_version: SCHEMA_VERSION,
+            id: "loopback.agent".into(),
+            revision: 1,
+            display_name: "Loopback agent".into(),
+            protocol_kind: crate::external_coding_agent_adapter::ExternalAgentProtocolKind::A2a {
+                protocol_version: A2A_PROTOCOL_VERSION,
+            },
+            endpoint: crate::external_agent_a2a::RemoteAgentEndpoint {
+                origin: format!("http://127.0.0.1:{port}"),
+                allow_loopback: true,
+                allowed_ports: vec![port],
+            },
+            auth_profile_ref: None,
+            skill_allowlist: vec!["code.review".into()],
+            capability_allowlist: vec!["agent.execute".into()],
+            privacy_ceiling: PrivacyClass::Sensitive,
+            concurrency_limit: 1,
+            enabled: true,
+            content_hash: String::new(),
+        })
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn http_transport_enforces_redirect_off_card_budget_and_unknown_outcome() {
+        let transport = A2aHttpTransport::default();
+
+        // 1. Redirect 302 must fail closed.
+        let addr = spawn_one_shot_http(
+            "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/other\r\nContent-Length: 0\r\n\r\n"
+                .into(),
+        )
+        .await;
+        let p = loopback_profile(addr.port());
+        let err = transport.fetch_card(&p, 1, 1000).await.unwrap_err();
+        assert_eq!(err, A2aRuntimeError::RedirectDenied);
+
+        // 2. Oversized card must fail closed.
+        let huge = "a".repeat(MAX_CARD_RESPONSE_BYTES + 16);
+        let addr = spawn_one_shot_http(format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+            huge.len(),
+            huge
+        ))
+        .await;
+        let p = loopback_profile(addr.port());
+        let err = transport.fetch_card(&p, 1, 1000).await.unwrap_err();
+        assert_eq!(err, A2aRuntimeError::CardTooLarge);
+
+        // 3. Valid card succeeds.
+        let card_body = br#"{"skills":[{"id":"code.review","capability":"agent.execute"}],"auth_schemes":["bearer"]}"#;
+        let addr = spawn_one_shot_http(format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            card_body.len(),
+            std::str::from_utf8(card_body).unwrap()
+        ))
+        .await;
+        let p = loopback_profile(addr.port());
+        let card = transport.fetch_card(&p, 10, 60_000).await.unwrap();
+        assert_eq!(card.profile_id, "loopback.agent");
+
+        // 4. Submit 500 -> UnknownOutcome (never blind retry).
+        let addr = spawn_one_shot_http(
+            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n".into(),
+        )
+        .await;
+        let p = loopback_profile(addr.port());
+        let mut reg = A2aRuntimeRegistry::default();
+        reg.register_profile(p.clone()).unwrap();
+        reg.refresh_card(&p.id, card_body, 10, 60_000).unwrap();
+        let (req, cap, _) = reg
+            .register_task(
+                &p.id,
+                "del-http".into(),
+                "grant-1".into(),
+                "agent.execute".into(),
+                "check",
+                PrivacyClass::Sensitive,
+                "idem-http".into(),
+                1,
+                "cap-http".into(),
+                vec!["ns:default".into()],
+                "a".repeat(64),
+                "b".repeat(64),
+                20,
+            )
+            .unwrap();
+        let outcome = transport.submit(&p, &req, &cap).await.unwrap();
+        assert_eq!(outcome, TransportOutcome::UnknownOutcome);
+
+        // 5. Path traversal in task id is rejected before transport.
+        assert_eq!(
+            transport.status(&p, "../secret").await.unwrap_err(),
+            A2aRuntimeError::InvalidCard
+        );
+        assert_eq!(
+            transport.cancel(&p, "../secret").await.unwrap_err(),
+            A2aRuntimeError::InvalidCard
         );
     }
 }

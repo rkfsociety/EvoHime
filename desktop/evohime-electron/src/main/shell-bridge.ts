@@ -2935,15 +2935,54 @@ function dispatch(
     case 'externalCodingAgentAdapter.list':
     case 'externalCodingAgentAdapter.status':
     case 'externalCodingAgentAdapter.start':
-    case 'externalCodingAgentAdapter.cancel': {
+    case 'externalCodingAgentAdapter.cancel':
+    case 'externalCodingAgentAdapter.a2aStatus':
+    case 'externalCodingAgentAdapter.a2aProfileUpsert':
+    case 'externalCodingAgentAdapter.a2aRefreshCard':
+    case 'externalCodingAgentAdapter.a2aRegisterTask':
+    case 'externalCodingAgentAdapter.a2aTransition':
+    case 'externalCodingAgentAdapter.a2aReconcile': {
       const value = asRecord(payload)
       const requestId = asBoundedString(value['requestId']); const ownerScope = asBoundedString(value['ownerScope']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
       if (requestId === null || ownerScope === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректные параметры внешнего агента.')
-      const operation = command.slice('externalCodingAgentAdapter.'.length)
+      const rawOperation = command.slice('externalCodingAgentAdapter.'.length)
+      const a2aOpMap: Record<string, string> = {
+        a2aStatus: 'a2a_status',
+        a2aProfileUpsert: 'a2a_profile_upsert',
+        a2aRefreshCard: 'a2a_refresh_card',
+        a2aRegisterTask: 'a2a_register_task',
+        a2aTransition: 'a2a_transition',
+        a2aReconcile: 'a2a_reconcile',
+      }
+      const operation = a2aOpMap[rawOperation] ?? rawOperation
       const json: Record<string, unknown> = {}
-      if (operation === 'start' || operation === 'cancel') { const runId = asBoundedString(value['runId']); const conversationId = operation === 'start' ? asBoundedString(value['conversationId']) : ''; const executableRef = operation === 'start' ? asBoundedString(value['executableRef']) : ''; if (runId === null || (operation === 'start' && (conversationId === null || executableRef === null))) return failure('invalid-payload', 'Некорректный run внешнего агента.'); Object.assign(json, { run_id: runId, conversation_id: conversationId, executable_ref: executableRef }) }
+      if (operation === 'start' || operation === 'cancel') {
+        const runId = asBoundedString(value['runId']); const conversationId = operation === 'start' ? asBoundedString(value['conversationId']) : ''; const executableRef = operation === 'start' ? asBoundedString(value['executableRef']) : ''
+        if (runId === null || (operation === 'start' && (conversationId === null || executableRef === null))) return failure('invalid-payload', 'Некорректный run внешнего агента.')
+        Object.assign(json, { run_id: runId, conversation_id: conversationId, executable_ref: executableRef })
+      } else if (operation === 'a2a_profile_upsert') {
+        const profile = asRecord(value['profile'])
+        if (Object.keys(profile).length === 0) return failure('invalid-payload', 'Некорректный A2A профиль.')
+        Object.assign(json, profile)
+      } else if (operation === 'a2a_refresh_card') {
+        const profileId = asBoundedString(value['profileId']); const cardJson = typeof value['cardJson'] === 'string' && value['cardJson'].length <= 65536 ? value['cardJson'] : null; const ttlMs = Number(value['ttlMs'])
+        if (profileId === null || cardJson === null || !Number.isSafeInteger(ttlMs)) return failure('invalid-payload', 'Некорректная A2A карта.')
+        Object.assign(json, { profile_id: profileId, card_json: cardJson, ttl_ms: ttlMs })
+      } else if (operation === 'a2a_register_task') {
+        const profileId = asBoundedString(value['profileId']); const delegationId = asBoundedString(value['delegationId']); const parentGrantRef = asBoundedString(value['parentGrantRef']); const capability = asBoundedString(value['capability']); const objective = typeof value['objective'] === 'string' && value['objective'].length <= 16384 ? value['objective'] : null; const requiredPrivacy = asBoundedString(value['requiredPrivacy']); const taskIdempotencyKey = asBoundedString(value['taskIdempotencyKey']); const artifactBudget = Number(value['artifactBudget']); const capsuleId = asBoundedString(value['capsuleId']); const contextRefs = Array.isArray(value['contextRefs']) ? value['contextRefs'].filter((v): v is string => typeof v === 'string' && v.length <= 128) : []; const parentGrantHash = asBoundedString(value['parentGrantHash']); const policyHash = asBoundedString(value['policyHash'])
+        if (profileId === null || delegationId === null || parentGrantRef === null || capability === null || objective === null || requiredPrivacy === null || taskIdempotencyKey === null || !Number.isSafeInteger(artifactBudget) || capsuleId === null || parentGrantHash === null || policyHash === null) return failure('invalid-payload', 'Некорректная A2A делегация.')
+        Object.assign(json, { profile_id: profileId, delegation_id: delegationId, parent_grant_ref: parentGrantRef, capability, objective, required_privacy: requiredPrivacy, idempotency_key: taskIdempotencyKey, artifact_budget: artifactBudget, capsule_id: capsuleId, context_refs: contextRefs, parent_grant_hash: parentGrantHash, policy_hash: policyHash })
+      } else if (operation === 'a2a_transition') {
+        const bindingId = asBoundedString(value['bindingId']); const state = asBoundedString(value['state']); const expectedRevision = Number(value['expectedRevision'])
+        if (bindingId === null || state === null || !Number.isSafeInteger(expectedRevision)) return failure('invalid-payload', 'Некорректный A2A переход.')
+        Object.assign(json, { binding_id: bindingId, state, expected_revision: expectedRevision })
+      } else if (operation === 'a2a_reconcile') {
+        const bindingId = asBoundedString(value['bindingId']); const remoteTaskId = asBoundedString(value['remoteTaskId']); const expectedRevision = Number(value['expectedRevision'])
+        if (bindingId === null || remoteTaskId === null || !Number.isSafeInteger(expectedRevision)) return failure('invalid-payload', 'Некорректный A2A reconcile.')
+        Object.assign(json, { binding_id: bindingId, remote_task_id: remoteTaskId, expected_revision: expectedRevision })
+      }
       const commandBody = { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(JSON.stringify(json), 'utf8'), expectedVersion: 0, idempotencyKey }
-      return accepted(client.send(operation === 'list' || operation === 'status' ? { externalCodingAgentAdapterList: commandBody } : { externalCodingAgentAdapterAction: commandBody }))
+      return accepted(client.send(operation === 'list' || operation === 'status' || operation === 'a2a_status' ? { externalCodingAgentAdapterList: commandBody } : { externalCodingAgentAdapterAction: commandBody }))
     }
 
     case 'agentClientProtocolBridge.list':
