@@ -471,6 +471,41 @@ impl ModuleRegistry {
             ))),
         }
     }
+
+    /// Invokes `capability_name` only when a `Ready` service module owns it;
+    /// returns `None` if no ready module owns the capability, allowing Core to
+    /// fall back cleanly during incremental migration.
+    pub async fn invoke_if_ready<F>(
+        &self,
+        request_id: impl Into<String>,
+        capability_name: &str,
+        payload: serde_json::Value,
+        caller_session_id: Option<String>,
+        authorize_permissions: F,
+    ) -> Option<Result<serde_json::Value, ServiceContractError>>
+    where
+        F: FnOnce(&[String]) -> Result<(), String>,
+    {
+        let is_ready = {
+            let guard = self.state.read().ok()?;
+            let service_id = guard.capability_owner.get(capability_name)?;
+            let module = guard.modules.get(service_id)?;
+            matches!(module.availability, ModuleAvailability::Ready)
+        };
+        if !is_ready {
+            return None;
+        }
+        Some(
+            self.invoke(
+                request_id,
+                capability_name,
+                payload,
+                caller_session_id,
+                authorize_permissions,
+            )
+            .await,
+        )
+    }
 }
 
 #[cfg(test)]

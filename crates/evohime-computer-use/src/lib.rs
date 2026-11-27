@@ -47,6 +47,13 @@ impl ServiceHandler for ComputerUseService {
                     required_permissions: vec!["computer_use.execute".to_owned()],
                     supports_streaming: false,
                 },
+                ServiceCapabilityDescriptor {
+                    name: "computer_use.mobile_status".to_owned(),
+                    description: "Queries attached mobile device automation targets.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object", "properties": {} }),
+                    required_permissions: vec!["computer_use.read".to_owned()],
+                    supports_streaming: false,
+                },
             ],
         }
     }
@@ -69,6 +76,7 @@ impl ServiceHandler for ComputerUseService {
     ) -> Result<serde_json::Value, ServiceContractError> {
         match capability {
             "computer_use.screen_info" => Ok(serde_json::json!({ "displays": [] })),
+            "computer_use.mobile_status" => Ok(serde_json::json!({ "devices": [] })),
             "computer_use.ide_bridge" => {
                 let action = payload
                     .get("action")
