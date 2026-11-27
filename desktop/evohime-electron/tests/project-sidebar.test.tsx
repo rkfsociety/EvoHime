@@ -88,7 +88,10 @@ describe('project sidebar', () => {
     await screen.findByRole('button', { name: 'repo' })
 
     await userEvent.click(screen.getByRole('button', { name: 'Действия с проектом repo' }))
-    expect(screen.getByRole('menu', { name: 'Действия с проектом repo' })).toBeTruthy()
+    const projectMenu = screen.getByRole('menu', { name: 'Действия с проектом repo' })
+    expect(projectMenu).toBeTruthy()
+    expect(screen.getByRole('list', { name: 'Список проектов' }).contains(projectMenu)).toBe(false)
+    expect(projectMenu.classList.contains('chat-rail__project-menu--floating')).toBe(true)
 
     await userEvent.click(screen.getByRole('menuitem', { name: 'Открыть в проводнике' }))
     expect(calls).toContainEqual({ command: 'workspace.openFolder', payload: { path: 'C:\\work\\repo' } })

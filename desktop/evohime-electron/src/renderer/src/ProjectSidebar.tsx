@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import type { ChatSummary, ConnectionState, WorkspaceOption } from '@shared/api'
 
@@ -13,6 +14,13 @@ import { UiIcon } from './UiIcon'
  * loaded only for the open workspace. The context rail owns workspace selection
  * and the chat list; global destinations stay in the adjacent icon rail.
  */
+
+interface FloatingMenuState<T extends string> {
+  readonly key: T
+  readonly left: number
+  readonly top: number
+  readonly anchorTop: number
+}
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 
@@ -45,34 +53,65 @@ export function ProjectSidebar({
   const [projects, setProjects] = useState<readonly WorkspaceOption[]>([])
   const [chats, setChats] = useState<readonly ChatSummary[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [openProjectMenuPath, setOpenProjectMenuPath] = useState<string | null>(null)
-  const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null)
+  const [openProjectMenu, setOpenProjectMenu] = useState<FloatingMenuState<string> | null>(null)
+  const [openChatMenu, setOpenChatMenu] = useState<FloatingMenuState<string> | null>(null)
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const projectsRef = useRef<HTMLElement | null>(null)
   const chatsRef = useRef<HTMLUListElement | null>(null)
+  const projectMenuRef = useRef<HTMLDivElement | null>(null)
+  const chatMenuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    if (!openProjectMenuPath && !openChatMenuId) return
+    if (!openProjectMenu && !openChatMenu) return
     const onPointerDown = (event: MouseEvent): void => {
       const target = event.target as Node
-      if (openProjectMenuPath && !projectsRef.current?.contains(target)) setOpenProjectMenuPath(null)
-      if (openChatMenuId && !chatsRef.current?.contains(target)) setOpenChatMenuId(null)
+      if (openProjectMenu && !projectsRef.current?.contains(target) && !projectMenuRef.current?.contains(target)) {
+        setOpenProjectMenu(null)
+      }
+      if (openChatMenu && !chatsRef.current?.contains(target) && !chatMenuRef.current?.contains(target)) {
+        setOpenChatMenu(null)
+      }
     }
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
-        setOpenProjectMenuPath(null)
-        setOpenChatMenuId(null)
+        setOpenProjectMenu(null)
+        setOpenChatMenu(null)
         setRenamingChatId(null)
       }
     }
+    const onResize = (): void => {
+      setOpenProjectMenu(null)
+      setOpenChatMenu(null)
+    }
     document.addEventListener('mousedown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('resize', onResize)
     return () => {
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', onResize)
     }
-  }, [openChatMenuId, openProjectMenuPath])
+  }, [openChatMenu, openProjectMenu])
+
+  useLayoutEffect(() => {
+    const adjustMenuPosition = (menuEl: HTMLDivElement | null, anchorTop: number): void => {
+      if (!menuEl) return
+      const rect = menuEl.getBoundingClientRect()
+      if (rect.height === 0 && rect.width === 0) return
+      const margin = 8
+      if (rect.bottom > window.innerHeight - margin) {
+        const flippedTop = Math.max(margin, anchorTop - rect.height - 4)
+        menuEl.style.top = `${flippedTop}px`
+      }
+      if (rect.right > window.innerWidth - margin) {
+        const shiftedLeft = Math.max(margin, window.innerWidth - rect.width - margin)
+        menuEl.style.left = `${shiftedLeft}px`
+      }
+    }
+    if (openProjectMenu) adjustMenuPosition(projectMenuRef.current, openProjectMenu.anchorTop)
+    if (openChatMenu) adjustMenuPosition(chatMenuRef.current, openChatMenu.anchorTop)
+  }, [openChatMenu, openProjectMenu])
 
   const loadProjects = useCallback(async () => {
     if (!api) {
@@ -134,7 +173,7 @@ export function ProjectSidebar({
   const forgetWorkspace = useCallback(async (path: string) => {
     if (!api) return
     const outcome = await api.invoke('workspace.forget', { path })
-    setOpenProjectMenuPath(null)
+    setOpenProjectMenu(null)
     if (outcome.ok) {
       setProjects(outcome.value.options)
       onWorkspaceChange(outcome.value.selected)
@@ -146,7 +185,7 @@ export function ProjectSidebar({
 
   const openWorkspaceInExplorer = useCallback(async (path: string) => {
     if (!api) return
-    setOpenProjectMenuPath(null)
+    setOpenProjectMenu(null)
     const outcome = await api.invoke('workspace.openFolder', { path })
     if (!outcome.ok) {
       setError(outcome.message)
@@ -154,7 +193,7 @@ export function ProjectSidebar({
   }, [api])
 
   const startNewChatInProject = useCallback(async (path: string) => {
-    setOpenProjectMenuPath(null)
+    setOpenProjectMenu(null)
     if (workspace === null || !samePath(workspace, path)) {
       await selectWorkspace(path)
     }
@@ -164,7 +203,7 @@ export function ProjectSidebar({
   const removeChat = useCallback(
     async (id: string) => {
       if (!api) return
-      setOpenChatMenuId(null)
+      setOpenChatMenu(null)
       const outcome = await api.invoke('chat.remove', { chatId: id })
       if (!outcome.ok) return
       setChats(outcome.value)
@@ -177,7 +216,7 @@ export function ProjectSidebar({
   const archiveChat = useCallback(
     async (id: string) => {
       if (!api) return
-      setOpenChatMenuId(null)
+      setOpenChatMenu(null)
       const outcome = await api.invoke('chat.archive', { chatId: id, archived: true })
       if (!outcome.ok) return
       setChats(outcome.value)
@@ -204,6 +243,12 @@ export function ProjectSidebar({
 
   const connected = CONNECTED_STATES.includes(connection)
   const activeProject = projects.find((project) => workspace !== null && samePath(project.path, workspace))
+  const openProjectTarget = openProjectMenu
+    ? projects.find((project) => samePath(openProjectMenu.key, project.path)) ?? null
+    : null
+  const openChatTarget = openChatMenu
+    ? chats.find((chat) => chat.id === openChatMenu.key) ?? null
+    : null
 
   return (
     <div className="chat-rail">
@@ -246,11 +291,17 @@ export function ProjectSidebar({
         {projects.length === 0 ? (
           <p className="chat-rail__projects-empty">{t('Без проекта')}</p>
         ) : (
-          <ul className="chat-rail__projects" aria-label={t('Список проектов')}>
+          <ul
+            className="chat-rail__projects"
+            aria-label={t('Список проектов')}
+            onScroll={() => {
+              if (openProjectMenu) setOpenProjectMenu(null)
+            }}
+          >
             {projects.map((project) => {
               const name = basename(project.path)
               const active = workspace !== null && samePath(project.path, workspace)
-              const menuOpen = openProjectMenuPath !== null && samePath(openProjectMenuPath, project.path)
+              const menuOpen = openProjectMenu !== null && samePath(openProjectMenu.key, project.path)
               return (
                 <li
                   key={project.path}
@@ -277,7 +328,18 @@ export function ProjectSidebar({
                       title={t('Действия с проектом')}
                       onClick={(event) => {
                         event.stopPropagation()
-                        setOpenProjectMenuPath(menuOpen ? null : project.path)
+                        if (menuOpen) {
+                          setOpenProjectMenu(null)
+                          return
+                        }
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        setOpenChatMenu(null)
+                        setOpenProjectMenu({
+                          key: project.path,
+                          left: rect.left,
+                          top: rect.bottom + 4,
+                          anchorTop: rect.top
+                        })
                       }}
                     >
                       <UiIcon name="more-horizontal" size={13} />
@@ -295,27 +357,6 @@ export function ProjectSidebar({
                       <UiIcon name="plus" size={13} />
                     </button>
                   </div>
-                  {menuOpen ? (
-                    <div className="chat-rail__project-menu" role="menu" aria-label={t('Действия с проектом {name}').replace('{name}', name)}>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => void openWorkspaceInExplorer(project.path)}
-                      >
-                        <UiIcon name="folder" size={13} />
-                        <span>{t('Открыть в проводнике')}</span>
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="chat-rail__project-menu-danger"
-                        onClick={() => void forgetWorkspace(project.path)}
-                      >
-                        <UiIcon name="x" size={13} />
-                        <span>{t('Удалить из списка')}</span>
-                      </button>
-                    </div>
-                  ) : null}
                 </li>
               )
             })}
@@ -339,9 +380,15 @@ export function ProjectSidebar({
       {chats.length === 0 ? (
         <p className="chat-rail__empty">{t('Чатов пока нет. Начни с нового чата.')}</p>
       ) : (
-        <ul className="chats__list" ref={chatsRef}>
+        <ul
+          className="chats__list"
+          ref={chatsRef}
+          onScroll={() => {
+            if (openChatMenu) setOpenChatMenu(null)
+          }}
+        >
           {chats.map((chat) => {
-            const chatMenuOpen = openChatMenuId === chat.id
+            const chatMenuOpen = openChatMenu?.key === chat.id
             const isRenaming = renamingChatId === chat.id
             return (
               <li key={chat.id} className="chats__row">
@@ -385,7 +432,18 @@ export function ProjectSidebar({
                         title={t('Действия с чатом')}
                         onClick={(event) => {
                           event.stopPropagation()
-                          setOpenChatMenuId(chatMenuOpen ? null : chat.id)
+                          if (chatMenuOpen) {
+                            setOpenChatMenu(null)
+                            return
+                          }
+                          const rect = event.currentTarget.getBoundingClientRect()
+                          setOpenProjectMenu(null)
+                          setOpenChatMenu({
+                            key: chat.id,
+                            left: rect.left,
+                            top: rect.bottom + 4,
+                            anchorTop: rect.top
+                          })
                         }}
                       >
                         <UiIcon name="more-horizontal" size={13} />
@@ -405,44 +463,83 @@ export function ProjectSidebar({
                     </div>
                   </>
                 )}
-                {chatMenuOpen ? (
-                  <div className="chat-rail__project-menu" role="menu" aria-label={t('Действия с чатом {title}').replace('{title}', chat.title)}>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setOpenChatMenuId(null)
-                        setRenamingChatId(chat.id)
-                        setRenameDraft(chat.title)
-                      }}
-                    >
-                      <UiIcon name="chat" size={13} />
-                      <span>{t('Переименовать')}</span>
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => void archiveChat(chat.id)}
-                    >
-                      <UiIcon name="archive" size={13} />
-                      <span>{t('Архивировать')}</span>
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="chat-rail__project-menu-danger"
-                      onClick={() => void removeChat(chat.id)}
-                    >
-                      <UiIcon name="x" size={13} />
-                      <span>{t('Удалить чат')}</span>
-                    </button>
-                  </div>
-                ) : null}
               </li>
             )
           })}
         </ul>
       )}
+      {openProjectMenu && openProjectTarget
+        ? createPortal(
+            <div
+              ref={projectMenuRef}
+              className="chat-rail__project-menu chat-rail__project-menu--floating"
+              role="menu"
+              aria-label={t('Действия с проектом {name}').replace('{name}', basename(openProjectTarget.path))}
+              style={{ top: openProjectMenu.top, left: openProjectMenu.left }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => void openWorkspaceInExplorer(openProjectTarget.path)}
+              >
+                <UiIcon name="folder" size={13} />
+                <span>{t('Открыть в проводнике')}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="chat-rail__project-menu-danger"
+                onClick={() => void forgetWorkspace(openProjectTarget.path)}
+              >
+                <UiIcon name="x" size={13} />
+                <span>{t('Удалить из списка')}</span>
+              </button>
+            </div>,
+            document.body
+          )
+        : null}
+      {openChatMenu && openChatTarget
+        ? createPortal(
+            <div
+              ref={chatMenuRef}
+              className="chat-rail__project-menu chat-rail__project-menu--floating"
+              role="menu"
+              aria-label={t('Действия с чатом {title}').replace('{title}', openChatTarget.title)}
+              style={{ top: openChatMenu.top, left: openChatMenu.left }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpenChatMenu(null)
+                  setRenamingChatId(openChatTarget.id)
+                  setRenameDraft(openChatTarget.title)
+                }}
+              >
+                <UiIcon name="chat" size={13} />
+                <span>{t('Переименовать')}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => void archiveChat(openChatTarget.id)}
+              >
+                <UiIcon name="archive" size={13} />
+                <span>{t('Архивировать')}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="chat-rail__project-menu-danger"
+                onClick={() => void removeChat(openChatTarget.id)}
+              >
+                <UiIcon name="x" size={13} />
+                <span>{t('Удалить чат')}</span>
+              </button>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   )
 }
