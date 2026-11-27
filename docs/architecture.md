@@ -348,6 +348,7 @@ fixed `compatibility` manifest. Поэтому обычное изменение
 | Файл | Домен |
 | --- | --- |
 | [`architecture/hive.md`](architecture/hive.md) | Улей (Hive), делегирование, роли, SOP и координация команд |
+| [`architecture/core-services.md`](architecture/core-services.md) | Микроядро Core, `evohime-service-contract`, `ModuleRegistry`, `core-assets`, реестр 26 модулей и hot-restart сервисов |
 | [`hive-architecture.md`](hive-architecture.md) | Аудитное описание Hive/EvaPulse: настройки, маршруты, proactive evolution и Electron UI |
 | [`architecture/workflow.md`](architecture/workflow.md) | Workflow/v1, оркестрация, триггеры, event bus и фоновое исполнение |
 | [`architecture/plan-review.md`](architecture/plan-review.md) | Ревью и правка планов, Plan Artifact и Architecture Drift Review |

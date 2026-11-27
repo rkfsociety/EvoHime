@@ -15,7 +15,7 @@
 ## Закрытые направления
 Временные plan-файлы закрытых направлений удалены после переноса их контракта
 и evidence в канонические документы. К закрытым относятся планы `01–181`,
-`183`, `189–190` (включая `144`), `192`, `196`, `197`, `198`, `199`, `200` и `201`; планы `127–130` закрыты как MVP-контуры
+`183`, `189–190` (включая `144`), `192`, `196`–`202`; планы `127–130` закрыты как MVP-контуры
 с явно сохранёнными `unavailable` deployment/adapter gates. Их отсутствие
 из каталога не означает отсутствие контракта: он находится в
 `architecture.md`, `docs/architecture/*.md` и `current-state.md`.
@@ -36,7 +36,6 @@
 | 193 | [Agent Coordination, Loop Guards и Session Recall](193-0-core-agent-coordination-loop-guards-and-session-recall.md) | active; анализ DeepSeek Harness, audit checkout и trace evidence 2026-11-17 (лимит шагов маскировался как completed) |
 | 194 | [Background Jobs Control Center](194-0-core-background-jobs-control-center.md) | active; UX/IPC поверх реализованного background-execution/v1 |
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
-| 202 | [Микроядерная декомпозиция Core и независимые модули-сервисы](202-0-core-microkernel-decomposition.md) | active (каркас готов); контракт `evohime-service-contract`, `ModuleRegistry`, `core-assets`, 12 сервисов, `modules.manifest.json` (26 модулей) и `updater`/`supervisor` реализованы; перенос вызовов и очистка ядра вынесены в План 203 |
 | 203 | [Фактический перенос вызовов из `evohime-core` в внешние сервисы и очистка микроядра](203-0-core-service-migration-and-cleanup.md) | active; 4 волны переноса логики/тестов, переключения на `ModuleRegistry` и удаления старых модулей из `evohime-core` |
 
 Незавершённые numbered plans: `184–188`, `191`, `193–195`, `202` и `203`.

@@ -1,9 +1,9 @@
 use super::{
     all_updates_already_staged, cleanup_failed_staging, copy_reader_bounded, is_github_api_url,
-    is_github_release_asset_url, is_trusted_github_url, merge_installed_manifest_to,
-    normalize_github_token, parse_git_credential_password, parse_json_body,
-    prune_stale_staged_entries, read_installed_module_manifest, read_update_config,
-    resolve_github_token_with, stream_file_hash, updater_bootstrap_script,
+    is_github_release_asset_url, is_trusted_github_url, isolated_service_exe_names,
+    merge_installed_manifest_to, normalize_github_token, parse_git_credential_password,
+    parse_json_body, prune_stale_staged_entries, read_installed_module_manifest,
+    read_update_config, resolve_github_token_with, stream_file_hash, updater_bootstrap_script,
     updater_first_if_required, updater_http_client, validate_compatible_manifest,
     validate_runtime_manifest, write_staged_cache_manifest, write_staged_manifest,
     CompatibleComponent, CompatibleManifest, RuntimeReleaseEntry, RuntimeReleaseManifest,
@@ -1277,4 +1277,38 @@ fn stage_updates_downloads_modules_in_candidate_order() {
     assert_eq!(telemetry_state.borrow().completed_modules, expected);
 
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn isolated_service_exe_names_collect_only_service_component_exes() {
+    let candidate = |module: &str, restart: &str, artifact: &str| UpdateCandidate {
+        module: module.into(),
+        installed: "1.0.0".into(),
+        available: "1.1.0".into(),
+        summary: String::new(),
+        changes: vec![],
+        dependencies: vec![],
+        restart: restart.into(),
+        artifact: artifact.into(),
+        size: 1,
+        sha256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".into(),
+        download_url: String::new(),
+    };
+    let updates = vec![
+        candidate("evals", "service:evals", "evohime-evals.exe"),
+        candidate(
+            "model-router",
+            "service:model-router",
+            "evohime-model-router.exe",
+        ),
+        candidate("evals-again", "service:evals", "evohime-evals.exe"),
+        candidate("shell-host", "shell", "shell-host.zip"),
+        candidate("core", "core", "evohime-core.exe"),
+        candidate("core-assets", "none", "core-assets.zip"),
+        candidate("verify", "none", "evohime-verify.exe"),
+    ];
+    assert_eq!(
+        isolated_service_exe_names(&updates),
+        vec!["evohime-evals.exe", "evohime-model-router.exe"]
+    );
 }

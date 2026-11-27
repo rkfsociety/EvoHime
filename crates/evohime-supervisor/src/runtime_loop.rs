@@ -76,6 +76,18 @@ pub enum TickEvent {
     /// сам не вызывает: возврат из dead-letter — операторское действие.
     #[allow(dead_code)]
     ScheduleRequeued,
+    /// Supervisor заметил сервисный модуль, чей бинарник на диске заменён при
+    /// живом процессе (прерванное обновление), и выполнил точечный
+    /// hot-restart: мягко остановил только этот процесс. Ядро лениво
+    /// перезапустит сервис с новым бинарником. Событие строит сам supervisor
+    /// в тиковом цикле, минуя `SupervisorRuntime`.
+    #[allow(dead_code)]
+    ServiceHotRestart {
+        /// Идентификатор сервисного модуля (например, `tools-exec`).
+        service_id: String,
+        /// Идентификатор остановленного процесса.
+        pid: u32,
+    },
 }
 
 /// Outcome of finishing a core-process generation, used by the caller to decide

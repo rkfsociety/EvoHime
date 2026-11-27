@@ -12,12 +12,19 @@
 //! implement this contract so `evohime-core` can discover, authorize, and invoke
 //! them uniformly without compile-time coupling to module internals.
 
+mod auth;
+
 use std::collections::BTreeSet;
 use std::io::{self, Read, Write};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+pub use auth::{
+    compute_service_proof, generate_handshake_nonce, generate_session_secret,
+    SERVICE_SESSION_SECRET_ENV, SESSION_SECRET_BYTES,
+};
 
 /// Current wire-level contract version for service modules.
 pub const SERVICE_CONTRACT_VERSION: u32 = 1;
@@ -152,6 +159,18 @@ pub struct ServiceDescriptor {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ServiceRequest {
+    /// Proves knowledge of the shared session secret before any other request.
+    ///
+    /// Required as the first request of a connection whenever Core passed the
+    /// secret through [`SERVICE_SESSION_SECRET_ENV`]; rejected at any other
+    /// time. Carries a fresh single-use nonce and the HMAC-SHA256 proof
+    /// computed with [`compute_service_proof`].
+    Authenticate {
+        /// Single-use lowercase hex nonce generated for this handshake.
+        nonce: String,
+        /// Hex HMAC-SHA256 proof over the nonce.
+        proof: String,
+    },
     /// Lightweight liveness and contract-version check.
     Ping,
     /// Requests the current [`ServiceHealthReport`].
@@ -177,6 +196,8 @@ pub enum ServiceRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ServiceResponse {
+    /// Acknowledgement of a successful [`ServiceRequest::Authenticate`].
+    Authenticated,
     /// Acknowledgement of [`ServiceRequest::Ping`].
     Pong {
         /// Contract version supported by the module.
@@ -335,6 +356,16 @@ pub fn dispatch_request<H: ServiceHandler>(
     request: ServiceRequest,
 ) -> ServiceResponse {
     match request {
+        ServiceRequest::Authenticate { .. } => {
+            // `Authenticate` is answered by the transport gate in
+            // [`serve_stream_with_secret`], never by the handler itself.
+            ServiceResponse::Error {
+                request_id: None,
+                error: ServiceContractError::permission_denied(
+                    "authentication handshake is not accepted in this state",
+                ),
+            }
+        }
         ServiceRequest::Ping => ServiceResponse::Pong {
             contract_version: SERVICE_CONTRACT_VERSION,
         },
@@ -377,11 +408,36 @@ pub fn dispatch_request<H: ServiceHandler>(
 
 /// Serves length-prefixed [`ServiceRequest`] / [`ServiceResponse`] frames over
 /// an arbitrary synchronous byte stream until EOF or [`ServiceRequest::Shutdown`].
+///
+/// When the [`SERVICE_SESSION_SECRET_ENV`] environment variable is set (and
+/// non-empty), the first request of the connection must be
+/// [`ServiceRequest::Authenticate`]; any other request before a successful
+/// handshake — and a repeated `Authenticate` after one — is answered with a
+/// [`ServiceErrorCode::PermissionDenied`] error that never reveals the expected
+/// secret. Without the environment variable the handler serves requests
+/// immediately, preserving the ungated behaviour used in development and tests.
 pub fn serve_stream<H: ServiceHandler, R: Read, W: Write>(
     handler: &H,
     reader: &mut R,
     writer: &mut W,
 ) -> io::Result<()> {
+    let session_secret = std::env::var(SERVICE_SESSION_SECRET_ENV)
+        .ok()
+        .filter(|value| !value.is_empty());
+    serve_stream_with_secret(handler, reader, writer, session_secret.as_deref())
+}
+
+/// Same as [`serve_stream`], with the gating secret injected explicitly:
+/// `Some` enforces the `Authenticate` handshake, `None` restores the ungated
+/// behaviour. Exists so transports and tests can exercise gating without
+/// touching process environment state.
+pub fn serve_stream_with_secret<H: ServiceHandler, R: Read, W: Write>(
+    handler: &H,
+    reader: &mut R,
+    writer: &mut W,
+    session_secret: Option<&str>,
+) -> io::Result<()> {
+    let mut authenticated = false;
     let mut len_buf = [0u8; 4];
     loop {
         match reader.read_exact(&mut len_buf) {
@@ -422,7 +478,40 @@ pub fn serve_stream<H: ServiceHandler, R: Read, W: Write>(
             }
         };
         let is_shutdown = matches!(request, ServiceRequest::Shutdown);
-        let response = dispatch_request(handler, request);
+        let response = match request {
+            ServiceRequest::Authenticate { nonce, proof } => match session_secret {
+                Some(secret) if !authenticated => {
+                    match auth::verify_handshake(secret, &nonce, &proof) {
+                        Ok(()) => {
+                            authenticated = true;
+                            ServiceResponse::Authenticated
+                        }
+                        Err(error) => ServiceResponse::Error {
+                            request_id: None,
+                            error,
+                        },
+                    }
+                }
+                _ => ServiceResponse::Error {
+                    request_id: None,
+                    error: ServiceContractError::permission_denied(
+                        "authentication handshake is not accepted in this state",
+                    ),
+                },
+            },
+            other => {
+                if session_secret.is_some() && !authenticated {
+                    ServiceResponse::Error {
+                        request_id: None,
+                        error: ServiceContractError::permission_denied(
+                            "authentication handshake required before any other request",
+                        ),
+                    }
+                } else {
+                    dispatch_request(handler, other)
+                }
+            }
+        };
         let encoded = encode_frame(&response)
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.message))?;
         writer.write_all(&encoded)?;
@@ -586,6 +675,216 @@ mod tests {
             ServiceResponse::InvokeResult { ref request_id, .. } if request_id == "s1"
         ));
         assert!(matches!(read_next(), ServiceResponse::ShuttingDown));
+        assert!(cursor.is_empty());
+    }
+
+    fn push_request(input: &mut Vec<u8>, request: &ServiceRequest) {
+        input.extend(encode_frame(request).expect("encode request"));
+    }
+
+    fn read_response(cursor: &mut &[u8]) -> ServiceResponse {
+        let len = u32::from_be_bytes([cursor[0], cursor[1], cursor[2], cursor[3]]) as usize;
+        let frame = &cursor[..4 + len];
+        *cursor = &cursor[4 + len..];
+        decode_frame(frame).expect("decode response")
+    }
+
+    fn assert_permission_denied(response: ServiceResponse) {
+        match response {
+            ServiceResponse::Error { error, .. } => {
+                assert_eq!(error.code, ServiceErrorCode::PermissionDenied)
+            }
+            other => panic!("expected PermissionDenied error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn gated_connection_rejects_requests_before_handshake() {
+        let mut input = Vec::new();
+        push_request(&mut input, &ServiceRequest::Ping);
+        push_request(&mut input, &ServiceRequest::Shutdown);
+
+        let mut reader = io::Cursor::new(input);
+        let mut output = Vec::new();
+        serve_stream_with_secret(
+            &EchoHandler,
+            &mut reader,
+            &mut output,
+            Some("a".repeat(64).as_str()),
+        )
+        .expect("serve_stream_with_secret");
+
+        let mut cursor = output.as_slice();
+        assert_permission_denied(read_response(&mut cursor));
+        assert_permission_denied(read_response(&mut cursor));
+        assert!(cursor.is_empty());
+    }
+
+    #[test]
+    fn gated_connection_accepts_handshake_then_serves_invoke() {
+        let secret = "a".repeat(64);
+        let nonce = "cd".repeat(32);
+        let mut input = Vec::new();
+        push_request(
+            &mut input,
+            &ServiceRequest::Authenticate {
+                proof: compute_service_proof(&secret, &nonce),
+                nonce,
+            },
+        );
+        push_request(
+            &mut input,
+            &ServiceRequest::Invoke {
+                request_id: "s2".to_owned(),
+                capability: "echo.say".to_owned(),
+                payload: serde_json::json!({"msg": "hi"}),
+                caller_session_id: None,
+            },
+        );
+        push_request(&mut input, &ServiceRequest::Shutdown);
+
+        let mut reader = io::Cursor::new(input);
+        let mut output = Vec::new();
+        serve_stream_with_secret(&EchoHandler, &mut reader, &mut output, Some(&secret))
+            .expect("serve_stream_with_secret");
+
+        let mut cursor = output.as_slice();
+        assert!(matches!(
+            read_response(&mut cursor),
+            ServiceResponse::Authenticated
+        ));
+        assert!(matches!(
+            read_response(&mut cursor),
+            ServiceResponse::InvokeResult { ref request_id, .. } if request_id == "s2"
+        ));
+        assert!(matches!(
+            read_response(&mut cursor),
+            ServiceResponse::ShuttingDown
+        ));
+        assert!(cursor.is_empty());
+    }
+
+    #[test]
+    fn gated_connection_rejects_a_wrong_proof() {
+        let secret = "a".repeat(64);
+        let nonce = "cd".repeat(32);
+        let mut input = Vec::new();
+        push_request(
+            &mut input,
+            &ServiceRequest::Authenticate {
+                proof: compute_service_proof("wrong-secret", &nonce),
+                nonce,
+            },
+        );
+        push_request(&mut input, &ServiceRequest::Shutdown);
+
+        let mut reader = io::Cursor::new(input);
+        let mut output = Vec::new();
+        serve_stream_with_secret(&EchoHandler, &mut reader, &mut output, Some(&secret))
+            .expect("serve_stream_with_secret");
+
+        let mut cursor = output.as_slice();
+        assert_permission_denied(read_response(&mut cursor));
+        // The connection stays unauthenticated: even a later Shutdown is denied.
+        assert_permission_denied(read_response(&mut cursor));
+        assert!(cursor.is_empty());
+    }
+
+    #[test]
+    fn gated_connection_rejects_a_repeated_authenticate() {
+        let secret = "a".repeat(64);
+        let nonce = "cd".repeat(32);
+        let mut input = Vec::new();
+        for _ in 0..2 {
+            push_request(
+                &mut input,
+                &ServiceRequest::Authenticate {
+                    proof: compute_service_proof(&secret, &nonce),
+                    nonce: nonce.clone(),
+                },
+            );
+        }
+        push_request(&mut input, &ServiceRequest::Shutdown);
+
+        let mut reader = io::Cursor::new(input);
+        let mut output = Vec::new();
+        serve_stream_with_secret(&EchoHandler, &mut reader, &mut output, Some(&secret))
+            .expect("serve_stream_with_secret");
+
+        let mut cursor = output.as_slice();
+        assert!(matches!(
+            read_response(&mut cursor),
+            ServiceResponse::Authenticated
+        ));
+        assert_permission_denied(read_response(&mut cursor));
+        assert!(matches!(
+            read_response(&mut cursor),
+            ServiceResponse::ShuttingDown
+        ));
+        assert!(cursor.is_empty());
+    }
+
+    #[test]
+    fn gated_connection_rejects_a_malformed_nonce_and_proof() {
+        let secret = "a".repeat(64);
+        let nonce = "cd".repeat(32);
+        let mut input = Vec::new();
+        for bad_nonce in [
+            "".to_owned(),
+            "zz".to_owned(),
+            "CD".repeat(32),
+            nonce[..62].to_owned(),
+        ] {
+            push_request(
+                &mut input,
+                &ServiceRequest::Authenticate {
+                    proof: compute_service_proof(&secret, &nonce),
+                    nonce: bad_nonce,
+                },
+            );
+        }
+        for bad_proof in ["".to_owned(), "zz".to_owned(), "AB".repeat(32)] {
+            push_request(
+                &mut input,
+                &ServiceRequest::Authenticate {
+                    proof: bad_proof,
+                    nonce: nonce.clone(),
+                },
+            );
+        }
+
+        let mut reader = io::Cursor::new(input);
+        let mut output = Vec::new();
+        serve_stream_with_secret(&EchoHandler, &mut reader, &mut output, Some(&secret))
+            .expect("serve_stream_with_secret");
+
+        let mut cursor = output.as_slice();
+        for _ in 0..7 {
+            assert_permission_denied(read_response(&mut cursor));
+        }
+        assert!(cursor.is_empty());
+    }
+
+    #[test]
+    fn ungated_connection_keeps_backwards_compatibility() {
+        let mut input = Vec::new();
+        push_request(&mut input, &ServiceRequest::Ping);
+        push_request(&mut input, &ServiceRequest::Shutdown);
+
+        let mut reader = io::Cursor::new(input);
+        let mut output = Vec::new();
+        serve_stream_with_secret(&EchoHandler, &mut reader, &mut output, None)
+            .expect("serve_stream_with_secret");
+
+        let mut cursor = output.as_slice();
+        assert!(matches!(
+            read_response(&mut cursor),
+            ServiceResponse::Pong { .. }
+        ));
+        assert!(matches!(
+            read_response(&mut cursor),
+            ServiceResponse::ShuttingDown
+        ));
         assert!(cursor.is_empty());
     }
 }

@@ -1800,6 +1800,39 @@ fn apply_updates_inner(
     let only_isolated_services = updates
         .iter()
         .all(|u| evohime_tx::UpdateTransaction::is_isolated_service_restart(&u.restart));
+    // A running service executable locks its image file, so the staged
+    // replacement would fail or wait forever, and the old process would keep
+    // running the previous version. Stop the updated services first; the core
+    // respawns them lazily with the new binaries. This happens before the
+    // exit-blocking status so mixed updates (service + shell/ui) keep their
+    // normal flow: services are stopped, then the shell is asked to exit.
+    let service_exes = isolated_service_exe_names(updates);
+    if !service_exes.is_empty() {
+        if only_isolated_services {
+            write_status(
+                data_dir,
+                "applying",
+                "Перезапускаю обновляемые сервисы…",
+                updates,
+            );
+        }
+        progress(
+            &format!(
+                "Остановка обновляемых сервисов: {}",
+                service_exes.join(", ")
+            ),
+            0,
+            None,
+        );
+        let terminated = evohime_tx::terminate_service_processes(
+            &service_exes.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        progress(
+            &format!("Сервисы остановлены для обновления ({})", terminated.len()),
+            100,
+            None,
+        );
+    }
     if !only_isolated_services {
         write_status_requiring_exit(
             data_dir,
@@ -1865,6 +1898,26 @@ fn apply_updates_inner(
     cleanup_completed_staging(&staging, updater_update.is_some());
     write_status(data_dir, "ready", "Обновления модулей применены.", &[]);
     Ok(())
+}
+
+/// Collects the executable names of updated isolated services: candidates with
+/// a `service:<id>` restart whose artifact is a known native component path.
+/// The updater refuses non-service images, so the result is safe to terminate.
+fn isolated_service_exe_names(updates: &[UpdateCandidate]) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for update in updates {
+        if !update.restart.starts_with("service:") {
+            continue;
+        }
+        let artifact = update.artifact.as_str();
+        if artifact.ends_with(".exe")
+            && evohime_tx::UpdateTransaction::SELECTABLE_COMPONENTS.contains(&artifact)
+            && !names.iter().any(|name| name == artifact)
+        {
+            names.push(artifact.to_owned());
+        }
+    }
+    names
 }
 
 fn merge_installed_manifest_to(

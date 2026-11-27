@@ -1,11 +1,30 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-11-21.
+Обновлено: 2026-11-27.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
+
+## Plan 202 — Микроядерная декомпозиция Core и изолированные модули-сервисы (закрыт 2026-11-27)
+
+- Реализованы три финальных элемента этапов 202.1 и 202.3: HMAC-SHA256
+  аутентификация канала ядро↔сервис (`crates/evohime-service-contract/src/auth.rs`,
+  гейтинг в `serve_stream`, рукопожатие в `StdioProcessTransport`), точечный
+  hot-restart обновляемых сервисов (`terminate_service_processes` в
+  `evohime-updater`, вызов из `evohime-update-agent` перед применением
+  изолированных обновлений) и отслеживание сервисных процессов в
+  `evohime-supervisor` (`service_pool.rs` + тиковый скан stale-бинарников
+  с событием `service_hot_restart`).
+- Локальные узкие проверки: `cargo test -p evohime-service-contract`
+  (15 unit + 1 doctest), `cargo test -p evohime-updater` (43+ новых теста,
+  включая kill по имени образа и защитный белый список), `cargo test -p
+  evohime-supervisor --locked` (48 lib + 5 интеграционных), `cargo fmt
+  --check`, `git diff --check`. Полные сборки и CI — после push.
+- Канонический контракт перенесён в [`architecture/core-services.md`](architecture/core-services.md);
+  файлы `docs/plans/202-*.md` удалены. Финальная CI-верификация всех 26 модулей
+  выполняется при следующем push (перенесена в этап 203.4).
 
 ## Plan 198 — Независимые EvaPulse и Hive (закрыт 2026-11-21)
 
@@ -459,7 +478,8 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 
 Поставка разделена на versioned module releases с тегами
 `module-<module>-v<semver>`, `bootstrap` для первоначальной установки и
-`installer` для полного восстановления. `bootstrap` содержит маленький`EvoHime-Setup.exe` и `EvoHime-Setup.json`; бинарники и runtime публикуются
+`installer` для полного восстановления. `bootstrap` содержит маленький
+`EvoHime-Setup.exe` и `EvoHime-Setup.json`; бинарники и runtime публикуются
 только в собственных релизах модулей. Fixed release
 `compatibility` содержит дешёвый `evohime.compatible.json`, который связывает
 конкретные module releases в один совместимый комплект и задаёт minimum updater

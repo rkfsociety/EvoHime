@@ -1,4 +1,5 @@
 use crate::runtime_loop::{SupervisorRuntime, TickEvent};
+use crate::service_pool::{is_service_module_executable, ServicePool};
 use serde_json::json;
 use std::{
     ffi::OsStr,
@@ -22,7 +23,9 @@ use tokio::{
 
 use evohime_desktop_ipc::session::LaunchContext;
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE},
+    Foundation::{
+        CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, FILETIME, HANDLE, INVALID_HANDLE_VALUE,
+    },
     System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectCpuRateControlInformation,
         JobObjectExtendedLimitInformation, SetInformationJobObject,
@@ -271,6 +274,10 @@ fn tick_event_log(event: &TickEvent) -> (&'static str, serde_json::Value) {
         ),
         TickEvent::ScheduleDeadLetter => ("runtime.schedule_dead_letter", json!({})),
         TickEvent::ScheduleRequeued => ("runtime.schedule_requeued", json!({})),
+        TickEvent::ServiceHotRestart { service_id, pid } => (
+            "runtime.service_hot_restart",
+            json!({"service_id": service_id, "pid": pid}),
+        ),
     }
 }
 
@@ -1284,6 +1291,23 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let core_exe = normalized_env_path("EVOHIME_CORE_EXE")
         .unwrap_or_else(|| PathBuf::from("evohime-core.exe"));
+    // Каталог установки: ядро лежит рядом с сервисными модулями, поэтому
+    // родительский каталог core-бинарника служит границей доверия для скана
+    // сервисных процессов. Если каталог определить нельзя (относительное имя
+    // без родителя), скан сервисов не выполняется.
+    let install_dir = core_exe
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .and_then(|dir| fs::canonicalize(dir).ok())
+        .map(|dir| {
+            let dir_text = dir.as_os_str().to_string_lossy().to_string();
+            // `canonicalize` возвращает verbatim-путь `\\?\C:\...`, а
+            // `QueryFullProcessImageNameW` — обычный; приводим к одному виду.
+            match dir_text.strip_prefix(r"\\?\") {
+                Some(stripped) => PathBuf::from(stripped),
+                None => dir,
+            }
+        });
 
     // One launch context per supervisor session: an unpredictable pipe name, a
     // session secret and the identity the shell must run as. It survives Core
@@ -1386,6 +1410,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     )
     .map_err(|error| -> Box<dyn std::error::Error> { Box::new(error) })?;
 
+    // In-memory пул сервисных модулей на время жизни процесса supervisor —
+    // тот же уровень хранения, что и у `SupervisorRuntime` выше.
+    let mut service_pool = ServicePool::new();
+
     loop {
         let _ = logger.write("core.spawn", json!({"restart": restarts}));
         let generation_started = SystemTime::now();
@@ -1407,7 +1435,15 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         let mut child = command.spawn()?;
         job.assign(&child)?;
-        let status = wait_for_core(&mut child, &heartbeat_path, &logger, &mut runtime).await?;
+        let status = wait_for_core(
+            &mut child,
+            &heartbeat_path,
+            &logger,
+            &mut runtime,
+            install_dir.as_deref(),
+            &mut service_pool,
+        )
+        .await?;
         let _ = logger.write(
             "core.exit",
             json!({"success": status.success(), "code": status.code()}),
@@ -1540,14 +1576,220 @@ fn heartbeat_is_stale_for_generation(
     heartbeat_is_stale(path, max_age)
 }
 
+/// Сколько тиков (по одной секунде) между сканами сервисных процессов
+/// в тиковом цикле supervisor.
+const SERVICE_SCAN_INTERVAL_TICKS: u32 = 5;
+
+/// Длина буфера для полного пути образа процесса
+/// (`QueryFullProcessImageNameW`).
+const PROCESS_IMAGE_PATH_LEN: usize = 1024;
+
+/// Снимок одного процесса из Toolhelp-перечисления.
+struct ProcessImageSnapshot {
+    pid: u32,
+    image_name: String,
+}
+
+/// Перечисляет процессы системы по имени образа через Toolhelp32-снимок.
+/// Ошибка снимка (например, при конкурентном создании процессов) даёт пустой
+/// список: скан повторится на следующем тике.
+fn enumerate_process_images() -> Vec<ProcessImageSnapshot> {
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Vec::new();
+    }
+    let mut processes = Vec::new();
+    let mut entry = PROCESSENTRY32W {
+        dwSize: size_of::<PROCESSENTRY32W>() as u32,
+        cntUsage: 0,
+        th32ProcessID: 0,
+        th32DefaultHeapID: 0,
+        th32ModuleID: 0,
+        cntThreads: 0,
+        th32ParentProcessID: 0,
+        pcPriClassBase: 0,
+        dwFlags: 0,
+        szExeFile: [0; 260],
+    };
+    if unsafe { Process32FirstW(snapshot, &mut entry) } != 0 {
+        loop {
+            let name_len = entry
+                .szExeFile
+                .iter()
+                .position(|unit| *unit == 0)
+                .unwrap_or(entry.szExeFile.len());
+            let image_name = String::from_utf16_lossy(&entry.szExeFile[..name_len]);
+            if !image_name.is_empty() {
+                processes.push(ProcessImageSnapshot {
+                    pid: entry.th32ProcessID,
+                    image_name,
+                });
+            }
+            if unsafe { Process32NextW(snapshot, &mut entry) } == 0 {
+                break;
+            }
+        }
+    }
+    unsafe { CloseHandle(snapshot) };
+    processes
+}
+
+/// Складывает `FILETIME` в u64 (100-наносекундные интервалы с 1601-01-01).
+fn filetime_as_u64(filetime: &FILETIME) -> u64 {
+    (u64::from(filetime.dwHighDateTime) << 32) | u64::from(filetime.dwLowDateTime)
+}
+
+/// Переводит 100-наносекундные интервалы Windows-эпохи (1601-01-01) в
+/// миллисекунды Unix-epoch; интервалы до 1970 года дают 0.
+fn filetime_to_unix_ms(filetime: u64) -> u64 {
+    const WINDOWS_EPOCH_OFFSET_100NS: u64 = 11_644_473_600_000_000;
+    filetime.saturating_sub(WINDOWS_EPOCH_OFFSET_100NS.saturating_mul(10_000)) / 10_000
+}
+
+/// Момент старта процесса `pid` (мс Unix-epoch) и полный путь его образа
+/// (`OpenProcess` + `GetProcessTimes` + `QueryFullProcessImageNameW`).
+/// `None`, если процесс уже завершился или недоступен для запроса.
+fn process_start_and_image(pid: u32) -> Option<(u64, PathBuf)> {
+    use windows_sys::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        return None;
+    }
+    let info = (|| {
+        let mut creation = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let mut exit = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let mut kernel = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let mut user = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let times_ok =
+            unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) };
+        if times_ok == 0 {
+            return None;
+        }
+        let start_ms = filetime_to_unix_ms(filetime_as_u64(&creation));
+        let mut path_buffer = [0u16; PROCESS_IMAGE_PATH_LEN];
+        let mut path_len = path_buffer.len() as u32;
+        let path_ok = unsafe {
+            QueryFullProcessImageNameW(handle, 0, path_buffer.as_mut_ptr(), &mut path_len)
+        };
+        if path_ok == 0 || path_len == 0 {
+            return None;
+        }
+        let image_path = PathBuf::from(String::from_utf16_lossy(&path_buffer[..path_len as usize]));
+        Some((start_ms, image_path))
+    })();
+    unsafe { CloseHandle(handle) };
+    info
+}
+
+/// Мягко останавливает один процесс сервисного модуля: `TerminateProcess`
+/// строго для этого pid. `false` означает, что процесс уже завершился сам или
+/// недоступен — штатный исход, ядро само разрулит последующий рестарт.
+fn terminate_process_id(pid: u32) -> bool {
+    use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+    let handle = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
+    if handle.is_null() {
+        return false;
+    }
+    let terminated = unsafe { TerminateProcess(handle, 0) } != 0;
+    unsafe { CloseHandle(handle) };
+    terminated
+}
+
+/// Проверяет, что путь лежит внутри каталога (без учёта регистра, как пути
+/// Windows). Защищает от остановки одноимённого сервисного бинарника вне
+/// каталога установки.
+fn path_is_within(path: &Path, dir: &Path) -> bool {
+    let path_text = path.to_string_lossy().to_ascii_lowercase();
+    let dir_text = dir.to_string_lossy().to_ascii_lowercase();
+    match path_text.strip_prefix(dir_text.trim_end_matches('\\')) {
+        Some(rest) => rest.is_empty() || rest.starts_with('\\'),
+        None => false,
+    }
+}
+
+/// Один проход наблюдения за сервисными модулями в каталоге установки.
+///
+/// Для каждого живого процесса, чей образ входит в белый список
+/// `is_service_module_executable`, пул регистрирует сервис и отражает его
+/// состояние. Если бинарник на диске новее момента старта процесса
+/// (прерванное обновление: файл заменён, а процесс продолжает работать со
+/// старой версией), выполняется точечный hot-restart: пул переводит сервис в
+/// `Restarting`, затем останавливается строго этот pid. Ядро после смерти
+/// дочернего процесса лениво перезапустит сервис уже с новым бинарником;
+/// последующие сканы увидят новый процесс и снова пометят сервис `Running`.
+/// За один скан перезапускается не более одного сервиса — никакой массовой
+/// зачистки не предусмотрено.
+fn scan_service_pool(install_dir: &Path, pool: &mut ServicePool) -> Vec<TickEvent> {
+    for snapshot in enumerate_process_images() {
+        if !is_service_module_executable(&snapshot.image_name) {
+            continue;
+        }
+        let Some((process_start_ms, image_path)) = process_start_and_image(snapshot.pid) else {
+            continue;
+        };
+        // Повторная проверка фактического образа уже открытого процесса
+        // защищает от гонки переиспользования pid: между Toolhelp-снимком и
+        // OpenProcess имя образа могло достаться чужому процессу.
+        let Some(actual_name) = image_path.file_name().and_then(OsStr::to_str) else {
+            continue;
+        };
+        if !is_service_module_executable(actual_name) || !path_is_within(&image_path, install_dir) {
+            continue;
+        }
+        let Some(exe_mtime_ms) = fs::metadata(&image_path)
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as u64)
+        else {
+            continue;
+        };
+        if let Some(service_id) = pool.observe_service_process(
+            &snapshot.image_name,
+            snapshot.pid,
+            image_path,
+            exe_mtime_ms,
+            process_start_ms,
+        ) {
+            terminate_process_id(snapshot.pid);
+            return vec![TickEvent::ServiceHotRestart {
+                service_id,
+                pid: snapshot.pid,
+            }];
+        }
+    }
+    Vec::new()
+}
+
 async fn wait_for_core(
     child: &mut tokio::process::Child,
     heartbeat_path: &Path,
     logger: &SupervisorLogger,
     runtime: &mut SupervisorRuntime,
+    install_dir: Option<&Path>,
+    service_pool: &mut ServicePool,
 ) -> io::Result<std::process::ExitStatus> {
     let started = tokio::time::Instant::now();
     let generation_started_at = SystemTime::now();
+    let mut tick: u32 = 0;
     loop {
         if let Some(status) = child.try_wait()? {
             return Ok(status);
@@ -1582,6 +1824,13 @@ async fn wait_for_core(
             );
             child.kill().await?;
             return child.wait().await;
+        }
+        tick = tick.wrapping_add(1);
+        if tick % SERVICE_SCAN_INTERVAL_TICKS == 0 {
+            if let Some(install_dir) = install_dir {
+                let events = scan_service_pool(install_dir, service_pool);
+                log_runtime_events(logger, &events);
+            }
         }
         sleep(Duration::from_secs(1)).await;
     }

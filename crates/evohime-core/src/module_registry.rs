@@ -15,9 +15,10 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, RwLock};
 
 use evohime_service_contract::{
-    decode_frame, encode_frame, validate_descriptor, ServiceCapabilityDescriptor,
+    compute_service_proof, decode_frame, encode_frame, generate_handshake_nonce,
+    generate_session_secret, validate_descriptor, ServiceCapabilityDescriptor,
     ServiceContractError, ServiceDescriptor, ServiceRequest, ServiceResponse,
-    MAX_SERVICE_FRAME_BYTES,
+    MAX_SERVICE_FRAME_BYTES, SERVICE_SESSION_SECRET_ENV,
 };
 
 /// Boxed `Send` future returned by [`ServiceTransport`].
@@ -96,6 +97,13 @@ pub struct ModuleRegistry {
 
 /// [`ServiceTransport`] backed by a child service-module process speaking
 /// `evohime-service-contract` frames over `stdin`/`stdout`.
+///
+/// Every spawned child receives a fresh session secret through the
+/// [`SERVICE_SESSION_SECRET_ENV`] environment variable and must complete the
+/// one-shot `Authenticate` handshake before the first real request. A failed
+/// handshake kills the child and reports
+/// [`evohime_service_contract::ServiceErrorCode::Unavailable`]; the next
+/// request spawns a new child and retries the handshake.
 pub struct StdioProcessTransport {
     executable: PathBuf,
     process: Mutex<Option<Child>>,
@@ -120,18 +128,7 @@ impl StdioProcessTransport {
             .lock()
             .map_err(|_| ServiceContractError::unavailable("service process lock poisoned"))?;
         if guard.is_none() {
-            let child = Command::new(&self.executable)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()
-                .map_err(|err| {
-                    ServiceContractError::unavailable(format!(
-                        "failed to spawn {}: {err}",
-                        self.executable.display()
-                    ))
-                })?;
-            *guard = Some(child);
+            *guard = Some(self.spawn_authenticated_child()?);
         }
         let child = guard
             .as_mut()
@@ -150,34 +147,108 @@ impl StdioProcessTransport {
             .stdout
             .as_mut()
             .ok_or_else(|| ServiceContractError::unavailable("service stdout is unavailable"))?;
-        let mut len_buf = [0u8; 4];
-        if let Err(err) = stdout.read_exact(&mut len_buf) {
+        let response = read_response_frame(stdout);
+        if response.is_err() {
             *guard = None;
-            return Err(ServiceContractError::unavailable(format!(
-                "failed to read response header: {err}"
-            )));
-        }
-        let payload_len = u32::from_be_bytes(len_buf) as usize;
-        if payload_len > MAX_SERVICE_FRAME_BYTES {
-            *guard = None;
-            return Err(ServiceContractError::invalid_input(format!(
-                "service response {payload_len} bytes exceeds limit {MAX_SERVICE_FRAME_BYTES}"
-            )));
-        }
-        let mut full_frame = Vec::with_capacity(4 + payload_len);
-        full_frame.extend_from_slice(&len_buf);
-        full_frame.resize(4 + payload_len, 0);
-        if let Err(err) = stdout.read_exact(&mut full_frame[4..]) {
-            *guard = None;
-            return Err(ServiceContractError::unavailable(format!(
-                "failed to read response body: {err}"
-            )));
         }
         if matches!(request, ServiceRequest::Shutdown) {
             *guard = None;
         }
-        decode_frame(&full_frame)
+        response
     }
+
+    /// Spawns a child process with a fresh session secret and completes the
+    /// `Authenticate` handshake before the child becomes usable. On any
+    /// handshake failure the child is killed so the next request starts from a
+    /// clean state.
+    fn spawn_authenticated_child(&self) -> Result<Child, ServiceContractError> {
+        let session_secret = generate_session_secret().map_err(|err| {
+            ServiceContractError::unavailable(format!(
+                "failed to generate service session secret: {}",
+                err.message
+            ))
+        })?;
+        let mut child = Command::new(&self.executable)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .env(SERVICE_SESSION_SECRET_ENV, &session_secret)
+            .spawn()
+            .map_err(|err| {
+                ServiceContractError::unavailable(format!(
+                    "failed to spawn {}: {err}",
+                    self.executable.display()
+                ))
+            })?;
+        if let Err(err) = authenticate_child(&mut child, &session_secret) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(err);
+        }
+        Ok(child)
+    }
+}
+
+/// Performs the one-shot `Authenticate` handshake with a freshly spawned child
+/// process: a fresh nonce, the HMAC proof over it, and an
+/// [`ServiceResponse::Authenticated`] acknowledgement.
+fn authenticate_child(child: &mut Child, session_secret: &str) -> Result<(), ServiceContractError> {
+    let nonce = generate_handshake_nonce().map_err(|err| {
+        ServiceContractError::unavailable(format!(
+            "failed to generate handshake nonce: {}",
+            err.message
+        ))
+    })?;
+    let proof = compute_service_proof(session_secret, &nonce);
+    let frame = encode_frame(&ServiceRequest::Authenticate { nonce, proof })?;
+    let stdin = child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| ServiceContractError::unavailable("service stdin is unavailable"))?;
+    if let Err(err) = stdin.write_all(&frame).and_then(|()| stdin.flush()) {
+        return Err(ServiceContractError::unavailable(format!(
+            "failed to write authentication frame: {err}"
+        )));
+    }
+    let stdout = child
+        .stdout
+        .as_mut()
+        .ok_or_else(|| ServiceContractError::unavailable("service stdout is unavailable"))?;
+    match read_response_frame(stdout)? {
+        ServiceResponse::Authenticated => Ok(()),
+        ServiceResponse::Error { error, .. } => Err(ServiceContractError::unavailable(format!(
+            "service authentication rejected: {}",
+            error.message
+        ))),
+        other => Err(ServiceContractError::unavailable(format!(
+            "unexpected response to the authentication handshake: {other:?}"
+        ))),
+    }
+}
+
+/// Reads one length-prefixed [`ServiceResponse`] frame from the child stdout.
+fn read_response_frame(stdout: &mut impl Read) -> Result<ServiceResponse, ServiceContractError> {
+    let mut len_buf = [0u8; 4];
+    if let Err(err) = stdout.read_exact(&mut len_buf) {
+        return Err(ServiceContractError::unavailable(format!(
+            "failed to read response header: {err}"
+        )));
+    }
+    let payload_len = u32::from_be_bytes(len_buf) as usize;
+    if payload_len > MAX_SERVICE_FRAME_BYTES {
+        return Err(ServiceContractError::invalid_input(format!(
+            "service response {payload_len} bytes exceeds limit {MAX_SERVICE_FRAME_BYTES}"
+        )));
+    }
+    let mut full_frame = Vec::with_capacity(4 + payload_len);
+    full_frame.extend_from_slice(&len_buf);
+    full_frame.resize(4 + payload_len, 0);
+    if let Err(err) = stdout.read_exact(&mut full_frame[4..]) {
+        return Err(ServiceContractError::unavailable(format!(
+            "failed to read response body: {err}"
+        )));
+    }
+    decode_frame(&full_frame)
 }
 
 impl Drop for StdioProcessTransport {
@@ -556,6 +627,18 @@ mod tests {
                 supports_streaming: false,
             }],
         }
+    }
+
+    /// Pins the handshake proof derivation used by `StdioProcessTransport` to
+    /// the published RFC 4231 test case 2, so a regression in the contract's
+    /// HMAC implementation cannot go unnoticed on the Core side.
+    #[test]
+    fn service_proof_matches_the_published_rfc4231_vector() {
+        // RFC 4231 test case 2: key = "Jefe", data = "what do ya want for nothing?".
+        assert_eq!(
+            compute_service_proof("Jefe", "what do ya want for nothing?"),
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+        );
     }
 
     #[tokio::test]

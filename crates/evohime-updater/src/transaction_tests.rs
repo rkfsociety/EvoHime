@@ -957,3 +957,92 @@ fn sync_uninstall_metadata_updates_display_icon_only_when_install_location_match
     }
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn service_image_names_are_screened_before_termination() {
+    for name in [
+        "evohime-core.exe",
+        "evohime-supervisor.exe",
+        "evohime-transaction.exe",
+        "evohime-updater.exe",
+        "evohime-update-agent.exe",
+        "EvoHime.exe",
+        "updater.exe",
+        "eva.exe",
+        "explorer.exe",
+        "notepad.exe",
+        "evohime-core.dll",
+        "evohime-",
+    ] {
+        assert!(
+            !super::is_terminable_service_image(name),
+            "{name} must be refused"
+        );
+    }
+    for name in [
+        "evohime-evals.exe",
+        "EvoHime-Model-Router.EXE",
+        "  evohime-tools-exec.exe  ",
+    ] {
+        assert!(
+            super::is_terminable_service_image(name),
+            "{name} must be accepted"
+        );
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn terminate_service_processes_refuses_protected_and_foreign_names() {
+    // Refusal happens before any process lookup: protected product components
+    // and non-`evohime-*` images are never candidates, so nothing is
+    // terminated even though `explorer.exe` is certainly running, and names
+    // without a matching process yield an empty result.
+    assert!(super::terminate_service_processes(&[
+        "evohime-core.exe",
+        "evohime-supervisor.exe",
+        "evohime-transaction.exe",
+        "evohime-updater.exe",
+        "evohime-update-agent.exe",
+        "EvoHime.exe",
+        "updater.exe",
+        "eva.exe",
+        "explorer.exe",
+        "notepad.exe",
+        "evohime-no-such-service.exe",
+    ])
+    .is_empty());
+}
+
+#[cfg(windows)]
+#[test]
+fn terminate_service_processes_kills_matching_service_image() {
+    use std::process::{Command, Stdio};
+
+    let dir = temp_dir("kill-service");
+    fs::create_dir_all(&dir).unwrap();
+    // A copy of a small system utility under a service-module image name runs
+    // long enough to be found in the process snapshot and terminated.
+    let fake = dir.join("evohime-fake-service.exe");
+    fs::copy(r"C:\Windows\System32\ping.exe", &fake).unwrap();
+    let mut child = Command::new(&fake)
+        .args(["-n", "60", "127.0.0.1"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+
+    let terminated = super::terminate_service_processes(&["evohime-fake-service.exe"]);
+    assert!(
+        terminated.contains(&pid),
+        "service process {pid} was not terminated: {terminated:?}"
+    );
+
+    let status = child.wait().unwrap();
+    assert!(
+        !status.success(),
+        "process exited normally instead of being terminated"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}

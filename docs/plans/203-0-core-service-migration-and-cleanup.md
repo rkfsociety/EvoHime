@@ -1,6 +1,6 @@
 # План 203.0 — Фактический перенос вызовов из `evohime-core` в внешние сервисы и очистка микроядра
 
-Статус: active implementation contract. Продолжение и фактическое завершение декомпозиции из [Плана 202](./202-0-core-microkernel-decomposition.md).
+Статус: active implementation contract. Продолжение и фактическое завершение декомпозиции из микроядерной декомпозиции плана 202 ([`../architecture/core-services.md`](../architecture/core-services.md)).
 
 ## Контекст и проблема
 В рамках Плана 202 построены контракт `evohime-service-contract`, реестр `ModuleRegistry`, пакет данных `core-assets`, 12 изолированных сервисных модулей, единый манифест `modules.manifest.json`, CI для 26 модулей и точечный рестарт в `supervisor`/`updater`.
@@ -30,7 +30,7 @@
 - [Этап 4 — `model-router`, `tools-workspace`/`tools-exec`, зачистка `Cargo.toml` ядра и проверка скорости CI](./203-4-core-service-migration-and-cleanup.md)
 
 ## Блокирующие зависимости
-- [План 202](./202-0-core-microkernel-decomposition.md) — базовая инфраструктура микроядра и `ModuleRegistry` (готова).
+- [План 202](../architecture/core-services.md) — базовая инфраструктура микроядра и `ModuleRegistry` (готова, контракт перенесён в доменный документ).
 
 ## Критерии готовности плана
 - [ ] Все перечисленные в этапах 1–4 прикладные файлы и их тесты удалены из `crates/evohime-core/src` (прогресс: перенесены и удалены из `evohime-core` 34 модуля — к 32 модулям добавлены `batch_invocation_runtime` и `policy_aware_tool_result_cache`).

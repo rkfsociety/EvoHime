@@ -1319,6 +1319,113 @@ fn wait_for_process_exit(pid: u32, limit: Duration) {
 #[cfg(not(windows))]
 fn wait_for_process_exit(_pid: u32, _limit: Duration) {}
 
+/// Process image names that must never be terminated by the service-restart
+/// path, even when a caller passes them in by mistake: they are the product's
+/// own live components rather than isolated service modules.
+const PROTECTED_PROCESS_IMAGES: [&str; 8] = [
+    "evohime.exe",
+    "evohime-core.exe",
+    "evohime-supervisor.exe",
+    "evohime-transaction.exe",
+    "evohime-updater.exe",
+    "evohime-update-agent.exe",
+    "updater.exe",
+    "eva.exe",
+];
+
+/// Returns `true` when `image_name` may be terminated by the service-update
+/// path: an isolated service module image (`evohime-<module>.exe`) that is not
+/// one of the product's protected components.
+fn is_terminable_service_image(image_name: &str) -> bool {
+    let lower = image_name.trim().to_ascii_lowercase();
+    lower.ends_with(".exe")
+        && lower.starts_with("evohime-")
+        && !PROTECTED_PROCESS_IMAGES.contains(&lower.as_str())
+}
+
+/// Terminates every running process whose image name matches one of
+/// `exe_names` and returns the terminated process identifiers.
+///
+/// The isolated service update path uses this before replacing service
+/// binaries: a running service executable locks its image file, so the staged
+/// replacement would fail or wait forever, and the old process would keep
+/// running the previous version. The core respawns isolated services lazily,
+/// so stopping them here completes the hot restart.
+///
+/// Only names that look like isolated service modules (`evohime-*.exe`) and
+/// are not protected product components are accepted; anything else is
+/// refused, so a mistyped name can never kill a product or system process.
+/// Individual termination failures (the process already exited, access is
+/// denied) are skipped and never fail the whole call.
+#[cfg(windows)]
+pub fn terminate_service_processes(exe_names: &[&str]) -> Vec<u32> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+
+    let targets: HashSet<String> = exe_names
+        .iter()
+        .filter(|name| is_terminable_service_image(name))
+        .map(|name| name.trim().to_ascii_lowercase())
+        .collect();
+    if targets.is_empty() {
+        return Vec::new();
+    }
+
+    let mut terminated = Vec::new();
+    // SAFETY: the snapshot handle is closed on every path, and the entry is
+    // fully initialized, with `dwSize` set, before every Toolhelp call.
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == INVALID_HANDLE_VALUE {
+            return terminated;
+        }
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..PROCESSENTRY32W::default()
+        };
+        if Process32FirstW(snapshot, &mut entry) != 0 {
+            loop {
+                let image_len = entry
+                    .szExeFile
+                    .iter()
+                    .position(|&unit| unit == 0)
+                    .unwrap_or(entry.szExeFile.len());
+                let image = OsString::from_wide(&entry.szExeFile[..image_len])
+                    .to_string_lossy()
+                    .to_ascii_lowercase();
+                if targets.contains(&image) {
+                    let pid = entry.th32ProcessID;
+                    let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
+                    if !handle.is_null() {
+                        if TerminateProcess(handle, 1) != 0 {
+                            terminated.push(pid);
+                        }
+                        CloseHandle(handle);
+                    }
+                }
+                if Process32NextW(snapshot, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snapshot);
+    }
+    terminated
+}
+
+/// Non-Windows placeholder: process enumeration is Windows-specific, and the
+/// updater does not perform service restarts on other platforms.
+#[cfg(not(windows))]
+pub fn terminate_service_processes(_exe_names: &[&str]) -> Vec<u32> {
+    Vec::new()
+}
+
 const UNINSTALL_SUBKEY: &str =
     "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B4EA9A84-7F33-4D1A-9C74-1C1B6D8A8A4B}_is1";
 

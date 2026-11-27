@@ -15,7 +15,7 @@
 4. **Финальная верификация и закрытие Планов 202 и 203:**
    - Сравнительный замер времени `core.yml` (до и после очистки) и времени сборки изолированных сервисов в GitHub Actions.
    - Проверка `cargo doc` gates, `rustfmt`, `clippy`, `documentation.tests.ps1`, `check-modules-manifest.ps1`, `compatible-manifest.yml`.
-   - Обновление `docs/architecture.md`, `docs/current-state.md`, `docs/release-evidence.md` и удаление временных файлов `202-*` и `203-*` после полного подтверждения в CI.
+   - Обновление `docs/architecture.md`, `docs/current-state.md`, `docs/release-evidence.md` и удаление временных файлов `203-*` после полного подтверждения в CI.
 
 ## Критерии готовности
 - [ ] `crates/evohime-core/src` содержит только микроядро (IPC, SQLite/journal, permissions/guardrails, главный цикл агента, `ModuleRegistry`).
