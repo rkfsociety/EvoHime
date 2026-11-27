@@ -55,6 +55,7 @@ const MODULE_LABELS: Readonly<Record<string, string>> = {
   'shell-host': 'Оболочка Electron',
   'ui-bundle': 'Интерфейс EvoHime',
   core: 'EvoHime Core',
+  'core-assets': 'Промпты и рецепты',
   supervisor: 'Диспетчер процессов',
   cli: 'Командный клиент',
   'analysis-worker': 'Аналитический модуль',
@@ -64,6 +65,14 @@ const MODULE_LABELS: Readonly<Record<string, string>> = {
   updater: 'Модуль обновлений',
   verifier: 'Проверка пакета',
   hive: 'Улей',
+  evals: 'Оценка и тесты моделей',
+  'media-voice': 'Картинки и голос',
+  research: 'Поиск и браузер',
+  'remote-a2a': 'Удалённые агенты',
+  ambient: 'Фоновая проактивность',
+  'computer-use': 'Управление экраном и IDE',
+  'workflow-engine': 'Движок сценариев',
+  'rag-memory': 'Поиск по проекту и память',
   installer: 'Установщик'
 }
 

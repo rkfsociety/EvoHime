@@ -146,6 +146,51 @@
       "dependencies": []
     },
     {
+      "id": "remote-a2a",
+      "kind": "native",
+      "artifact": "evohime-remote.exe",
+      "restart": "service:remote-a2a",
+      "version_file": "release-versions/remote-a2a.txt",
+      "workflow": ".github/workflows/remote-a2a.yml",
+      "dependencies": []
+    },
+    {
+      "id": "ambient",
+      "kind": "native",
+      "artifact": "evohime-ambient.exe",
+      "restart": "service:ambient",
+      "version_file": "release-versions/ambient.txt",
+      "workflow": ".github/workflows/ambient.yml",
+      "dependencies": []
+    },
+    {
+      "id": "computer-use",
+      "kind": "native",
+      "artifact": "evohime-computer-use.exe",
+      "restart": "service:computer-use",
+      "version_file": "release-versions/computer-use.txt",
+      "workflow": ".github/workflows/computer-use.yml",
+      "dependencies": []
+    },
+    {
+      "id": "workflow-engine",
+      "kind": "native",
+      "artifact": "evohime-workflow.exe",
+      "restart": "service:workflow-engine",
+      "version_file": "release-versions/workflow-engine.txt",
+      "workflow": ".github/workflows/workflow-engine.yml",
+      "dependencies": []
+    },
+    {
+      "id": "rag-memory",
+      "kind": "native",
+      "artifact": "evohime-rag-memory.exe",
+      "restart": "service:rag-memory",
+      "version_file": "release-versions/rag-memory.txt",
+      "workflow": ".github/workflows/rag-memory.yml",
+      "dependencies": []
+    },
+    {
       "id": "installer",
       "kind": "installer",
       "artifact": "EvoHime-Setup.exe",

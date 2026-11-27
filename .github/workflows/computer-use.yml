@@ -1,0 +1,26 @@
+name: computer-use module
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/evohime-computer-use/**'
+      - 'crates/evohime-service-contract/**'
+      - 'release-versions/computer-use.txt'
+      - '.github/workflows/computer-use.yml'
+      - '.github/workflows/module-native.yml'
+
+concurrency:
+  group: evohime-module-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  module:
+    uses: ./.github/workflows/module-native.yml
+    permissions: { contents: write }
+    with:
+      module: computer-use
+      package: evohime-computer-use
+      artifact: evohime-computer-use.exe
+      version_file: release-versions/computer-use.txt

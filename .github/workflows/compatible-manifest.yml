@@ -19,6 +19,11 @@ on:
       - evals module
       - media-voice module
       - research module
+      - remote-a2a module
+      - ambient module
+      - computer-use module
+      - workflow-engine module
+      - rag-memory module
     types: [completed]
   workflow_dispatch:
 

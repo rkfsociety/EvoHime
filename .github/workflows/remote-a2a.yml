@@ -1,0 +1,26 @@
+name: remote-a2a module
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/evohime-remote/**'
+      - 'crates/evohime-service-contract/**'
+      - 'release-versions/remote-a2a.txt'
+      - '.github/workflows/remote-a2a.yml'
+      - '.github/workflows/module-native.yml'
+
+concurrency:
+  group: evohime-module-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  module:
+    uses: ./.github/workflows/module-native.yml
+    permissions: { contents: write }
+    with:
+      module: remote-a2a
+      package: evohime-remote
+      artifact: evohime-remote.exe
+      version_file: release-versions/remote-a2a.txt

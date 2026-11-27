@@ -1,0 +1,26 @@
+name: workflow-engine module
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/evohime-workflow/**'
+      - 'crates/evohime-service-contract/**'
+      - 'release-versions/workflow-engine.txt'
+      - '.github/workflows/workflow-engine.yml'
+      - '.github/workflows/module-native.yml'
+
+concurrency:
+  group: evohime-module-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  module:
+    uses: ./.github/workflows/module-native.yml
+    permissions: { contents: write }
+    with:
+      module: workflow-engine
+      package: evohime-workflow
+      artifact: evohime-workflow.exe
+      version_file: release-versions/workflow-engine.txt

@@ -56,6 +56,11 @@ $modulePaths = @{
     'evals' = @('crates/evohime-evals-service')
     'media-voice' = @('crates/evohime-media-voice')
     'research' = @('crates/evohime-research')
+    'remote-a2a' = @('crates/evohime-remote')
+    'ambient' = @('crates/evohime-ambient')
+    'computer-use' = @('crates/evohime-computer-use')
+    'workflow-engine' = @('crates/evohime-workflow')
+    'rag-memory' = @('crates/evohime-rag-memory')
     'transaction' = @('crates/evohime-updater')
     'verifier' = @('crates/evohime-receipts')
     'updater' = @(
@@ -93,6 +98,16 @@ $summaryText = if ($Summary) { $Summary } else {
         'transaction' { 'Worker транзакционного обновления: безопасная замена файлов, backup и rollback.'; break }
         'verifier' { 'Проверяющий worker целостности и контрактов поставляемых файлов.'; break }
         'updater' { 'Самостоятельный модуль обновления: Rust worker с встроенной транзакцией и Electron-интерфейс EvoHimeUpdater.'; break }
+        'hive' { 'Модуль Улья: координация ролевых агентов, карта архитектуры и наблюдение за задачами.'; break }
+        'core-assets' { 'Внешний пакет декларативных данных: системные промпты, рецепты и профили без пересборки ядра.'; break }
+        'evals' { 'Модуль оценки моделей: бенчмарки, симуляции инструментов и локальная калибровка.'; break }
+        'media-voice' { 'Модуль картинок и голоса: генерация изображений, зрение и голосовой синтез.'; break }
+        'research' { 'Модуль поиска и браузера: веб-поиск, загрузка страниц и инспекция репозиториев.'; break }
+        'remote-a2a' { 'Модуль удалённых агентов: подключение внешних A2A-агентов и удалённых каналов.'; break }
+        'ambient' { 'Модуль фоновой проактивности: временные сигналы и автономные эксперименты.'; break }
+        'computer-use' { 'Модуль управления экраном и IDE: GUI-автоматизация и мост к редактору.'; break }
+        'workflow-engine' { 'Модуль сценариев: выполнение workflow, расписания, триггеры и фоновые задания.'; break }
+        'rag-memory' { 'Модуль поиска по проекту и памяти: индексация кода и извлечение фактов.'; break }
         default { "Компонент `$Module` поставлен как самостоятельный модуль EvoHime."; break }
     }
 }

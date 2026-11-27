@@ -1,0 +1,26 @@
+name: rag-memory module
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/evohime-rag-memory/**'
+      - 'crates/evohime-service-contract/**'
+      - 'release-versions/rag-memory.txt'
+      - '.github/workflows/rag-memory.yml'
+      - '.github/workflows/module-native.yml'
+
+concurrency:
+  group: evohime-module-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  module:
+    uses: ./.github/workflows/module-native.yml
+    permissions: { contents: write }
+    with:
+      module: rag-memory
+      package: evohime-rag-memory
+      artifact: evohime-rag-memory.exe
+      version_file: release-versions/rag-memory.txt
