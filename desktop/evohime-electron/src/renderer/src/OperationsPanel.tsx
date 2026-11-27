@@ -3799,39 +3799,6 @@ export function HiveDashboard({
               })}
             </div>
           </section>
-
-          <div className="hive-dock__card hive-dock__card--launcher">
-            <button
-              type="button"
-              className={`hive-chat-launcher${hiveChatOpen ? ' hive-chat-launcher--open' : ''}`}
-              aria-label={translate('Диалог с Королевой Евой')}
-              aria-expanded={hiveChatOpen}
-              aria-controls="hive-chat-drawer"
-              onClick={() => setHiveChatOpen((open) => !open)}
-            >
-              <span className="hive-chat-launcher__glow" aria-hidden="true">
-                <HiveLotusMark size={38} />
-              </span>
-              <span className="hive-chat-launcher__body">
-                <strong>{translate('Диалог с Королевой Евой')}</strong>
-                <small>
-                  {translate(
-                    queenTyping
-                      ? 'Королева печатает'
-                      : waitingApproval
-                        ? 'Ждёт подтверждения'
-                        : 'Открыть диалог'
-                  )}
-                </small>
-              </span>
-              <span className="hive-chat-launcher__meta">
-                <span className="hive-badge">{translate(queenTyping ? 'в процессе' : 'на связи')}</span>
-                {effectiveActiveApprovals.length > 0 ? (
-                  <span className="hive-chat-launcher__alert">{effectiveActiveApprovals.length}</span>
-                ) : null}
-              </span>
-            </button>
-          </div>
         </div>
 
         <div className="hive-right-rail">
@@ -3952,6 +3919,20 @@ export function HiveDashboard({
             <div className="hive-panel__head">
               <h3>{translate('Ход работы Королевы')}</h3>
               <div className="hive-panel__actions">
+                <button
+                  type="button"
+                  className={`hive-logs-chat-btn${hiveChatOpen ? ' hive-logs-chat-btn--open' : ''}`}
+                  aria-label={translate('Диалог с Королевой Евой')}
+                  aria-expanded={hiveChatOpen}
+                  aria-controls="hive-chat-drawer"
+                  onClick={() => setHiveChatOpen((open) => !open)}
+                >
+                  <UiIcon name="message" size={12} />
+                  <span>{translate('Диалог')}</span>
+                  {effectiveActiveApprovals.length > 0 ? (
+                    <span className="hive-chat-launcher__alert">{effectiveActiveApprovals.length}</span>
+                  ) : null}
+                </button>
                 <button
                   type="button"
                   className="hive-link-button"

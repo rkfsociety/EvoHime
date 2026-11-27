@@ -8549,7 +8549,7 @@ body {
   grid-column: 1;
   z-index: 5;
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(220px, 0.9fr);
+  grid-template-columns: minmax(0, 440px);
   gap: 10px;
   align-items: stretch;
   margin: 0 12px 12px;
@@ -9703,6 +9703,29 @@ body {
   color: var(--fg);
 }
 
+.hive-logs-chat-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--hive-violet) 42%, var(--border-strong));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hive-violet) 16%, transparent);
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.hive-logs-chat-btn:hover,
+.hive-logs-chat-btn--open {
+  background: color-mix(in srgb, var(--hive-violet) 26%, transparent);
+  border-color: color-mix(in srgb, var(--hive-violet) 65%, var(--border-strong));
+}
+
 /* Human-in-the-loop: подтверждение действия. */
 
 .hive-approval {
@@ -10134,7 +10157,7 @@ body {
   }
 
   .hive-dock {
-    grid-template-columns: minmax(0, 1.3fr) minmax(200px, 0.85fr);
+    grid-template-columns: minmax(0, 400px);
     gap: 8px;
     margin: 0 10px 10px;
   }
@@ -10262,7 +10285,7 @@ body {
   .hive-dock {
     position: static;
     order: 5;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     margin: 0;
   }
 }
