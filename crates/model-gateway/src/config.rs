@@ -1525,6 +1525,18 @@ struct EnvRouteConfig {
     model_rate_limits: HashMap<String, ModelRateLimitConfig>,
 }
 
+#[cfg(test)]
+fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, ProviderError> {
+    parse_routes_json_with_lookup(raw_routes, true, &|name| env::var(name).ok())
+}
+
+#[cfg(test)]
+fn parse_additional_routes_from_json(
+    raw_routes: &str,
+) -> Result<ModelGatewayConfig, ProviderError> {
+    parse_routes_json_with_lookup(raw_routes, false, &|name| env::var(name).ok())
+}
+
 fn parse_routes_json_with_lookup(
     raw_routes: &str,
     require_default_route: bool,
