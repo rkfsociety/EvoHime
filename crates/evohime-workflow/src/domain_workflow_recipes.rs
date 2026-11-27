@@ -3,7 +3,7 @@
 //! The projection is metadata-only and does not perform external effects.
 //!
 //! ```
-//! use evohime_core::domain_workflow_recipes::{canonical_hash, projection, validate, DomainWorkflowRecipesRecord, Lifecycle, SCHEMA_VERSION};
+//! use evohime_workflow::domain_workflow_recipes::{canonical_hash, projection, validate, DomainWorkflowRecipesRecord, Lifecycle, SCHEMA_VERSION};
 //! let mut record = DomainWorkflowRecipesRecord {
 //!     schema_version: SCHEMA_VERSION,
 //!     id: "recipe-1".into(),

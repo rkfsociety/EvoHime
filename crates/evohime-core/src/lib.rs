@@ -30,7 +30,6 @@ pub mod agent_program_optimizer;
 pub(crate) mod approval_policy_profiles;
 /// Models authorization state for security assessments.
 pub mod authorized_security_assessment;
-pub mod autonomous_metric_experiment_runtime;
 /// Provides a safe Core-owned catalog of guided capability recipes.
 pub mod capability_recipes;
 pub mod capability_workbenches;
@@ -41,44 +40,29 @@ pub mod confidence_gated_model_cascade;
 pub mod contextual_next_step_suggestions;
 pub(crate) mod conversation_bridge_adapters;
 pub mod core_topic_subscription_event_bus;
-pub mod cross_modal_ui_grounding;
 pub(crate) mod customization_inventory;
 pub mod declarative_agent_component_registry;
 pub mod declarative_runtime_components;
 pub(crate) mod dependency_aware_task_graph;
 /// Defines deterministic, evidence-referenced review plans.
 pub mod deterministic_review_execution_plan;
-pub mod domain_workflow_recipes;
 pub mod durable_remote_task_bridge;
 pub(crate) mod event_visualizer_registry;
-pub mod experience_replay_library;
-pub mod external_source_acquisition_runtime;
 pub mod free_access_probe;
 /// Models guarded publication operations for Git remotes.
 pub mod git_remote_publication_protocol;
 pub mod headless_core_cli;
-pub mod ide_companion_bridge;
 /// Core-owned image-generation contracts and output validation.
 pub mod image_generation;
 pub mod interactive_model_compare_workbench;
 pub mod knowledge_source_registry_project_role;
-pub mod local_inference_scheduler;
 pub mod local_model_adaptation;
-pub mod local_model_compatibility_gateway;
 pub mod minimal_change_policy;
-pub mod mobile_device_automation_runtime;
-pub mod native_computer_use_runtime;
-/// Describes bounded metadata for offline experience consolidation.
-pub mod offline_experience_consolidation;
-pub mod optional_voice_output_adapter;
 pub(crate) mod output_guardrail_pipeline;
 pub(crate) mod privacy_and_telemetry_governance;
 pub mod project_execution_board;
 pub mod project_instruction_stack;
-/// Provides project-scoped knowledge notebook contracts.
-pub mod project_knowledge_notebook;
 pub(crate) mod reasoning_operator_library;
-pub mod remote_client_control_plane;
 /// Describes Core runtime services and their dependency graph.
 pub mod runtime_service_graph;
 pub(crate) mod safe_ui_extension_framework;
@@ -90,12 +74,9 @@ pub mod task_ownership_lease_fencing;
 pub mod team_coordinator;
 pub(crate) mod team_sop_protocols;
 pub mod temporal_memory_facts;
-pub mod temporal_signal_intelligence;
 pub(crate) mod typed_context_references;
 pub mod verified_git_checkpoints;
 pub mod verified_technical_diagram_artifacts;
-/// Defines listener-backed voice input dictation profiles.
-pub mod voice_input_dictation;
 pub mod workflow_optimization_lab;
 pub mod workspace_bootstrap_manifest;
 pub(crate) mod workspace_sets;
@@ -207,7 +188,6 @@ pub(crate) mod continuation;
 pub(crate) mod conversation_event_log;
 pub(crate) mod conversation_workbench;
 pub(crate) mod conversational_workflow_composer;
-pub mod design_intent_review_lane;
 pub(crate) mod doctor;
 /// Defines the bounded typed boundary between EvaPulse and the Hive.
 pub use evohime_hive_contract::pulse_boundary as eva_pulse_boundary;
@@ -215,8 +195,6 @@ pub mod evals;
 pub(crate) mod event_trigger_runtime;
 pub(crate) mod execution_backend_registry;
 pub mod execution_environment_profiles;
-/// Defines redacted execution traces and deterministic regression assertions.
-pub mod execution_trace_evaluation;
 pub(crate) mod export;
 pub mod extension_conformance_kit;
 pub mod external_agent_a2a;
@@ -315,7 +293,6 @@ pub mod plan_review;
 pub mod prompt_strategy;
 pub(crate) mod task_checkpoint;
 pub(crate) mod telemetry;
-pub(crate) mod vision_contract;
 pub(crate) mod visual_workflow_builder;
 pub(crate) mod voice_command;
 pub mod workflow;

@@ -4,7 +4,7 @@
 //! an adapter from claiming a connected remote session until a deployable relay
 //! and an authenticated transport are present.
 
-use evohime_remote::{Availability, Device, RemoteError, SequenceGuard};
+use crate::{Availability, Device, RemoteError, SequenceGuard};
 
 /// State reported by the Core remote connector boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

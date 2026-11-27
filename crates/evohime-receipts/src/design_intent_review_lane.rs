@@ -1,7 +1,7 @@
 //! Bounded Core-owned design-intent review metadata.
 //!
 //! ```
-//! use evohime_core::design_intent_review_lane::{DesignIntent, ReviewRecord, ReviewVerdict};
+//! use evohime_receipts::design_intent_review_lane::{DesignIntent, ReviewRecord, ReviewVerdict};
 //! let intent = DesignIntent {
 //!     intent_id: "intent-1".into(),
 //!     scope: "screen-opaque-id".into(),

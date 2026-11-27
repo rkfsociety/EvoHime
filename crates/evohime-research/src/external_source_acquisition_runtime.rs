@@ -4,7 +4,7 @@
 //! does not fetch, download, or import a source.
 //!
 //! ```
-//! use evohime_core::external_source_acquisition_runtime::{canonical_hash, projection, validate, ExternalSourceAcquisitionRuntimeRecord, Lifecycle, SCHEMA_VERSION};
+//! use evohime_research::external_source_acquisition_runtime::{canonical_hash, projection, validate, ExternalSourceAcquisitionRuntimeRecord, Lifecycle, SCHEMA_VERSION};
 //! let mut acquisition = ExternalSourceAcquisitionRuntimeRecord {
 //!     schema_version: SCHEMA_VERSION, id: "source-acquisition-1".into(), revision: 1,
 //!     lifecycle: Lifecycle::Active, scope: "workspace-opaque-id".into(),

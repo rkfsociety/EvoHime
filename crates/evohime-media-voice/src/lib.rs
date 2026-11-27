@@ -6,6 +6,11 @@
 
 //! Isolated `media-voice` service module implementing `evohime-service-contract`.
 
+pub mod optional_voice_output_adapter;
+pub mod vision_contract;
+/// Voice input dictation profile contract and validation.
+pub mod voice_input_dictation;
+
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
     ServiceHealthReport, ServiceHealthStatus, SERVICE_CONTRACT_VERSION,
@@ -60,6 +65,20 @@ impl ServiceHandler for MediaVoiceService {
                         "properties": { "text": { "type": "string" } }
                     }),
                     required_permissions: vec!["voice.output".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "voice.dictation_validate".to_owned(),
+                    description: "Validates a voice input dictation profile.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["voice.input".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "voice.dictation_availability".to_owned(),
+                    description: "Checks voice dictation profile availability.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["voice.input".to_owned()],
                     supports_streaming: false,
                 },
             ],
@@ -133,6 +152,32 @@ impl ServiceHandler for MediaVoiceService {
                     "bytes": meta.len(),
                     "status": "validated"
                 }))
+            }
+            "voice.dictation_validate" => {
+                let profile: voice_input_dictation::DictationProfile =
+                    serde_json::from_value(payload).map_err(|err| {
+                        ServiceContractError::invalid_input(format!(
+                            "invalid dictation profile: {err}"
+                        ))
+                    })?;
+                voice_input_dictation::validate(&profile)
+                    .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
+                serde_json::to_value(&profile).map_err(|err| {
+                    ServiceContractError::new(
+                        evohime_service_contract::ServiceErrorCode::Internal,
+                        format!("failed to serialize validated profile: {err}"),
+                    )
+                })
+            }
+            "voice.dictation_availability" => {
+                let profile: voice_input_dictation::DictationProfile =
+                    serde_json::from_value(payload).map_err(|err| {
+                        ServiceContractError::invalid_input(format!(
+                            "invalid dictation profile: {err}"
+                        ))
+                    })?;
+                voice_input_dictation::availability(&profile)
+                    .map_err(|err| ServiceContractError::invalid_input(err.to_string()))
             }
             "voice.synthesize" => {
                 let text = payload

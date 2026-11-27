@@ -562,11 +562,107 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
         } => {
             let event_id = notebook_id.clone();
             let event_operation = operation.clone();
-            let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){
-                "save"=>{let n:crate::project_knowledge_notebook::Notebook=serde_json::from_slice(&payload).map_err(|_|"invalid_project_knowledge_notebook".to_string())?;crate::project_knowledge_notebook::validate(&n).map_err(|e|e.to_string())?;if n.id!=notebook_id{return Err("notebook_id_mismatch".into())}let json=serde_json::to_vec(&n).map_err(|e|e.to_string())?;evohime_local_storage::project_knowledge_notebook_store::save(database.connection(),&n.id,n.revision,&n.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"stored","notebook_id":n.id,"revision":n.revision,"content_hash_prefix":&n.content_hash[..8]})).map_err(|e|e.to_string())},
-                "get"=>{let json=evohime_local_storage::project_knowledge_notebook_store::current(database.connection(),&notebook_id).map_err(|e|e.to_string())?.ok_or_else(||"notebook_not_found".to_string())?;let n:crate::project_knowledge_notebook::Notebook=serde_json::from_slice(&json).map_err(|_|"corrupt_notebook".to_string())?;crate::project_knowledge_notebook::validate(&n).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"ok","notebook_id":n.id,"revision":n.revision,"lifecycle":n.lifecycle,"entry_count":n.entries.len(),"content_hash_prefix":&n.content_hash[..8]})).map_err(|e|e.to_string())},
-                "pin"=>{let request:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_notebook_pin".to_string())?;let run_id=request.get("run_id").and_then(serde_json::Value::as_str).ok_or_else(||"run_id_required".to_string())?;let json=evohime_local_storage::project_knowledge_notebook_store::current(database.connection(),&notebook_id).map_err(|e|e.to_string())?.ok_or_else(||"notebook_not_found".to_string())?;let n:crate::project_knowledge_notebook::Notebook=serde_json::from_slice(&json).map_err(|_|"corrupt_notebook".to_string())?;let pin=crate::project_knowledge_notebook::pin(&n,run_id).map_err(|e|e.to_string())?;evohime_local_storage::project_knowledge_notebook_store::pin(database.connection(),&pin.run_id,&pin.notebook_id,pin.revision,&pin.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"pinned","notebook_id":pin.notebook_id,"revision":pin.revision,"run_id":pin.run_id,"effect_owner":"existing_core_knowledge_owner"})).map_err(|e|e.to_string())},
-                "activate"|"supersede"=>Err("lifecycle_transition_requires_new_immutable_revision".into()),_=>Err("unsupported_project_knowledge_notebook_operation".into())}}.await;
+            let result = async {
+                let journal = state
+                    .lock()
+                    .await
+                    .journal
+                    .clone()
+                    .ok_or_else(|| "storage journal is not configured".to_string())?;
+                let database = journal.database().lock().await;
+                match operation.as_str() {
+                    "save" => {
+                        let value: serde_json::Value = serde_json::from_slice(&payload)
+                            .map_err(|_| "invalid_project_knowledge_notebook".to_string())?;
+                        let id = value
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "invalid_project_knowledge_notebook".to_string())?;
+                        let revision = value
+                            .get("revision")
+                            .and_then(|v| v.as_u64())
+                            .ok_or_else(|| "invalid_project_knowledge_notebook".to_string())?;
+                        let content_hash = value
+                            .get("content_hash")
+                            .and_then(|v| v.as_str())
+                            .filter(|h| h.len() >= 8)
+                            .ok_or_else(|| "invalid_project_knowledge_notebook".to_string())?;
+                        if id != notebook_id {
+                            return Err("notebook_id_mismatch".into());
+                        }
+                        let json = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
+                        evohime_local_storage::project_knowledge_notebook_store::save(
+                            database.connection(),
+                            id,
+                            revision,
+                            content_hash,
+                            &json,
+                            &idempotency_key,
+                            crate::task_memory::now_millis() as i64,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({
+                            "status": "stored",
+                            "notebook_id": id,
+                            "revision": revision,
+                            "content_hash_prefix": &content_hash[..8]
+                        }))
+                        .map_err(|e| e.to_string())
+                    }
+                    "get" => {
+                        let json =
+                            evohime_local_storage::project_knowledge_notebook_store::current(
+                                database.connection(),
+                                &notebook_id,
+                            )
+                            .map_err(|e| e.to_string())?
+                            .ok_or_else(|| "notebook_not_found".to_string())?;
+                        Ok(json)
+                    }
+                    "pin" => {
+                        let request: serde_json::Value = serde_json::from_slice(&payload)
+                            .map_err(|_| "invalid_notebook_pin".to_string())?;
+                        let run_id = request
+                            .get("run_id")
+                            .and_then(serde_json::Value::as_str)
+                            .ok_or_else(|| "run_id_required".to_string())?;
+                        let content_hash = request
+                            .get("content_hash")
+                            .and_then(serde_json::Value::as_str)
+                            .ok_or_else(|| "content_hash_required".to_string())?;
+                        let revision = request
+                            .get("revision")
+                            .and_then(serde_json::Value::as_u64)
+                            .ok_or_else(|| "revision_required".to_string())?;
+                        let notebook_id_pin = request
+                            .get("notebook_id")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or(&notebook_id);
+                        evohime_local_storage::project_knowledge_notebook_store::pin(
+                            database.connection(),
+                            run_id,
+                            notebook_id_pin,
+                            revision,
+                            content_hash,
+                            crate::task_memory::now_millis() as i64,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({
+                            "status": "pinned",
+                            "notebook_id": notebook_id_pin,
+                            "revision": revision,
+                            "run_id": run_id,
+                            "effect_owner": "existing_core_knowledge_owner"
+                        }))
+                        .map_err(|e| e.to_string())
+                    }
+                    "activate" | "supersede" => {
+                        Err("lifecycle_transition_requires_new_immutable_revision".into())
+                    }
+                    _ => Err("unsupported_project_knowledge_notebook_operation".into()),
+                }
+            }
+            .await;
             let projection_json = result
                 .as_ref()
                 .ok()
@@ -624,7 +720,66 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
         } => {
             let event_id = profile_id.clone();
             let event_operation = operation.clone();
-            let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"save"=>{let p:crate::voice_input_dictation::DictationProfile=serde_json::from_slice(&payload).map_err(|_|"invalid_voice_input_dictation".to_string())?;crate::voice_input_dictation::validate(&p).map_err(|e|e.to_string())?;if p.id!=profile_id{return Err("profile_id_mismatch".into())}let json=serde_json::to_vec(&p).map_err(|e|e.to_string())?;evohime_local_storage::voice_input_dictation_store::save(database.connection(),&p.id,p.revision,&p.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"stored","profile_id":p.id,"revision":p.revision,"content_hash_prefix":&p.content_hash[..8]})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::voice_input_dictation_store::current(database.connection(),&profile_id).map_err(|e|e.to_string())?.ok_or_else(||"dictation_profile_not_found".to_string())?;let p:crate::voice_input_dictation::DictationProfile=serde_json::from_slice(&json).map_err(|_|"corrupt_dictation_profile".to_string())?;serde_json::to_vec(&crate::voice_input_dictation::availability(&p).map_err(|e|e.to_string())?).map_err(|e|e.to_string())},_=>Err("unsupported_voice_input_dictation_operation".into())}}.await;
+            let result = async {
+                let journal = state
+                    .lock()
+                    .await
+                    .journal
+                    .clone()
+                    .ok_or_else(|| "storage journal is not configured".to_string())?;
+                let database = journal.database().lock().await;
+                match operation.as_str() {
+                    "save" => {
+                        let value: serde_json::Value = serde_json::from_slice(&payload)
+                            .map_err(|_| "invalid_voice_input_dictation".to_string())?;
+                        let id = value
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "invalid_voice_input_dictation".to_string())?;
+                        let revision = value
+                            .get("revision")
+                            .and_then(|v| v.as_u64())
+                            .ok_or_else(|| "invalid_voice_input_dictation".to_string())?;
+                        let content_hash = value
+                            .get("content_hash")
+                            .and_then(|v| v.as_str())
+                            .filter(|h| h.len() >= 8)
+                            .ok_or_else(|| "invalid_voice_input_dictation".to_string())?;
+                        if id != profile_id {
+                            return Err("profile_id_mismatch".into());
+                        }
+                        let json = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
+                        evohime_local_storage::voice_input_dictation_store::save(
+                            database.connection(),
+                            id,
+                            revision,
+                            content_hash,
+                            &json,
+                            &idempotency_key,
+                            crate::task_memory::now_millis() as i64,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({
+                            "status": "stored",
+                            "profile_id": id,
+                            "revision": revision,
+                            "content_hash_prefix": &content_hash[..8]
+                        }))
+                        .map_err(|e| e.to_string())
+                    }
+                    "get" => {
+                        let json = evohime_local_storage::voice_input_dictation_store::current(
+                            database.connection(),
+                            &profile_id,
+                        )
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "dictation_profile_not_found".to_string())?;
+                        Ok(json)
+                    }
+                    _ => Err("unsupported_voice_input_dictation_operation".into()),
+                }
+            }
+            .await;
             let projection_json = result
                 .as_ref()
                 .ok()
@@ -653,7 +808,103 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
         } => {
             let event_id = cycle_id.clone();
             let event_operation = operation.clone();
-            let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"save"=>{let c:crate::offline_experience_consolidation::ConsolidationCycle=serde_json::from_slice(&payload).map_err(|_|"invalid_offline_consolidation".to_string())?;crate::offline_experience_consolidation::validate(&c).map_err(|e|e.to_string())?;if c.id!=cycle_id{return Err("cycle_id_mismatch".into())}let json=serde_json::to_vec(&c).map_err(|e|e.to_string())?;evohime_local_storage::offline_experience_consolidation_store::save(database.connection(),&c.id,c.revision,&c.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"stored","cycle_id":c.id,"revision":c.revision,"content_hash_prefix":&c.content_hash[..8]})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::offline_experience_consolidation_store::current(database.connection(),&cycle_id).map_err(|e|e.to_string())?.ok_or_else(||"consolidation_cycle_not_found".to_string())?;let c:crate::offline_experience_consolidation::ConsolidationCycle=serde_json::from_slice(&json).map_err(|_|"corrupt_consolidation_cycle".to_string())?;serde_json::to_vec(&crate::offline_experience_consolidation::evaluate(&c).map_err(|e|e.to_string())?).map_err(|e|e.to_string())},"consolidate"=>{let run_id=serde_json::from_slice::<serde_json::Value>(&payload).ok().and_then(|v|v.get("run_id").and_then(|x|x.as_str()).map(str::to_owned)).ok_or_else(||"run_id_required".to_string())?;let json=evohime_local_storage::offline_experience_consolidation_store::current(database.connection(),&cycle_id).map_err(|e|e.to_string())?.ok_or_else(||"consolidation_cycle_not_found".to_string())?;let c:crate::offline_experience_consolidation::ConsolidationCycle=serde_json::from_slice(&json).map_err(|_|"corrupt_consolidation_cycle".to_string())?;let projection=crate::offline_experience_consolidation::evaluate(&c).map_err(|e|e.to_string())?;evohime_local_storage::offline_experience_consolidation_store::pin(database.connection(),&run_id,&c.id,c.revision,&c.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"run_id":run_id,"cycle_id":c.id,"revision":c.revision,"projection":projection})).map_err(|e|e.to_string())},_=>Err("unsupported_offline_consolidation_operation".into())}}.await;
+            let result = async {
+                let journal = state
+                    .lock()
+                    .await
+                    .journal
+                    .clone()
+                    .ok_or_else(|| "storage journal is not configured".to_string())?;
+                let database = journal.database().lock().await;
+                match operation.as_str() {
+                    "save" => {
+                        let value: serde_json::Value = serde_json::from_slice(&payload)
+                            .map_err(|_| "invalid_offline_consolidation".to_string())?;
+                        let id = value
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "invalid_offline_consolidation".to_string())?;
+                        let revision = value
+                            .get("revision")
+                            .and_then(|v| v.as_u64())
+                            .ok_or_else(|| "invalid_offline_consolidation".to_string())?;
+                        let content_hash = value
+                            .get("content_hash")
+                            .and_then(|v| v.as_str())
+                            .filter(|h| h.len() >= 8)
+                            .ok_or_else(|| "invalid_offline_consolidation".to_string())?;
+                        if id != cycle_id {
+                            return Err("cycle_id_mismatch".into());
+                        }
+                        let json = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
+                        evohime_local_storage::offline_experience_consolidation_store::save(
+                            database.connection(),
+                            id,
+                            revision,
+                            content_hash,
+                            &json,
+                            &idempotency_key,
+                            crate::task_memory::now_millis() as i64,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({
+                            "status": "stored",
+                            "cycle_id": id,
+                            "revision": revision,
+                            "content_hash_prefix": &content_hash[..8]
+                        }))
+                        .map_err(|e| e.to_string())
+                    }
+                    "get" => {
+                        let json =
+                            evohime_local_storage::offline_experience_consolidation_store::current(
+                                database.connection(),
+                                &cycle_id,
+                            )
+                            .map_err(|e| e.to_string())?
+                            .ok_or_else(|| "consolidation_cycle_not_found".to_string())?;
+                        Ok(json)
+                    }
+                    "consolidate" => {
+                        let req: serde_json::Value = serde_json::from_slice(&payload)
+                            .map_err(|_| "invalid_offline_consolidation".to_string())?;
+                        let run_id = req
+                            .get("run_id")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| "run_id_required".to_string())?;
+                        let revision = req
+                            .get("revision")
+                            .and_then(|x| x.as_u64())
+                            .ok_or_else(|| "revision_required".to_string())?;
+                        let content_hash = req
+                            .get("content_hash")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| "content_hash_required".to_string())?;
+                        let projection = req
+                            .get("projection")
+                            .cloned()
+                            .unwrap_or_else(|| serde_json::json!({}));
+                        evohime_local_storage::offline_experience_consolidation_store::pin(
+                            database.connection(),
+                            run_id,
+                            &cycle_id,
+                            revision,
+                            content_hash,
+                            crate::task_memory::now_millis() as i64,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({
+                            "run_id": run_id,
+                            "cycle_id": cycle_id,
+                            "revision": revision,
+                            "projection": projection
+                        }))
+                        .map_err(|e| e.to_string())
+                    }
+                    _ => Err("unsupported_offline_consolidation_operation".into()),
+                }
+            }
+            .await;
             let projection_json = result
                 .as_ref()
                 .ok()

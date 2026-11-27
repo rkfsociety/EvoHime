@@ -325,27 +325,116 @@ impl IpcBridge {
         &self,
         request: generated::ProjectKnowledgeNotebookCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let mut payload_bytes = request.payload;
+        if request.operation == "save" {
+            let input: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_project_knowledge_notebook".into()))?;
+            let validated = self
+                .module_registry
+                .invoke_if_ready("rag.notebook_validate", input, None)
+                .await
+                .map_err(|err| FrameError::Io(err.to_string()))?;
+            payload_bytes =
+                serde_json::to_vec(&validated).map_err(|err| FrameError::Io(err.to_string()))?;
+        }
         let coordinator = self
             .coordinator
             .as_ref()
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        if request.operation == "pin" {
+            let pin_req: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_notebook_pin".into()))?;
+            let run_id = pin_req
+                .get("run_id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| FrameError::Io("run_id_required".into()))?
+                .to_owned();
+            let (get_reply, get_resp) = oneshot::channel();
+            coordinator
+                .dispatch(CoreCommand::ProjectKnowledgeNotebook {
+                    operation: "get".to_owned(),
+                    notebook_id: request.notebook_id.clone(),
+                    payload: Vec::new(),
+                    expected_revision: request.expected_revision,
+                    idempotency_key: request.idempotency_key.clone(),
+                    reply: get_reply,
+                })
+                .await
+                .map_err(|e| FrameError::Io(e.to_string()))?;
+            let stored_bytes = get_resp
+                .await
+                .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+                .map_err(FrameError::Io)
+                .map_err(IpcBridgeError::from)?;
+            let notebook: serde_json::Value = serde_json::from_slice(&stored_bytes)
+                .map_err(|_| FrameError::Io("corrupt_notebook".into()))?;
+            let pin = self
+                .module_registry
+                .invoke_if_ready(
+                    "rag.notebook_pin",
+                    serde_json::json!({ "notebook": notebook, "run_id": run_id }),
+                    None,
+                )
+                .await
+                .map_err(|err| FrameError::Io(err.to_string()))?;
+            payload_bytes =
+                serde_json::to_vec(&pin).map_err(|err| FrameError::Io(err.to_string()))?;
+        }
         let (reply, response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::ProjectKnowledgeNotebook {
-                operation: request.operation,
+                operation: request.operation.clone(),
                 notebook_id: request.notebook_id,
-                payload: request.payload,
+                payload: payload_bytes,
                 expected_revision: request.expected_revision,
                 idempotency_key: request.idempotency_key,
                 reply,
             })
             .await
             .map_err(|e| FrameError::Io(e.to_string()))?;
-        response
+        let out_bytes = response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
-            .map_err(IpcBridgeError::from)
+            .map_err(IpcBridgeError::from)?;
+        if request.operation == "get" {
+            let notebook: serde_json::Value = serde_json::from_slice(&out_bytes)
+                .map_err(|_| FrameError::Io("corrupt_notebook".into()))?;
+            let validated = self
+                .module_registry
+                .invoke_if_ready("rag.notebook_validate", notebook, None)
+                .await
+                .map_err(|err| FrameError::Io(err.to_string()))?;
+            let id = validated.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let revision = validated
+                .get("revision")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let lifecycle = validated
+                .get("lifecycle")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!("unknown"));
+            let entry_count = validated
+                .get("entries")
+                .and_then(|v| v.as_array())
+                .map_or(0, |a| a.len());
+            let hash_prefix = validated
+                .get("content_hash")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.get(..8))
+                .unwrap_or("");
+            return serde_json::to_vec(&serde_json::json!({
+                "status": "ok",
+                "notebook_id": id,
+                "revision": revision,
+                "lifecycle": lifecycle,
+                "entry_count": entry_count,
+                "content_hash_prefix": hash_prefix
+            }))
+            .map_err(|err| FrameError::Io(err.to_string()))
+            .map_err(IpcBridgeError::from);
+        }
+        Ok(out_bytes)
     }
     pub(crate) async fn dispatch_git_remote_publication_protocol(
         &self,
@@ -377,6 +466,18 @@ impl IpcBridge {
         &self,
         request: generated::VoiceInputDictationCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let mut payload_bytes = request.payload;
+        if request.operation == "save" {
+            let input: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_voice_input_dictation".into()))?;
+            let validated = self
+                .module_registry
+                .invoke_if_ready("voice.dictation_validate", input, None)
+                .await
+                .map_err(|err| FrameError::Io(err.to_string()))?;
+            payload_bytes =
+                serde_json::to_vec(&validated).map_err(|err| FrameError::Io(err.to_string()))?;
+        }
         let coordinator = self
             .coordinator
             .as_ref()
@@ -384,46 +485,124 @@ impl IpcBridge {
         let (reply, response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::VoiceInputDictation {
-                operation: request.operation,
+                operation: request.operation.clone(),
                 profile_id: request.profile_id,
-                payload: request.payload,
+                payload: payload_bytes,
                 expected_revision: request.expected_revision,
                 idempotency_key: request.idempotency_key,
                 reply,
             })
             .await
             .map_err(|e| FrameError::Io(e.to_string()))?;
-        response
+        let stored_bytes = response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
-            .map_err(IpcBridgeError::from)
+            .map_err(IpcBridgeError::from)?;
+        if request.operation == "get" {
+            let stored_value: serde_json::Value = serde_json::from_slice(&stored_bytes)
+                .map_err(|_| FrameError::Io("corrupt_dictation_profile".into()))?;
+            let availability = self
+                .module_registry
+                .invoke_if_ready("voice.dictation_availability", stored_value, None)
+                .await
+                .map_err(|err| FrameError::Io(err.to_string()))?;
+            return serde_json::to_vec(&availability)
+                .map_err(|err| FrameError::Io(err.to_string()))
+                .map_err(IpcBridgeError::from);
+        }
+        Ok(stored_bytes)
     }
     pub(crate) async fn dispatch_offline_experience_consolidation(
         &self,
         request: generated::OfflineExperienceConsolidationCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let mut payload_bytes = request.payload;
+        if request.operation == "save" {
+            let input: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_offline_consolidation".into()))?;
+            let validated = self
+                .module_registry
+                .invoke_if_ready("memory.consolidation_validate", input, None)
+                .await
+                .map_err(|err| FrameError::Io(err.to_string()))?;
+            payload_bytes =
+                serde_json::to_vec(&validated).map_err(|err| FrameError::Io(err.to_string()))?;
+        }
         let coordinator = self
             .coordinator
             .as_ref()
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        if request.operation == "consolidate" {
+            let req: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_offline_consolidation".into()))?;
+            let run_id = req
+                .get("run_id")
+                .and_then(|x| x.as_str())
+                .ok_or_else(|| FrameError::Io("run_id_required".into()))?
+                .to_owned();
+            let (get_reply, get_resp) = oneshot::channel();
+            coordinator
+                .dispatch(CoreCommand::OfflineExperienceConsolidation {
+                    operation: "get".to_owned(),
+                    cycle_id: request.cycle_id.clone(),
+                    payload: Vec::new(),
+                    expected_revision: request.expected_revision,
+                    idempotency_key: request.idempotency_key.clone(),
+                    reply: get_reply,
+                })
+                .await
+                .map_err(|e| FrameError::Io(e.to_string()))?;
+            let stored_bytes = get_resp
+                .await
+                .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+                .map_err(FrameError::Io)
+                .map_err(IpcBridgeError::from)?;
+            let cycle: serde_json::Value = serde_json::from_slice(&stored_bytes)
+                .map_err(|_| FrameError::Io("corrupt_consolidation_cycle".into()))?;
+            let projection = self
+                .module_registry
+                .invoke_if_ready("memory.consolidation_evaluate", cycle.clone(), None)
+                .await
+                .map_err(|err| FrameError::Io(err.to_string()))?;
+            payload_bytes = serde_json::to_vec(&serde_json::json!({
+                "run_id": run_id,
+                "revision": cycle.get("revision").and_then(|v| v.as_u64()).unwrap_or(0),
+                "content_hash": cycle.get("content_hash").and_then(|v| v.as_str()).unwrap_or(""),
+                "projection": projection
+            }))
+            .map_err(|err| FrameError::Io(err.to_string()))?;
+        }
         let (reply, response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::OfflineExperienceConsolidation {
-                operation: request.operation,
+                operation: request.operation.clone(),
                 cycle_id: request.cycle_id,
-                payload: request.payload,
+                payload: payload_bytes,
                 expected_revision: request.expected_revision,
                 idempotency_key: request.idempotency_key,
                 reply,
             })
             .await
             .map_err(|e| FrameError::Io(e.to_string()))?;
-        response
+        let out_bytes = response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
-            .map_err(IpcBridgeError::from)
+            .map_err(IpcBridgeError::from)?;
+        if request.operation == "get" {
+            let cycle: serde_json::Value = serde_json::from_slice(&out_bytes)
+                .map_err(|_| FrameError::Io("corrupt_consolidation_cycle".into()))?;
+            let evaluated = self
+                .module_registry
+                .invoke_if_ready("memory.consolidation_evaluate", cycle, None)
+                .await
+                .map_err(|err| FrameError::Io(err.to_string()))?;
+            return serde_json::to_vec(&evaluated)
+                .map_err(|err| FrameError::Io(err.to_string()))
+                .map_err(IpcBridgeError::from);
+        }
+        Ok(out_bytes)
     }
     pub(crate) async fn dispatch_deterministic_review_execution_plan(
         &self,
@@ -1613,6 +1792,26 @@ impl IpcBridge {
         operation: String,
         request: generated::ExperienceReplayLibraryCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let mut payload_bytes = request.payload;
+        if operation == "write" {
+            let record: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_experience_record".into()))?;
+            let validated = self
+                .module_registry
+                .invoke_if_ready(
+                    "memory.replay_validate",
+                    serde_json::json!({
+                        "scope": request.scope,
+                        "scope_id": request.scope_id,
+                        "record": record
+                    }),
+                    None,
+                )
+                .await
+                .map_err(|err| FrameError::Io(err.to_string()))?;
+            payload_bytes =
+                serde_json::to_vec(&validated).map_err(|err| FrameError::Io(err.to_string()))?;
+        }
         let coordinator = self
             .coordinator
             .as_ref()
@@ -1620,20 +1819,41 @@ impl IpcBridge {
         let (reply, response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::ExperienceReplayLibrary {
-                operation,
+                operation: operation.clone(),
                 scope: request.scope,
                 scope_id: request.scope_id,
-                payload: request.payload,
+                payload: payload_bytes,
                 expected_revision: request.expected_revision,
                 idempotency_key: request.idempotency_key,
                 reply,
             })
             .await
             .map_err(|e| FrameError::Io(e.to_string()))?;
-        response
+        let out_bytes = response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
-            .map_err(IpcBridgeError::from)
+            .map_err(IpcBridgeError::from)?;
+        if operation == "context" {
+            let listed: serde_json::Value = serde_json::from_slice(&out_bytes)
+                .map_err(|_| FrameError::Io("corrupt_experience_records".into()))?;
+            let records = listed
+                .get("records")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!([]));
+            let projected = self
+                .module_registry
+                .invoke_if_ready(
+                    "memory.replay_context",
+                    serde_json::json!({ "records": records }),
+                    None,
+                )
+                .await
+                .map_err(|err| FrameError::Io(err.to_string()))?;
+            return serde_json::to_vec(&projected)
+                .map_err(|err| FrameError::Io(err.to_string()))
+                .map_err(IpcBridgeError::from);
+        }
+        Ok(out_bytes)
     }
 }

@@ -6,6 +6,8 @@
 
 //! Isolated `research` service module implementing `evohime-service-contract`.
 
+pub mod external_source_acquisition_runtime;
+
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
     ServiceHealthReport, ServiceHealthStatus, SERVICE_CONTRACT_VERSION,

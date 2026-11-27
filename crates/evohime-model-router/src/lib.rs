@@ -7,6 +7,9 @@
 //! Isolated `model-router` service module for local model runtime management,
 //! free-provider health probing, and purpose-based route selection.
 
+pub mod local_inference_scheduler;
+pub mod local_model_compatibility_gateway;
+
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
     ServiceHealthReport, ServiceHealthStatus, SERVICE_CONTRACT_VERSION,

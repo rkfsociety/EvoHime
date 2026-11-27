@@ -26,6 +26,9 @@
 //! assert!(frame.validate().is_ok());
 //! ```
 
+/// Bounded remote client control-plane contract.
+pub mod remote_client_control_plane;
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;

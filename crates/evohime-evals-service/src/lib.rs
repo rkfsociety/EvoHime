@@ -6,6 +6,8 @@
 
 //! Isolated `evals` service module implementing `evohime-service-contract`.
 
+pub mod execution_trace_evaluation;
+
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
     ServiceHealthReport, ServiceHealthStatus, SERVICE_CONTRACT_VERSION,

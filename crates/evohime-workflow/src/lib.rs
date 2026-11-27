@@ -6,6 +6,8 @@
 
 //! Isolated `workflow-engine` service module implementing `evohime-service-contract`.
 
+pub mod domain_workflow_recipes;
+
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
     ServiceHealthReport, ServiceHealthStatus, SERVICE_CONTRACT_VERSION,

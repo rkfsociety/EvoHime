@@ -453,16 +453,73 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let event_scope = scope.clone();
             let event_operation = operation.clone();
             let result = async {
-                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
-                    let database = journal.database().lock().await;
-                    let scope_kind = match scope.as_str() { "Session"=>crate::experience_replay_library::ExperienceScope::Session,"Project"=>crate::experience_replay_library::ExperienceScope::Project,"User"=>crate::experience_replay_library::ExperienceScope::User,"RoleProfile"=>crate::experience_replay_library::ExperienceScope::RoleProfile,"WorkflowProfile"=>crate::experience_replay_library::ExperienceScope::WorkflowProfile,_=>return Err("invalid_experience_scope".into()) };
-                    match operation.as_str() {
-                        "write" => { let record: crate::experience_replay_library::ExperienceRecord = serde_json::from_slice(&payload).map_err(|_| "invalid_experience_record".to_string())?; if record.scope != scope_kind || record.scope_id != scope_id { return Err("experience_scope_denied".into()); } crate::experience_replay_library::validate_and_write_gate(&record).map_err(|e|e.to_string())?; let hash=record.content_hash.clone(); let json=serde_json::to_vec(&record).map_err(|e|e.to_string())?; let saved=evohime_local_storage::experience_replay_library_store::put(database.connection(),&record.id,&scope,&scope_id,&json,&hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":if saved{"stored"}else{"duplicate"},"id":record.id,"revision":1,"idempotent":!saved})).map_err(|e|e.to_string()) }
-                        "list" => { let records=evohime_local_storage::experience_replay_library_store::list(database.connection(),&scope,&scope_id,64).map_err(|e|e.to_string())?; let records:Vec<serde_json::Value>=records.into_iter().filter_map(|b|serde_json::from_slice(&b).ok()).collect(); serde_json::to_vec(&serde_json::json!({"status":"ok","scope":scope,"records":records})).map_err(|e|e.to_string()) }
-                        "context" => { let records=evohime_local_storage::experience_replay_library_store::list(database.connection(),&scope,&scope_id,64).map_err(|e|e.to_string())?; let records:Vec<crate::experience_replay_library::ExperienceRecord>=records.into_iter().filter_map(|b|serde_json::from_slice(&b).ok()).collect(); let context=crate::experience_replay_library::project_context(&records,crate::experience_replay_library::MAX_CONTEXT_BYTES).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"ok","context":context,"max_bytes":crate::experience_replay_library::MAX_CONTEXT_BYTES})).map_err(|e|e.to_string()) }
-                        _ => Err("unsupported_experience_operation".into()),
+                let journal = state
+                    .lock()
+                    .await
+                    .journal
+                    .clone()
+                    .ok_or_else(|| "storage journal is not configured".to_string())?;
+                let database = journal.database().lock().await;
+                if !matches!(
+                    scope.as_str(),
+                    "Session" | "Project" | "User" | "RoleProfile" | "WorkflowProfile"
+                ) {
+                    return Err("invalid_experience_scope".into());
+                }
+                match operation.as_str() {
+                    "write" => {
+                        let record: serde_json::Value = serde_json::from_slice(&payload)
+                            .map_err(|_| "invalid_experience_record".to_string())?;
+                        let id = record
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "invalid_experience_record".to_string())?;
+                        let hash = record
+                            .get("content_hash")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "invalid_experience_record".to_string())?;
+                        let json = serde_json::to_vec(&record).map_err(|e| e.to_string())?;
+                        let saved = evohime_local_storage::experience_replay_library_store::put(
+                            database.connection(),
+                            id,
+                            &scope,
+                            &scope_id,
+                            &json,
+                            hash,
+                            crate::task_memory::now_millis() as i64,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({
+                            "status": if saved { "stored" } else { "duplicate" },
+                            "id": id,
+                            "revision": 1,
+                            "idempotent": !saved
+                        }))
+                        .map_err(|e| e.to_string())
                     }
-                }.await;
+                    "list" | "context" => {
+                        let records = evohime_local_storage::experience_replay_library_store::list(
+                            database.connection(),
+                            &scope,
+                            &scope_id,
+                            64,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        let records: Vec<serde_json::Value> = records
+                            .into_iter()
+                            .filter_map(|b| serde_json::from_slice(&b).ok())
+                            .collect();
+                        serde_json::to_vec(&serde_json::json!({
+                            "status": "ok",
+                            "scope": scope,
+                            "records": records
+                        }))
+                        .map_err(|e| e.to_string())
+                    }
+                    _ => Err("unsupported_experience_operation".into()),
+                }
+            }
+            .await;
             let revision = result
                 .as_ref()
                 .ok()

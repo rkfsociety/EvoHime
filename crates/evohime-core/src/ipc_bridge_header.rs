@@ -712,6 +712,8 @@ pub struct IpcBridge {
     /// `None` in tests and console workflows means status queries report
     /// `unavailable` instead of pretending a daemon is running.
     pulse: Option<Arc<crate::external_pulse::ExternalHiveObservationProxy>>,
+    /// Registry and proxy for isolated external service modules.
+    module_registry: crate::module_registry::ModuleRegistry,
 }
 
 /// Client identity confirmed by the connection handshake.

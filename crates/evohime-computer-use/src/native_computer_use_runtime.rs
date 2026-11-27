@@ -4,7 +4,7 @@
 //! projection does not grant permission or perform a computer-use action.
 //!
 //! ```
-//! use evohime_core::native_computer_use_runtime::{canonical_hash, projection, validate, Lifecycle, NativeComputerUseRuntimeRecord, SCHEMA_VERSION};
+//! use evohime_computer_use::native_computer_use_runtime::{canonical_hash, projection, validate, Lifecycle, NativeComputerUseRuntimeRecord, SCHEMA_VERSION};
 //! let mut runtime = NativeComputerUseRuntimeRecord {
 //!     schema_version: SCHEMA_VERSION,
 //!     id: "computer-use-1".into(),

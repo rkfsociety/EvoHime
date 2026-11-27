@@ -22,6 +22,8 @@ use thiserror::Error;
 
 pub mod capability;
 pub mod chain;
+/// Bounded design-intent review metadata contracts.
+pub mod design_intent_review_lane;
 pub mod export;
 pub mod key_lifecycle;
 pub mod runtime;

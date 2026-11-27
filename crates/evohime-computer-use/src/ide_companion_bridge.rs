@@ -4,7 +4,7 @@
 //! establish a connection or exchange IDE data.
 //!
 //! ```
-//! use evohime_core::ide_companion_bridge::{canonical_hash, projection, validate, IdeCompanionBridgeRecord, Lifecycle, SCHEMA_VERSION};
+//! use evohime_computer_use::ide_companion_bridge::{canonical_hash, projection, validate, IdeCompanionBridgeRecord, Lifecycle, SCHEMA_VERSION};
 //! let mut bridge = IdeCompanionBridgeRecord {
 //!     schema_version: SCHEMA_VERSION, id: "ide-bridge-1".into(), revision: 1,
 //!     lifecycle: Lifecycle::Active, scope: "workspace-opaque-id".into(),

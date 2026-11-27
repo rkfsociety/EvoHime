@@ -4,7 +4,7 @@
 //! connect to, inspect, or control a mobile device.
 //!
 //! ```
-//! use evohime_core::mobile_device_automation_runtime::{canonical_hash, projection, validate, Lifecycle, MobileDeviceAutomationRuntimeRecord, SCHEMA_VERSION};
+//! use evohime_computer_use::mobile_device_automation_runtime::{canonical_hash, projection, validate, Lifecycle, MobileDeviceAutomationRuntimeRecord, SCHEMA_VERSION};
 //! let mut runtime = MobileDeviceAutomationRuntimeRecord {
 //!     schema_version: SCHEMA_VERSION, id: "mobile-automation-1".into(), revision: 1,
 //!     lifecycle: Lifecycle::Active, scope: "device-opaque-id".into(),

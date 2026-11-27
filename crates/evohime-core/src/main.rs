@@ -471,7 +471,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     .with_free_access_evidence_cache(free_access_evidence_cache)
     .with_free_access_probe_guard(free_access_probe_guard)
     .with_free_access_probe_cancellation(free_access_probe_cancellation.clone())
-    .with_ambient_data_dir(data_dir.clone());
+    .with_ambient_data_dir(data_dir.clone())
+    .with_module_registry(module_registry.clone());
     {
         let recovered =
             evohime_core::image_generation::ImageGenerationRuntime::recover_durable_jobs(

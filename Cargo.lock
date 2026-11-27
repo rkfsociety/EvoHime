@@ -763,7 +763,11 @@ name = "evohime-ambient"
 version = "0.1.0"
 dependencies = [
  "evohime-service-contract",
+ "hex",
+ "serde",
  "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -803,7 +807,11 @@ name = "evohime-computer-use"
 version = "0.1.0"
 dependencies = [
  "evohime-service-contract",
+ "hex",
+ "serde",
  "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -897,7 +905,11 @@ name = "evohime-evals-service"
 version = "0.1.0"
 dependencies = [
  "evohime-service-contract",
+ "hex",
+ "serde",
  "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1003,7 +1015,11 @@ name = "evohime-media-voice"
 version = "0.1.0"
 dependencies = [
  "evohime-service-contract",
+ "hex",
+ "serde",
  "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1050,7 +1066,11 @@ name = "evohime-model-router"
 version = "0.1.0"
 dependencies = [
  "evohime-service-contract",
+ "hex",
+ "serde",
  "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1071,7 +1091,11 @@ name = "evohime-rag-memory"
 version = "0.1.0"
 dependencies = [
  "evohime-service-contract",
+ "hex",
+ "serde",
  "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1111,7 +1135,11 @@ name = "evohime-research"
 version = "0.1.0"
 dependencies = [
  "evohime-service-contract",
+ "hex",
+ "serde",
  "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1214,7 +1242,11 @@ name = "evohime-workflow"
 version = "0.1.0"
 dependencies = [
  "evohime-service-contract",
+ "hex",
+ "serde",
  "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

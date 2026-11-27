@@ -6,6 +6,9 @@
 
 //! Isolated `ambient` service module implementing `evohime-service-contract`.
 
+pub mod autonomous_metric_experiment_runtime;
+pub mod temporal_signal_intelligence;
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use evohime_service_contract::{

@@ -6,6 +6,11 @@
 
 //! Isolated `computer-use` service module implementing `evohime-service-contract`.
 
+pub mod cross_modal_ui_grounding;
+pub mod ide_companion_bridge;
+pub mod mobile_device_automation_runtime;
+pub mod native_computer_use_runtime;
+
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
     ServiceHealthReport, ServiceHealthStatus, SERVICE_CONTRACT_VERSION,

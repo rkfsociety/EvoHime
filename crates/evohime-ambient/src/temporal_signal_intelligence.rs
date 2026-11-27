@@ -4,7 +4,7 @@
 //! scope; it does not infer, schedule, or execute signals.
 //!
 //! ```
-//! use evohime_core::temporal_signal_intelligence::{canonical_hash, projection, validate, Lifecycle, TemporalSignalIntelligenceRecord, SCHEMA_VERSION};
+//! use evohime_ambient::temporal_signal_intelligence::{canonical_hash, projection, validate, Lifecycle, TemporalSignalIntelligenceRecord, SCHEMA_VERSION};
 //! let mut record = TemporalSignalIntelligenceRecord {
 //!     schema_version: SCHEMA_VERSION, id: "signal-1".into(), revision: 1,
 //!     lifecycle: Lifecycle::Active, scope: "workspace-opaque-id".into(),

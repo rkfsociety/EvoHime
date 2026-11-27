@@ -434,7 +434,7 @@ impl ExecutionTrace {
     }
 
     /// Returns the legacy 64-character digest accepted by
-    /// [`crate::agent_benchmark_matrix::AttemptResult::tool_trace_digest`].
+    /// `AttemptResult::tool_trace_digest`.
     ///
     /// The digest bytes are identical to [`Self::canonical_hash`]; this method
     /// omits its `sha256:` prefix to preserve the existing benchmark field

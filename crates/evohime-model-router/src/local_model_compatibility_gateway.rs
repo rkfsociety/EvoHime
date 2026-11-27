@@ -4,7 +4,7 @@
 //! it does not inspect a model, start a server, or route a request.
 //!
 //! ```
-//! use evohime_core::local_model_compatibility_gateway::{canonical_hash, projection, validate, Lifecycle, LocalModelCompatibilityGatewayRecord, SCHEMA_VERSION};
+//! use evohime_model_router::local_model_compatibility_gateway::{canonical_hash, projection, validate, Lifecycle, LocalModelCompatibilityGatewayRecord, SCHEMA_VERSION};
 //! let mut gateway = LocalModelCompatibilityGatewayRecord {
 //!     schema_version: SCHEMA_VERSION, id: "local-gateway-1".into(), revision: 1,
 //!     lifecycle: Lifecycle::Active, scope: "host-opaque-id".into(),

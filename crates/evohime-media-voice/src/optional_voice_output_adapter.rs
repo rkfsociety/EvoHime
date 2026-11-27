@@ -4,7 +4,7 @@
 //! or start an audio device.
 //!
 //! ```
-//! use evohime_core::optional_voice_output_adapter::{canonical_hash, projection, validate, Lifecycle, OptionalVoiceOutputAdapterRecord, SCHEMA_VERSION};
+//! use evohime_media_voice::optional_voice_output_adapter::{canonical_hash, projection, validate, Lifecycle, OptionalVoiceOutputAdapterRecord, SCHEMA_VERSION};
 //! let mut adapter = OptionalVoiceOutputAdapterRecord {
 //!     schema_version: SCHEMA_VERSION, id: "voice-output-1".into(), revision: 1,
 //!     lifecycle: Lifecycle::Active, scope: "user-opaque-id".into(),

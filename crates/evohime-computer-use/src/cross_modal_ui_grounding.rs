@@ -4,7 +4,7 @@
 //! does not observe, read, or change the UI.
 //!
 //! ```
-//! use evohime_core::cross_modal_ui_grounding::{canonical_hash, projection, validate, CrossModalUiGroundingRecord, Lifecycle, SCHEMA_VERSION};
+//! use evohime_computer_use::cross_modal_ui_grounding::{canonical_hash, projection, validate, CrossModalUiGroundingRecord, Lifecycle, SCHEMA_VERSION};
 //! let mut grounding = CrossModalUiGroundingRecord {
 //!     schema_version: SCHEMA_VERSION, id: "grounding-1".into(), revision: 1,
 //!     lifecycle: Lifecycle::Active, scope: "window-opaque-id".into(),

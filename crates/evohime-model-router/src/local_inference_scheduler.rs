@@ -30,7 +30,7 @@ pub enum SchedulerStatus {
 /// Versioned scheduler intent; this contract does not represent measured execution.
 ///
 /// ```
-/// use evohime_core::local_inference_scheduler::{SchedulerContract, SchedulerStatus, SCHEMA_VERSION};
+/// use evohime_model_router::local_inference_scheduler::{SchedulerContract, SchedulerStatus, SCHEMA_VERSION};
 /// let contract = SchedulerContract {
 ///     schema_version: SCHEMA_VERSION,
 ///     scheduler_id: "local-default".into(),

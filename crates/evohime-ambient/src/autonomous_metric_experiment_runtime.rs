@@ -4,7 +4,7 @@
 //! launch an experiment or publish measured results.
 //!
 //! ```
-//! use evohime_core::autonomous_metric_experiment_runtime::{canonical_hash, projection, validate, AutonomousMetricExperimentRuntimeRecord, Lifecycle, SCHEMA_VERSION};
+//! use evohime_ambient::autonomous_metric_experiment_runtime::{canonical_hash, projection, validate, AutonomousMetricExperimentRuntimeRecord, Lifecycle, SCHEMA_VERSION};
 //! let mut runtime = AutonomousMetricExperimentRuntimeRecord {
 //!     schema_version: SCHEMA_VERSION, id: "metric-runtime-1".into(), revision: 1,
 //!     lifecycle: Lifecycle::Active, scope: "project-opaque-id".into(),

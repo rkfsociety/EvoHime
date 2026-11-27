@@ -1104,6 +1104,7 @@ impl IpcBridge {
                 crate::bounded_tasks::DEFAULT_CAPACITY,
             )),
             pulse: None,
+            module_registry: crate::module_registry::ModuleRegistry::new(),
         }
     }
 
@@ -1158,6 +1159,7 @@ impl IpcBridge {
                 crate::bounded_tasks::DEFAULT_CAPACITY,
             )),
             pulse: None,
+            module_registry: crate::module_registry::ModuleRegistry::new(),
         }
     }
 
@@ -1219,6 +1221,7 @@ impl IpcBridge {
                 crate::bounded_tasks::DEFAULT_CAPACITY,
             )),
             pulse: None,
+            module_registry: crate::module_registry::ModuleRegistry::new(),
         }
     }
 
@@ -1243,6 +1246,21 @@ impl IpcBridge {
     pub fn with_ambient_data_dir(mut self, directory: std::path::PathBuf) -> Self {
         self.ambient_data_dir = Some(directory);
         self
+    }
+
+    /// Attaches the runtime [`crate::module_registry::ModuleRegistry`] used to
+    /// delegate capabilities to isolated external service modules.
+    pub fn with_module_registry(
+        mut self,
+        registry: crate::module_registry::ModuleRegistry,
+    ) -> Self {
+        self.module_registry = registry;
+        self
+    }
+
+    /// Returns a clone of the attached [`crate::module_registry::ModuleRegistry`].
+    pub fn module_registry(&self) -> crate::module_registry::ModuleRegistry {
+        self.module_registry.clone()
     }
 
     /// Разделяемый реестр проактивности.
