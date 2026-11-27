@@ -2692,10 +2692,10 @@ export interface CommandResults {
   /** `cancelled` приходит вместо `accepted`, когда закрыт диалог сохранения. */
   'review.saveRevision': { accepted?: boolean; cancelled?: boolean }
   'provider.get': ProviderSummary
-  /** `restarted` is false when Core could not be relaunched with the new key. */
-  'provider.save': { summary: ProviderSummary; restarted: boolean }
-  'provider.select': { summary: ProviderSummary; restarted: boolean }
-  'provider.clearKey': { summary: ProviderSummary; restarted: boolean }
+  /** `appliedLive` is true when running Core accepted the config for new sessions without restarting. */
+  'provider.save': { summary: ProviderSummary; restarted: boolean; appliedLive?: boolean }
+  'provider.select': { summary: ProviderSummary; restarted: boolean; appliedLive?: boolean }
+  'provider.clearKey': { summary: ProviderSummary; restarted: boolean; appliedLive?: boolean }
   'provider.verifyFreeAccess': { accepted: boolean }
   'codex.getStatus': CodexStatus
   'codex.refresh': CodexStatus

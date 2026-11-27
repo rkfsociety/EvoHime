@@ -20,11 +20,11 @@ impl IpcBridge {
         if let Some(runtime) = self.image_generation_runtime.get() {
             return Some(runtime.clone());
         }
-        let config = self.gateway_config.as_ref()?;
-        let gateway = evohime_model_gateway::ModelGateway::from_config(config).ok()?;
+        let config = self.gateway_config_snapshot()?;
+        let gateway = evohime_model_gateway::ModelGateway::from_config(&config).ok()?;
         let preflight =
             crate::free_provider_reliability_routing::ProviderCatalogRoutePreflight::new(
-                config.clone(),
+                config,
                 self.provider_catalog_snapshots.clone(),
             );
         let runtime = std::sync::Arc::new(crate::image_generation::ImageGenerationRuntime::new(
@@ -313,7 +313,7 @@ impl IpcBridge {
         if !confirmed_possible_cost || model_id.trim().is_empty() || model_id.len() > 256 {
             return failure_payload(FreeProbeFailureCode::ConsentOrCredentialRequired);
         }
-        let Some(config) = self.gateway_config.as_ref() else {
+        let Some(config) = self.gateway_config_snapshot() else {
             return failure_payload(FreeProbeFailureCode::AuthorityUnavailable);
         };
         let route_name = config.default_route.clone();
@@ -372,7 +372,7 @@ impl IpcBridge {
                 })
             }
         };
-        let gateway = match evohime_model_gateway::ModelGateway::from_config(config) {
+        let gateway = match evohime_model_gateway::ModelGateway::from_config(&config) {
             Ok(gateway) => gateway,
             Err(_) => return failure_payload(FreeProbeFailureCode::AuthorityUnavailable),
         };
@@ -469,8 +469,7 @@ impl IpcBridge {
     /// no credential binding or raw evidence payload is logged or projected.
     pub async fn hydrate_free_access_evidence(&self) -> usize {
         let routes = self
-            .gateway_config
-            .as_ref()
+            .gateway_config_snapshot()
             .map(|config| {
                 config
                     .routes
@@ -825,8 +824,7 @@ impl IpcBridge {
     /// is included in the recovery log.
     pub async fn hydrate_provider_catalog_snapshots(&self) -> usize {
         let routes = self
-            .gateway_config
-            .as_ref()
+            .gateway_config_snapshot()
             .map(|config| {
                 config
                     .routes
@@ -1066,8 +1064,9 @@ impl IpcBridge {
             coordinator: None,
             approvals: None,
             tools: None,
-            model_config: None,
-            gateway_config: None,
+            model_config: Arc::new(std::sync::RwLock::new(None)),
+            gateway_config: Arc::new(std::sync::RwLock::new(None)),
+            shared_gateway: None,
             image_generation_runtime: std::sync::OnceLock::new(),
             provider_catalog_snapshots:
                 crate::free_provider_reliability_routing::new_provider_catalog_cache(),
@@ -1121,8 +1120,9 @@ impl IpcBridge {
             coordinator: Some(coordinator),
             approvals: None,
             tools: None,
-            model_config: None,
-            gateway_config: None,
+            model_config: Arc::new(std::sync::RwLock::new(None)),
+            gateway_config: Arc::new(std::sync::RwLock::new(None)),
+            shared_gateway: None,
             image_generation_runtime: std::sync::OnceLock::new(),
             provider_catalog_snapshots:
                 crate::free_provider_reliability_routing::new_provider_catalog_cache(),
@@ -1183,8 +1183,9 @@ impl IpcBridge {
             coordinator: Some(coordinator),
             approvals: Some(approvals),
             tools: Some(tools),
-            model_config,
-            gateway_config,
+            model_config: Arc::new(std::sync::RwLock::new(model_config)),
+            gateway_config: Arc::new(std::sync::RwLock::new(gateway_config)),
+            shared_gateway: None,
             image_generation_runtime: std::sync::OnceLock::new(),
             provider_catalog_snapshots:
                 crate::free_provider_reliability_routing::new_provider_catalog_cache(),

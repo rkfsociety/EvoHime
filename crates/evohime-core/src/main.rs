@@ -334,6 +334,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .attach_module_registry(module_registry.clone())
         .await;
     let workflow_state = std::sync::Arc::new(evohime_core::WorkflowRuntimeState::new());
+    let mut shared_gateway: Option<evohime_core::SharedModelGateway> = None;
     let executor = model_config
         .and_then(|config| evohime_model_gateway::ModelGateway::from_config(&config).ok())
         .map(|gateway| {
@@ -341,12 +342,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 Some(preflight) => gateway.with_route_preflight(preflight.clone()),
                 None => gateway,
             };
+            let gateway_arc = std::sync::Arc::new(gateway);
+            let slot = std::sync::Arc::new(std::sync::RwLock::new(std::sync::Arc::clone(
+                &gateway_arc,
+            )));
+            shared_gateway = Some(std::sync::Arc::clone(&slot));
             std::sync::Arc::new(
                 evohime_core::ToolAgent::new_with_approvals(
-                    std::sync::Arc::new(gateway),
+                    gateway_arc,
                     tools.clone(),
                     approvals.clone(),
                 )
+                .with_shared_gateway(slot)
                 .with_journal(journal.clone())
                 .with_receipt_keys(receipt_keys.clone())
                 .with_routing_approvals(routing_approvals.clone())
@@ -457,7 +464,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .ok();
     let observation_proxy =
         std::sync::Arc::new(evohime_core::external_pulse::ExternalHiveObservationProxy::new());
-    let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(
+    let mut bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(
         journal,
         coordinator,
         approvals,
@@ -476,6 +483,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     .with_free_access_probe_cancellation(free_access_probe_cancellation.clone())
     .with_ambient_data_dir(data_dir.clone())
     .with_module_registry(module_registry.clone());
+    if let Some(slot) = shared_gateway {
+        bridge = bridge.with_shared_gateway(slot);
+    }
     {
         let recovered =
             evohime_core::image_generation::ImageGenerationRuntime::recover_durable_jobs(

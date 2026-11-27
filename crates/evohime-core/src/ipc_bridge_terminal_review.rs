@@ -788,8 +788,7 @@ impl IpcBridge {
             .validate()
             .map_err(|error| FrameError::Io(error.to_string()))?;
         let gateway_config = self
-            .gateway_config
-            .clone()
+            .gateway_config_snapshot()
             .ok_or_else(|| FrameError::Io("provider is not configured".into()))?;
         let gateway = evohime_model_gateway::ModelGateway::from_config(&gateway_config)
             .map_err(|error| FrameError::Io(error.to_string()))?;
@@ -967,8 +966,7 @@ impl IpcBridge {
             .validate()
             .map_err(|error| FrameError::Io(error.to_string()))?;
         let gateway_config = self
-            .gateway_config
-            .clone()
+            .gateway_config_snapshot()
             .ok_or_else(|| FrameError::Io("provider is not configured".into()))?;
         let gateway = evohime_model_gateway::ModelGateway::from_config(&gateway_config)
             .map_err(|error| FrameError::Io(error.to_string()))?;

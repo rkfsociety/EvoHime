@@ -865,9 +865,14 @@ impl evohime_local_storage::domains::receipts::ProvenanceBundleSigner for CoreRe
     }
 }
 
+/// Process-wide slot holding the active [`ModelGateway`] so new tasks pick up
+/// updated provider settings without interrupting already-running tasks.
+pub type SharedModelGateway = Arc<std::sync::RwLock<Arc<ModelGateway>>>;
+
 /// Coordinates model calls and tool execution under Core policy and approval controls.
 pub struct ToolAgent {
     gateway: Arc<ModelGateway>,
+    gateway_slot: Option<SharedModelGateway>,
     tools: Arc<ToolRegistry>,
     max_iterations: usize,
     approvals: ApprovalCoordinator,
@@ -1140,10 +1145,20 @@ fn conversation_prompt_for_cli(history: &[ChatMessage], prompt: &str) -> String 
     )
 }
 
-impl TaskExecutor for ToolAgent {
-    fn recover_memory_extractions(&self, events: EventSink) -> BoxFuture<'static, ()> {
-        let agent = Self {
-            gateway: Arc::clone(&self.gateway),
+impl ToolAgent {
+    fn latest_gateway(&self) -> Arc<ModelGateway> {
+        self.gateway_slot
+            .as_ref()
+            .and_then(|slot| slot.read().ok().map(|guard| Arc::clone(&guard)))
+            .unwrap_or_else(|| Arc::clone(&self.gateway))
+    }
+
+    /// Snapshots the latest configured gateway for a single task/episode so
+    /// subsequent settings updates never mutate an in-flight execution.
+    fn clone_for_task(&self) -> Self {
+        Self {
+            gateway: self.latest_gateway(),
+            gateway_slot: None,
             tools: Arc::clone(&self.tools),
             max_iterations: self.max_iterations,
             approvals: self.approvals.clone(),
@@ -1156,7 +1171,13 @@ impl TaskExecutor for ToolAgent {
             proactivity: self.proactivity.clone(),
             workflow_registry: Arc::clone(&self.workflow_registry),
             workflow_state: Arc::clone(&self.workflow_state),
-        };
+        }
+    }
+}
+
+impl TaskExecutor for ToolAgent {
+    fn recover_memory_extractions(&self, events: EventSink) -> BoxFuture<'static, ()> {
+        let agent = self.clone_for_task();
         Box::pin(async move {
             agent.recover_pending_memory_extractions(&events).await;
         })
@@ -1255,23 +1276,7 @@ impl TaskExecutor for ToolAgent {
         cancellation: CancellationToken,
         events: EventSink,
     ) -> BoxFuture<'static, Result<String, AgentRunError>> {
-        let agent = Self {
-            gateway: Arc::clone(&self.gateway),
-            tools: Arc::clone(&self.tools),
-            max_iterations: self.max_iterations,
-            approvals: self.approvals.clone(),
-            routing_approvals: self.routing_approvals.clone(),
-            journal: self.journal.clone(),
-            selected_model: self.selected_model.clone(),
-            receipt_keys: self.receipt_keys.clone(),
-            // Shared, not cloned: the hourly candidate/token limits and the
-            // circuit breaker have to hold across concurrent tasks.
-            extraction_guard: Arc::clone(&self.extraction_guard),
-            extraction_lease: Arc::clone(&self.extraction_lease),
-            proactivity: self.proactivity.clone(),
-            workflow_registry: Arc::clone(&self.workflow_registry),
-            workflow_state: Arc::clone(&self.workflow_state),
-        };
+        let agent = self.clone_for_task();
         Box::pin(async move {
             agent
                 .run_once_with_cancellation(
@@ -1304,21 +1309,7 @@ impl TaskExecutor for ToolAgent {
                 events,
             ));
         }
-        let agent = Self {
-            gateway: Arc::clone(&self.gateway),
-            tools: Arc::clone(&self.tools),
-            max_iterations: self.max_iterations,
-            approvals: self.approvals.clone(),
-            routing_approvals: self.routing_approvals.clone(),
-            journal: self.journal.clone(),
-            selected_model: self.selected_model.clone(),
-            receipt_keys: self.receipt_keys.clone(),
-            extraction_guard: Arc::clone(&self.extraction_guard),
-            extraction_lease: Arc::clone(&self.extraction_lease),
-            proactivity: self.proactivity.clone(),
-            workflow_registry: Arc::clone(&self.workflow_registry),
-            workflow_state: Arc::clone(&self.workflow_state),
-        };
+        let agent = self.clone_for_task();
         Box::pin(async move {
             agent
                 .run_once_with_cancellation(
@@ -1362,21 +1353,7 @@ impl TaskExecutor for ToolAgent {
                 events,
             ));
         }
-        let agent = Self {
-            gateway: Arc::clone(&self.gateway),
-            tools: Arc::clone(&self.tools),
-            max_iterations: self.max_iterations,
-            approvals: self.approvals.clone(),
-            routing_approvals: self.routing_approvals.clone(),
-            journal: self.journal.clone(),
-            selected_model: self.selected_model.clone(),
-            receipt_keys: self.receipt_keys.clone(),
-            extraction_guard: Arc::clone(&self.extraction_guard),
-            extraction_lease: Arc::clone(&self.extraction_lease),
-            proactivity: self.proactivity.clone(),
-            workflow_registry: Arc::clone(&self.workflow_registry),
-            workflow_state: Arc::clone(&self.workflow_state),
-        };
+        let agent = self.clone_for_task();
         Box::pin(async move {
             agent
                 .run_once_with_cancellation(
@@ -1396,7 +1373,7 @@ impl TaskExecutor for ToolAgent {
         provider: Option<&str>,
         profile_id: Option<&str>,
     ) -> Result<Option<String>, String> {
-        self.gateway
+        self.latest_gateway()
             .resolve_route(provider, profile_id)
             .map_err(|error| error.to_string())
     }
@@ -1406,23 +1383,7 @@ impl TaskExecutor for ToolAgent {
         episode_id: String,
         events: EventSink,
     ) -> BoxFuture<'static, ()> {
-        let agent = Self {
-            gateway: Arc::clone(&self.gateway),
-            tools: Arc::clone(&self.tools),
-            max_iterations: self.max_iterations,
-            approvals: self.approvals.clone(),
-            routing_approvals: self.routing_approvals.clone(),
-            journal: self.journal.clone(),
-            selected_model: self.selected_model.clone(),
-            receipt_keys: self.receipt_keys.clone(),
-            // Shared, not cloned: the ambient budgets and the malformed
-            // breaker are hourly and have to hold across episodes.
-            extraction_guard: Arc::clone(&self.extraction_guard),
-            extraction_lease: Arc::clone(&self.extraction_lease),
-            proactivity: self.proactivity.clone(),
-            workflow_registry: Arc::clone(&self.workflow_registry),
-            workflow_state: Arc::clone(&self.workflow_state),
-        };
+        let agent = self.clone_for_task();
         Box::pin(async move {
             agent
                 .run_ambient_memory_extraction(&episode_id, &events)

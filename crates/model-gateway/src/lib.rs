@@ -45,7 +45,9 @@ pub mod structured_response;
 /// Tool call and chat response types exposed by the gateway.
 pub mod tools;
 
-pub use crate::config::{ModelGatewayConfig, ModelRouteConfig, ProviderLimits, ProviderProfileId};
+pub use crate::config::{
+    ModelGatewayConfig, ModelRateLimitConfig, ModelRouteConfig, ProviderLimits, ProviderProfileId,
+};
 pub use crate::model_ranker::{
     get_ranked_models, get_rout_ranked_models, next_available_model, next_available_rout_model,
     ROUT_DEFAULT_FREE_MODEL,
@@ -244,6 +246,7 @@ pub struct ModelGateway {
     default_provider: Arc<dyn ModelProvider>,
     routes: HashMap<String, Arc<dyn ModelProvider>>,
     route_profiles: HashMap<String, Option<ProviderProfileId>>,
+    route_rate_limits: HashMap<String, HashMap<String, ModelRateLimitConfig>>,
     route_preflight: Option<Arc<dyn RoutePreflight>>,
 }
 
@@ -763,9 +766,13 @@ impl ModelGateway {
         }
         let mut routes = HashMap::new();
         let mut route_profiles = HashMap::new();
+        let mut route_rate_limits = HashMap::new();
         for (name, route_config) in &config.routes {
             routes.insert(name.clone(), build_provider(route_config)?);
             route_profiles.insert(name.clone(), route_config.provider_profile_id);
+            if !route_config.model_rate_limits.is_empty() {
+                route_rate_limits.insert(name.clone(), route_config.model_rate_limits.clone());
+            }
         }
 
         let default_provider = routes
@@ -777,6 +784,7 @@ impl ModelGateway {
             default_provider,
             routes,
             route_profiles,
+            route_rate_limits,
             route_preflight: None,
         })
     }
@@ -788,6 +796,7 @@ impl ModelGateway {
             default_provider: provider.clone(),
             routes: HashMap::from([("default".to_string(), provider)]),
             route_profiles: HashMap::new(),
+            route_rate_limits: HashMap::new(),
             route_preflight: None,
         }
     }
@@ -806,8 +815,14 @@ impl ModelGateway {
             default_provider,
             routes,
             route_profiles: HashMap::new(),
+            route_rate_limits: HashMap::new(),
             route_preflight: None,
         })
+    }
+
+    /// Returns the configured per-model rate limits for the default route, if any.
+    pub fn default_route_rate_limits(&self) -> Option<&HashMap<String, ModelRateLimitConfig>> {
+        self.route_rate_limits.get(&self.default_route)
     }
 
     /// Adds a Core-owned gate checked after selection and before every provider call.

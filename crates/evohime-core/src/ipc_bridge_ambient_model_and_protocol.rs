@@ -329,11 +329,19 @@ impl IpcBridge {
                     .await?;
                     return Ok(());
                 }
-                let Some(route) = self
-                    .gateway_config
-                    .as_ref()
-                    .and_then(|config| config.routes.get(&config.default_route))
-                else {
+                let Some(gateway_config) = self.gateway_config_snapshot() else {
+                    self.write_response(
+                        writer,
+                        "model.select.rejected",
+                        serde_json::to_vec(
+                            &serde_json::json!({ "reason": "provider_not_configured" }),
+                        )
+                        .unwrap_or_default(),
+                    )
+                    .await?;
+                    return Ok(());
+                };
+                let Some(route) = gateway_config.routes.get(&gateway_config.default_route) else {
                     self.write_response(
                         writer,
                         "model.select.rejected",
@@ -444,7 +452,7 @@ impl IpcBridge {
                             settings.hive_model.as_deref(),
                         )
                     };
-                    let mut adjusted_config = self.gateway_config.clone();
+                    let mut adjusted_config = self.gateway_config_snapshot();
                     if let Some(config) = adjusted_config.as_mut() {
                         if is_fallback {
                             config.apply_hive_fallback_route_overrides(
@@ -551,6 +559,13 @@ impl IpcBridge {
                 };
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
             }
+            Some(generated::command_envelope::Command::UpdateProviderConfig(request)) => {
+                let outcome = self.apply_live_provider_config(&request.env_json).await;
+                let payload = serde_json::to_vec(&outcome)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                self.write_response(writer, "provider.config.updated", payload)
+                    .await?;
+            }
 
             _ => unreachable!("command routed to the wrong domain"),
         }
@@ -564,10 +579,11 @@ impl IpcBridge {
         requested_profile_id: Option<&str>,
     ) -> serde_json::Value {
         let mode = if raw_mode == "paid" { "paid" } else { "free" };
-        let route = self.gateway_config.as_ref().and_then(|config| {
-            resolve_catalog_route(config, requested_provider, requested_profile_id)
+        let route = self.gateway_config_snapshot().and_then(|config| {
+            resolve_catalog_route(&config, requested_provider, requested_profile_id).cloned()
         });
         let provider = route
+            .as_ref()
             .map(|route| route.provider.as_str().to_string())
             .unwrap_or_else(|| "unknown".into());
         let (mut entries, error, ollama, catalog_failure): (
@@ -575,7 +591,7 @@ impl IpcBridge {
             Option<String>,
             Option<serde_json::Value>,
             Option<crate::free_provider_reliability_routing::CatalogFailureCode>,
-        ) = match route {
+        ) = match route.as_ref() {
             Some(route)
                 if route.provider == evohime_model_gateway::providers::ProviderKind::Ollama =>
             {
@@ -680,7 +696,7 @@ impl IpcBridge {
                 None,
             ),
         };
-        if let Some(route) = route {
+        if let Some(ref route) = route {
             let cached_entries = self
                 .remember_provider_catalog_snapshot(route, &entries, catalog_failure)
                 .await;
@@ -691,7 +707,7 @@ impl IpcBridge {
             }
         }
         let selected_model = self.selected_model.get();
-        let provider_catalog = if let Some(route) = route {
+        let provider_catalog = if let Some(ref route) = route {
             self.provider_catalog_projection(route, selected_model.as_deref())
                 .await
         } else {
@@ -730,6 +746,118 @@ impl IpcBridge {
             "error": if provider == "ollama" { None } else { error },
             "ollama": ollama,
             "provider_catalog": provider_catalog,
+        })
+    }
+
+    async fn apply_live_provider_config(&self, env_json: &[u8]) -> serde_json::Value {
+        const MAX_ENV_JSON_BYTES: usize = 512 * 1024;
+        if env_json.len() > MAX_ENV_JSON_BYTES {
+            return serde_json::json!({ "applied": false, "error": "payload_too_large" });
+        }
+        let Ok(vars) = serde_json::from_slice::<HashMap<String, String>>(env_json) else {
+            return serde_json::json!({ "applied": false, "error": "invalid_payload" });
+        };
+        let mut config = match evohime_model_gateway::ModelGatewayConfig::from_env_map(&vars) {
+            Ok(config) => config,
+            Err(error) => {
+                return serde_json::json!({
+                    "applied": false,
+                    "error": error.to_string(),
+                });
+            }
+        };
+        if let Ok(hive_settings) = self.journal.hive_settings().await {
+            config.apply_hive_route_overrides(
+                hive_settings.hive_provider_profile.as_deref(),
+                hive_settings.hive_model.as_deref(),
+            );
+            config.apply_hive_fallback_route_overrides(
+                hive_settings.hive_fallback_provider_profile.as_deref(),
+                hive_settings.hive_fallback_model.as_deref(),
+            );
+            config.apply_hive_route_limits(
+                "hive",
+                hive_settings.hive_provider_limits,
+                hive_settings.hive_daily_token_quota,
+                hive_settings.hive_quota_reset_utc_midnight,
+            );
+            config.apply_hive_route_limits(
+                "hive_fallback",
+                hive_settings.hive_fallback_provider_limits,
+                hive_settings.hive_fallback_daily_token_quota,
+                hive_settings.hive_fallback_quota_reset_utc_midnight,
+            );
+        }
+        let gateway = match evohime_model_gateway::ModelGateway::from_config(&config) {
+            Ok(gateway) => gateway,
+            Err(error) => {
+                return serde_json::json!({
+                    "applied": false,
+                    "error": error.to_string(),
+                });
+            }
+        };
+        let probe_policy = vars
+            .get("MODEL_PROVIDER_FREE_ACCESS_PROBE_POLICY")
+            .map(|value| crate::free_access_probe::FreeAccessProbePolicy::parse(value))
+            .unwrap_or_default();
+        let probe_consent = vars
+            .get("MODEL_PROVIDER_FREE_ACCESS_PROBE_CONSENT_BINDING")
+            .cloned();
+        let routing_mode = vars
+            .get("MODEL_FREE_ACCESS_ROUTING_MODE")
+            .map(|value| crate::free_access_probe::FreeAccessRoutingMode::parse(value))
+            .unwrap_or_default();
+        let allow_paid = vars
+            .get("MODEL_FREE_ACCESS_ALLOW_PAID_FALLBACK")
+            .is_some_and(|value| value.eq_ignore_ascii_case("true"));
+        let probe_coordinator = crate::free_access_probe::FreeAccessProbeCoordinator::new(
+            config.clone(),
+            self.journal.clone(),
+            self.free_access_evidence.clone(),
+            self.free_access_probe_guard.clone(),
+            probe_policy,
+            probe_consent,
+            self.free_access_probe_cancellation.clone(),
+        );
+        let preflight = std::sync::Arc::new(
+            crate::free_provider_reliability_routing::ProviderCatalogRoutePreflight::new(
+                config.clone(),
+                self.provider_catalog_snapshots.clone(),
+            )
+            .with_quota_journal(self.journal.clone())
+            .with_free_access_policy(
+                routing_mode,
+                allow_paid,
+                Some(probe_coordinator),
+                self.free_access_evidence.clone(),
+            ),
+        );
+        let gateway = std::sync::Arc::new(gateway.with_route_preflight(preflight));
+        let snapshot = config
+            .routes
+            .get(&config.default_route)
+            .map(|route| ModelConfigSnapshot {
+                provider: route.provider.as_str().to_string(),
+                route: config.default_route.clone(),
+                model: route.literouter.model.clone(),
+                configured: route.configured(),
+            });
+        if let Ok(mut guard) = self.gateway_config.write() {
+            *guard = Some(config);
+        }
+        if let Ok(mut guard) = self.model_config.write() {
+            *guard = snapshot.clone();
+        }
+        if let Some(slot) = self.shared_gateway.as_ref() {
+            if let Ok(mut guard) = slot.write() {
+                *guard = gateway;
+            }
+        }
+        tracing::info!("live provider configuration applied for upcoming tasks");
+        serde_json::json!({
+            "applied": true,
+            "modelConfig": snapshot,
         })
     }
 }
@@ -967,6 +1095,46 @@ mod tests {
         assert_eq!(
             parse_hive_catalog_profile_and_tier("", Some("literouter"), None),
             (Some("literouter"), "free")
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_live_provider_config_updates_shared_gateway_for_new_tasks_without_mutating_existing_snapshot() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let journal = EventJournal::open(dir.path().join("events.db")).expect("open journal");
+        let initial_gateway = Arc::new(evohime_model_gateway::mock_gateway(vec!["old".into()]));
+        let shared_slot: crate::core_agent::SharedModelGateway =
+            Arc::new(std::sync::RwLock::new(Arc::clone(&initial_gateway)));
+        let bridge = IpcBridge::new(journal).with_shared_gateway(Arc::clone(&shared_slot));
+
+        let existing_task_gateway = shared_slot.read().expect("read lock").clone();
+        assert_eq!(existing_task_gateway.model_name(), "mock-model");
+
+        let env_map = serde_json::json!({
+            "MODEL_PROVIDER": "openai_compatible",
+            "OPENAI_API_KEY": "sk-new-live-key",
+            "OPENAI_BASE_URL": "https://api.example.com/v1",
+            "OPENAI_MODEL": "gpt-4o-mini",
+            "MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON": r#"{"*":{"enabled":true,"rpm":15,"daily_token_quota":10000,"reset_schedule_enabled":true,"reset_time_minutes":120,"reset_utc_offset_hours":2}}"#
+        });
+        let payload = serde_json::to_vec(&env_map).expect("serialize env map");
+        let outcome = bridge.apply_live_provider_config(&payload).await;
+        assert_eq!(outcome["applied"], serde_json::json!(true));
+
+        let next_task_gateway = shared_slot.read().expect("read lock").clone();
+        assert_eq!(next_task_gateway.model_name(), "gpt-4o-mini");
+        assert_eq!(
+            next_task_gateway
+                .default_route_rate_limits()
+                .and_then(|limits| limits.get("*"))
+                .map(|limit| limit.rpm),
+            Some(15)
+        );
+        // Existing task still holds its original gateway snapshot.
+        assert_eq!(existing_task_gateway.model_name(), "mock-model");
+        assert_eq!(
+            bridge.current_model_config().map(|cfg| cfg.model),
+            Some("gpt-4o-mini".to_string())
         );
     }
 }

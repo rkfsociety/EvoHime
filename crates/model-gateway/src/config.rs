@@ -62,14 +62,24 @@ impl RequestPacingConfig {
     /// Reads the `MODEL_PROVIDER_REQUEST_PACING_*` environment variables,
     /// falling back to an unlimited, disabled policy.
     pub fn from_env(provider: ProviderKind) -> Self {
+        Self::from_lookup(provider, &|name| env::var(name).ok())
+    }
+
+    /// Reads `MODEL_PROVIDER_REQUEST_PACING_*` settings from a key-value map.
+    pub fn from_lookup(
+        provider: ProviderKind,
+        lookup: &dyn Fn(&str) -> Option<String>,
+    ) -> Self {
         let default = Self::for_provider(provider);
         Self {
-            enabled: env_bool("MODEL_PROVIDER_REQUEST_PACING_ENABLED", default.enabled),
-            interval_ms: env_u64(
+            enabled: lookup_bool(lookup, "MODEL_PROVIDER_REQUEST_PACING_ENABLED", default.enabled),
+            interval_ms: lookup_u64(
+                lookup,
                 "MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS",
                 default.interval_ms,
             ),
-            free_interval_ms: env_u64(
+            free_interval_ms: lookup_u64(
+                lookup,
                 "MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS",
                 default.free_interval_ms,
             ),
@@ -270,20 +280,19 @@ pub struct ProviderLimits {
     pub rpd: u32,
 }
 
-fn env_bool(name: &str, default: bool) -> bool {
-    match env::var(name) {
-        Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
+fn lookup_bool(lookup: &dyn Fn(&str) -> Option<String>, name: &str, default: bool) -> bool {
+    match lookup(name) {
+        Some(value) => match value.trim().to_ascii_lowercase().as_str() {
             "1" | "true" | "yes" | "on" => true,
             "0" | "false" | "no" | "off" => false,
             _ => default,
         },
-        Err(_) => default,
+        None => default,
     }
 }
 
-fn env_u64(name: &str, default: u64) -> u64 {
-    env::var(name)
-        .ok()
+fn lookup_u64(lookup: &dyn Fn(&str) -> Option<String>, name: &str, default: u64) -> u64 {
+    lookup(name)
         .and_then(|value| value.trim().parse().ok())
         .unwrap_or(default)
 }
@@ -464,10 +473,14 @@ pub struct LiteRouterConfig {
 impl LiteRouterConfig {
     /// Reads LiteRouter settings from `LITEROUTER_*` environment variables.
     pub fn from_env() -> Self {
-        let api_key = env::var("LITEROUTER_API_KEY").unwrap_or_default();
-        let base_url = env::var("LITEROUTER_BASE_URL")
-            .unwrap_or_else(|_| LITEROUTER_DEFAULT_BASE_URL.to_string());
-        let model = env::var("LITEROUTER_MODEL").unwrap_or_default();
+        Self::from_lookup(&|name| env::var(name).ok())
+    }
+
+    pub(crate) fn from_lookup(lookup: &dyn Fn(&str) -> Option<String>) -> Self {
+        let api_key = lookup("LITEROUTER_API_KEY").unwrap_or_default();
+        let base_url = lookup("LITEROUTER_BASE_URL")
+            .unwrap_or_else(|| LITEROUTER_DEFAULT_BASE_URL.to_string());
+        let model = lookup("LITEROUTER_MODEL").unwrap_or_default();
 
         Self {
             api_key,
@@ -483,10 +496,14 @@ impl LiteRouterConfig {
 
     /// Reads OpenAI-compatible settings from `OPENAI_*` environment variables.
     pub fn openai_compatible_from_env() -> Self {
-        let api_key = env::var("OPENAI_API_KEY").unwrap_or_default();
+        Self::openai_compatible_from_lookup(&|name| env::var(name).ok())
+    }
+
+    pub(crate) fn openai_compatible_from_lookup(lookup: &dyn Fn(&str) -> Option<String>) -> Self {
+        let api_key = lookup("OPENAI_API_KEY").unwrap_or_default();
         let base_url =
-            env::var("OPENAI_BASE_URL").unwrap_or_else(|_| OPENAI_DEFAULT_BASE_URL.to_string());
-        let model = env::var("OPENAI_MODEL").unwrap_or_else(|_| OPENAI_DEFAULT_MODEL.to_string());
+            lookup("OPENAI_BASE_URL").unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string());
+        let model = lookup("OPENAI_MODEL").unwrap_or_else(|| OPENAI_DEFAULT_MODEL.to_string());
 
         Self {
             api_key,
@@ -497,11 +514,15 @@ impl LiteRouterConfig {
 
     /// Reads OpenAI Responses settings from `OPENAI_*` environment variables.
     pub fn openai_responses_from_env() -> Self {
-        let api_key = env::var("OPENAI_API_KEY").unwrap_or_default();
+        Self::openai_responses_from_lookup(&|name| env::var(name).ok())
+    }
+
+    pub(crate) fn openai_responses_from_lookup(lookup: &dyn Fn(&str) -> Option<String>) -> Self {
+        let api_key = lookup("OPENAI_API_KEY").unwrap_or_default();
         let base_url =
-            env::var("OPENAI_BASE_URL").unwrap_or_else(|_| OPENAI_DEFAULT_BASE_URL.to_string());
+            lookup("OPENAI_BASE_URL").unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string());
         let model =
-            env::var("OPENAI_MODEL").unwrap_or_else(|_| OPENAI_CODEX_DEFAULT_MODEL.to_string());
+            lookup("OPENAI_MODEL").unwrap_or_else(|| OPENAI_CODEX_DEFAULT_MODEL.to_string());
 
         Self {
             api_key,
@@ -936,17 +957,26 @@ pub struct ModelGatewayConfig {
 impl ModelGatewayConfig {
     /// Loads either `MODEL_ROUTES_JSON` or the single-route environment settings.
     pub fn from_env() -> Result<Self, ProviderError> {
-        if let Ok(raw_routes) = env::var("MODEL_ROUTES_JSON") {
-            return parse_routes_from_json(&raw_routes);
+        Self::from_lookup(&|name| env::var(name).ok())
+    }
+
+    /// Loads gateway configuration from an explicit key-value map using the
+    /// same schema as [`Self::from_env`].
+    pub fn from_env_map(vars: &HashMap<String, String>) -> Result<Self, ProviderError> {
+        Self::from_lookup(&|name| vars.get(name).cloned())
+    }
+
+    fn from_lookup(lookup: &dyn Fn(&str) -> Option<String>) -> Result<Self, ProviderError> {
+        if let Some(raw_routes) = lookup("MODEL_ROUTES_JSON") {
+            return parse_routes_json_with_lookup(&raw_routes, true, lookup);
         }
 
         let default_route =
-            env::var("MODEL_DEFAULT_ROUTE").unwrap_or_else(|_| "default".to_string());
-        let provider = env::var("MODEL_PROVIDER")
-            .ok()
+            lookup("MODEL_DEFAULT_ROUTE").unwrap_or_else(|| "default".to_string());
+        let provider = lookup("MODEL_PROVIDER")
             .and_then(|value| ProviderKind::parse(&value))
             .unwrap_or(ProviderKind::LiteRouter);
-        let literouter = LiteRouterConfig::from_env();
+        let literouter = LiteRouterConfig::from_lookup(lookup);
         let mut route = match provider {
             ProviderKind::LiteRouter => ModelRouteConfig {
                 provider,
@@ -963,16 +993,16 @@ impl ModelGatewayConfig {
                 limit_reset_schedule: LimitResetSchedule::default(),
             },
             ProviderKind::OpenAICompatible => {
-                let openai = LiteRouterConfig::openai_compatible_from_env();
+                let openai = LiteRouterConfig::openai_compatible_from_lookup(lookup);
                 ModelRouteConfig::openai_compatible(openai.api_key, openai.base_url, openai.model)
             }
             ProviderKind::OpenAIResponses => {
-                let openai = LiteRouterConfig::openai_responses_from_env();
+                let openai = LiteRouterConfig::openai_responses_from_lookup(lookup);
                 ModelRouteConfig::openai_responses(openai.api_key, openai.base_url, openai.model)
             }
             ProviderKind::Ollama => ModelRouteConfig::ollama(
-                env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| OLLAMA_DEFAULT_BASE_URL.to_string()),
-                env::var("OLLAMA_MODEL").unwrap_or_default(),
+                lookup("OLLAMA_BASE_URL").unwrap_or_else(|| OLLAMA_DEFAULT_BASE_URL.to_string()),
+                lookup("OLLAMA_MODEL").unwrap_or_default(),
             ),
             ProviderKind::Mock => {
                 return Err(ProviderError::Config(
@@ -980,16 +1010,16 @@ impl ModelGatewayConfig {
                 ));
             }
             ProviderKind::Local => ModelRouteConfig::local(
-                env::var("LOCAL_PROVIDER_SESSION").unwrap_or_default(),
-                env::var("LOCAL_PROVIDER_BASE_URL")
-                    .unwrap_or_else(|_| LOCAL_DEFAULT_BASE_URL.to_string()),
-                env::var("LOCAL_PROVIDER_MODEL").unwrap_or_else(|_| "local-slm".to_string()),
+                lookup("LOCAL_PROVIDER_SESSION").unwrap_or_default(),
+                lookup("LOCAL_PROVIDER_BASE_URL")
+                    .unwrap_or_else(|| LOCAL_DEFAULT_BASE_URL.to_string()),
+                lookup("LOCAL_PROVIDER_MODEL").unwrap_or_else(|| "local-slm".to_string()),
             ),
         };
         route = route
-            .with_credential_binding(env::var("MODEL_PROVIDER_CREDENTIAL_BINDING").ok())
-            .with_request_pacing(RequestPacingConfig::from_env(provider))
-            .with_model_rate_limits(model_rate_limits_from_env()?);
+            .with_credential_binding(lookup("MODEL_PROVIDER_CREDENTIAL_BINDING"))
+            .with_request_pacing(RequestPacingConfig::from_lookup(provider, lookup))
+            .with_model_rate_limits(model_rate_limits_from_lookup(lookup)?);
         if let Some((quota, reset)) = route
             .model_rate_limits
             .get("*")
@@ -1005,13 +1035,13 @@ impl ModelGatewayConfig {
         }
         if provider == ProviderKind::OpenAICompatible {
             let profile_id =
-                match env::var("MODEL_PROVIDER_PROFILE_ID") {
-                    Ok(value) => Some(ProviderProfileId::parse(&value).ok_or_else(|| {
+                match lookup("MODEL_PROVIDER_PROFILE_ID") {
+                    Some(value) => Some(ProviderProfileId::parse(&value).ok_or_else(|| {
                         ProviderError::Config("provider profile is invalid".into())
                     })?),
-                    Err(_) => None,
+                    None => None,
                 };
-            let account_id = env::var("MODEL_PROVIDER_ACCOUNT_ID").ok();
+            let account_id = lookup("MODEL_PROVIDER_ACCOUNT_ID");
             if profile_id.is_some() || account_id.is_some() {
                 route = route.with_provider_profile(profile_id.unwrap_or_default(), account_id);
             }
@@ -1019,36 +1049,30 @@ impl ModelGatewayConfig {
         route.validate_provider_profile()?;
 
         let mut routes = HashMap::from([(default_route.clone(), route)]);
-        let rout_key = env::var("ROUT_API_KEY")
-            .ok()
+        let rout_key = lookup("ROUT_API_KEY")
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
             .or_else(|| {
-                env::var("ROUTMY_API_KEY")
-                    .ok()
+                lookup("ROUTMY_API_KEY")
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty())
             });
         if let Some(rout_key) = rout_key {
             if !routes.contains_key("rout") {
-                let rout_base = env::var("ROUT_BASE_URL")
-                    .ok()
+                let rout_base = lookup("ROUT_BASE_URL")
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty())
                     .or_else(|| {
-                        env::var("ROUTMY_BASE_URL")
-                            .ok()
+                        lookup("ROUTMY_BASE_URL")
                             .map(|value| value.trim().to_string())
                             .filter(|value| !value.is_empty())
                     })
                     .unwrap_or_else(|| "https://api.rout.my/v1".to_string());
-                let rout_model = env::var("ROUT_MODEL")
-                    .ok()
+                let rout_model = lookup("ROUT_MODEL")
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty())
                     .or_else(|| {
-                        env::var("ROUTMY_MODEL")
-                            .ok()
+                        lookup("ROUTMY_MODEL")
                             .map(|value| value.trim().to_string())
                             .filter(|value| !value.is_empty())
                     })
@@ -1062,12 +1086,12 @@ impl ModelGatewayConfig {
             }
         }
 
-        if let Ok(raw_additional) = env::var("MODEL_ADDITIONAL_ROUTES_JSON") {
+        if let Some(raw_additional) = lookup("MODEL_ADDITIONAL_ROUTES_JSON") {
             if !raw_additional.trim().is_empty() {
                 // Additional routes intentionally do not contain the primary
                 // route selected by MODEL_DEFAULT_ROUTE. Parse and validate
                 // their entries, but do not require them to define that route.
-                let additional = parse_additional_routes_from_json(&raw_additional)?;
+                let additional = parse_routes_json_with_lookup(&raw_additional, false, lookup)?;
                 for (name, additional_route) in additional.routes {
                     if name != default_route && name != "hive" && name != "hive_fallback" {
                         routes.entry(name).or_insert(additional_route);
@@ -1076,10 +1100,9 @@ impl ModelGatewayConfig {
             }
         }
 
-        let hive_keys_map = parse_hive_provider_keys_from_env("HIVE_API_KEYS_JSON");
-        let hive_profile_raw = env::var("HIVE_PROVIDER_PROFILE")
-            .ok()
-            .or_else(|| env::var("hive_provider_profile").ok())
+        let hive_keys_map = parse_hive_provider_keys_from_lookup(lookup, "HIVE_API_KEYS_JSON");
+        let hive_profile_raw = lookup("HIVE_PROVIDER_PROFILE")
+            .or_else(|| lookup("hive_provider_profile"))
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
         let hive_key = if let Some(ref keys) = hive_keys_map {
@@ -1090,19 +1113,16 @@ impl ModelGatewayConfig {
                 .unwrap_or_else(|| "rout".to_string());
             keys.get(&effective_profile).cloned()
         } else {
-            env::var("HIVE_API_KEY")
-                .ok()
+            lookup("HIVE_API_KEY")
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
         };
         if let Some(hive_key) = hive_key {
             if !routes.contains_key("hive") {
-                let hive_base = env::var("HIVE_BASE_URL")
-                    .ok()
+                let hive_base = lookup("HIVE_BASE_URL")
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty());
-                let hive_model = env::var("HIVE_MODEL")
-                    .ok()
+                let hive_model = lookup("HIVE_MODEL")
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty())
                     .unwrap_or_default();
@@ -1119,10 +1139,9 @@ impl ModelGatewayConfig {
         }
 
         let hive_fallback_keys_map =
-            parse_hive_provider_keys_from_env("HIVE_FALLBACK_API_KEYS_JSON");
-        let fallback_profile_raw = env::var("HIVE_FALLBACK_PROVIDER_PROFILE")
-            .ok()
-            .or_else(|| env::var("hive_fallback_provider_profile").ok())
+            parse_hive_provider_keys_from_lookup(lookup, "HIVE_FALLBACK_API_KEYS_JSON");
+        let fallback_profile_raw = lookup("HIVE_FALLBACK_PROVIDER_PROFILE")
+            .or_else(|| lookup("hive_fallback_provider_profile"))
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
         let hive_fallback_key = if let Some(ref keys) = hive_fallback_keys_map {
@@ -1132,19 +1151,16 @@ impl ModelGatewayConfig {
                 .filter(|p| !p.is_empty())
                 .and_then(|profile| keys.get(&profile).cloned())
         } else {
-            env::var("HIVE_FALLBACK_API_KEY")
-                .ok()
+            lookup("HIVE_FALLBACK_API_KEY")
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
         };
         if let Some(hive_fallback_key) = hive_fallback_key {
             if !routes.contains_key("hive_fallback") {
-                let fallback_base = env::var("HIVE_FALLBACK_BASE_URL")
-                    .ok()
+                let fallback_base = lookup("HIVE_FALLBACK_BASE_URL")
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty());
-                let fallback_model = env::var("HIVE_FALLBACK_MODEL")
-                    .ok()
+                let fallback_model = lookup("HIVE_FALLBACK_MODEL")
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty())
                     .unwrap_or_default();
@@ -1231,7 +1247,9 @@ impl ModelGatewayConfig {
         } else {
             "HIVE_API_KEYS_JSON"
         };
-        if let Some(keys) = parse_hive_provider_keys_from_env(keys_env_var) {
+        if let Some(keys) =
+            parse_hive_provider_keys_from_lookup(&|name| env::var(name).ok(), keys_env_var)
+        {
             let Some(target_profile) = (if route_key == "hive_fallback" {
                 normalized_profile
             } else {
@@ -1398,8 +1416,11 @@ impl ModelGatewayConfig {
     }
 }
 
-fn parse_hive_provider_keys_from_env(var_name: &str) -> Option<HashMap<String, String>> {
-    let raw = env::var(var_name).ok()?;
+fn parse_hive_provider_keys_from_lookup(
+    lookup: &dyn Fn(&str) -> Option<String>,
+    var_name: &str,
+) -> Option<HashMap<String, String>> {
+    let raw = lookup(var_name)?;
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return None;
@@ -1419,7 +1440,20 @@ fn parse_hive_provider_keys_from_env(var_name: &str) -> Option<HashMap<String, S
 /// Parses `MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON` from the process environment.
 pub fn model_rate_limits_from_env() -> Result<HashMap<String, ModelRateLimitConfig>, ProviderError>
 {
-    let Ok(raw) = env::var("MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON") else {
+    model_rate_limits_from_lookup(&|name| env::var(name).ok())
+}
+
+/// Parses `MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON` from an explicit key-value map.
+pub fn model_rate_limits_from_env_map(
+    vars: &HashMap<String, String>,
+) -> Result<HashMap<String, ModelRateLimitConfig>, ProviderError> {
+    model_rate_limits_from_lookup(&|name| vars.get(name).cloned())
+}
+
+fn model_rate_limits_from_lookup(
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Result<HashMap<String, ModelRateLimitConfig>, ProviderError> {
+    let Some(raw) = lookup("MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON") else {
         return Ok(HashMap::new());
     };
     if raw.len() > 64 * 1024 {
@@ -1491,23 +1525,14 @@ struct EnvRouteConfig {
     model_rate_limits: HashMap<String, ModelRateLimitConfig>,
 }
 
-fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, ProviderError> {
-    parse_routes_json(raw_routes, true)
-}
-
-fn parse_additional_routes_from_json(
-    raw_routes: &str,
-) -> Result<ModelGatewayConfig, ProviderError> {
-    parse_routes_json(raw_routes, false)
-}
-
-fn parse_routes_json(
+fn parse_routes_json_with_lookup(
     raw_routes: &str,
     require_default_route: bool,
+    lookup: &dyn Fn(&str) -> Option<String>,
 ) -> Result<ModelGatewayConfig, ProviderError> {
     let routes: HashMap<String, EnvRouteConfig> = serde_json::from_str(raw_routes)
         .map_err(|error| ProviderError::Config(error.to_string()))?;
-    let default_route = env::var("MODEL_DEFAULT_ROUTE").unwrap_or_else(|_| "default".to_string());
+    let default_route = lookup("MODEL_DEFAULT_ROUTE").unwrap_or_else(|| "default".to_string());
     let mut parsed_routes = HashMap::new();
 
     for (name, route) in routes {
@@ -2300,5 +2325,27 @@ mod tests {
             Some(v) => env::set_var("HIVE_API_KEYS_JSON", v),
             None => env::remove_var("HIVE_API_KEYS_JSON"),
         }
+    }
+
+    #[test]
+    fn from_env_map_parses_provider_and_rate_limits_without_process_env() {
+        let mut vars = HashMap::new();
+        vars.insert("MODEL_PROVIDER".into(), "openai_compatible".into());
+        vars.insert("OPENAI_API_KEY".into(), "sk-test-map".into());
+        vars.insert("OPENAI_BASE_URL".into(), "https://api.example.com/v1".into());
+        vars.insert("OPENAI_MODEL".into(), "gpt-4o-mini".into());
+        vars.insert(
+            "MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON".into(),
+            r#"{"*":{"enabled":true,"rpm":12,"daily_token_quota":50000,"reset_schedule_enabled":true,"reset_time_minutes":90,"reset_utc_offset_hours":2}}"#.into(),
+        );
+        let config = ModelGatewayConfig::from_env_map(&vars).expect("valid env map");
+        let route = config.routes.get(&config.default_route).expect("default route");
+        assert_eq!(route.provider, ProviderKind::OpenAICompatible);
+        assert_eq!(route.literouter.model, "gpt-4o-mini");
+        assert_eq!(route.daily_token_quota, Some(50_000));
+        let star = route.model_rate_limits.get("*").expect("star limit");
+        assert_eq!(star.rpm, 12);
+        assert_eq!(star.reset_time_minutes, 90);
+        assert_eq!(star.reset_utc_offset_hours, 2);
     }
 }

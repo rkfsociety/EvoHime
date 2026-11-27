@@ -391,6 +391,7 @@ impl ToolAgent {
 
         let agent = Self {
             gateway: Arc::clone(&self.gateway),
+            gateway_slot: None,
             tools: Arc::clone(&self.tools),
             max_iterations: max_steps,
             approvals: self.approvals.clone(),

@@ -503,7 +503,7 @@ describe('provider form', () => {
     expect(screen.getByText('Ключ не задан')).toBeTruthy()
   })
 
-  it('warns when the key was stored but Core did not come back', async () => {
+  it('reports when settings were saved locally without a live Core connection and when applied live', async () => {
     saveOutcome = ok({
       summary: { provider: 'literouter', model: '', baseUrl: '', tier: 'free', configured: true },
       restarted: false
@@ -513,7 +513,15 @@ describe('provider form', () => {
     await userEvent.type(await screen.findByLabelText('Ключ API'), 'sk-value')
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
 
-    expect(await screen.findByText(/Core не перезапустился/)).toBeTruthy()
+    expect(await screen.findByText(/применится при следующем подключении Core/)).toBeTruthy()
+
+    saveOutcome = ok({
+      summary: { provider: 'literouter', model: '', baseUrl: '', tier: 'free', configured: true },
+      restarted: false,
+      appliedLive: true
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
+    expect(await screen.findByText(/Новые настройки применятся в новой сессии, текущая работа не прервана/)).toBeTruthy()
   })
 
   it('shows the free/paid tier selector only for LiteRouter', async () => {

@@ -649,8 +649,12 @@ pub struct IpcBridge {
     coordinator: Option<TaskCoordinator>,
     approvals: Option<ApprovalCoordinator>,
     tools: Option<Arc<ToolRegistry>>,
-    model_config: Option<ModelConfigSnapshot>,
-    gateway_config: Option<ModelGatewayConfig>,
+    model_config: Arc<std::sync::RwLock<Option<ModelConfigSnapshot>>>,
+    gateway_config: Arc<std::sync::RwLock<Option<ModelGatewayConfig>>>,
+    /// Shared process-wide gateway slot read by new tasks/sessions so live
+    /// provider config updates apply to new sessions without interrupting
+    /// already-running tasks.
+    shared_gateway: Option<crate::core_agent::SharedModelGateway>,
     /// Process-local image runtime, including active cancellation tokens and bounded slots.
     image_generation_runtime:
         std::sync::OnceLock<Arc<crate::image_generation::ImageGenerationRuntime>>,

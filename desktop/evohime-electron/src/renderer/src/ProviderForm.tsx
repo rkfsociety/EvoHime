@@ -199,7 +199,7 @@ function buildModelLimitDrafts(
 type Status =
   | { readonly kind: 'idle' }
   | { readonly kind: 'saving' }
-  | { readonly kind: 'saved'; readonly restarted: boolean; readonly action: 'provider' | 'settings' }
+  | { readonly kind: 'saved'; readonly restarted: boolean; readonly appliedLive?: boolean; readonly action: 'provider' | 'settings' }
   | { readonly kind: 'failed'; readonly message: string }
 
 export interface ProviderFormProps {
@@ -420,7 +420,12 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       pendingSelection.current = false
       apply(outcome.value.summary)
     }
-    setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'provider' })
+    setStatus({
+      kind: 'saved',
+      restarted: outcome.value.restarted,
+      ...(outcome.value.appliedLive !== undefined ? { appliedLive: outcome.value.appliedLive } : {}),
+      action: 'provider'
+    })
   }, [api, apply, applyPacing, applySummary, nextCardKey, profileId, provider, summary])
 
   const updateModelLimitEntry = useCallback(
@@ -592,7 +597,12 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     applySummary(outcome.value.summary)
     apply(outcome.value.summary)
     setApiKey('')
-    setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'settings' })
+    setStatus({
+      kind: 'saved',
+      restarted: outcome.value.restarted,
+      ...(outcome.value.appliedLive !== undefined ? { appliedLive: outcome.value.appliedLive } : {}),
+      action: 'settings'
+    })
   }, [
     accountId,
     acknowledgeProbePossibleCost,
@@ -632,7 +642,12 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     applySummary(outcome.value.summary)
     apply(outcome.value.summary)
     setApiKey('')
-    setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'settings' })
+    setStatus({
+      kind: 'saved',
+      restarted: outcome.value.restarted,
+      ...(outcome.value.appliedLive !== undefined ? { appliedLive: outcome.value.appliedLive } : {}),
+      action: 'settings'
+    })
   }, [api, apply, applySummary, profileId, provider])
 
   const verifyFreeAccess = useCallback(async () => {
@@ -783,14 +798,16 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       ) : null}
 
       {status.kind === 'saved' ? (
-        <p className={status.restarted ? 'provider-form__ok' : 'shell__reason'}>
+        <p className={status.restarted || status.appliedLive !== undefined ? 'provider-form__ok' : 'shell__reason'}>
           {translate(status.restarted
             ? status.action === 'provider'
               ? 'Провайдер выбран и сохранён, Core перезапущен — подключение восстановится за пару секунд.'
               : 'Сохранено, Core перезапущен — подключение восстановится за пару секунд.'
-            : status.action === 'provider'
-              ? 'Провайдер сохранён, но Core не перезапустился. Перезапусти приложение вручную.'
-              : 'Сохранено, но Core не перезапустился. Перезапусти приложение вручную.')}
+            : status.appliedLive === true
+              ? status.action === 'provider'
+                ? 'Провайдер выбран и сохранён. Новые настройки применятся в новой сессии, текущая работа не прервана.'
+                : 'Сохранено. Новые настройки применятся в новой сессии, текущая работа не прервана.'
+              : 'Сохранено локально и применится при следующем подключении Core.')}
         </p>
       ) : null}
       {status.kind === 'failed' ? (

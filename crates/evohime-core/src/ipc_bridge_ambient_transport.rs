@@ -320,6 +320,14 @@ impl IpcBridge {
         self
     }
 
+    /// Shares the process-wide [`crate::core_agent::SharedModelGateway`] slot
+    /// so live provider configuration updates apply to newly started tasks
+    /// without interrupting in-flight work.
+    pub fn with_shared_gateway(mut self, slot: crate::core_agent::SharedModelGateway) -> Self {
+        self.shared_gateway = Some(slot);
+        self
+    }
+
     /// Shares the process-wide map of active analysis kernel runtimes with the agent host.
     pub fn with_analysis_kernels(
         mut self,

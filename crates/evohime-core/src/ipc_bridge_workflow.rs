@@ -1132,7 +1132,7 @@ impl IpcBridge {
                 let Ok(request_hash) = composer::request_hash(&request.payload) else {
                     return base("invalid", "request_too_large");
                 };
-                let Some(config) = self.gateway_config.clone() else {
+                let Some(config) = self.gateway_config_snapshot() else {
                     return base("unavailable", "model_unavailable");
                 };
                 let Ok(gateway) = evohime_model_gateway::ModelGateway::from_config(&config) else {

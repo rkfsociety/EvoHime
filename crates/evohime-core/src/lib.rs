@@ -298,7 +298,7 @@ mod core_agent;
 pub(crate) use core_agent::*;
 pub use core_agent::{
     AgentRunError, ApprovalCoordinator, ModelAgent, RoutingApprovalRegistry, SelectedModel,
-    TaskExecutor, ToolAgent, WorkflowRuntimeState,
+    SharedModelGateway, TaskExecutor, ToolAgent, WorkflowRuntimeState,
 };
 mod core_coordinator;
 pub use core_coordinator::TaskCoordinator;

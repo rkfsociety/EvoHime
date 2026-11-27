@@ -123,6 +123,7 @@ impl ToolAgent {
     ) -> Self {
         Self {
             gateway,
+            gateway_slot: None,
             tools,
             max_iterations: DEFAULT_TOOL_ITERATIONS,
             approvals,
@@ -138,6 +139,12 @@ impl ToolAgent {
             workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
             workflow_state: Arc::new(crate::core_agent::WorkflowRuntimeState::new()),
         }
+    }
+
+    /// Attaches a shared gateway slot so new tasks read updated provider settings.
+    pub fn with_shared_gateway(mut self, slot: SharedModelGateway) -> Self {
+        self.gateway_slot = Some(slot);
+        self
     }
 
     /// Подключает реестр ограниченной проактивности.

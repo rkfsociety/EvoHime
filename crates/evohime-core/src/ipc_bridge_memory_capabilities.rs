@@ -933,14 +933,28 @@ impl IpcBridge {
 
     /// Configuration as the shell should see it: the route's own model unless
     /// the shell selected another one for the next request.
+    pub(crate) fn model_config_snapshot(&self) -> Option<ModelConfigSnapshot> {
+        self.model_config
+            .read()
+            .ok()
+            .and_then(|guard| guard.clone())
+    }
+
+    pub(crate) fn gateway_config_snapshot(&self) -> Option<ModelGatewayConfig> {
+        self.gateway_config
+            .read()
+            .ok()
+            .and_then(|guard| guard.clone())
+    }
+
     pub(crate) fn current_model_config(&self) -> Option<ModelConfigSnapshot> {
-        let config = self.model_config.as_ref()?;
+        let config = self.model_config_snapshot()?;
         let Some(model) = self.selected_model.get() else {
-            return Some(config.clone());
+            return Some(config);
         };
         Some(ModelConfigSnapshot {
             model: model.to_string(),
-            ..config.clone()
+            ..config
         })
     }
 
@@ -948,7 +962,8 @@ impl IpcBridge {
     /// gateway configuration. Never exposes an API key value, only whether
     /// one is present.
     pub(crate) fn provider_probe(&self) -> crate::doctor::ProviderProbe {
-        let (provider_id, model_id, configured) = match &self.model_config {
+        let model_snapshot = self.model_config_snapshot();
+        let (provider_id, model_id, configured) = match &model_snapshot {
             Some(config) => (
                 config.provider.clone(),
                 config.model.clone(),
@@ -957,10 +972,8 @@ impl IpcBridge {
             None => (String::new(), String::new(), false),
         };
         let key_present = self
-            .gateway_config
-            .as_ref()
-            .and_then(|config| config.routes.get(&config.default_route))
-            .map(|route| route.configured())
+            .gateway_config_snapshot()
+            .and_then(|config| config.routes.get(&config.default_route).map(|route| route.configured()))
             .unwrap_or(false);
         let metadata_valid = !provider_id.is_empty() && !model_id.is_empty();
         crate::doctor::ProviderProbe {
