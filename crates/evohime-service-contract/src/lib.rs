@@ -514,4 +514,78 @@ mod tests {
             ServiceErrorCode::InvalidInput
         );
     }
+
+    struct EchoHandler;
+
+    impl ServiceHandler for EchoHandler {
+        fn descriptor(&self) -> ServiceDescriptor {
+            ServiceDescriptor {
+                service_id: "echo".to_owned(),
+                version: "0.1.0".to_owned(),
+                contract_version: SERVICE_CONTRACT_VERSION,
+                capabilities: vec![ServiceCapabilityDescriptor {
+                    name: "echo.say".to_owned(),
+                    description: "Echo payload".to_owned(),
+                    input_schema: serde_json::json!({"type": "object"}),
+                    required_permissions: vec![],
+                    supports_streaming: false,
+                }],
+            }
+        }
+
+        fn health(&self) -> ServiceHealthReport {
+            ServiceHealthReport {
+                service_id: "echo".to_owned(),
+                version: "0.1.0".to_owned(),
+                status: ServiceHealthStatus::Ready,
+                active_requests: 0,
+                detail: None,
+            }
+        }
+
+        fn invoke(
+            &self,
+            _capability: &str,
+            payload: serde_json::Value,
+            _caller_session_id: Option<&str>,
+        ) -> Result<serde_json::Value, ServiceContractError> {
+            Ok(payload)
+        }
+    }
+
+    #[test]
+    fn serve_stream_processes_ping_invoke_and_shutdown() {
+        let mut input = Vec::new();
+        input.extend(encode_frame(&ServiceRequest::Ping).expect("ping"));
+        input.extend(
+            encode_frame(&ServiceRequest::Invoke {
+                request_id: "s1".to_owned(),
+                capability: "echo.say".to_owned(),
+                payload: serde_json::json!({"msg": "hi"}),
+                caller_session_id: None,
+            })
+            .expect("invoke"),
+        );
+        input.extend(encode_frame(&ServiceRequest::Shutdown).expect("shutdown"));
+
+        let mut reader = io::Cursor::new(input);
+        let mut output = Vec::new();
+        serve_stream(&EchoHandler, &mut reader, &mut output).expect("serve_stream");
+
+        let mut cursor = output.as_slice();
+        let mut read_next = || -> ServiceResponse {
+            let len = u32::from_be_bytes([cursor[0], cursor[1], cursor[2], cursor[3]]) as usize;
+            let frame = &cursor[..4 + len];
+            cursor = &cursor[4 + len..];
+            decode_frame(frame).expect("decode response")
+        };
+
+        assert!(matches!(read_next(), ServiceResponse::Pong { .. }));
+        assert!(matches!(
+            read_next(),
+            ServiceResponse::InvokeResult { ref request_id, .. } if request_id == "s1"
+        ));
+        assert!(matches!(read_next(), ServiceResponse::ShuttingDown));
+        assert!(cursor.is_empty());
+    }
 }

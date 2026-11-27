@@ -177,4 +177,24 @@ mod tests {
             LoadedCoreAssets::BuiltinFallback { .. }
         ));
     }
+
+    #[test]
+    fn load_text_asset_rejects_traversal_and_reads_valid_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join("prompts")).expect("mkdir prompts");
+        std::fs::write(
+            dir.path().join("prompts/memory_extraction.txt"),
+            "custom prompt",
+        )
+        .expect("write prompt");
+
+        assert_eq!(
+            load_text_asset_or_default(dir.path(), "prompts/memory_extraction.txt", "default"),
+            "custom prompt"
+        );
+        assert_eq!(
+            load_text_asset_or_default(dir.path(), "../secret.txt", "default"),
+            "default"
+        );
+    }
 }
