@@ -330,6 +330,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // потолок. Координатор подключается ниже — он рождается позже агента.
     let proactivity = evohime_core::ambient::AmbientProactivityRegistry::default();
     proactivity.set_data_dir(data_dir.clone()).await;
+    proactivity
+        .attach_module_registry(module_registry.clone())
+        .await;
     let workflow_state = std::sync::Arc::new(evohime_core::WorkflowRuntimeState::new());
     let executor = model_config
         .and_then(|config| evohime_model_gateway::ModelGateway::from_config(&config).ok())

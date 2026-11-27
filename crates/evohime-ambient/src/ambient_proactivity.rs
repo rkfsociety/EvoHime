@@ -1,8 +1,9 @@
 //! Side-effect-free автомат ограниченной проактивности (план 04.7).
 //!
 //! Здесь нет ни SQL, ни часов, ни файлов, ни сети: время приходит параметром,
-//! персистентность живёт в `evohime_local_storage::ambient_store`, а
-//! разделяемый реестр и публикация событий — в [`crate::ambient`]. Этот модуль
+//! персистентность счётчиков и mute-ключей живёт в ядре
+//! (`evohime_local_storage::ambient_store`), а разделяемый реестр и публикация
+//! событий — в `evohime-core` (`crate::ambient`). Этот модуль
 //! отвечает ровно за три вещи:
 //!
 //! - **закрытый список эффектов.** Проактивно Ева может показать карточку и
@@ -64,6 +65,7 @@ pub enum ProactiveEffect {
 }
 
 impl ProactiveEffect {
+    /// Закрытый список всех эффектов в каноническом порядке.
     pub const ALL: [ProactiveEffect; 6] = [
         ProactiveEffect::ProposalCard,
         ProactiveEffect::PendingReminder,
@@ -73,6 +75,7 @@ impl ProactiveEffect {
         ProactiveEffect::NetworkRequest,
     ];
 
+    /// Канонический строковый вид эффекта для трасс и JSON-контракта.
     pub const fn as_str(self) -> &'static str {
         match self {
             ProactiveEffect::ProposalCard => "proposal_card",
@@ -91,6 +94,17 @@ impl ProactiveEffect {
             ProactiveEffect::ProposalCard | ProactiveEffect::PendingReminder
         )
     }
+
+    /// Разбирает эффект из его канонического строкового вида [`Self::as_str`].
+    ///
+    /// Нужен для JSON-контракта сервиса: строка — единственная форма, в которой
+    /// эффект пересекает границу процесса, и неизвестная строка не может
+    /// превратиться в эффект.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|effect| effect.as_str() == value)
+    }
 }
 
 /// Почему проактивная попытка не состоялась.
@@ -100,12 +114,23 @@ impl ProactiveEffect {
 /// значении значило бы дать надежду, что через час получится.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProposalRejection {
+    /// Эффект вне закрытого списка проактивно допустимых.
     Forbidden(ProactiveEffect),
+    /// Тема заглушена выбором пользователя.
     Muted,
+    /// Отказ политики или потолка из контракта 04.1.
     Denied(ProactivityDenial),
+    /// Решение недоступно: сервис проактивности не отвечает.
+    ///
+    /// Вариант никогда не возвращается [`decide_proposal`] — его производит
+    /// только делегирование решения внешнему сервису в ядре, когда транспорт
+    /// не готов. Fail-safe-семантика та же, что у остальных отказов: предложения
+    /// не появляется.
+    ServiceUnavailable,
 }
 
 impl ProposalRejection {
+    /// Канонический строковый код отказа для трассы.
     pub fn as_str(self) -> &'static str {
         match self {
             ProposalRejection::Forbidden(_) => "effect_forbidden",
@@ -115,6 +140,7 @@ impl ProposalRejection {
             ProposalRejection::Denied(ProactivityDenial::HourlyCapReached) => "hourly_cap",
             ProposalRejection::Denied(ProactivityDenial::DailyCapReached) => "daily_cap",
             ProposalRejection::Denied(ProactivityDenial::TooSoon { .. }) => "too_soon",
+            ProposalRejection::ServiceUnavailable => "service_unavailable",
         }
     }
 }
@@ -128,6 +154,7 @@ impl ProposalRejection {
 pub struct AuthorizedEffect(ProactiveEffect);
 
 impl AuthorizedEffect {
+    /// Возвращает разрешённый эффект; значение существует только после проверки.
     pub const fn effect(self) -> ProactiveEffect {
         self.0
     }
@@ -228,14 +255,21 @@ pub fn mute_key(kind: ProposalKind, subject: &SubjectKey) -> String {
 /// Одно предложение в терминах автомата.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Proposal {
+    /// Stable identifier assigned by Core.
     pub proposal_id: String,
+    /// Deduplication key with the rounded time bucket.
     pub proposal_key: String,
+    /// Key used to mute this subject after a user choice.
     pub mute_key: String,
+    /// Kind of action being proposed.
     pub kind: ProposalKind,
+    /// Typed identity of the proposal subject.
     pub subject_key: SubjectKey,
     /// Эпизод-источник. `None` означает, что источник уже удалён.
     pub source_episode: Option<String>,
+    /// Proposal creation time in Unix milliseconds.
     pub created_at_ms: u64,
+    /// Current state of the proposal automaton.
     pub state: ProposalState,
 }
 
@@ -267,6 +301,7 @@ impl Proposal {
         self.created_at_ms.saturating_add(PROPOSAL_LIFETIME_MS)
     }
 
+    /// Истекло ли молчание: предложение ещё не решено, а срок жизни вышел.
     pub fn is_expired_at(&self, now_ms: u64) -> bool {
         self.state == ProposalState::Proposed && now_ms >= self.expires_at_ms()
     }
@@ -287,9 +322,12 @@ impl Proposal {
     }
 }
 
+/// Ошибка недопустимого перехода автомата предложения.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProposalTransitionError {
+    /// Предложение уже решено; повторное решение запрещено.
     AlreadyResolved(ProposalState),
+    /// Из указанного состояния допустим только переход в терминальное.
     NotTerminal(ProposalState),
 }
 
@@ -313,12 +351,17 @@ impl std::error::Error for ProposalTransitionError {}
 /// Хранит начало часа и суток, а не список меток: потолок — это «сколько за
 /// окно», и держать ради него историю предложений значило бы завести вторую
 /// хронологию слушания.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RollingCounters {
+    /// Начало текущего часового окна в Unix-миллисекундах.
     pub hour_started_at_ms: u64,
+    /// Предложений в текущем часовом окне.
     pub hour_count: u32,
+    /// Начало текущего суточного окна в Unix-миллисекундах.
     pub day_started_at_ms: u64,
+    /// Предложений в текущем суточном окне.
     pub day_count: u32,
+    /// Момент последнего показанного предложения.
     pub last_proposed_at_ms: Option<u64>,
 }
 
@@ -339,6 +382,7 @@ impl RollingCounters {
         self
     }
 
+    /// Сводит окно к bounded-снимку контракта 04.1.
     pub fn snapshot(self) -> ProactivityCounters {
         ProactivityCounters {
             hour_count: self.hour_count,

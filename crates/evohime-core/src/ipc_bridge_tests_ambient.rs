@@ -1107,7 +1107,7 @@ async fn seed_proposal(
     episode_id: Option<&str>,
     now_ms: u64,
 ) {
-    use crate::ambient_proactivity as proactivity;
+    use evohime_ambient::ambient_proactivity as proactivity;
     let subject_key = proactivity::subject_key(subject);
     let proposal_key = proactivity::proposal_key(kind, &subject_key, now_ms);
     let mute_key = proactivity::mute_key(kind, &subject_key);
@@ -1288,8 +1288,8 @@ async fn muting_a_subject_survives_a_core_restart() {
     let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
     let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator)
         .with_ambient_data_dir(directory.path().to_path_buf());
-    let subject_key = crate::ambient_proactivity::subject_key("хлеб");
-    let mute_key = crate::ambient_proactivity::mute_key(
+    let subject_key = evohime_ambient::ambient_proactivity::subject_key("хлеб");
+    let mute_key = evohime_ambient::ambient_proactivity::mute_key(
         evohime_listener_contract::ProposalKind::Reminder,
         &subject_key,
     );
@@ -1300,7 +1300,7 @@ async fn muting_a_subject_survives_a_core_restart() {
     // И он глушит предложение из другой временной корзины — то есть с
     // другим `proposal_key`.
     let later_now_ms = now_ms + 5 * 60 * 60 * 1000;
-    let later_key = crate::ambient_proactivity::proposal_key(
+    let later_key = evohime_ambient::ambient_proactivity::proposal_key(
         evohime_listener_contract::ProposalKind::Reminder,
         &subject_key,
         later_now_ms,
@@ -1343,7 +1343,7 @@ async fn the_proposal_list_carries_the_card_text_and_hides_expired_cards() {
         evohime_listener_contract::ProposalKind::Suggestion,
         "отчёт",
         None,
-        now_ms - 2 * crate::ambient_proactivity::PROPOSAL_LIFETIME_MS,
+        now_ms - 2 * evohime_ambient::ambient_proactivity::PROPOSAL_LIFETIME_MS,
     )
     .await;
     let (event_type, payload) = ambient_call(

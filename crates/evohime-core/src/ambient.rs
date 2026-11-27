@@ -21,8 +21,8 @@ use evohime_local_storage::ambient_store::{
     ProposalInsert, REASON_USER_REQUEST, SPEAKER_UNVERIFIED,
 };
 
-use crate::ambient_proactivity::{
-    decide_proposal, effect_of, AuthorizedEffect, ProposalRejection, RollingCounters,
+use evohime_ambient::ambient_proactivity::{
+    effect_of, AuthorizedEffect, ProactiveEffect, ProposalRejection, RollingCounters,
     PROPOSAL_LIFETIME_MS,
 };
 
@@ -533,6 +533,7 @@ struct ProactivityInner {
     loaded: bool,
     data_dir: Option<PathBuf>,
     coordinator: Option<crate::TaskCoordinator>,
+    module_registry: Option<crate::module_registry::ModuleRegistry>,
 }
 
 impl Default for ProactivityInner {
@@ -544,6 +545,7 @@ impl Default for ProactivityInner {
             loaded: false,
             data_dir: None,
             coordinator: None,
+            module_registry: None,
         }
     }
 }
@@ -561,6 +563,15 @@ impl AmbientProactivityRegistry {
     /// со следующим событием задачи.
     pub async fn attach_coordinator(&self, coordinator: crate::TaskCoordinator) {
         self.inner.lock().await.coordinator = Some(coordinator);
+    }
+
+    /// Подключает реестр модулей-сервисов: решение о предложении принимает
+    /// внешний `ambient`-сервис (план 203.1), ядро владеет только журналом.
+    pub async fn attach_module_registry(
+        &self,
+        module_registry: crate::module_registry::ModuleRegistry,
+    ) {
+        self.inner.lock().await.module_registry = Some(module_registry);
     }
 
     /// Returns the immutable proactivity budget enforced by the contract.
@@ -609,6 +620,12 @@ impl AmbientProactivityRegistry {
     /// Счётчик **не** увеличивается здесь: он растёт только после того, как
     /// карточка действительно появилась ([`Self::commit`]). Иначе отброшенное
     /// хранилищем предложение съедало бы часовой потолок.
+    ///
+    /// Само решение принимает внешний `ambient`-сервис через
+    /// `ModuleRegistry` (план 203.1): ядро читает политику и счётчики и
+    /// передаёт их вместе с фактом mute. Недоступность сервиса — тоже отказ
+    /// ([`ProposalRejection::ServiceUnavailable`]): отсутствие решения
+    /// не открывает проактивность.
     pub async fn decide(
         &self,
         journal: &crate::EventJournal,
@@ -618,16 +635,43 @@ impl AmbientProactivityRegistry {
     ) -> Result<AuthorizedEffect, ProposalRejection> {
         self.ensure_loaded(journal).await;
         let policy = load_policy(&self.data_dir().await);
-        let guard = self.inner.lock().await;
-        decide_proposal(
-            effect_of(kind),
-            guard.muted.contains(mute_key),
-            &policy,
-            &guard.budget,
-            guard.counters,
-            now_ms,
-            local_minute_of_day(),
-        )
+        let (budget, muted, counters, module_registry) = {
+            let guard = self.inner.lock().await;
+            (
+                guard.budget,
+                guard.muted.contains(mute_key),
+                guard.counters,
+                guard.module_registry.clone(),
+            )
+        };
+        let Some(module_registry) = module_registry else {
+            return Err(ProposalRejection::ServiceUnavailable);
+        };
+        let payload = serde_json::json!({
+            "effect": effect_of(kind).as_str(),
+            "muted": muted,
+            "policy": policy,
+            "budget": budget,
+            "counters": counters,
+            "now_ms": now_ms,
+            "minute_of_day": local_minute_of_day(),
+        });
+        let request_id = format!("ambient-proactivity-{now_ms}");
+        match module_registry
+            .invoke_if_ready(
+                request_id,
+                "ambient.proactivity_decide",
+                payload,
+                None,
+                |_| Ok(()),
+            )
+            .await
+        {
+            Some(Ok(response)) => parse_proactivity_decide_response(response),
+            // Сервис не зарегистрирован, не готов или ответил ошибкой —
+            // решение недоступно, предложение не появляется.
+            Some(Err(_)) | None => Err(ProposalRejection::ServiceUnavailable),
+        }
     }
 
     /// Учитывает показанную карточку и сохраняет окно.
@@ -685,6 +729,42 @@ impl AmbientProactivityRegistry {
         }
         Ok(sequence)
     }
+}
+
+/// Разбирает ответ `ambient.proactivity_decide` внешнего сервиса.
+///
+/// Любое отклонение от контракта ответа трактуется как недоступность решения:
+/// разрешение, пришедшее в неожиданной форме, не открывает проактивность.
+/// Закрытый список эффектов перепроверяется ядром — сервис не может выдать
+/// запрещённый эффект за разрешённый.
+fn parse_proactivity_decide_response(
+    response: serde_json::Value,
+) -> Result<AuthorizedEffect, ProposalRejection> {
+    use evohime_ambient::ProactivityRejectionPayload;
+    let parsed: evohime_ambient::ProactivityDecideResponse =
+        serde_json::from_value(response).map_err(|_| ProposalRejection::ServiceUnavailable)?;
+    if !parsed.authorized {
+        let rejection = match parsed.rejection {
+            Some(ProactivityRejectionPayload::Forbidden { effect }) => {
+                let effect =
+                    ProactiveEffect::parse(&effect).ok_or(ProposalRejection::ServiceUnavailable)?;
+                ProposalRejection::Forbidden(effect)
+            }
+            Some(ProactivityRejectionPayload::Muted) => ProposalRejection::Muted,
+            Some(ProactivityRejectionPayload::Denied { denial }) => {
+                ProposalRejection::Denied(denial)
+            }
+            None => return Err(ProposalRejection::ServiceUnavailable),
+        };
+        return Err(rejection);
+    }
+    let effect = parsed
+        .effect
+        .as_deref()
+        .and_then(ProactiveEffect::parse)
+        .ok_or(ProposalRejection::ServiceUnavailable)?;
+    evohime_ambient::ambient_proactivity::authorize_proactive(effect)
+        .map_err(|_| ProposalRejection::ServiceUnavailable)
 }
 
 /// Собирает строку предложения для хранилища.
@@ -1145,6 +1225,70 @@ impl crate::EventJournal {
 mod tests {
     use super::*;
     use evohime_listener_contract::{EpisodeId, ListeningReason, QuietHours};
+    use evohime_service_contract::ServiceHandler;
+
+    /// Внутрипроцессный транспорт к настоящему обработчику
+    /// `evohime-ambient`: тесты реестра гоняют реальное сервисное решение
+    /// без запуска дочернего процесса.
+    struct AmbientServiceTransport {
+        handler: evohime_ambient::AmbientService,
+    }
+
+    impl crate::module_registry::ServiceTransport for AmbientServiceTransport {
+        fn send(
+            &self,
+            request: evohime_service_contract::ServiceRequest,
+        ) -> crate::module_registry::ServiceFuture<
+            '_,
+            Result<
+                evohime_service_contract::ServiceResponse,
+                evohime_service_contract::ServiceContractError,
+            >,
+        > {
+            Box::pin(async move {
+                match request {
+                    evohime_service_contract::ServiceRequest::Invoke {
+                        request_id,
+                        capability,
+                        payload,
+                        caller_session_id,
+                    } => match self.handler.invoke(
+                        &capability,
+                        payload,
+                        caller_session_id.as_deref(),
+                    ) {
+                        Ok(payload) => {
+                            Ok(evohime_service_contract::ServiceResponse::InvokeResult {
+                                request_id,
+                                payload,
+                            })
+                        }
+                        Err(error) => Ok(evohime_service_contract::ServiceResponse::Error {
+                            request_id: Some(request_id),
+                            error,
+                        }),
+                    },
+                    _ => Ok(evohime_service_contract::ServiceResponse::Pong {
+                        contract_version: evohime_service_contract::SERVICE_CONTRACT_VERSION,
+                    }),
+                }
+            })
+        }
+    }
+
+    /// Реестр модулей с настоящим ambient-сервисом, как после discovery.
+    fn ambient_module_registry() -> crate::module_registry::ModuleRegistry {
+        let module_registry = crate::module_registry::ModuleRegistry::new();
+        module_registry
+            .register(
+                evohime_ambient::AmbientService::new().descriptor(),
+                std::sync::Arc::new(AmbientServiceTransport {
+                    handler: evohime_ambient::AmbientService::new(),
+                }),
+            )
+            .expect("ambient service registers");
+        module_registry
+    }
 
     fn temporary_journal(name: &str) -> (crate::EventJournal, tempfile::TempDir) {
         let directory = tempfile::tempdir().expect("temp dir");
@@ -1391,6 +1535,9 @@ mod tests {
         .expect("policy saves");
         let registry = AmbientProactivityRegistry::default();
         registry.set_data_dir(directory.to_path_buf()).await;
+        registry
+            .attach_module_registry(ambient_module_registry())
+            .await;
         registry.ensure_loaded(journal).await;
         registry
     }
@@ -1402,9 +1549,10 @@ mod tests {
         now_ms: u64,
     ) -> AmbientProposalRecord {
         let kind = ProposalKind::Reminder;
-        let subject_key = crate::ambient_proactivity::subject_key(subject);
-        let proposal_key = crate::ambient_proactivity::proposal_key(kind, &subject_key, now_ms);
-        let mute_key = crate::ambient_proactivity::mute_key(kind, &subject_key);
+        let subject_key = evohime_ambient::ambient_proactivity::subject_key(subject);
+        let proposal_key =
+            evohime_ambient::ambient_proactivity::proposal_key(kind, &subject_key, now_ms);
+        let mute_key = evohime_ambient::ambient_proactivity::mute_key(kind, &subject_key);
         proposal_record(ProposalRecordInput {
             proposal_id,
             proposal_key: &proposal_key,
@@ -1428,9 +1576,9 @@ mod tests {
         let mut now = NOW_MS;
         for index in 0..3 {
             let subject = format!("тема {index}");
-            let key = crate::ambient_proactivity::mute_key(
+            let key = evohime_ambient::ambient_proactivity::mute_key(
                 ProposalKind::Reminder,
-                &crate::ambient_proactivity::subject_key(&subject),
+                &evohime_ambient::ambient_proactivity::subject_key(&subject),
             );
             registry
                 .decide(&journal, ProposalKind::Reminder, &key, now)
@@ -1442,18 +1590,23 @@ mod tests {
         // Свежий реестр — тот же, что после перезапуска процесса.
         let restarted = AmbientProactivityRegistry::default();
         restarted.set_data_dir(directory.path().to_path_buf()).await;
+        restarted
+            .attach_module_registry(ambient_module_registry())
+            .await;
         restarted.ensure_loaded(&journal).await;
-        let key = crate::ambient_proactivity::mute_key(
+        let key = evohime_ambient::ambient_proactivity::mute_key(
             ProposalKind::Reminder,
-            &crate::ambient_proactivity::subject_key("четвёртая тема"),
+            &evohime_ambient::ambient_proactivity::subject_key("четвёртая тема"),
         );
         assert_eq!(
             restarted
                 .decide(&journal, ProposalKind::Reminder, &key, now)
                 .await,
-            Err(crate::ambient_proactivity::ProposalRejection::Denied(
-                evohime_listener_contract::ProactivityDenial::HourlyCapReached
-            )),
+            Err(
+                evohime_ambient::ambient_proactivity::ProposalRejection::Denied(
+                    evohime_listener_contract::ProactivityDenial::HourlyCapReached
+                )
+            ),
             "перезапуск не обнуляет часовой потолок"
         );
         // И отброшенное не копится: через час доступен ровно один слот, а не
@@ -1536,7 +1689,7 @@ mod tests {
             "prop-stale",
             "хлеб",
             None,
-            NOW_MS - 2 * crate::ambient_proactivity::PROPOSAL_LIFETIME_MS,
+            NOW_MS - 2 * evohime_ambient::ambient_proactivity::PROPOSAL_LIFETIME_MS,
         );
         let fresh = seed_proposal_record("prop-fresh", "отчёт", None, NOW_MS);
         journal

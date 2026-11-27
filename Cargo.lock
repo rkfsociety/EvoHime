@@ -762,12 +762,14 @@ dependencies = [
 name = "evohime-ambient"
 version = "0.1.0"
 dependencies = [
+ "evohime-listener-contract",
  "evohime-service-contract",
  "hex",
  "serde",
  "serde_json",
  "sha2",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -834,6 +836,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "criterion",
+ "evohime-ambient",
  "evohime-cli-contract",
  "evohime-context-budget",
  "evohime-desktop-ipc",

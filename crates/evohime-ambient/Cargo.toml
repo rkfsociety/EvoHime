@@ -13,6 +13,8 @@ path = "src/main.rs"
 
 [dependencies]
 evohime-service-contract = { path = "../evohime-service-contract" }
+evohime-listener-contract = { path = "../evohime-listener-contract" }
+tracing = { workspace = true }
 hex = "0.4"
 serde = { workspace = true }
 serde_json = { workspace = true }

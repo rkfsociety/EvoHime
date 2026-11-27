@@ -149,7 +149,6 @@ pub mod agent_middleware_pipeline;
 pub mod agent_role_profiles;
 pub(crate) mod agentic_browser_session;
 pub mod ambient;
-pub(crate) mod ambient_proactivity;
 pub(crate) mod analysis_kernel;
 pub(crate) mod analysis_kernel_host;
 pub use analysis_kernel_host::CoreKernelHost;
