@@ -101,6 +101,20 @@ impl ServiceHandler for ResearchService {
                     .ok_or_else(|| {
                         ServiceContractError::invalid_input("url must be a non-empty string")
                     })?;
+                if !url.starts_with("https://") && !url.starts_with("http://") {
+                    return Err(ServiceContractError::invalid_input(
+                        "url must use http:// or https://",
+                    ));
+                }
+                let lower = url.to_ascii_lowercase();
+                if lower.contains("://localhost")
+                    || lower.contains("://127.0.0.1")
+                    || lower.contains("://[::1]")
+                {
+                    return Err(ServiceContractError::permission_denied(
+                        "loopback URLs are blocked by SSRF policy",
+                    ));
+                }
                 Ok(serde_json::json!({ "url": url, "status": "accepted" }))
             }
             "research.github_inspect" => {
@@ -111,6 +125,18 @@ impl ServiceHandler for ResearchService {
                     .ok_or_else(|| {
                         ServiceContractError::invalid_input("repo must be a non-empty string")
                     })?;
+                let valid_slug = repo.split('/').count() == 2
+                    && repo.split('/').all(|part| {
+                        !part.is_empty()
+                            && part
+                                .chars()
+                                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+                    });
+                if !valid_slug {
+                    return Err(ServiceContractError::invalid_input(
+                        "repo must be formatted as owner/name",
+                    ));
+                }
                 Ok(serde_json::json!({ "repo": repo, "status": "accepted" }))
             }
             other => Err(ServiceContractError::not_found(format!(

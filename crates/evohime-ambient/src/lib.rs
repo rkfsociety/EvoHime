@@ -6,6 +6,8 @@
 
 //! Isolated `ambient` service module implementing `evohime-service-contract`.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
     ServiceHealthReport, ServiceHealthStatus, SERVICE_CONTRACT_VERSION,
@@ -13,12 +15,16 @@ use evohime_service_contract::{
 
 /// Service handler for background proactivity, temporal signals, and autonomous experiments.
 #[derive(Debug, Default)]
-pub struct AmbientService;
+pub struct AmbientService {
+    experiments_started: AtomicU64,
+}
 
 impl AmbientService {
     /// Creates a new [`AmbientService`] instance.
     pub fn new() -> Self {
-        Self
+        Self {
+            experiments_started: AtomicU64::new(0),
+        }
     }
 }
 
@@ -68,7 +74,10 @@ impl ServiceHandler for AmbientService {
         _caller_session_id: Option<&str>,
     ) -> Result<serde_json::Value, ServiceContractError> {
         match capability {
-            "ambient.status" => Ok(serde_json::json!({ "proactivity": "idle" })),
+            "ambient.status" => Ok(serde_json::json!({
+                "proactivity": "idle",
+                "experiments_started": self.experiments_started.load(Ordering::Relaxed)
+            })),
             "ambient.run_experiment" => {
                 let experiment_id = payload
                     .get("experiment_id")
@@ -79,7 +88,12 @@ impl ServiceHandler for AmbientService {
                             "experiment_id must be a non-empty string",
                         )
                     })?;
-                Ok(serde_json::json!({ "experiment_id": experiment_id, "status": "accepted" }))
+                let count = self.experiments_started.fetch_add(1, Ordering::Relaxed) + 1;
+                Ok(serde_json::json!({
+                    "experiment_id": experiment_id,
+                    "run_number": count,
+                    "status": "accepted"
+                }))
             }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown ambient capability: {other}"

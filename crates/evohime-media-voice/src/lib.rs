@@ -104,9 +104,34 @@ impl ServiceHandler for MediaVoiceService {
                     .ok_or_else(|| {
                         ServiceContractError::invalid_input("image_path must be a non-empty string")
                     })?;
+                let path = std::path::Path::new(image_path);
+                let ext_ok = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|ext| {
+                        matches!(
+                            ext.to_ascii_lowercase().as_str(),
+                            "png" | "jpg" | "jpeg" | "webp"
+                        )
+                    });
+                if !ext_ok {
+                    return Err(ServiceContractError::invalid_input(
+                        "unsupported image extension (expected png, jpg, jpeg, or webp)",
+                    ));
+                }
+                let meta = std::fs::metadata(path).map_err(|err| {
+                    ServiceContractError::invalid_input(format!("cannot stat {image_path}: {err}"))
+                })?;
+                const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+                if meta.len() > MAX_IMAGE_BYTES {
+                    return Err(ServiceContractError::invalid_input(
+                        "image exceeds 20 MiB limit",
+                    ));
+                }
                 Ok(serde_json::json!({
                     "image_path": image_path,
-                    "status": "accepted"
+                    "bytes": meta.len(),
+                    "status": "validated"
                 }))
             }
             "voice.synthesize" => {

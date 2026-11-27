@@ -84,6 +84,14 @@ $routingResource = Join-Path $resolvedOutput 'routing'
 New-Item -ItemType Directory -Force -Path $routingResource | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot 'crates\model-gateway\resources\routing-v1.jsonl') -Destination (Join-Path $routingResource 'routing-v1.jsonl') -Force
 
+$coreAssetsSource = Join-Path $repoRoot 'assets\core-assets'
+if (Test-Path -LiteralPath $coreAssetsSource -PathType Container) {
+    $coreAssetsDest = Join-Path $resolvedOutput 'assets\core-assets'
+    if (Test-Path -LiteralPath $coreAssetsDest) { Remove-Item -LiteralPath $coreAssetsDest -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $coreAssetsDest) | Out-Null
+    Copy-Item -LiteralPath $coreAssetsSource -Destination $coreAssetsDest -Recurse -Force
+}
+
 $electronPayload = if ($resolvedElectronInput) { $resolvedElectronInput } else { Join-Path $electronRoot 'release\win-unpacked' }
 $uiPackaged = Join-Path $resolvedOutput 'EvoHime.exe'
 if (-not $SkipBuild -or $resolvedElectronInput) {
