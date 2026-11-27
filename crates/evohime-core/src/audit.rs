@@ -215,16 +215,28 @@ fn is_sensitive_name(name: &str) -> bool {
     .any(|marker| lower.contains(marker))
 }
 
+/// Проверяет, встречается ли маркер секрета на границе слова/токена, чтобы
+/// обычные пути и слова вроде `task-dependency-graphs.md` не считались ключами.
+fn contains_prefixed_secret(lower: &str, prefix: &str) -> bool {
+    lower.match_indices(prefix).any(|(start, _)| {
+        start == 0
+            || lower[..start]
+                .chars()
+                .next_back()
+                .is_some_and(|ch| !ch.is_ascii_alphanumeric() && ch != '_')
+    })
+}
+
 /// Bounded secret-shape scan shared with the execution ledger's redaction
 /// metadata (план 08-4) — same markers as the audit log's own redaction, so
 /// the two layers agree on what counts as secret-shaped.
 pub(crate) fn contains_secret(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     lower.contains("bearer ")
-        || lower.contains("sk-")
-        || lower.contains("ghp_")
-        || lower.contains("github_pat_")
-        || lower.contains("aiza")
+        || contains_prefixed_secret(&lower, "sk-")
+        || contains_prefixed_secret(&lower, "ghp_")
+        || contains_prefixed_secret(&lower, "github_pat_")
+        || contains_prefixed_secret(&lower, "aiza")
 }
 
 #[cfg(test)]

@@ -835,7 +835,7 @@ mod tests {
             },
         )
         .contains("read-only"));
-        assert!(super::delivery_next_step(
+        let mutation_step = super::delivery_next_step(
             requirements,
             super::DeliveryProgress {
                 research_done: true,
@@ -847,8 +847,9 @@ mod tests {
                 research_has_content: true,
                 research_has_search: true,
             },
-        )
-        .contains("filesystem_patch"));
+        );
+        assert!(mutation_step.contains("filesystem_patch"));
+        assert!(!mutation_step.contains("Не вызывай read"));
         assert!(super::delivery_next_step(
             super::DeliveryRequirements {
                 research: true,

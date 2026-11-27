@@ -1272,7 +1272,7 @@ pub(crate) fn delivery_next_step_for_agent(
             "НЕМЕДЛЕННО подготовь итоговый отчёт по уже собранным данным. Не вызывай инструменты."
         }
     } else if !progress.mutation_done && requirements.mutation {
-        "НЕМЕДЛЕННО вызови filesystem_patch или filesystem_write и внеси требуемое изменение. Не вызывай read/search и не пиши отчёт."
+        "НЕМЕДЛЕННО внеси требуемое изменение через filesystem_patch или filesystem_write (если для expected_hash или уточнения текста нужно сначала прочитать целевой файл через filesystem_read — прочитай его и сразу внеси правку). Не пиши отчёт и не задавай вопросов."
     } else if !progress.verification_done && requirements.verification {
         "НЕМЕДЛЕННО вызови shell_execute с полным JSON-объектом, например {\"program\":\"cargo\",\"args\":[\"test\"],\"cwd\":\".\"}. Не вызывай shell_execute с пустыми аргументами и не пиши отчёт."
     } else if !progress.commit_done && requirements.commit {

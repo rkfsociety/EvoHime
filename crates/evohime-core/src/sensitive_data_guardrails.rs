@@ -1146,12 +1146,22 @@ fn find_matches(input: &str, detector: Detector) -> Vec<(usize, usize)> {
         Detector::SecretToken => ["sk-", "ghp_", "xoxb-", "AKIA"]
             .iter()
             .flat_map(|prefix| {
-                input.match_indices(prefix).map(move |(start, _)| {
+                input.match_indices(prefix).filter_map(move |(start, _)| {
+                    // Префикс секрета не может начинаться в середине слова или
+                    // идентификатора (например, `task-dependency-graphs.md`).
+                    let starts_at_boundary = start == 0
+                        || input[..start]
+                            .chars()
+                            .next_back()
+                            .is_some_and(|ch| !ch.is_ascii_alphanumeric() && ch != '_');
+                    if !starts_at_boundary {
+                        return None;
+                    }
                     let end = input[start..]
                         .find(char::is_whitespace)
                         .map(|offset| start + offset)
                         .unwrap_or(input.len());
-                    (start, end, *prefix)
+                    Some((start, end, *prefix))
                 })
             })
             // A real provider secret is a long opaque token; require a
@@ -1204,6 +1214,12 @@ mod tests {
         assert!(summary.findings.is_empty());
         assert_eq!(summary.required_privacy, "public");
         assert!(find_matches("task-only", Detector::SecretToken).is_empty());
+    }
+    #[test]
+    fn secret_detector_ignores_sk_inside_identifiers() {
+        let input = "extended-reasoning.md\nreflection.md\ntask-dependency-graphs.md";
+        assert!(find_matches(input, Detector::SecretToken).is_empty());
+        assert!(classify_text(input).unwrap().findings.is_empty());
     }
     #[test]
     fn secret_detector_still_matches_long_tokens() {

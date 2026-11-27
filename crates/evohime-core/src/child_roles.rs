@@ -362,12 +362,7 @@ fn redact_value(name: &str, value: &str) -> String {
 }
 
 fn contains_sensitive_phrase(value: &str) -> bool {
-    let lower = value.to_ascii_lowercase();
-    lower.contains("bearer ")
-        || lower.contains("sk-")
-        || lower.contains("ghp_")
-        || lower.contains("github_pat_")
-        || lower.contains("aiza")
+    crate::audit::contains_secret(value)
 }
 
 fn is_sensitive_name(name: &str) -> bool {
