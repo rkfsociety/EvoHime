@@ -55,14 +55,16 @@ const MODULE_LABELS: Readonly<Record<string, string>> = {
   'shell-host': 'Оболочка Electron',
   'ui-bundle': 'Интерфейс EvoHime',
   core: 'EvoHime Core',
-  supervisor: 'Supervisor',
+  supervisor: 'Диспетчер процессов',
   cli: 'Командный клиент',
   'analysis-worker': 'Аналитический модуль',
   listener: 'Голосовой модуль',
   'listener-runtime': 'Распознавание речи',
-  transaction: 'Транзакционный worker',
-  updater: 'Updater worker',
-  verifier: 'Проверка пакета'
+  transaction: 'Транзакционный модуль',
+  updater: 'Модуль обновлений',
+  verifier: 'Проверка пакета',
+  hive: 'Улей',
+  installer: 'Установщик'
 }
 
 const DEFAULT_MODULES = ['core', 'shell-host', 'supervisor', 'listener']

@@ -204,4 +204,42 @@ describe('updaterUiStatus', () => {
     expect(view.detail).toBe('updater: download shell-host.zip: HTTP 502 Bad Gateway')
     expect(view.modules[0]?.changes).toEqual(['Ускорен запуск окна'])
   })
+
+  it('maps all module identifiers to user-friendly labels', () => {
+    const ids = [
+      'shell-host',
+      'ui-bundle',
+      'core',
+      'supervisor',
+      'cli',
+      'analysis-worker',
+      'listener',
+      'listener-runtime',
+      'transaction',
+      'updater',
+      'verifier',
+      'hive',
+      'installer'
+    ]
+    const view = updaterUiStatus(status({
+      phase: 'available',
+      availableModules: ids
+    }))
+
+    expect(view.modules.map((item) => [item.id, item.label])).toEqual([
+      ['shell-host', 'Оболочка Electron'],
+      ['ui-bundle', 'Интерфейс EvoHime'],
+      ['core', 'EvoHime Core'],
+      ['supervisor', 'Диспетчер процессов'],
+      ['cli', 'Командный клиент'],
+      ['analysis-worker', 'Аналитический модуль'],
+      ['listener', 'Голосовой модуль'],
+      ['listener-runtime', 'Распознавание речи'],
+      ['transaction', 'Транзакционный модуль'],
+      ['updater', 'Модуль обновлений'],
+      ['verifier', 'Проверка пакета'],
+      ['hive', 'Улей'],
+      ['installer', 'Установщик']
+    ])
+  })
 })
