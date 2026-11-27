@@ -260,4 +260,52 @@ mod tests {
             Err(CacheError::Stale)
         );
     }
+
+    #[test]
+    fn mutating_manifest_defaults_to_never_and_expired_entry_is_not_reused() {
+        let m = metadata("filesystem_write".into(), "1".into(), Cacheability::Never).unwrap();
+        assert!(cache_key(&m, "input", "workspace", "account", "policy").is_err());
+        let m = metadata("filesystem_read".into(), "1".into(), Cacheability::ReadOnly).unwrap();
+        let key = cache_key(&m, "input", "workspace", "account", "policy").unwrap();
+        let entry = CacheEntry {
+            schema_version: 1,
+            key,
+            tool_id: "filesystem_read".into(),
+            tool_version: "1".into(),
+            resource_scope: "workspace".into(),
+            authority_scope: "account".into(),
+            policy_hash: "policy".into(),
+            result_ref: "artifact:read-1".into(),
+            observed_at_ms: 1,
+            expires_at_ms: 5,
+            provenance_ref: "event:read-1".into(),
+            status: CacheStatus::Fresh,
+        };
+        assert!(validate_entry(&entry, &default_policy(), 6, Freshness::UseCache).is_err());
+    }
+
+    #[test]
+    fn eviction_removes_expired_entries_and_keeps_only_bounded_recent_data() {
+        let mut entries = (0..3)
+            .map(|i| CacheEntry {
+                schema_version: 1,
+                key: format!("{i:064x}"),
+                tool_id: "read".into(),
+                tool_version: "1".into(),
+                resource_scope: "workspace".into(),
+                authority_scope: "account".into(),
+                policy_hash: "policy".into(),
+                result_ref: format!("artifact:{i}"),
+                observed_at_ms: i,
+                expires_at_ms: 100,
+                provenance_ref: format!("event:{i}"),
+                status: CacheStatus::Fresh,
+            })
+            .collect();
+        let mut policy = default_policy();
+        policy.max_entries = 2;
+        evict(&mut entries, &policy, 1);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].observed_at_ms, 1);
+    }
 }

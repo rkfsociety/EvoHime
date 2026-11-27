@@ -507,4 +507,89 @@ mod tests {
             Err(BatchError::UnknownRetry)
         );
     }
+
+    #[test]
+    fn contract_is_bounded_and_redacted_projection_keeps_item_drilldown() {
+        let value = new_batch(NewBatchInput {
+            id: "contract-batch".into(),
+            definition_ref: "workflow.review".into(),
+            definition_version: 1,
+            inputs: vec!["one".into(), "two".into()],
+            max_concurrency: 1,
+            failure_policy: FailurePolicy::Continue,
+            now_ms: 10,
+            policy: default_policy(),
+        })
+        .unwrap();
+        assert_eq!(
+            value.items[0].run_id.as_deref(),
+            Some("contract-batch:0:run:0")
+        );
+        assert_eq!(
+            value.items[1].run_id.as_deref(),
+            Some("contract-batch:1:run:0")
+        );
+        let proj = projection(&value);
+        assert_eq!(proj["redacted"], true);
+        assert_eq!(proj["item_count"], 2);
+        assert!(proj["items"][0].get("input_payload").is_none());
+    }
+
+    #[test]
+    fn start_respects_concurrency_and_unknown_cannot_blind_retry() {
+        let mut value = new_batch(NewBatchInput {
+            id: "recovery-batch".into(),
+            definition_ref: "workflow.review".into(),
+            definition_version: 1,
+            inputs: vec!["one".into(), "two".into()],
+            max_concurrency: 1,
+            failure_policy: FailurePolicy::Continue,
+            now_ms: 10,
+            policy: default_policy(),
+        })
+        .unwrap();
+        assert_eq!(
+            start_batch(&mut value, 1, 11, &default_policy()).unwrap(),
+            1
+        );
+        assert_eq!(
+            value
+                .items
+                .iter()
+                .filter(|item| item.status == ItemStatus::Running)
+                .count(),
+            1
+        );
+        let running = value
+            .items
+            .iter_mut()
+            .find(|item| item.status == ItemStatus::Running)
+            .unwrap();
+        running.status = ItemStatus::Running;
+        value.content_hash = canonical_hash(&value);
+        assert_eq!(
+            resume_pending(&mut value, 2, 12, &default_policy()).unwrap(),
+            1
+        );
+        let unknown = value
+            .items
+            .iter()
+            .find(|item| item.status == ItemStatus::Unknown)
+            .unwrap()
+            .item_id
+            .clone();
+        assert_eq!(
+            record_result(RecordResultInput {
+                batch: &mut value,
+                item_id: &unknown,
+                expected_version: 3,
+                status: ItemStatus::Running,
+                result_ref: None,
+                error_class: None,
+                now_ms: 13,
+                policy: &default_policy(),
+            }),
+            Err(BatchError::UnknownRetry)
+        );
+    }
 }

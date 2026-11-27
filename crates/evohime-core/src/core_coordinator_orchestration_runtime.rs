@@ -600,121 +600,113 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     .clone()
                     .ok_or_else(|| "storage journal is not configured".to_string())?;
                 let database = journal.database().lock().await;
-                use crate::batch_invocation_runtime as batch;
                 use evohime_local_storage::batch_invocation_runtime_store as store;
-                let policy = batch::default_policy();
                 match operation.as_str() {
                     "create" => {
-                        let request: batch::CreateBatchRequest =
-                            serde_json::from_slice(&payload)
-                                .map_err(|_| "invalid_batch_payload".to_string())?;
-                        let value = batch::new_batch(batch::NewBatchInput {
-                            id: batch_id.clone(),
-                            definition_ref: request.definition_ref,
-                            definition_version: request.definition_version,
-                            inputs: request.inputs,
-                            max_concurrency: request.max_concurrency,
-                            failure_policy: request.failure_policy,
-                            now_ms: crate::task_memory::now_millis() as i64,
-                            policy,
-                        })
-                        .map_err(|e| e.to_string())?;
-                        let json = serde_json::to_vec(&value)
+                        let wrapper: serde_json::Value = serde_json::from_slice(&payload)
+                            .map_err(|_| "invalid_batch_payload".to_string())?;
+                        let value = wrapper
+                            .get("value")
+                            .ok_or_else(|| "invalid_batch_payload".to_string())?;
+                        let projection = wrapper
+                            .get("projection")
+                            .ok_or_else(|| "invalid_batch_payload".to_string())?;
+                        let id = value
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "invalid_batch_payload".to_string())?;
+                        let version = value
+                            .get("version")
+                            .and_then(|v| v.as_u64())
+                            .ok_or_else(|| "invalid_batch_payload".to_string())?;
+                        let status = value
+                            .get("status")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("pending");
+                        let content_hash = value
+                            .get("content_hash")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "invalid_batch_payload".to_string())?;
+                        let updated_at_ms = value
+                            .get("updated_at_ms")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0);
+                        let json = serde_json::to_vec(value)
                             .map_err(|_| "serialization_failed".to_string())?;
                         if !store::put(
                             database.connection(),
-                            &value.id,
-                            value.version,
-                            &format!("{:?}", value.status),
-                            &value.content_hash,
+                            id,
+                            version,
+                            status,
+                            content_hash,
                             &json,
-                            value.updated_at_ms,
+                            updated_at_ms,
                         )
                         .map_err(|_| "storage_failed".to_string())?
                         {
                             return Err("batch_duplicate".into());
                         }
-                        serde_json::to_vec(&batch::projection(&value))
+                        serde_json::to_vec(projection)
                             .map_err(|_| "serialization_failed".to_string())
                     }
-                    "get" | "resume" | "start" => {
+                    "get_raw" => {
                         let (version, json) = store::get(database.connection(), &batch_id)
                             .map_err(|_| "storage_failed".to_string())?
                             .ok_or_else(|| "batch_not_found".to_string())?;
-                        let mut value: batch::BatchInvocation = serde_json::from_slice(&json)
+                        let value: serde_json::Value = serde_json::from_slice(&json)
                             .map_err(|_| "corrupt_batch".to_string())?;
-                        if operation == "resume" {
-                            batch::resume_pending(
-                                &mut value,
-                                expected_version.max(version),
-                                crate::task_memory::now_millis() as i64,
-                                &policy,
-                            )
-                            .map_err(|e| e.to_string())?;
-                        } else if operation == "start" {
-                            batch::start_batch(
-                                &mut value,
-                                expected_version.max(version),
-                                crate::task_memory::now_millis() as i64,
-                                &policy,
-                            )
-                            .map_err(|e| e.to_string())?;
-                        }
+                        serde_json::to_vec(
+                            &serde_json::json!({ "version": version, "value": value }),
+                        )
+                        .map_err(|_| "serialization_failed".to_string())
+                    }
+                    "get" | "resume" | "start" | "result" => {
+                        let wrapper: serde_json::Value = serde_json::from_slice(&payload)
+                            .map_err(|_| "corrupt_batch".to_string())?;
+                        let value = wrapper
+                            .get("value")
+                            .ok_or_else(|| "corrupt_batch".to_string())?;
+                        let projection = wrapper
+                            .get("projection")
+                            .ok_or_else(|| "corrupt_batch".to_string())?;
                         if operation != "get" {
-                            let json = serde_json::to_vec(&value)
+                            let id = value
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .ok_or_else(|| "corrupt_batch".to_string())?;
+                            let version = value
+                                .get("version")
+                                .and_then(|v| v.as_u64())
+                                .ok_or_else(|| "corrupt_batch".to_string())?;
+                            let status = value
+                                .get("status")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("pending");
+                            let content_hash = value
+                                .get("content_hash")
+                                .and_then(|v| v.as_str())
+                                .ok_or_else(|| "corrupt_batch".to_string())?;
+                            let updated_at_ms = value
+                                .get("updated_at_ms")
+                                .and_then(|v| v.as_i64())
+                                .unwrap_or(0);
+                            let json = serde_json::to_vec(value)
                                 .map_err(|_| "serialization_failed".to_string())?;
                             if !store::put(
                                 database.connection(),
-                                &value.id,
-                                value.version,
-                                &format!("{:?}", value.status),
-                                &value.content_hash,
+                                id,
+                                version,
+                                status,
+                                content_hash,
                                 &json,
-                                value.updated_at_ms,
+                                updated_at_ms,
                             )
                             .map_err(|_| "storage_failed".to_string())?
                             {
                                 return Err("batch_stale_version".into());
                             }
                         }
-                        serde_json::to_vec(&batch::projection(&value))
-                            .map_err(|_| "serialization_failed".to_string())
-                    }
-                    "result" => {
-                        let (version, json) = store::get(database.connection(), &batch_id)
-                            .map_err(|_| "storage_failed".to_string())?
-                            .ok_or_else(|| "batch_not_found".to_string())?;
-                        let mut value: batch::BatchInvocation = serde_json::from_slice(&json)
-                            .map_err(|_| "corrupt_batch".to_string())?;
-                        let request: batch::RecordResultRequest = serde_json::from_slice(&payload)
-                            .map_err(|_| "invalid_batch_result".to_string())?;
-                        batch::record_result(batch::RecordResultInput {
-                            batch: &mut value,
-                            item_id: &request.item_id,
-                            expected_version: expected_version.max(version),
-                            status: request.status,
-                            result_ref: request.result_ref,
-                            error_class: request.error_class,
-                            now_ms: crate::task_memory::now_millis() as i64,
-                            policy: &policy,
-                        })
-                        .map_err(|e| e.to_string())?;
-                        let json = serde_json::to_vec(&value)
-                            .map_err(|_| "serialization_failed".to_string())?;
-                        if !store::put(
-                            database.connection(),
-                            &value.id,
-                            value.version,
-                            &format!("{:?}", value.status),
-                            &value.content_hash,
-                            &json,
-                            value.updated_at_ms,
-                        )
-                        .map_err(|_| "storage_failed".to_string())?
-                        {
-                            return Err("batch_stale_version".into());
-                        }
-                        serde_json::to_vec(&batch::projection(&value))
+                        serde_json::to_vec(projection)
                             .map_err(|_| "serialization_failed".to_string())
                     }
                     _ => Err("unsupported_batch_operation".into()),

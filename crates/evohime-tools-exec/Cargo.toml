@@ -13,4 +13,9 @@ path = "src/main.rs"
 
 [dependencies]
 evohime-service-contract = { path = "../evohime-service-contract" }
+evohime-tool-runtime = { path = "../tool-runtime" }
+hex = "0.4"
+serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = "0.11"
+thiserror = { workspace = true }

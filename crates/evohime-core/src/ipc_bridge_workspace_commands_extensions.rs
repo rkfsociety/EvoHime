@@ -1719,15 +1719,80 @@ impl IpcBridge {
         operation: String,
         request: generated::BatchInvocationRuntimeCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let now_ms = crate::task_memory::now_millis() as i64;
+        let mut payload_bytes = request.payload;
+        if operation == "create" {
+            let req_json: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_batch_payload".into()))?;
+            let created = self
+                .invoke_required_service(
+                    "workflow.batch_create",
+                    serde_json::json!({
+                        "batch_id": request.batch_id,
+                        "request": req_json,
+                        "now_ms": now_ms,
+                    }),
+                )
+                .await?;
+            payload_bytes =
+                serde_json::to_vec(&created).map_err(|e| FrameError::Io(e.to_string()))?;
+        }
         let c = self
             .coordinator
             .as_ref()
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        if matches!(operation.as_str(), "get" | "resume" | "start" | "result") {
+            let (get_reply, get_resp) = oneshot::channel();
+            c.dispatch(CoreCommand::BatchInvocationRuntime {
+                operation: "get_raw".to_owned(),
+                batch_id: request.batch_id.clone(),
+                payload: Vec::new(),
+                expected_version: request.expected_version,
+                idempotency_key: request.idempotency_key.clone(),
+                reply: get_reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+            let raw_bytes = get_resp
+                .await
+                .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+                .map_err(FrameError::Io)
+                .map_err(IpcBridgeError::from)?;
+            let stored: serde_json::Value = serde_json::from_slice(&raw_bytes)
+                .map_err(|_| FrameError::Io("corrupt_batch".into()))?;
+            let version = stored.get("version").and_then(|v| v.as_u64()).unwrap_or(0);
+            let value = stored
+                .get("value")
+                .cloned()
+                .ok_or_else(|| FrameError::Io("corrupt_batch".into()))?;
+            let req_arg = if operation == "result" {
+                Some(
+                    serde_json::from_slice::<serde_json::Value>(&payload_bytes)
+                        .map_err(|_| FrameError::Io("invalid_batch_result".into()))?,
+                )
+            } else {
+                None
+            };
+            let transitioned = self
+                .invoke_required_service(
+                    "workflow.batch_transition",
+                    serde_json::json!({
+                        "operation": operation,
+                        "value": value,
+                        "expected_version": request.expected_version.max(version),
+                        "now_ms": now_ms,
+                        "request": req_arg,
+                    }),
+                )
+                .await?;
+            payload_bytes =
+                serde_json::to_vec(&transitioned).map_err(|e| FrameError::Io(e.to_string()))?;
+        }
         let (reply, response) = oneshot::channel();
         c.dispatch(CoreCommand::BatchInvocationRuntime {
             operation,
             batch_id: request.batch_id,
-            payload: request.payload,
+            payload: payload_bytes,
             expected_version: request.expected_version,
             idempotency_key: request.idempotency_key,
             reply,
@@ -1746,26 +1811,100 @@ impl IpcBridge {
         operation: String,
         request: generated::PolicyAwareToolResultCacheCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let now_ms = crate::task_memory::now_millis() as i64;
+        let mut payload_bytes = request.payload;
+        if operation == "inspect" {
+            let policy = self
+                .invoke_required_service("tools_exec.cache_policy", serde_json::json!({}))
+                .await?;
+            payload_bytes =
+                serde_json::to_vec(&policy).map_err(|e| FrameError::Io(e.to_string()))?;
+        } else if operation == "put" {
+            let entry: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_cache_entry".into()))?;
+            let validated = self
+                .invoke_required_service(
+                    "tools_exec.cache_validate_entry",
+                    serde_json::json!({ "entry": entry, "now_ms": now_ms }),
+                )
+                .await?;
+            payload_bytes =
+                serde_json::to_vec(&validated).map_err(|e| FrameError::Io(e.to_string()))?;
+        }
         let c = self
             .coordinator
             .as_ref()
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        if operation == "invalidate" {
+            let (get_reply, get_resp) = oneshot::channel();
+            c.dispatch(CoreCommand::PolicyAwareToolResultCache {
+                operation: "get_raw".to_owned(),
+                cache_key: request.cache_key.clone(),
+                payload: Vec::new(),
+                expected_version: request.expected_version,
+                idempotency_key: request.idempotency_key.clone(),
+                reply: get_reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+            let raw_bytes = get_resp
+                .await
+                .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+                .map_err(FrameError::Io)
+                .map_err(IpcBridgeError::from)?;
+            let raw: serde_json::Value = serde_json::from_slice(&raw_bytes)
+                .map_err(|_| FrameError::Io("corrupt_cache".into()))?;
+            if let Some(entry) = raw.get("entry").filter(|v| !v.is_null()).cloned() {
+                let invalidated = self
+                    .invoke_required_service("tools_exec.cache_invalidate", entry)
+                    .await?;
+                payload_bytes = serde_json::to_vec(&serde_json::json!({
+                    "version": raw.get("version").cloned().unwrap_or(serde_json::json!(0)),
+                    "entry": invalidated,
+                }))
+                .map_err(|e| FrameError::Io(e.to_string()))?;
+            }
+        }
         let (reply, response) = oneshot::channel();
         c.dispatch(CoreCommand::PolicyAwareToolResultCache {
-            operation,
-            cache_key: request.cache_key,
-            payload: request.payload,
+            operation: operation.clone(),
+            cache_key: request.cache_key.clone(),
+            payload: payload_bytes,
             expected_version: request.expected_version,
             idempotency_key: request.idempotency_key,
             reply,
         })
         .await
         .map_err(|e| FrameError::Io(e.to_string()))?;
-        response
+        let out_bytes = response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
-            .map_err(IpcBridgeError::from)
+            .map_err(IpcBridgeError::from)?;
+        if operation == "get" {
+            let raw: serde_json::Value = serde_json::from_slice(&out_bytes)
+                .map_err(|_| FrameError::Io("corrupt_cache".into()))?;
+            let hit = if let Some(entry) = raw.get("entry").filter(|v| !v.is_null()).cloned() {
+                self.invoke_required_service(
+                    "tools_exec.cache_validate_entry",
+                    serde_json::json!({ "entry": entry, "now_ms": now_ms }),
+                )
+                .await
+                .ok()
+            } else {
+                None
+            };
+            let provenance_ref = hit.as_ref().and_then(|e| e.get("provenance_ref").cloned());
+            return serde_json::to_vec(&serde_json::json!({
+                "status": if hit.is_some() { "hit" } else { "miss" },
+                "cache_key": request.cache_key,
+                "provenance_ref": provenance_ref,
+                "redacted": true,
+            }))
+            .map_err(|e| FrameError::Io(e.to_string()))
+            .map_err(IpcBridgeError::from);
+        }
+        Ok(out_bytes)
     }
     pub(crate) async fn dispatch_code_anchored_intent_markers(
         &self,

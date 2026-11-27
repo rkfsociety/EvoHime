@@ -6,6 +6,9 @@
 
 //! Isolated `tools-exec` service module for shell, process, script, and build tools.
 
+#[allow(dead_code)]
+pub(crate) mod policy_aware_tool_result_cache;
+
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
     ServiceHealthReport, ServiceHealthStatus, SERVICE_CONTRACT_VERSION,
@@ -46,6 +49,35 @@ impl ServiceHandler for ToolsExecService {
                         .to_owned(),
                     input_schema: serde_json::json!({ "type": "object", "properties": {} }),
                     required_permissions: vec!["process.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "tools_exec.cache_policy".to_owned(),
+                    description: "Returns the default policy-aware tool result cache bounds."
+                        .to_owned(),
+                    input_schema: serde_json::json!({ "type": "object", "properties": {} }),
+                    required_permissions: vec!["process.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "tools_exec.cache_validate_entry".to_owned(),
+                    description: "Validates a policy-aware tool result cache entry against policy and freshness.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["entry", "now_ms"],
+                        "properties": {
+                            "entry": { "type": "object" },
+                            "now_ms": { "type": "integer" }
+                        }
+                    }),
+                    required_permissions: vec!["process.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "tools_exec.cache_invalidate".to_owned(),
+                    description: "Marks a cached tool result entry as invalidated.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["shell.execute".to_owned()],
                     supports_streaming: false,
                 },
             ],
@@ -105,6 +137,39 @@ impl ServiceHandler for ToolsExecService {
                 }))
             }
             "process.list" => Ok(serde_json::json!({ "processes": [] })),
+            "tools_exec.cache_policy" => {
+                let policy = policy_aware_tool_result_cache::default_policy();
+                Ok(serde_json::json!({ "max_entries": policy.max_entries }))
+            }
+            "tools_exec.cache_validate_entry" => {
+                #[derive(serde::Deserialize)]
+                struct ValidateReq {
+                    entry: policy_aware_tool_result_cache::CacheEntry,
+                    now_ms: i64,
+                }
+                let req: ValidateReq = serde_json::from_value(payload)
+                    .map_err(|_| ServiceContractError::invalid_input("invalid_cache_entry"))?;
+                let policy = policy_aware_tool_result_cache::default_policy();
+                policy_aware_tool_result_cache::validate_entry(
+                    &req.entry,
+                    &policy,
+                    req.now_ms,
+                    policy_aware_tool_result_cache::Freshness::UseCache,
+                )
+                .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                serde_json::to_value(req.entry).map_err(|e| {
+                    ServiceContractError::unavailable(format!("serialization_failed: {e}"))
+                })
+            }
+            "tools_exec.cache_invalidate" => {
+                let mut entry: policy_aware_tool_result_cache::CacheEntry =
+                    serde_json::from_value(payload)
+                        .map_err(|_| ServiceContractError::invalid_input("corrupt_cache"))?;
+                entry.status = policy_aware_tool_result_cache::CacheStatus::Invalidated;
+                serde_json::to_value(entry).map_err(|e| {
+                    ServiceContractError::unavailable(format!("serialization_failed: {e}"))
+                })
+            }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown tools-exec capability: {other}"
             ))),

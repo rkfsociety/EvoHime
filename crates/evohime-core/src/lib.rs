@@ -157,7 +157,6 @@ pub(crate) mod analysis_kernel_host;
 pub use analysis_kernel_host::CoreKernelHost;
 pub(crate) mod artifact_handoff_registry;
 pub(crate) mod audit;
-pub mod batch_invocation_runtime;
 pub(crate) mod browser_backend;
 pub(crate) mod build;
 pub mod capability_registry;
@@ -233,7 +232,6 @@ pub(crate) mod persistent_agent_registry;
 /// Models plans and their lifecycle within the Core.
 pub mod plan;
 pub mod plan_artifact;
-pub mod policy_aware_tool_result_cache;
 pub(crate) mod policy_gate;
 pub(crate) mod prd;
 pub mod project_quality_contract;

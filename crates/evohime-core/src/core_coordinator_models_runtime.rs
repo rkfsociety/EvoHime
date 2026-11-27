@@ -616,14 +616,44 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     if idempotency_key.is_empty() { return Err("invalid_cache_idempotency_key".into()); }
                     let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                     let database = journal.database().lock().await;
-                    use crate::policy_aware_tool_result_cache as cache;
                     use evohime_local_storage::policy_aware_tool_result_cache_store as store;
-                    let policy = cache::default_policy();
                     match operation.as_str() {
-                        "inspect" => serde_json::to_vec(&serde_json::json!({"status":"available","cache_key":cache_key,"default_cacheability":"never","max_entries":policy.max_entries,"redacted":true})).map_err(|_| "serialization_failed".to_string()),
-                        "put" => { let entry: cache::CacheEntry = serde_json::from_slice(&payload).map_err(|_| "invalid_cache_entry".to_string())?; cache::validate_entry(&entry, &policy, crate::task_memory::now_millis() as i64, cache::Freshness::UseCache).map_err(|e| e.to_string())?; let json=serde_json::to_vec(&entry).map_err(|_| "serialization_failed".to_string())?; if !store::put(database.connection(), &cache_key, expected_version.max(1), &json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())? { return Err("cache_stale_version".into()); } serde_json::to_vec(&serde_json::json!({"status":"stored","cache_key":cache_key,"redacted":true})).map_err(|_| "serialization_failed".to_string()) },
-                        "get" => { let hit=store::get(database.connection(), &cache_key).map_err(|_| "storage_failed".to_string())?.and_then(|(_,json)|serde_json::from_slice::<cache::CacheEntry>(&json).ok()).and_then(|entry|cache::validate_entry(&entry,&policy,crate::task_memory::now_millis() as i64,cache::Freshness::UseCache).ok().map(|_|entry)); serde_json::to_vec(&serde_json::json!({"status":if hit.is_some(){"hit"}else{"miss"},"cache_key":cache_key,"provenance_ref":hit.map(|e|e.provenance_ref),"redacted":true})).map_err(|_| "serialization_failed".to_string()) },
-                        "invalidate" => { if let Some((version,json))=store::get(database.connection(), &cache_key).map_err(|_| "storage_failed".to_string())? { let mut entry:cache::CacheEntry=serde_json::from_slice(&json).map_err(|_|"corrupt_cache".to_string())?; entry.status=cache::CacheStatus::Invalidated; let json=serde_json::to_vec(&entry).map_err(|_|"serialization_failed".to_string())?; if !store::put(database.connection(),&cache_key,version+1,&json,crate::task_memory::now_millis() as i64).map_err(|_|"storage_failed".to_string())? {return Err("cache_stale_version".into())}; } serde_json::to_vec(&serde_json::json!({"status":"invalidated","cache_key":cache_key,"redacted":true})).map_err(|_|"serialization_failed".to_string()) },
+                        "inspect" => {
+                            let policy: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_cache_policy".to_string())?;
+                            let max_entries = policy.get("max_entries").and_then(|v| v.as_u64()).unwrap_or(512);
+                            serde_json::to_vec(&serde_json::json!({"status":"available","cache_key":cache_key,"default_cacheability":"never","max_entries":max_entries,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "put" => {
+                            let entry: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_cache_entry".to_string())?;
+                            let json = serde_json::to_vec(&entry).map_err(|_| "serialization_failed".to_string())?;
+                            if !store::put(database.connection(), &cache_key, expected_version.max(1), &json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())? {
+                                return Err("cache_stale_version".into());
+                            }
+                            serde_json::to_vec(&serde_json::json!({"status":"stored","cache_key":cache_key,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "get" | "get_raw" => {
+                            let found = store::get(database.connection(), &cache_key).map_err(|_| "storage_failed".to_string())?;
+                            match found {
+                                Some((version, json)) => {
+                                    let entry: serde_json::Value = serde_json::from_slice(&json).map_err(|_| "corrupt_cache".to_string())?;
+                                    serde_json::to_vec(&serde_json::json!({"version": version, "entry": entry})).map_err(|_| "serialization_failed".to_string())
+                                }
+                                None => serde_json::to_vec(&serde_json::json!({"version": 0, "entry": serde_json::Value::Null})).map_err(|_| "serialization_failed".to_string()),
+                            }
+                        }
+                        "invalidate" => {
+                            if !payload.is_empty() {
+                                let wrapper: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "corrupt_cache".to_string())?;
+                                if let Some(entry) = wrapper.get("entry").filter(|v| !v.is_null()) {
+                                    let version = wrapper.get("version").and_then(|v| v.as_u64()).unwrap_or(0);
+                                    let json = serde_json::to_vec(entry).map_err(|_| "serialization_failed".to_string())?;
+                                    if !store::put(database.connection(), &cache_key, version + 1, &json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())? {
+                                        return Err("cache_stale_version".into());
+                                    }
+                                }
+                            }
+                            serde_json::to_vec(&serde_json::json!({"status":"invalidated","cache_key":cache_key,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
                         _ => Err("unsupported_cache_operation".into()),
                     }
                 }.await;

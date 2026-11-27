@@ -6,6 +6,8 @@
 
 //! Isolated `workflow-engine` service module implementing `evohime-service-contract`.
 
+#[allow(dead_code)]
+pub(crate) mod batch_invocation_runtime;
 pub(crate) mod dependency_aware_task_graph;
 pub mod domain_workflow_recipes;
 
@@ -79,6 +81,38 @@ impl ServiceHandler for WorkflowEngineService {
                             "ops": { "type": "array" },
                             "expected_revision": { "type": "integer" },
                             "grants": { "type": "array" }
+                        }
+                    }),
+                    required_permissions: vec!["workflow.execute".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "workflow.batch_create".to_owned(),
+                    description: "Creates and hashes a bounded batch invocation record.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["batch_id", "request", "now_ms"],
+                        "properties": {
+                            "batch_id": { "type": "string" },
+                            "request": { "type": "object" },
+                            "now_ms": { "type": "integer" }
+                        }
+                    }),
+                    required_permissions: vec!["workflow.execute".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "workflow.batch_transition".to_owned(),
+                    description: "Transitions or projects a stored batch invocation record."
+                        .to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["operation", "value", "expected_version", "now_ms"],
+                        "properties": {
+                            "operation": { "type": "string" },
+                            "value": { "type": "object" },
+                            "expected_version": { "type": "integer" },
+                            "now_ms": { "type": "integer" }
                         }
                     }),
                     required_permissions: vec!["workflow.execute".to_owned()],
@@ -174,6 +208,91 @@ impl ServiceHandler for WorkflowEngineService {
                 .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
                 serde_json::to_value(next)
                     .map_err(|err| ServiceContractError::unavailable(err.to_string()))
+            }
+            "workflow.batch_create" => {
+                #[derive(serde::Deserialize)]
+                struct CreateReq {
+                    batch_id: String,
+                    request: batch_invocation_runtime::CreateBatchRequest,
+                    now_ms: i64,
+                }
+                let req: CreateReq = serde_json::from_value(payload)
+                    .map_err(|_| ServiceContractError::invalid_input("invalid_batch_payload"))?;
+                let policy = batch_invocation_runtime::default_policy();
+                let value =
+                    batch_invocation_runtime::new_batch(batch_invocation_runtime::NewBatchInput {
+                        id: req.batch_id,
+                        definition_ref: req.request.definition_ref,
+                        definition_version: req.request.definition_version,
+                        inputs: req.request.inputs,
+                        max_concurrency: req.request.max_concurrency,
+                        failure_policy: req.request.failure_policy,
+                        now_ms: req.now_ms,
+                        policy,
+                    })
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                let projection = batch_invocation_runtime::projection(&value);
+                Ok(serde_json::json!({ "value": value, "projection": projection }))
+            }
+            "workflow.batch_transition" => {
+                #[derive(serde::Deserialize)]
+                struct TransitionReq {
+                    operation: String,
+                    value: batch_invocation_runtime::BatchInvocation,
+                    expected_version: u64,
+                    now_ms: i64,
+                    #[serde(default)]
+                    request: Option<batch_invocation_runtime::RecordResultRequest>,
+                }
+                let mut req: TransitionReq = serde_json::from_value(payload)
+                    .map_err(|_| ServiceContractError::invalid_input("corrupt_batch"))?;
+                let policy = batch_invocation_runtime::default_policy();
+                match req.operation.as_str() {
+                    "get" => {}
+                    "resume" => {
+                        batch_invocation_runtime::resume_pending(
+                            &mut req.value,
+                            req.expected_version,
+                            req.now_ms,
+                            &policy,
+                        )
+                        .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                    }
+                    "start" => {
+                        batch_invocation_runtime::start_batch(
+                            &mut req.value,
+                            req.expected_version,
+                            req.now_ms,
+                            &policy,
+                        )
+                        .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                    }
+                    "result" => {
+                        let res_req = req.request.ok_or_else(|| {
+                            ServiceContractError::invalid_input("invalid_batch_result")
+                        })?;
+                        batch_invocation_runtime::record_result(
+                            batch_invocation_runtime::RecordResultInput {
+                                batch: &mut req.value,
+                                item_id: &res_req.item_id,
+                                expected_version: req.expected_version,
+                                status: res_req.status,
+                                result_ref: res_req.result_ref,
+                                error_class: res_req.error_class,
+                                now_ms: req.now_ms,
+                                policy: &policy,
+                            },
+                        )
+                        .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                    }
+                    _ => {
+                        return Err(ServiceContractError::invalid_input(
+                            "unsupported_batch_operation",
+                        ));
+                    }
+                }
+                let projection = batch_invocation_runtime::projection(&req.value);
+                Ok(serde_json::json!({ "value": req.value, "projection": projection }))
             }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown workflow-engine capability: {other}"

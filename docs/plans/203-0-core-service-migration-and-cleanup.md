@@ -33,7 +33,7 @@
 - [План 202](./202-0-core-microkernel-decomposition.md) — базовая инфраструктура микроядра и `ModuleRegistry` (готова).
 
 ## Критерии готовности плана
-- [ ] Все перечисленные в этапах 1–4 прикладные файлы и их тесты удалены из `crates/evohime-core/src` (прогресс: перенесены и удалены из `evohime-core` 32 модуля — к 31 модулю добавлен `multi_reviewer_ensemble`).
-- [ ] Все соответствующие вызовы в `core_coordinator_*`, `core_agent_*` и `ipc_bridge_*` работают через `ModuleRegistry` (прогресс: `ModuleRegistry` подключён в `IpcBridge`, переключены `voice_input_dictation`, `project_knowledge_notebook`, `offline_experience_consolidation`, `experience_replay_library`, `research.fetch_url`, `research.grounded_session`, `workflow.task_graph_*`, `evals.review_plan_*`, `evals.ensemble_*`, `tools.diagnostics_*`, `tools.analysis_pack_*`).
+- [ ] Все перечисленные в этапах 1–4 прикладные файлы и их тесты удалены из `crates/evohime-core/src` (прогресс: перенесены и удалены из `evohime-core` 34 модуля — к 32 модулям добавлены `batch_invocation_runtime` и `policy_aware_tool_result_cache`).
+- [ ] Все соответствующие вызовы в `core_coordinator_*`, `core_agent_*` и `ipc_bridge_*` работают через `ModuleRegistry` (прогресс: `ModuleRegistry` подключён в `IpcBridge`, переключены `voice_input_dictation`, `project_knowledge_notebook`, `offline_experience_consolidation`, `experience_replay_library`, `research.fetch_url`, `research.grounded_session`, `workflow.task_graph_*`, `workflow.batch_*`, `evals.review_plan_*`, `evals.ensemble_*`, `tools.diagnostics_*`, `tools.analysis_pack_*`, `tools_exec.cache_*`).
 - [ ] Неиспользуемые зависимости удалены из `crates/evohime-core/Cargo.toml`.
 - [ ] Полный прогон CI всех 26 модулей и `Rust documentation` зелёный; время сборки/тестов `core.yml` заметно сокращено и зафиксировано в `docs/release-evidence.md`.
