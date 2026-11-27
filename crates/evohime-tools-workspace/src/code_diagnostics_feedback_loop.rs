@@ -276,4 +276,34 @@ mod tests {
         x.binding.file_ref = "/../secret".into();
         assert!(validate_diagnostic(&x).is_err())
     }
+    #[test]
+    fn introduced_resolved_and_persisting_are_deterministic() {
+        let base = s("b", vec![d("old"), d("same")]);
+        let current = s("c", vec![d("same"), d("new")]);
+        let res = delta(&base, &current).unwrap();
+        assert_eq!(
+            res.introduced
+                .iter()
+                .map(|x| x.fingerprint.as_str())
+                .collect::<Vec<_>>(),
+            vec!["new"]
+        );
+        assert_eq!(
+            res.resolved
+                .iter()
+                .map(|x| x.fingerprint.as_str())
+                .collect::<Vec<_>>(),
+            vec!["old"]
+        );
+        assert_eq!(res.persisting.len(), 1);
+    }
+    #[test]
+    fn canonical_workspace_ref_and_stale_binding_are_rejected() {
+        let mut x = d("x");
+        x.binding.file_ref = "/../secret".into();
+        assert!(validate_diagnostic(&x).is_err());
+        x.binding.file_ref = "/src/lib.rs".into();
+        x.stale = true;
+        assert!(validate_diagnostic(&x).is_ok());
+    }
 }

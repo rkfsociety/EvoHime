@@ -1,4 +1,4 @@
-use evohime_core::experience_replay_library::*;
+use evohime_rag_memory::experience_replay_library::*;
 
 #[test]
 fn unknown_outcome_is_not_replayed_as_success_and_context_is_bounded() {

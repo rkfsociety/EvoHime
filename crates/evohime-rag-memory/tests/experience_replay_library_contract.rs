@@ -1,4 +1,4 @@
-use evohime_core::experience_replay_library::*;
+use evohime_rag_memory::experience_replay_library::*;
 
 #[test]
 fn successful_experience_requires_independent_evidence_and_hash() {
