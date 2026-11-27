@@ -413,15 +413,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             .await;
             let _ = reply.send(result);
         }
-        CoreCommand::RunResearchFetch {
+        CoreCommand::PersistResearchFetchOutcome {
             work_item_id,
-            url,
-            title,
-            allowed_domains,
-            max_bytes,
-            max_latency_ms,
-            max_cost_micros,
-            ttl_ms,
+            outcome_json,
             reply,
         } => {
             let journal = state.lock().await.journal.clone();
@@ -431,150 +425,57 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 if work_item_id.trim().is_empty() {
                     return Err("work_item_id must not be empty".to_string());
                 }
-                let policy = crate::research_pipeline::ResearchPolicy {
-                    network_allowed: true,
-                    allowed_domains,
-                    max_bytes,
-                    max_latency_ms,
-                    max_cost_micros,
+                let evidence: crate::research::ResearchEvidence = serde_json::from_value(
+                    outcome_json
+                        .get("evidence")
+                        .cloned()
+                        .ok_or_else(|| "missing evidence in research.fetch_url response".to_string())?,
+                )
+                .map_err(|err| format!("invalid evidence in research.fetch_url response: {err}"))?;
+                let citation_url = outcome_json
+                    .get("citation")
+                    .and_then(|c| c.get("url"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&evidence.source.url)
+                    .to_owned();
+                let source_hash = outcome_json
+                    .get("citation")
+                    .and_then(|c| c.get("source_hash"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&evidence.excerpt_sha256)
+                    .to_owned();
+                let id = uuid::Uuid::new_v4().to_string();
+                let record = evohime_local_storage::research_store::ResearchEvidenceRecord {
+                    id: id.clone(),
+                    source_kind: "url".to_string(),
+                    source_ref: evidence.source.url.clone(),
+                    redacted_excerpt: evidence.excerpt.clone(),
+                    source_hash: evidence.excerpt_sha256.clone(),
+                    fetched_at: evidence.captured_at_ms.to_string(),
+                    ttl_seconds: evidence.ttl_ms.div_ceil(1_000),
+                    provenance_link: Some(work_item_id.clone()),
                 };
-                let fetch_result = crate::research_fetch::run_research_fetch(
-                    &work_item_id,
-                    &url,
-                    &title,
-                    &policy,
-                    ttl_ms,
-                    false,
+                journal.save_research_evidence(&record).await?;
+                TaskCoordinator::record_audit(
+                    &state,
+                    crate::audit::AuditKind::Evidence,
+                    work_item_id.clone(),
+                    "research.fetch.completed",
+                    [
+                        ("evidence_id".to_owned(), id.clone()),
+                        ("url".to_owned(), citation_url),
+                        ("source_hash".to_owned(), source_hash),
+                    ],
                 )
                 .await;
-                match fetch_result {
-                    Ok(outcome) => {
-                        let id = uuid::Uuid::new_v4().to_string();
-                        let record =
-                            evohime_local_storage::research_store::ResearchEvidenceRecord {
-                                id: id.clone(),
-                                source_kind: "url".to_string(),
-                                source_ref: outcome.evidence.source.url.clone(),
-                                redacted_excerpt: outcome.evidence.excerpt.clone(),
-                                source_hash: outcome.evidence.excerpt_sha256.clone(),
-                                fetched_at: outcome.evidence.captured_at_ms.to_string(),
-                                ttl_seconds: outcome.evidence.ttl_ms.div_ceil(1_000),
-                                provenance_link: Some(work_item_id.clone()),
-                            };
-                        journal.save_research_evidence(&record).await?;
-                        TaskCoordinator::record_audit(
-                            &state,
-                            crate::audit::AuditKind::Evidence,
-                            work_item_id.clone(),
-                            "research.fetch.completed",
-                            [
-                                ("evidence_id".to_owned(), id.clone()),
-                                ("url".to_owned(), outcome.citation.url.clone()),
-                                (
-                                    "source_hash".to_owned(),
-                                    outcome.citation.source_hash.clone(),
-                                ),
-                            ],
-                        )
-                        .await;
-                        serde_json::to_vec(&serde_json::json!({
-                            "id": id,
-                            "work_item_id": work_item_id,
-                            "state": outcome.state,
-                            "evidence": outcome.evidence,
-                            "citation": outcome.citation,
-                            "source_revision": outcome.revision,
-                            "evidence_item": outcome.evidence_item,
-                        }))
-                        .map_err(|error| error.to_string())
-                    }
-                    Err(error) => {
-                        TaskCoordinator::record_audit(
-                            &state,
-                            crate::audit::AuditKind::Failure,
-                            work_item_id.clone(),
-                            "research.fetch.failed",
-                            [
-                                ("url".to_owned(), url.clone()),
-                                ("state".to_owned(), format!("{:?}", error.state)),
-                                ("error".to_owned(), error.message.clone()),
-                            ],
-                        )
-                        .await;
-                        Err(error.message)
-                    }
-                }
-            }
-            .await;
-            let _ = reply.send(result);
-        }
-        CoreCommand::RunGroundedResearchSession { payload, reply } => {
-            #[derive(serde::Deserialize)]
-            struct Request {
-                request_id: String,
-                query: String,
-                mode: crate::research::ResearchMode,
-                source_policy: crate::research::SourcePolicy,
-                budget: crate::research::ResearchBudget,
-                endpoint: String,
-                results: Vec<crate::research_search::SearchResult>,
-                allowed_domains: Vec<String>,
-                max_bytes: u64,
-                max_latency_ms: u64,
-                max_cost_micros: u64,
-                ttl_ms: u64,
-                cancelled: bool,
-            }
-            let result = async {
-                let request: Request = serde_json::from_slice(&payload)
-                    .map_err(|_| "invalid_research_session_run".to_string())?;
-                let network_policy =
-                    evohime_tool_runtime::network_capability::NetworkCapabilityPolicy::new(
-                        request.allowed_domains.clone(),
-                        request.max_bytes,
-                        request.max_latency_ms,
-                        request.max_cost_micros,
-                        false,
-                        evohime_tool_runtime::network_capability::RefreshPolicy::Never,
-                    )
-                    .map_err(|error| format!("invalid_network_policy: {error:?}"))?;
-                let fetch_policy = crate::research_pipeline::ResearchPolicy {
-                    network_allowed: true,
-                    allowed_domains: request.allowed_domains,
-                    max_bytes: request.max_bytes,
-                    max_latency_ms: request.max_latency_ms,
-                    max_cost_micros: request.max_cost_micros,
-                };
-                let provider = crate::research_search::OfflineStubSearchProvider {
-                    endpoint: request.endpoint,
-                    fixed_results: request.results,
-                };
-                let outcome = crate::research_search::run_bounded_research_session(
-                    &request.request_id,
-                    &request.query,
-                    request.mode,
-                    request.source_policy,
-                    &request.budget,
-                    &provider,
-                    &crate::research_search::ExtractiveSummarizer,
-                    &network_policy,
-                    &fetch_policy,
-                    request.ttl_ms,
-                    request.cancelled,
-                )
-                .await
-                .map_err(|error| error.to_string())?;
                 serde_json::to_vec(&serde_json::json!({
-                    "schema_version": 1,
-                    "state": outcome.state,
-                    "coverage": outcome.coverage,
-                    "fetched": outcome.fetched.iter().map(|item| serde_json::json!({
-                        "revision": item.revision,
-                        "evidence_item": item.evidence_item,
-                    })).collect::<Vec<_>>(),
-                    "summary": outcome.summary,
-                    "omitted_results": outcome.omitted_results,
-                    "redacted": true,
+                    "id": id,
+                    "work_item_id": work_item_id,
+                    "state": outcome_json.get("state").cloned().unwrap_or(serde_json::Value::Null),
+                    "evidence": evidence,
+                    "citation": outcome_json.get("citation").cloned().unwrap_or(serde_json::Value::Null),
+                    "source_revision": outcome_json.get("source_revision").cloned().unwrap_or(serde_json::Value::Null),
+                    "evidence_item": outcome_json.get("evidence_item").cloned().unwrap_or(serde_json::Value::Null),
                 }))
                 .map_err(|error| error.to_string())
             }

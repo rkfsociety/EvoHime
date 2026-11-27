@@ -284,21 +284,30 @@ impl IpcBridge {
         &self,
         request: generated::RunResearchFetch,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let outcome_json = self
+            .invoke_required_service(
+                "research.fetch_url",
+                serde_json::json!({
+                    "work_item_id": request.work_item_id,
+                    "url": request.url,
+                    "title": request.title,
+                    "allowed_domains": request.allowed_domains,
+                    "max_bytes": request.max_bytes,
+                    "max_latency_ms": request.max_latency_ms,
+                    "max_cost_micros": request.max_cost_micros,
+                    "ttl_ms": request.ttl_ms,
+                }),
+            )
+            .await?;
         let coordinator = self
             .coordinator
             .as_ref()
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
         let (reply, response) = oneshot::channel();
         coordinator
-            .dispatch(CoreCommand::RunResearchFetch {
+            .dispatch(CoreCommand::PersistResearchFetchOutcome {
                 work_item_id: request.work_item_id,
-                url: request.url,
-                title: request.title,
-                allowed_domains: request.allowed_domains,
-                max_bytes: request.max_bytes,
-                max_latency_ms: request.max_latency_ms,
-                max_cost_micros: request.max_cost_micros,
-                ttl_ms: request.ttl_ms,
+                outcome_json,
                 reply,
             })
             .await

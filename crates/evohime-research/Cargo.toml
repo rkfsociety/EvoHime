@@ -13,8 +13,15 @@ path = "src/main.rs"
 
 [dependencies]
 evohime-service-contract = { path = "../evohime-service-contract" }
+evohime-tool-runtime = { path = "../tool-runtime" }
+futures-util = "0.3"
 hex = "0.4"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "gzip", "brotli", "deflate", "stream"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.11"
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt", "time", "macros"] }
+
+[dev-dependencies]
+wiremock = "0.6"

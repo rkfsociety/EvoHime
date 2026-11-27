@@ -6,6 +6,7 @@
 
 //! Isolated `workflow-engine` service module implementing `evohime-service-contract`.
 
+pub(crate) mod dependency_aware_task_graph;
 pub mod domain_workflow_recipes;
 
 use evohime_service_contract::{
@@ -45,6 +46,40 @@ impl ServiceHandler for WorkflowEngineService {
                         "type": "object",
                         "required": ["workflow_id"],
                         "properties": { "workflow_id": { "type": "string" } }
+                    }),
+                    required_permissions: vec!["workflow.execute".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "workflow.task_graph_validate".to_owned(),
+                    description:
+                        "Validates a dependency-aware task graph and computes its ready set."
+                            .to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["graph", "grants"],
+                        "properties": {
+                            "graph": { "type": "object" },
+                            "grants": { "type": "array" }
+                        }
+                    }),
+                    required_permissions: vec!["workflow.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "workflow.task_graph_patch".to_owned(),
+                    description:
+                        "Applies validated patch operations to a dependency-aware task graph."
+                            .to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["current", "ops", "expected_revision", "grants"],
+                        "properties": {
+                            "current": { "type": "object" },
+                            "ops": { "type": "array" },
+                            "expected_revision": { "type": "integer" },
+                            "grants": { "type": "array" }
+                        }
                     }),
                     required_permissions: vec!["workflow.execute".to_owned()],
                     supports_streaming: false,
@@ -101,6 +136,44 @@ impl ServiceHandler for WorkflowEngineService {
                         )
                     })?;
                 Ok(serde_json::json!({ "workflow_id": workflow_id, "status": "accepted" }))
+            }
+            "workflow.task_graph_validate" => {
+                #[derive(serde::Deserialize)]
+                struct ValidateReq {
+                    graph: dependency_aware_task_graph::TaskGraph,
+                    grants: Vec<String>,
+                }
+                let req: ValidateReq = serde_json::from_value(payload).map_err(|err| {
+                    ServiceContractError::invalid_input(format!("invalid_graph: {err}"))
+                })?;
+                dependency_aware_task_graph::validate(&req.graph, &req.grants)
+                    .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
+                Ok(serde_json::json!({
+                    "status": "valid",
+                    "ready": dependency_aware_task_graph::ready_set(&req.graph),
+                    "revision": req.graph.revision,
+                }))
+            }
+            "workflow.task_graph_patch" => {
+                #[derive(serde::Deserialize)]
+                struct PatchReq {
+                    current: dependency_aware_task_graph::TaskGraph,
+                    ops: Vec<dependency_aware_task_graph::PatchOp>,
+                    expected_revision: u64,
+                    grants: Vec<String>,
+                }
+                let req: PatchReq = serde_json::from_value(payload).map_err(|err| {
+                    ServiceContractError::invalid_input(format!("invalid_patch: {err}"))
+                })?;
+                let next = dependency_aware_task_graph::apply_patch(
+                    req.current,
+                    &req.ops,
+                    req.expected_revision,
+                    &req.grants,
+                )
+                .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
+                serde_json::to_value(next)
+                    .map_err(|err| ServiceContractError::unavailable(err.to_string()))
             }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown workflow-engine capability: {other}"

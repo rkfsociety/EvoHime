@@ -24,10 +24,10 @@ use std::time::{Duration, SystemTime};
 use futures_util::StreamExt;
 use reqwest::{redirect::Policy, Client, Url};
 
-use crate::research::{ResearchEvidence, SourceMetadata, MAX_EXCERPT_CHARS};
 use crate::research_pipeline::{
     transition, validate_citations, Citation, PipelineState, ResearchPolicy, ResearchRequest,
 };
+use crate::research_types::{ResearchEvidence, SourceMetadata, MAX_EXCERPT_CHARS};
 
 /// Outcome of a completed research fetch: the persisted evidence, its
 /// citation, and the terminal pipeline state (`Completed` on success).
@@ -35,8 +35,8 @@ use crate::research_pipeline::{
 pub struct ResearchFetchOutcome {
     pub evidence: ResearchEvidence,
     pub citation: Citation,
-    pub revision: crate::research::ResearchSourceRevision,
-    pub evidence_item: crate::research::EvidenceItem,
+    pub revision: crate::research_types::ResearchSourceRevision,
+    pub evidence_item: crate::research_types::EvidenceItem,
     pub state: PipelineState,
 }
 
@@ -195,14 +195,14 @@ pub async fn run_research_fetch(
     let evidence = ResearchEvidence::capture(source, truncated, captured_at_ms, ttl_ms)
         .map_err(|error| fail(state, false, error.to_string()))?;
 
-    let revision = crate::research::ResearchSourceRevision::from_snapshot(
+    let revision = crate::research_types::ResearchSourceRevision::from_snapshot(
         format!(
             "revision-{}",
-            crate::research::sha256_hex(final_url.as_str().as_bytes())
+            crate::research_types::sha256_hex(final_url.as_str().as_bytes())
         ),
         format!(
             "source-{}",
-            crate::research::sha256_hex(final_url.as_str().as_bytes())
+            crate::research_types::sha256_hex(final_url.as_str().as_bytes())
         ),
         1,
         &body,
@@ -214,16 +214,16 @@ pub async fn run_research_fetch(
         .to_string(),
         "research-fetch/v1",
         "legacy-fetch",
-        crate::research::EvidenceTrust::AcquiredExternal,
+        crate::research_types::EvidenceTrust::AcquiredExternal,
         citation_url(&final_url),
     )
     .map_err(|error| fail(state, false, error.to_string()))?;
 
-    let evidence_item = crate::research::EvidenceItem {
+    let evidence_item = crate::research_types::EvidenceItem {
         evidence_id: format!("evidence-{}", evidence.excerpt_sha256),
         revision_id: revision.revision_id.clone(),
-        locator: crate::research::EvidenceLocator {
-            kind: crate::research::EvidenceLocatorKind::HtmlRange,
+        locator: crate::research_types::EvidenceLocator {
+            kind: crate::research_types::EvidenceLocatorKind::HtmlRange,
             value: citation_url(&final_url),
             start: Some(0),
             end: Some(u32::try_from(body.len()).unwrap_or(u32::MAX)),
@@ -231,7 +231,7 @@ pub async fn run_research_fetch(
         // Citation lineage is keyed by the immutable source revision, not by
         // a mutable/redacted excerpt digest.
         content_hash: revision.content_hash.clone(),
-        trust: crate::research::EvidenceTrust::AcquiredExternal,
+        trust: crate::research_types::EvidenceTrust::AcquiredExternal,
     };
     evidence_item
         .validate_against_revision(&revision)

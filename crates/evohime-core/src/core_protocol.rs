@@ -1323,40 +1323,15 @@ pub enum CoreCommand {
         /// Канал ограниченного списка evidence.
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
-    /// Performs a real, policy-gated, SSRF-protected HTTP GET against `url`,
-    /// driving `research_fetch::run_research_fetch` through the real
-    /// `research_pipeline` state machine, then persists the resulting
-    /// `ResearchEvidence` the same way `SaveResearchEvidence` does. `title`
-    /// is caller-supplied; content-type/publisher are derived from the
-    /// response and URL. No search-engine integration and no LLM-based
-    /// summarization happen here (see `research_fetch` module docs).
-    RunResearchFetch {
+    /// Persists the redacted `ResearchEvidence` outcome returned by the
+    /// external `research` service module (`research.fetch_url`) and records
+    /// its audit event.
+    PersistResearchFetchOutcome {
         /// Work item, с которым сохраняется результат fetch.
         work_item_id: String,
-        /// URL, который Core проверит по network/SSRF policy.
-        url: String,
-        /// Название свидетельства, заданное вызывающим кодом.
-        title: String,
-        /// Список разрешённых доменов для этого fetch.
-        allowed_domains: Vec<String>,
-        /// Верхняя граница загружаемого тела в байтах.
-        max_bytes: u64,
-        /// Максимальная длительность fetch в миллисекундах.
-        max_latency_ms: u64,
-        /// Верхняя граница стоимости операции в микродолларах.
-        max_cost_micros: u64,
-        /// Срок хранения полученного evidence в миллисекундах.
-        ttl_ms: u64,
-        /// Канал metadata-проекции evidence или ошибки policy/fetch.
-        reply: oneshot::Sender<Result<Vec<u8>, String>>,
-    },
-    /// Runs the bounded research adapter and returns only a metadata
-    /// projection. The caller supplies already-selected result URLs; every
-    /// URL still passes the normal network and fetch policy.
-    RunGroundedResearchSession {
-        /// Сериализованные результаты/URL для bounded grounded session.
-        payload: Vec<u8>,
-        /// Канал metadata-проекции или ошибки выполнения.
+        /// Сериализованный ответ `research.fetch_url` от сервиса `research`.
+        outcome_json: serde_json::Value,
+        /// Канал metadata-проекции evidence или ошибки сохранения.
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     /// Creates one bounded Memory v1 record. `memory_domain::MemoryDomain`

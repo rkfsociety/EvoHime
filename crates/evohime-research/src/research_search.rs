@@ -29,9 +29,9 @@ use evohime_tool_runtime::network_capability::{
     NetworkCapabilityPolicy, NetworkDecision, NetworkRequest,
 };
 
-use crate::research::{redact_excerpt, sha256_hex};
 use crate::research_fetch::{run_research_fetch, ResearchFetchOutcome};
 use crate::research_pipeline::{Citation, PipelineState, ResearchPolicy};
+use crate::research_types::{redact_excerpt, sha256_hex};
 
 pub const MAX_QUERY_CHARS: usize = 512;
 pub const MAX_RESULT_URLS: usize = 8;
@@ -148,8 +148,8 @@ pub struct SearchPipelineOutcome {
 
 #[derive(Debug, Clone)]
 pub struct BoundedResearchSessionOutcome {
-    pub state: crate::research::ResearchSessionState,
-    pub coverage: crate::research::ResearchCoverage,
+    pub state: crate::research_types::ResearchSessionState,
+    pub coverage: crate::research_types::ResearchCoverage,
     pub fetched: Vec<ResearchFetchOutcome>,
     pub summary: Option<SummaryEvidence>,
     pub omitted_results: usize,
@@ -163,9 +163,9 @@ pub struct BoundedResearchSessionOutcome {
 pub async fn run_bounded_research_session(
     request_id: &str,
     query: &str,
-    _mode: crate::research::ResearchMode,
-    source_policy: crate::research::SourcePolicy,
-    budget: &crate::research::ResearchBudget,
+    _mode: crate::research_types::ResearchMode,
+    source_policy: crate::research_types::SourcePolicy,
+    budget: &crate::research_types::ResearchBudget,
     provider: &dyn SearchProvider,
     summarizer: &dyn Summarizer,
     network_policy: &NetworkCapabilityPolicy,
@@ -178,7 +178,7 @@ pub async fn run_bounded_research_session(
         .map_err(|error| SearchPipelineError::SearchProviderFailed(error.to_string()))?;
     crate::research_pipeline::permits_source_policy(
         source_policy,
-        crate::research::ResearchSourceKind::WebPage,
+        crate::research_types::ResearchSourceKind::WebPage,
         true,
     )
     .map_err(|error| SearchPipelineError::SearchDenied {
@@ -186,8 +186,8 @@ pub async fn run_bounded_research_session(
     })?;
     if cancelled {
         return Ok(BoundedResearchSessionOutcome {
-            state: crate::research::ResearchSessionState::Partial,
-            coverage: crate::research::ResearchCoverage::Partial,
+            state: crate::research_types::ResearchSessionState::Partial,
+            coverage: crate::research_types::ResearchCoverage::Partial,
             fetched: Vec::new(),
             summary: None,
             omitted_results: 0,
@@ -211,16 +211,16 @@ pub async fn run_bounded_research_session(
         outcome.fetched.truncate(budget.max_sources as usize);
     }
     let coverage = if outcome.fetched.is_empty() {
-        crate::research::ResearchCoverage::SourceLimited
+        crate::research_types::ResearchCoverage::SourceLimited
     } else if omitted_results > 0 {
-        crate::research::ResearchCoverage::BudgetLimited
+        crate::research_types::ResearchCoverage::BudgetLimited
     } else {
-        crate::research::ResearchCoverage::Complete
+        crate::research_types::ResearchCoverage::Complete
     };
-    let state = if coverage == crate::research::ResearchCoverage::Complete {
-        crate::research::ResearchSessionState::Completed
+    let state = if coverage == crate::research_types::ResearchCoverage::Complete {
+        crate::research_types::ResearchSessionState::Completed
     } else {
-        crate::research::ResearchSessionState::Partial
+        crate::research_types::ResearchSessionState::Partial
     };
     Ok(BoundedResearchSessionOutcome {
         state,

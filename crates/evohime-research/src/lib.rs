@@ -7,6 +7,11 @@
 //! Isolated `research` service module implementing `evohime-service-contract`.
 
 pub mod external_source_acquisition_runtime;
+pub(crate) mod research_fetch;
+pub(crate) mod research_gate;
+pub(crate) mod research_pipeline;
+pub(crate) mod research_search;
+pub(crate) mod research_types;
 
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
@@ -62,6 +67,49 @@ impl ServiceHandler for ResearchService {
                         "properties": { "repo": { "type": "string" } }
                     }),
                     required_permissions: vec!["network.fetch".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "research.fetch_url".to_owned(),
+                    description: "Executes a policy-gated, SSRF-protected HTTP GET and produces redacted evidence.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["work_item_id", "url", "title", "allowed_domains", "max_bytes", "max_latency_ms", "max_cost_micros", "ttl_ms"],
+                        "properties": {
+                            "work_item_id": { "type": "string" },
+                            "url": { "type": "string" },
+                            "title": { "type": "string" }
+                        }
+                    }),
+                    required_permissions: vec!["network.fetch".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "research.grounded_session".to_owned(),
+                    description: "Executes a bounded search-and-fetch grounded research session.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["request_id", "query", "mode", "source_policy", "budget", "endpoint", "results", "allowed_domains", "max_bytes", "max_latency_ms", "max_cost_micros", "ttl_ms"],
+                        "properties": {
+                            "request_id": { "type": "string" },
+                            "query": { "type": "string" }
+                        }
+                    }),
+                    required_permissions: vec!["network.search".to_owned(), "network.fetch".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "research.check_gate".to_owned(),
+                    description: "Evaluates whether research evidence is required and fresh for a task.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["task_text", "evidence", "now_ms"],
+                        "properties": {
+                            "task_text": { "type": "string" },
+                            "now_ms": { "type": "integer" }
+                        }
+                    }),
+                    required_permissions: vec![],
                     supports_streaming: false,
                 },
             ],
@@ -140,6 +188,181 @@ impl ServiceHandler for ResearchService {
                     ));
                 }
                 Ok(serde_json::json!({ "repo": repo, "status": "accepted" }))
+            }
+            "research.fetch_url" => {
+                #[derive(serde::Deserialize)]
+                struct FetchUrlRequest {
+                    work_item_id: String,
+                    url: String,
+                    title: String,
+                    allowed_domains: Vec<String>,
+                    max_bytes: u64,
+                    max_latency_ms: u64,
+                    max_cost_micros: u64,
+                    ttl_ms: u64,
+                    #[serde(default)]
+                    cancelled: bool,
+                }
+                let req: FetchUrlRequest = serde_json::from_value(payload).map_err(|err| {
+                    ServiceContractError::invalid_input(format!("invalid fetch_url payload: {err}"))
+                })?;
+                if req.work_item_id.trim().is_empty() {
+                    return Err(ServiceContractError::invalid_input(
+                        "work_item_id must not be empty",
+                    ));
+                }
+                let policy = research_pipeline::ResearchPolicy {
+                    network_allowed: true,
+                    allowed_domains: req.allowed_domains,
+                    max_bytes: req.max_bytes,
+                    max_latency_ms: req.max_latency_ms,
+                    max_cost_micros: req.max_cost_micros,
+                };
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|err| {
+                        ServiceContractError::unavailable(format!(
+                            "failed to build tokio runtime: {err}"
+                        ))
+                    })?;
+                let outcome = runtime
+                    .block_on(research_fetch::run_research_fetch(
+                        &req.work_item_id,
+                        &req.url,
+                        &req.title,
+                        &policy,
+                        req.ttl_ms,
+                        req.cancelled,
+                    ))
+                    .map_err(|err| {
+                        let code = match err.state {
+                            research_pipeline::PipelineState::Cancelled => {
+                                evohime_service_contract::ServiceErrorCode::Unavailable
+                            }
+                            _ => evohime_service_contract::ServiceErrorCode::InvalidInput,
+                        };
+                        ServiceContractError::new(
+                            code,
+                            serde_json::json!({
+                                "state": err.state,
+                                "message": err.message,
+                            })
+                            .to_string(),
+                        )
+                    })?;
+                serde_json::to_value(serde_json::json!({
+                    "state": outcome.state,
+                    "evidence": outcome.evidence,
+                    "citation": outcome.citation,
+                    "source_revision": outcome.revision,
+                    "evidence_item": outcome.evidence_item,
+                }))
+                .map_err(|err| ServiceContractError::unavailable(err.to_string()))
+            }
+            "research.grounded_session" => {
+                #[derive(serde::Deserialize)]
+                struct GroundedSessionRequest {
+                    request_id: String,
+                    query: String,
+                    mode: research_types::ResearchMode,
+                    source_policy: research_types::SourcePolicy,
+                    budget: research_types::ResearchBudget,
+                    endpoint: String,
+                    results: Vec<research_search::SearchResult>,
+                    allowed_domains: Vec<String>,
+                    max_bytes: u64,
+                    max_latency_ms: u64,
+                    max_cost_micros: u64,
+                    ttl_ms: u64,
+                    #[serde(default)]
+                    cancelled: bool,
+                }
+                let req: GroundedSessionRequest =
+                    serde_json::from_value(payload).map_err(|err| {
+                        ServiceContractError::invalid_input(format!(
+                            "invalid_research_session_run: {err}"
+                        ))
+                    })?;
+                let network_policy =
+                    evohime_tool_runtime::network_capability::NetworkCapabilityPolicy::new(
+                        req.allowed_domains.clone(),
+                        req.max_bytes,
+                        req.max_latency_ms,
+                        req.max_cost_micros,
+                        false,
+                        evohime_tool_runtime::network_capability::RefreshPolicy::Never,
+                    )
+                    .map_err(|err| {
+                        ServiceContractError::invalid_input(format!(
+                            "invalid_network_policy: {err:?}"
+                        ))
+                    })?;
+                let fetch_policy = research_pipeline::ResearchPolicy {
+                    network_allowed: true,
+                    allowed_domains: req.allowed_domains,
+                    max_bytes: req.max_bytes,
+                    max_latency_ms: req.max_latency_ms,
+                    max_cost_micros: req.max_cost_micros,
+                };
+                let provider = research_search::OfflineStubSearchProvider {
+                    endpoint: req.endpoint,
+                    fixed_results: req.results,
+                };
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|err| {
+                        ServiceContractError::unavailable(format!(
+                            "failed to build tokio runtime: {err}"
+                        ))
+                    })?;
+                let outcome = runtime
+                    .block_on(research_search::run_bounded_research_session(
+                        &req.request_id,
+                        &req.query,
+                        req.mode,
+                        req.source_policy,
+                        &req.budget,
+                        &provider,
+                        &research_search::ExtractiveSummarizer,
+                        &network_policy,
+                        &fetch_policy,
+                        req.ttl_ms,
+                        req.cancelled,
+                    ))
+                    .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
+                Ok(serde_json::json!({
+                    "schema_version": 1,
+                    "state": outcome.state,
+                    "coverage": outcome.coverage,
+                    "fetched": outcome.fetched.iter().map(|item| serde_json::json!({
+                        "revision": item.revision,
+                        "evidence_item": item.evidence_item,
+                    })).collect::<Vec<_>>(),
+                    "summary": outcome.summary,
+                    "omitted_results": outcome.omitted_results,
+                    "redacted": true,
+                }))
+            }
+            "research.check_gate" => {
+                #[derive(serde::Deserialize)]
+                struct CheckGateRequest {
+                    task_text: String,
+                    evidence: Vec<research_types::ResearchEvidence>,
+                    now_ms: u64,
+                }
+                let req: CheckGateRequest = serde_json::from_value(payload).map_err(|err| {
+                    ServiceContractError::invalid_input(format!(
+                        "invalid check_gate payload: {err}"
+                    ))
+                })?;
+                let decision =
+                    research_gate::check_research_gate(&req.task_text, &req.evidence, req.now_ms);
+                Ok(serde_json::json!({
+                    "allowed": decision.is_allowed(),
+                    "status": format!("{decision:?}"),
+                }))
             }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown research capability: {other}"

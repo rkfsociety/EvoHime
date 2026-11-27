@@ -6,6 +6,7 @@
 
 //! Isolated `evals` service module implementing `evohime-service-contract`.
 
+pub(crate) mod deterministic_review_execution_plan;
 pub mod execution_trace_evaluation;
 
 use evohime_service_contract::{
@@ -58,6 +59,27 @@ impl ServiceHandler for EvalsService {
                         "properties": { "model_id": { "type": "string" } }
                     }),
                     required_permissions: vec!["evals.execute".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "evals.review_plan_validate".to_owned(),
+                    description: "Validates a deterministic review execution plan against its id and content hash.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["plan", "plan_id"],
+                        "properties": {
+                            "plan": { "type": "object" },
+                            "plan_id": { "type": "string" }
+                        }
+                    }),
+                    required_permissions: vec!["evals.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "evals.review_plan_verdict".to_owned(),
+                    description: "Computes the verdict for a deterministic review execution plan.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["evals.read".to_owned()],
                     supports_streaming: false,
                 },
             ],
@@ -116,6 +138,33 @@ impl ServiceHandler for EvalsService {
                     "model_id": model_id,
                     "status": "calibrated"
                 }))
+            }
+            "evals.review_plan_validate" => {
+                #[derive(serde::Deserialize)]
+                struct ValidatePlanReq {
+                    plan: deterministic_review_execution_plan::ReviewPlan,
+                    plan_id: String,
+                }
+                let req: ValidatePlanReq = serde_json::from_value(payload).map_err(|err| {
+                    ServiceContractError::invalid_input(format!("invalid_review_plan: {err}"))
+                })?;
+                deterministic_review_execution_plan::validate(&req.plan)
+                    .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
+                if req.plan.id != req.plan_id {
+                    return Err(ServiceContractError::invalid_input("plan_id_mismatch"));
+                }
+                serde_json::to_value(req.plan)
+                    .map_err(|err| ServiceContractError::unavailable(err.to_string()))
+            }
+            "evals.review_plan_verdict" => {
+                let plan: deterministic_review_execution_plan::ReviewPlan =
+                    serde_json::from_value(payload).map_err(|err| {
+                        ServiceContractError::invalid_input(format!("corrupt_review_plan: {err}"))
+                    })?;
+                let verdict = deterministic_review_execution_plan::verdict(&plan)
+                    .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
+                serde_json::to_value(verdict)
+                    .map_err(|err| ServiceContractError::unavailable(err.to_string()))
             }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown evals capability: {other}"

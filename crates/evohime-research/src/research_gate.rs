@@ -13,7 +13,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use crate::research::ResearchEvidence;
+use crate::research_types::ResearchEvidence;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SensitiveCategory {
@@ -146,7 +146,7 @@ pub fn check_research_gate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::research::SourceMetadata;
+    use crate::research_types::SourceMetadata;
 
     fn evidence(captured_at_ms: u64, ttl_ms: u64) -> ResearchEvidence {
         let source = SourceMetadata::new(

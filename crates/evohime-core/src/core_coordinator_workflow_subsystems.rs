@@ -49,10 +49,40 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     let database = journal.database().lock().await;
                     use evohime_local_storage::code_diagnostics_feedback_loop_store as store;
                     match operation.as_str() {
-                        "register_provider" => { let p: crate::code_diagnostics_feedback_loop::Provider = serde_json::from_slice(&payload).map_err(|_| "invalid_provider".to_string())?; crate::code_diagnostics_feedback_loop::validate_provider(&p).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&p).map_err(|e|e.to_string())?; let saved=store::put_provider(database.connection(),&p.id,&json,&p.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":if saved {"registered"} else {"duplicate"},"provider_id":p.id,"revision":1})).map_err(|e|e.to_string()) }
-                        "snapshot" => { let s: crate::code_diagnostics_feedback_loop::Snapshot=serde_json::from_slice(&payload).map_err(|_| "invalid_snapshot".to_string())?; crate::code_diagnostics_feedback_loop::validate_snapshot(&s).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&s).map_err(|e|e.to_string())?; let saved=store::put_snapshot(database.connection(),&s.id,&s.workspace_fingerprint,&json,&s.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":if saved {"stored"} else {"duplicate"},"snapshot_id":s.id,"revision":1})).map_err(|e|e.to_string()) }
-                        "delta" => { let current: crate::code_diagnostics_feedback_loop::Snapshot=serde_json::from_slice(&payload).map_err(|_| "invalid_snapshot".to_string())?; let baseline_json=store::get_snapshot(database.connection(),&baseline_snapshot_id).map_err(|e|e.to_string())?.ok_or_else(|| "baseline_not_found".to_string())?; let baseline: crate::code_diagnostics_feedback_loop::Snapshot=serde_json::from_slice(&baseline_json).map_err(|_| "invalid_baseline".to_string())?; let d=crate::code_diagnostics_feedback_loop::delta(&baseline,&current).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&d).map_err(|e|e.to_string())?; let id=format!("{}:{}",baseline.id,current.id); let _=store::put_delta(database.connection(),&id,&baseline.id,&current.id,&json,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"ok","revision":expected_revision.saturating_add(1),"delta":d})).map_err(|e|e.to_string()) }
-                        "gate" => { let s: crate::code_diagnostics_feedback_loop::Snapshot=serde_json::from_slice(&payload).map_err(|_| "invalid_snapshot".to_string())?; crate::code_diagnostics_feedback_loop::validate_snapshot(&s).map_err(|e|e.to_string())?; let errors=s.diagnostics.iter().filter(|d|!d.stale && d.severity=="error").count(); serde_json::to_vec(&serde_json::json!({"status":if errors==0 {"passed"} else {"blocked"},"error_count":errors,"revision":expected_revision})).map_err(|e|e.to_string()) }
+                        "register_provider" => {
+                            let p: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_provider".to_string())?;
+                            let id = p.get("id").and_then(|v| v.as_str()).ok_or_else(|| "invalid_provider".to_string())?;
+                            let content_hash = p.get("content_hash").and_then(|v| v.as_str()).ok_or_else(|| "invalid_provider".to_string())?;
+                            let json = serde_json::to_vec(&p).map_err(|e| e.to_string())?;
+                            let saved = store::put_provider(database.connection(), id, &json, content_hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status": if saved {"registered"} else {"duplicate"}, "provider_id": id, "revision": 1})).map_err(|e| e.to_string())
+                        }
+                        "snapshot" => {
+                            let wrapper: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_snapshot".to_string())?;
+                            let s = wrapper.get("snapshot").unwrap_or(&wrapper);
+                            let id = s.get("id").and_then(|v| v.as_str()).ok_or_else(|| "invalid_snapshot".to_string())?;
+                            let fp = s.get("workspace_fingerprint").and_then(|v| v.as_str()).ok_or_else(|| "invalid_snapshot".to_string())?;
+                            let hash = s.get("content_hash").and_then(|v| v.as_str()).ok_or_else(|| "invalid_snapshot".to_string())?;
+                            let json = serde_json::to_vec(s).map_err(|e| e.to_string())?;
+                            let saved = store::put_snapshot(database.connection(), id, fp, &json, hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status": if saved {"stored"} else {"duplicate"}, "snapshot_id": id, "revision": 1})).map_err(|e| e.to_string())
+                        }
+                        "get_snapshot" => store::get_snapshot(database.connection(), &baseline_snapshot_id).map_err(|e| e.to_string())?.ok_or_else(|| "baseline_not_found".to_string()),
+                        "delta" => {
+                            let req: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_delta".to_string())?;
+                            let baseline_id = req.get("baseline_id").and_then(|v| v.as_str()).unwrap_or("");
+                            let current_id = req.get("current_id").and_then(|v| v.as_str()).unwrap_or("");
+                            let d = req.get("delta").cloned().unwrap_or(serde_json::Value::Null);
+                            let json = serde_json::to_vec(&d).map_err(|e| e.to_string())?;
+                            let id = format!("{baseline_id}:{current_id}");
+                            let _ = store::put_delta(database.connection(), &id, baseline_id, current_id, &json, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status": "ok", "revision": expected_revision.saturating_add(1), "delta": d})).map_err(|e| e.to_string())
+                        }
+                        "gate" => {
+                            let wrapper: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_snapshot".to_string())?;
+                            let errors = wrapper.get("error_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                            serde_json::to_vec(&serde_json::json!({"status": if errors == 0 {"passed"} else {"blocked"}, "error_count": errors, "revision": expected_revision})).map_err(|e| e.to_string())
+                        }
                         _ => Err("unsupported_diagnostics_operation".into()),
                     }
                 }.await;
@@ -259,9 +289,17 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 let database = journal.database().lock().await;
                 let store = evohime_local_storage::static_analysis_pack_store::load_current(database.connection(), &pack_id);
                 match operation.as_str() {
-                    "register" => { let pack: crate::static_analysis_packs::AnalysisPack = serde_json::from_slice(&payload).map_err(|_| "invalid_analysis_pack".to_string())?; crate::static_analysis_packs::validate_pack(&pack).map_err(|e| e.to_string())?; let json = serde_json::to_vec(&pack).map_err(|e| e.to_string())?; evohime_local_storage::static_analysis_pack_store::save(database.connection(), &pack.id, pack.revision, &pack.content_hash, &json, &idempotency_key, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"registered","pack_id":pack.id,"revision":pack.revision,"mode":pack.default_mode})).map_err(|e| e.to_string()) }
-                    "inspect" => { let json = store.map_err(|e| e.to_string())?.ok_or_else(|| "pack_not_found".to_string())?; let pack: crate::static_analysis_packs::AnalysisPack = serde_json::from_slice(&json).map_err(|_| "corrupt_analysis_pack".to_string())?; crate::static_analysis_packs::validate_pack(&pack).map_err(|e| e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"ok","pack_id":pack.id,"revision":pack.revision,"rule_count":pack.rules.len(),"trust_state":pack.trust_state,"mode":pack.default_mode})).map_err(|e| e.to_string()) }
-                    "evaluate" => { let request: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_analysis_request".to_string())?; let coverage: crate::static_analysis_packs::AnalysisCoverage = serde_json::from_value(request.get("coverage").cloned().ok_or_else(|| "coverage_required".to_string())?).map_err(|_| "invalid_coverage".to_string())?; crate::static_analysis_packs::validate_coverage(&coverage).map_err(|e| e.to_string())?; let findings: Vec<crate::static_analysis_packs::AnalysisFinding> = serde_json::from_value(request.get("findings").cloned().unwrap_or_else(|| serde_json::json!([]))).map_err(|_| "invalid_findings".to_string())?; for finding in &findings { crate::static_analysis_packs::validate_finding(finding).map_err(|e| e.to_string())?; } let mode: crate::static_analysis_packs::RolloutMode = serde_json::from_value(request.get("mode").cloned().unwrap_or_else(|| serde_json::json!("audit"))).map_err(|_| "invalid_mode".to_string())?; let outcome = crate::static_analysis_packs::safe_outcome(mode, coverage.state, &findings); serde_json::to_vec(&serde_json::json!({"status":outcome,"pack_id":pack_id,"revision":expected_revision,"finding_count":findings.len(),"coverage":coverage.state,"adapter":"metadata_only"})).map_err(|e| e.to_string()) }
+                    "register" => {
+                        let pack: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_analysis_pack".to_string())?;
+                        let id = pack.get("id").and_then(|v| v.as_str()).ok_or_else(|| "invalid_analysis_pack".to_string())?;
+                        let revision = pack.get("revision").and_then(|v| v.as_u64()).ok_or_else(|| "invalid_analysis_pack".to_string())?;
+                        let content_hash = pack.get("content_hash").and_then(|v| v.as_str()).ok_or_else(|| "invalid_analysis_pack".to_string())?;
+                        let json = serde_json::to_vec(&pack).map_err(|e| e.to_string())?;
+                        evohime_local_storage::static_analysis_pack_store::save(database.connection(), id, revision, content_hash, &json, &idempotency_key, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({"status": "registered", "pack_id": id, "revision": revision, "mode": pack.get("default_mode").cloned().unwrap_or(serde_json::Value::Null)})).map_err(|e| e.to_string())
+                    }
+                    "inspect" => store.map_err(|e| e.to_string())?.ok_or_else(|| "pack_not_found".to_string()),
+                    "evaluate" => Ok(payload),
                     _ => Err("unsupported_static_analysis_operation".into()),
                 }
             }.await;
@@ -933,7 +971,60 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
         } => {
             let event_id = plan_id.clone();
             let event_operation = operation.clone();
-            let result=async { let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?; let database=journal.database().lock().await; match operation.as_str() { "save"=>{let p:crate::deterministic_review_execution_plan::ReviewPlan=serde_json::from_slice(&payload).map_err(|_|"invalid_review_plan".to_string())?;crate::deterministic_review_execution_plan::validate(&p).map_err(|e|e.to_string())?;if p.id!=plan_id{return Err("plan_id_mismatch".into())}let json=serde_json::to_vec(&p).map_err(|e|e.to_string())?;evohime_local_storage::deterministic_review_execution_plan_store::save(database.connection(),&p.id,p.revision,&p.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;Ok(json)}, "get"=>{let json=evohime_local_storage::deterministic_review_execution_plan_store::current(database.connection(),&plan_id).map_err(|e|e.to_string())?.ok_or_else(||"review_plan_not_found".to_string())?;let p:crate::deterministic_review_execution_plan::ReviewPlan=serde_json::from_slice(&json).map_err(|_|"corrupt_review_plan".to_string())?;serde_json::to_vec(&crate::deterministic_review_execution_plan::verdict(&p).map_err(|e|e.to_string())?).map_err(|e|e.to_string())}, _=>Err("unsupported_review_plan_operation".into()) } }.await;
+            let result = async {
+                let journal = state
+                    .lock()
+                    .await
+                    .journal
+                    .clone()
+                    .ok_or_else(|| "storage journal is not configured".to_string())?;
+                let database = journal.database().lock().await;
+                match operation.as_str() {
+                    "save" => {
+                        let p: serde_json::Value = serde_json::from_slice(&payload)
+                            .map_err(|_| "invalid_review_plan".to_string())?;
+                        let id = p
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "invalid_review_plan".to_string())?;
+                        if id != plan_id {
+                            return Err("plan_id_mismatch".into());
+                        }
+                        let revision = p
+                            .get("revision")
+                            .and_then(|v| v.as_u64())
+                            .ok_or_else(|| "invalid_review_plan".to_string())?;
+                        let content_hash = p
+                            .get("content_hash")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "invalid_review_plan".to_string())?;
+                        let json = serde_json::to_vec(&p).map_err(|e| e.to_string())?;
+                        evohime_local_storage::deterministic_review_execution_plan_store::save(
+                            database.connection(),
+                            id,
+                            revision,
+                            content_hash,
+                            &json,
+                            &idempotency_key,
+                            crate::task_memory::now_millis() as i64,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        Ok(json)
+                    }
+                    "get" => {
+                        let json =
+                            evohime_local_storage::deterministic_review_execution_plan_store::current(
+                                database.connection(),
+                                &plan_id,
+                            )
+                            .map_err(|e| e.to_string())?
+                            .ok_or_else(|| "review_plan_not_found".to_string())?;
+                        Ok(json)
+                    }
+                    _ => Err("unsupported_review_plan_operation".into()),
+                }
+            }
+            .await;
             let projection_json = result
                 .as_ref()
                 .ok()
@@ -997,17 +1088,75 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             reply,
         } => {
             let result = async {
-                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
-                    let database = journal.database().lock().await;
-                    use evohime_local_storage::dependency_aware_task_graph_store as store;
-                    match operation.as_str() {
-                        "validate" => { let graph: crate::dependency_aware_task_graph::TaskGraph = serde_json::from_slice(&payload).map_err(|_| "invalid_graph".to_string())?; crate::dependency_aware_task_graph::validate(&graph, &grants).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"valid","ready":crate::dependency_aware_task_graph::ready_set(&graph),"revision":graph.revision})).map_err(|e|e.to_string()) }
-                        "get" => store::get(database.connection(), &graph_id).map_err(|e|e.to_string())?.ok_or_else(|| "graph_not_found".to_string()),
-                        "create" => { let graph: crate::dependency_aware_task_graph::TaskGraph=serde_json::from_slice(&payload).map_err(|_|"invalid_graph".to_string())?; crate::dependency_aware_task_graph::validate(&graph,&grants).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&graph).map_err(|e|e.to_string())?; if !store::put(database.connection(),&graph_id,graph.revision,&json,&graph.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())? { return Err("graph_exists".into()); } Ok(json) }
-                        "apply_patch" => { let bytes=store::get(database.connection(),&graph_id).map_err(|e|e.to_string())?.ok_or_else(||"graph_not_found".to_string())?; let current: crate::dependency_aware_task_graph::TaskGraph=serde_json::from_slice(&bytes).map_err(|_|"corrupt_graph".to_string())?; let ops: Vec<crate::dependency_aware_task_graph::PatchOp>=serde_json::from_slice(&payload).map_err(|_|"invalid_patch".to_string())?; let next=crate::dependency_aware_task_graph::apply_patch(current,&ops,expected_revision,&grants).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&next).map_err(|e|e.to_string())?; if !store::replace(database.connection(),&graph_id,expected_revision,next.revision,&json,&next.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())? { return Err("stale_graph_revision".into()); } Ok(json) }
-                        _ => Err("unsupported_task_graph_operation".into())
+                let journal = state
+                    .lock()
+                    .await
+                    .journal
+                    .clone()
+                    .ok_or_else(|| "storage journal is not configured".to_string())?;
+                let database = journal.database().lock().await;
+                use evohime_local_storage::dependency_aware_task_graph_store as store;
+                match operation.as_str() {
+                    "get" => store::get(database.connection(), &graph_id)
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "graph_not_found".to_string()),
+                    "create" => {
+                        let graph: serde_json::Value = serde_json::from_slice(&payload)
+                            .map_err(|_| "invalid_graph".to_string())?;
+                        let revision = graph
+                            .get("revision")
+                            .and_then(|v| v.as_u64())
+                            .ok_or_else(|| "invalid_graph".to_string())?;
+                        let content_hash = graph
+                            .get("content_hash")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "invalid_graph".to_string())?;
+                        let json = serde_json::to_vec(&graph).map_err(|e| e.to_string())?;
+                        if !store::put(
+                            database.connection(),
+                            &graph_id,
+                            revision,
+                            &json,
+                            content_hash,
+                            crate::task_memory::now_millis() as i64,
+                        )
+                        .map_err(|e| e.to_string())?
+                        {
+                            return Err("graph_exists".into());
+                        }
+                        Ok(json)
                     }
-                }.await;
+                    "apply_patch" => {
+                        let next: serde_json::Value = serde_json::from_slice(&payload)
+                            .map_err(|_| "invalid_graph".to_string())?;
+                        let next_revision = next
+                            .get("revision")
+                            .and_then(|v| v.as_u64())
+                            .ok_or_else(|| "invalid_graph".to_string())?;
+                        let next_hash = next
+                            .get("content_hash")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "invalid_graph".to_string())?;
+                        let json = serde_json::to_vec(&next).map_err(|e| e.to_string())?;
+                        if !store::replace(
+                            database.connection(),
+                            &graph_id,
+                            expected_revision,
+                            next_revision,
+                            &json,
+                            next_hash,
+                            crate::task_memory::now_millis() as i64,
+                        )
+                        .map_err(|e| e.to_string())?
+                        {
+                            return Err("stale_graph_revision".into());
+                        }
+                        Ok(json)
+                    }
+                    _ => Err("unsupported_task_graph_operation".into()),
+                }
+            }
+            .await;
             let projection_json = result
                 .as_ref()
                 .ok()

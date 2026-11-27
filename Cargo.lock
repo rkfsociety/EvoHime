@@ -1135,11 +1135,16 @@ name = "evohime-research"
 version = "0.1.0"
 dependencies = [
  "evohime-service-contract",
+ "evohime-tool-runtime",
+ "futures-util",
  "hex",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2",
  "thiserror 2.0.21",
+ "tokio",
+ "wiremock",
 ]
 
 [[package]]

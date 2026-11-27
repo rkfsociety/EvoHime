@@ -34,7 +34,6 @@ pub mod authorized_security_assessment;
 pub mod capability_recipes;
 pub mod capability_workbenches;
 pub(crate) mod checkpoint_forking_and_replay;
-pub mod code_diagnostics_feedback_loop;
 pub mod command_center;
 pub mod contextual_next_step_suggestions;
 pub(crate) mod conversation_bridge_adapters;
@@ -42,9 +41,6 @@ pub mod core_topic_subscription_event_bus;
 pub(crate) mod customization_inventory;
 pub mod declarative_agent_component_registry;
 pub mod declarative_runtime_components;
-pub(crate) mod dependency_aware_task_graph;
-/// Defines deterministic, evidence-referenced review plans.
-pub mod deterministic_review_execution_plan;
 pub mod durable_remote_task_bridge;
 pub(crate) mod event_visualizer_registry;
 pub mod free_access_probe;
@@ -248,7 +244,6 @@ pub mod remote_conversation_channels;
 pub(crate) mod retained_child;
 /// Models trust and lifecycle for skill sources.
 pub mod skill_source_lifecycle;
-pub mod static_analysis_packs;
 pub(crate) mod structured_response_contract;
 pub(crate) mod support_bundle;
 pub mod tool_simulation_runtime;
@@ -264,10 +259,6 @@ pub use recovery::{classify_tool_outcome, DenialSource, ToolFailureKind, ToolOut
 pub mod composable_termination_conditions;
 pub(crate) mod refinement;
 pub mod research;
-pub(crate) mod research_fetch;
-pub(crate) mod research_gate;
-pub(crate) mod research_pipeline;
-pub(crate) mod research_search;
 pub(crate) mod scope;
 pub mod skill_registry;
 pub mod skill_trust_pipeline;

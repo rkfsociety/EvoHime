@@ -6,6 +6,10 @@
 
 //! Isolated `tools-workspace` service module for file, patch, search, and Git tools.
 
+#[allow(dead_code)]
+pub(crate) mod code_diagnostics_feedback_loop;
+#[allow(dead_code)]
+pub(crate) mod static_analysis_packs;
 /// Verified Git checkpoint metadata contracts.
 pub mod verified_git_checkpoints;
 
@@ -92,6 +96,61 @@ impl ServiceHandler for ToolsWorkspaceService {
                     description: "Reads Git working tree diff summary for a repository.".to_owned(),
                     input_schema: serde_json::json!({ "type": "object", "properties": {} }),
                     required_permissions: vec!["git.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "tools.diagnostics_validate_provider".to_owned(),
+                    description: "Validates a code diagnostics provider definition.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["fs.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "tools.diagnostics_validate_snapshot".to_owned(),
+                    description: "Validates a code diagnostics snapshot and counts active errors."
+                        .to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["fs.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "tools.diagnostics_delta".to_owned(),
+                    description:
+                        "Computes the diagnostics delta between a baseline and current snapshot."
+                            .to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["baseline", "current"],
+                        "properties": {
+                            "baseline": { "type": "object" },
+                            "current": { "type": "object" }
+                        }
+                    }),
+                    required_permissions: vec!["fs.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "tools.analysis_pack_validate".to_owned(),
+                    description: "Validates a static analysis pack definition.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["fs.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "tools.analysis_pack_evaluate".to_owned(),
+                    description:
+                        "Evaluates static analysis findings and coverage against rollout policy."
+                            .to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["pack_id", "expected_revision", "request"],
+                        "properties": {
+                            "pack_id": { "type": "string" },
+                            "expected_revision": { "type": "integer" },
+                            "request": { "type": "object" }
+                        }
+                    }),
+                    required_permissions: vec!["fs.read".to_owned()],
                     supports_streaming: false,
                 },
             ],
@@ -255,6 +314,100 @@ impl ServiceHandler for ToolsWorkspaceService {
                     "exit_code": output.status.code().unwrap_or(-1),
                     "stdout": String::from_utf8_lossy(&output.stdout),
                     "stderr": String::from_utf8_lossy(&output.stderr),
+                }))
+            }
+            "tools.diagnostics_validate_provider" => {
+                let provider: code_diagnostics_feedback_loop::Provider =
+                    serde_json::from_value(payload)
+                        .map_err(|_| ServiceContractError::invalid_input("invalid_provider"))?;
+                code_diagnostics_feedback_loop::validate_provider(&provider)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                serde_json::to_value(&provider)
+                    .map_err(|e| ServiceContractError::unavailable(e.to_string()))
+            }
+            "tools.diagnostics_validate_snapshot" => {
+                let snapshot: code_diagnostics_feedback_loop::Snapshot =
+                    serde_json::from_value(payload)
+                        .map_err(|_| ServiceContractError::invalid_input("invalid_snapshot"))?;
+                code_diagnostics_feedback_loop::validate_snapshot(&snapshot)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                let error_count = snapshot
+                    .diagnostics
+                    .iter()
+                    .filter(|d| !d.stale && d.severity == "error")
+                    .count();
+                Ok(serde_json::json!({
+                    "snapshot": snapshot,
+                    "error_count": error_count,
+                }))
+            }
+            "tools.diagnostics_delta" => {
+                #[derive(serde::Deserialize)]
+                struct DeltaReq {
+                    baseline: code_diagnostics_feedback_loop::Snapshot,
+                    current: code_diagnostics_feedback_loop::Snapshot,
+                }
+                let req: DeltaReq = serde_json::from_value(payload)
+                    .map_err(|_| ServiceContractError::invalid_input("invalid_snapshot"))?;
+                let delta = code_diagnostics_feedback_loop::delta(&req.baseline, &req.current)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                serde_json::to_value(delta)
+                    .map_err(|e| ServiceContractError::unavailable(e.to_string()))
+            }
+            "tools.analysis_pack_validate" => {
+                let pack: static_analysis_packs::AnalysisPack = serde_json::from_value(payload)
+                    .map_err(|_| ServiceContractError::invalid_input("invalid_analysis_pack"))?;
+                static_analysis_packs::validate_pack(&pack)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                Ok(serde_json::json!({
+                    "pack": pack,
+                    "rule_count": pack.rules.len(),
+                }))
+            }
+            "tools.analysis_pack_evaluate" => {
+                #[derive(serde::Deserialize)]
+                struct EvalReq {
+                    pack_id: String,
+                    expected_revision: u64,
+                    request: serde_json::Value,
+                }
+                let req: EvalReq = serde_json::from_value(payload)
+                    .map_err(|_| ServiceContractError::invalid_input("invalid_analysis_request"))?;
+                let coverage: static_analysis_packs::AnalysisCoverage = serde_json::from_value(
+                    req.request
+                        .get("coverage")
+                        .cloned()
+                        .ok_or_else(|| ServiceContractError::invalid_input("coverage_required"))?,
+                )
+                .map_err(|_| ServiceContractError::invalid_input("invalid_coverage"))?;
+                static_analysis_packs::validate_coverage(&coverage)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                let findings: Vec<static_analysis_packs::AnalysisFinding> = serde_json::from_value(
+                    req.request
+                        .get("findings")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!([])),
+                )
+                .map_err(|_| ServiceContractError::invalid_input("invalid_findings"))?;
+                for finding in &findings {
+                    static_analysis_packs::validate_finding(finding)
+                        .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                }
+                let mode: static_analysis_packs::RolloutMode = serde_json::from_value(
+                    req.request
+                        .get("mode")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!("audit")),
+                )
+                .map_err(|_| ServiceContractError::invalid_input("invalid_mode"))?;
+                let outcome = static_analysis_packs::safe_outcome(mode, coverage.state, &findings);
+                Ok(serde_json::json!({
+                    "status": outcome,
+                    "pack_id": req.pack_id,
+                    "revision": req.expected_revision,
+                    "finding_count": findings.len(),
+                    "coverage": coverage.state,
+                    "adapter": "metadata_only",
                 }))
             }
             other => Err(ServiceContractError::not_found(format!(

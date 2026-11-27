@@ -52,16 +52,74 @@ impl IpcBridge {
         operation: String,
         request: generated::CodeDiagnosticsFeedbackLoopCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let mut payload_bytes = request.payload;
+        match operation.as_str() {
+            "register_provider" => {
+                let provider: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                    .map_err(|_| FrameError::Io("invalid_provider".into()))?;
+                let validated = self
+                    .invoke_required_service("tools.diagnostics_validate_provider", provider)
+                    .await?;
+                payload_bytes =
+                    serde_json::to_vec(&validated).map_err(|e| FrameError::Io(e.to_string()))?;
+            }
+            "snapshot" | "gate" => {
+                let snapshot: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                    .map_err(|_| FrameError::Io("invalid_snapshot".into()))?;
+                let validated = self
+                    .invoke_required_service("tools.diagnostics_validate_snapshot", snapshot)
+                    .await?;
+                payload_bytes =
+                    serde_json::to_vec(&validated).map_err(|e| FrameError::Io(e.to_string()))?;
+            }
+            _ => {}
+        }
         let coordinator = self
             .coordinator
             .as_ref()
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        if operation == "delta" {
+            let current: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_snapshot".into()))?;
+            let (get_reply, get_resp) = oneshot::channel();
+            coordinator
+                .dispatch(CoreCommand::CodeDiagnosticsFeedbackLoop {
+                    operation: "get_snapshot".to_owned(),
+                    workspace_root_id: request.workspace_root_id.clone(),
+                    payload: Vec::new(),
+                    baseline_snapshot_id: request.baseline_snapshot_id.clone(),
+                    expected_revision: request.expected_revision,
+                    idempotency_key: request.idempotency_key.clone(),
+                    reply: get_reply,
+                })
+                .await
+                .map_err(|e| FrameError::Io(e.to_string()))?;
+            let baseline_bytes = get_resp
+                .await
+                .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+                .map_err(FrameError::Io)
+                .map_err(IpcBridgeError::from)?;
+            let baseline: serde_json::Value = serde_json::from_slice(&baseline_bytes)
+                .map_err(|_| FrameError::Io("invalid_baseline".into()))?;
+            let delta = self
+                .invoke_required_service(
+                    "tools.diagnostics_delta",
+                    serde_json::json!({ "baseline": baseline, "current": current }),
+                )
+                .await?;
+            payload_bytes = serde_json::to_vec(&serde_json::json!({
+                "baseline_id": baseline.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                "current_id": current.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                "delta": delta,
+            }))
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        }
         let (reply, response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::CodeDiagnosticsFeedbackLoop {
                 operation,
                 workspace_root_id: request.workspace_root_id,
-                payload: request.payload,
+                payload: payload_bytes,
                 baseline_snapshot_id: request.baseline_snapshot_id,
                 expected_revision: request.expected_revision,
                 idempotency_key: request.idempotency_key,
@@ -162,6 +220,35 @@ impl IpcBridge {
         &self,
         request: generated::StaticAnalysisPacksCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let mut payload_bytes = request.payload;
+        if request.operation == "register" {
+            let pack: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_analysis_pack".into()))?;
+            let validated = self
+                .invoke_required_service("tools.analysis_pack_validate", pack)
+                .await?;
+            payload_bytes = serde_json::to_vec(
+                validated
+                    .get("pack")
+                    .ok_or_else(|| FrameError::Io("invalid_analysis_pack".into()))?,
+            )
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        } else if request.operation == "evaluate" {
+            let eval_req: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_analysis_request".into()))?;
+            let evaluated = self
+                .invoke_required_service(
+                    "tools.analysis_pack_evaluate",
+                    serde_json::json!({
+                        "pack_id": request.pack_id,
+                        "expected_revision": request.expected_revision,
+                        "request": eval_req,
+                    }),
+                )
+                .await?;
+            payload_bytes =
+                serde_json::to_vec(&evaluated).map_err(|e| FrameError::Io(e.to_string()))?;
+        }
         let coordinator = self
             .coordinator
             .as_ref()
@@ -169,20 +256,45 @@ impl IpcBridge {
         let (reply, response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::StaticAnalysisPacks {
-                operation: request.operation,
+                operation: request.operation.clone(),
                 pack_id: request.pack_id,
-                payload: request.payload,
+                payload: payload_bytes,
                 expected_revision: request.expected_revision,
                 idempotency_key: request.idempotency_key,
                 reply,
             })
             .await
             .map_err(|e| FrameError::Io(e.to_string()))?;
-        response
+        let out_bytes = response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
-            .map_err(IpcBridgeError::from)
+            .map_err(IpcBridgeError::from)?;
+        if request.operation == "inspect" {
+            let pack: serde_json::Value = serde_json::from_slice(&out_bytes)
+                .map_err(|_| FrameError::Io("corrupt_analysis_pack".into()))?;
+            let validated = self
+                .invoke_required_service("tools.analysis_pack_validate", pack)
+                .await?;
+            let p = validated
+                .get("pack")
+                .ok_or_else(|| FrameError::Io("corrupt_analysis_pack".into()))?;
+            let rule_count = validated
+                .get("rule_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            return serde_json::to_vec(&serde_json::json!({
+                "status": "ok",
+                "pack_id": p.get("id").cloned().unwrap_or(serde_json::Value::Null),
+                "revision": p.get("revision").cloned().unwrap_or(serde_json::Value::Null),
+                "rule_count": rule_count,
+                "trust_state": p.get("trust_state").cloned().unwrap_or(serde_json::Value::Null),
+                "mode": p.get("default_mode").cloned().unwrap_or(serde_json::Value::Null),
+            }))
+            .map_err(|e| FrameError::Io(e.to_string()))
+            .map_err(IpcBridgeError::from);
+        }
+        Ok(out_bytes)
     }
     pub(crate) async fn dispatch_context_loadouts(
         &self,
@@ -610,6 +722,19 @@ impl IpcBridge {
         &self,
         request: generated::DeterministicReviewExecutionPlanCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let mut payload_bytes = request.payload;
+        if request.operation == "save" {
+            let plan: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_review_plan".into()))?;
+            let validated = self
+                .invoke_required_service(
+                    "evals.review_plan_validate",
+                    serde_json::json!({ "plan": plan, "plan_id": request.plan_id }),
+                )
+                .await?;
+            payload_bytes =
+                serde_json::to_vec(&validated).map_err(|e| FrameError::Io(e.to_string()))?;
+        }
         let coordinator = self
             .coordinator
             .as_ref()
@@ -617,20 +742,31 @@ impl IpcBridge {
         let (reply, response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::DeterministicReviewExecutionPlan {
-                operation: request.operation,
+                operation: request.operation.clone(),
                 plan_id: request.plan_id,
-                payload: request.payload,
+                payload: payload_bytes,
                 expected_revision: request.expected_revision,
                 idempotency_key: request.idempotency_key,
                 reply,
             })
             .await
             .map_err(|e| FrameError::Io(e.to_string()))?;
-        response
+        let out_bytes = response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
-            .map_err(IpcBridgeError::from)
+            .map_err(IpcBridgeError::from)?;
+        if request.operation == "get" {
+            let plan: serde_json::Value = serde_json::from_slice(&out_bytes)
+                .map_err(|_| FrameError::Io("corrupt_review_plan".into()))?;
+            let verdict = self
+                .invoke_required_service("evals.review_plan_verdict", plan)
+                .await?;
+            return serde_json::to_vec(&verdict)
+                .map_err(|e| FrameError::Io(e.to_string()))
+                .map_err(IpcBridgeError::from);
+        }
+        Ok(out_bytes)
     }
 
     pub(crate) async fn dispatch_workflow_optimization_lab(
@@ -693,16 +829,76 @@ impl IpcBridge {
         operation: String,
         request: generated::DependencyAwareTaskGraphCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let mut payload_bytes = request.payload;
+        if operation == "validate" {
+            let graph: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_graph".into()))?;
+            let validated = self
+                .invoke_required_service(
+                    "workflow.task_graph_validate",
+                    serde_json::json!({ "graph": graph, "grants": request.grants }),
+                )
+                .await?;
+            return serde_json::to_vec(&validated)
+                .map_err(|e| FrameError::Io(e.to_string()))
+                .map_err(IpcBridgeError::from);
+        }
+        if operation == "create" {
+            let graph: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_graph".into()))?;
+            let _ = self
+                .invoke_required_service(
+                    "workflow.task_graph_validate",
+                    serde_json::json!({ "graph": graph, "grants": request.grants }),
+                )
+                .await?;
+        }
         let coordinator = self
             .coordinator
             .as_ref()
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        if operation == "apply_patch" {
+            let ops: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_patch".into()))?;
+            let (get_reply, get_resp) = oneshot::channel();
+            coordinator
+                .dispatch(CoreCommand::DependencyAwareTaskGraph {
+                    operation: "get".to_owned(),
+                    graph_id: request.graph_id.clone(),
+                    payload: Vec::new(),
+                    expected_revision: request.expected_revision,
+                    grants: request.grants.clone(),
+                    reply: get_reply,
+                })
+                .await
+                .map_err(|e| FrameError::Io(e.to_string()))?;
+            let current_bytes = get_resp
+                .await
+                .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+                .map_err(FrameError::Io)
+                .map_err(IpcBridgeError::from)?;
+            let current: serde_json::Value = serde_json::from_slice(&current_bytes)
+                .map_err(|_| FrameError::Io("corrupt_graph".into()))?;
+            let patched = self
+                .invoke_required_service(
+                    "workflow.task_graph_patch",
+                    serde_json::json!({
+                        "current": current,
+                        "ops": ops,
+                        "expected_revision": request.expected_revision,
+                        "grants": request.grants,
+                    }),
+                )
+                .await?;
+            payload_bytes =
+                serde_json::to_vec(&patched).map_err(|e| FrameError::Io(e.to_string()))?;
+        }
         let (reply, response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::DependencyAwareTaskGraph {
                 operation,
                 graph_id: request.graph_id,
-                payload: request.payload,
+                payload: payload_bytes,
                 expected_revision: request.expected_revision,
                 grants: request.grants,
                 reply,
@@ -901,14 +1097,13 @@ impl IpcBridge {
             ..
         } = request;
         if operation == "research_session_run" {
-            coordinator
-                .dispatch(CoreCommand::RunGroundedResearchSession { payload, reply })
-                .await
-                .map_err(|error| FrameError::Io(error.to_string()))?;
-            return response
-                .await
-                .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
-                .map_err(FrameError::Io)
+            let session_req: serde_json::Value = serde_json::from_slice(&payload)
+                .map_err(|_| FrameError::Io("invalid_research_session_run".into()))?;
+            let outcome = self
+                .invoke_required_service("research.grounded_session", session_req)
+                .await?;
+            return serde_json::to_vec(&outcome)
+                .map_err(|error| FrameError::Io(error.to_string()))
                 .map_err(IpcBridgeError::from);
         }
         coordinator

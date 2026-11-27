@@ -9,6 +9,7 @@ pub const MAX_EDGES: usize = 4096;
 pub const MAX_ID: usize = 128;
 pub const MAX_TEXT: usize = 16 * 1024;
 pub const MAX_REFS: usize = 256;
+#[allow(dead_code)]
 pub const MAX_PARALLELISM: usize = 16;
 pub const MAX_PATCH_OPS: usize = 256;
 

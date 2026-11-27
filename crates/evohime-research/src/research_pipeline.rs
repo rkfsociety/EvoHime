@@ -152,25 +152,27 @@ impl ResearchPolicy {
 /// allowed only by the two policies that name it or by an already approved
 /// open policy.
 pub fn permits_source_policy(
-    policy: crate::research::SourcePolicy,
-    source_kind: crate::research::ResearchSourceKind,
+    policy: crate::research_types::SourcePolicy,
+    source_kind: crate::research_types::ResearchSourceKind,
     network_requested: bool,
 ) -> Result<(), PipelineError> {
     let is_web = matches!(
         source_kind,
-        crate::research::ResearchSourceKind::WebPage
-            | crate::research::ResearchSourceKind::GitHubFile
-            | crate::research::ResearchSourceKind::GitHubRepositorySnapshot
-            | crate::research::ResearchSourceKind::ExternalConnectorDocument
+        crate::research_types::ResearchSourceKind::WebPage
+            | crate::research_types::ResearchSourceKind::GitHubFile
+            | crate::research_types::ResearchSourceKind::GitHubRepositorySnapshot
+            | crate::research_types::ResearchSourceKind::ExternalConnectorDocument
     );
     if !network_requested || !is_web {
         return Ok(());
     }
     match policy {
-        crate::research::SourcePolicy::SelectedPlusWeb
-        | crate::research::SourcePolicy::OpenResearchWithinPolicy => Ok(()),
-        crate::research::SourcePolicy::SelectedOnly
-        | crate::research::SourcePolicy::SelectedPlusWorkspace => Err(PipelineError::NetworkDenied),
+        crate::research_types::SourcePolicy::SelectedPlusWeb
+        | crate::research_types::SourcePolicy::OpenResearchWithinPolicy => Ok(()),
+        crate::research_types::SourcePolicy::SelectedOnly
+        | crate::research_types::SourcePolicy::SelectedPlusWorkspace => {
+            Err(PipelineError::NetworkDenied)
+        }
     }
 }
 

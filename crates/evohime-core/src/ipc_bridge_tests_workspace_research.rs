@@ -1595,25 +1595,104 @@ fn run_research_fetch_command(
     }
 }
 
+struct MockResearchTransport {
+    fail_with: Option<String>,
+}
+
+impl crate::module_registry::ServiceTransport for MockResearchTransport {
+    fn send(
+        &self,
+        request: evohime_service_contract::ServiceRequest,
+    ) -> evohime_service_contract::ServiceFuture<
+        '_,
+        Result<
+            evohime_service_contract::ServiceResponse,
+            evohime_service_contract::ServiceContractError,
+        >,
+    > {
+        let fail_with = self.fail_with.clone();
+        Box::pin(async move {
+            match request {
+                evohime_service_contract::ServiceRequest::Invoke {
+                    request_id,
+                    capability,
+                    payload,
+                    ..
+                } => {
+                    if let Some(msg) = fail_with {
+                        return Err(
+                            evohime_service_contract::ServiceContractError::invalid_input(msg),
+                        );
+                    }
+                    assert_eq!(capability, "research.fetch_url");
+                    let url = payload["url"]
+                        .as_str()
+                        .unwrap_or("https://example.invalid/article");
+                    let title = payload["title"].as_str().unwrap_or("Example Article");
+                    let ttl_ms = payload["ttl_ms"].as_u64().unwrap_or(3_600_000);
+                    let source = crate::research::SourceMetadata::new(
+                        url,
+                        title,
+                        "example.invalid",
+                        "text/plain",
+                        1_700_000_000_000,
+                    )
+                    .expect("source metadata valid");
+                    let evidence = crate::research::ResearchEvidence::capture(
+                        source,
+                        "Useful finding sk-secret alice@example.test",
+                        1_700_000_000_100,
+                        ttl_ms,
+                    )
+                    .expect("evidence captures");
+                    let source_hash = evidence.excerpt_sha256.clone();
+                    Ok(evohime_service_contract::ServiceResponse::InvokeResult {
+                        request_id,
+                        payload: serde_json::json!({
+                            "state": "completed",
+                            "evidence": evidence,
+                            "citation": {
+                                "url": url,
+                                "title": title,
+                                "source_hash": source_hash,
+                            },
+                            "source_revision": serde_json::Value::Null,
+                            "evidence_item": serde_json::Value::Null,
+                        }),
+                    })
+                }
+                _ => Ok(evohime_service_contract::ServiceResponse::Pong {
+                    contract_version: evohime_service_contract::SERVICE_CONTRACT_VERSION,
+                }),
+            }
+        })
+    }
+}
+
+fn register_mock_research_service(bridge: &IpcBridge, fail_with: Option<String>) {
+    let descriptor = evohime_service_contract::ServiceDescriptor {
+        service_id: "research".to_owned(),
+        version: "0.0.2".to_owned(),
+        contract_version: evohime_service_contract::SERVICE_CONTRACT_VERSION,
+        capabilities: vec![evohime_service_contract::ServiceCapabilityDescriptor {
+            name: "research.fetch_url".to_owned(),
+            description: "Mock fetch_url".to_owned(),
+            input_schema: serde_json::json!({"type": "object"}),
+            required_permissions: vec!["network.fetch".to_owned()],
+            supports_streaming: false,
+        }],
+    };
+    bridge
+        .module_registry()
+        .register(
+            descriptor,
+            std::sync::Arc::new(MockResearchTransport { fail_with }),
+        )
+        .expect("register mock research service");
+}
+
 #[tokio::test]
 async fn run_research_fetch_persists_real_evidence_from_a_live_http_get() {
-    let server = wiremock::MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("GET"))
-        .and(wiremock::matchers::path("/article"))
-        .respond_with(
-            wiremock::ResponseTemplate::new(200)
-                .set_body_string("Useful finding sk-secret alice@example.test")
-                .insert_header("content-type", "text/plain"),
-        )
-        .mount(&server)
-        .await;
-    let _private = evohime_tool_runtime::lock_private_override(Some(true));
-    let domain = reqwest::Url::parse(&server.uri())
-        .expect("mock uri parses")
-        .host_str()
-        .expect("mock uri has host")
-        .to_ascii_lowercase();
-
     let path = std::env::temp_dir().join(format!(
         "evohime-ipc-research-fetch-ok-{}.db",
         std::process::id()
@@ -1622,13 +1701,14 @@ async fn run_research_fetch_persists_real_evidence_from_a_live_http_get() {
     let journal = EventJournal::open(&path).expect("journal opens");
     let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
     let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator);
+    register_mock_research_service(&bridge, None);
     let (mut client, server_io) = duplex(16 * 1024);
     let (mut server_reader, mut server_writer) = tokio::io::split(server_io);
 
     let command = run_research_fetch_command(
         "task-fetch-ok",
-        format!("{}/article", server.uri()),
-        vec![domain],
+        "https://example.invalid/article".into(),
+        vec!["example.invalid".into()],
         4096,
     );
     transport::write_frame(&mut client, &command.encode_to_vec())
@@ -1667,15 +1747,7 @@ async fn run_research_fetch_persists_real_evidence_from_a_live_http_get() {
 }
 
 #[tokio::test]
-async fn run_research_fetch_denies_domain_outside_allowlist_and_persists_nothing() {
-    let server = wiremock::MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("GET"))
-        .and(wiremock::matchers::path("/article"))
-        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("should not fetch"))
-        .mount(&server)
-        .await;
-    let _private = evohime_tool_runtime::lock_private_override(Some(true));
-
+async fn run_research_fetch_fails_when_service_errors_and_persists_nothing() {
     let path = std::env::temp_dir().join(format!(
         "evohime-ipc-research-fetch-denied-{}.db",
         std::process::id()
@@ -1684,12 +1756,13 @@ async fn run_research_fetch_denies_domain_outside_allowlist_and_persists_nothing
     let journal = EventJournal::open(&path).expect("journal opens");
     let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
     let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator);
+    register_mock_research_service(&bridge, Some("domain is not in the allowlist".into()));
     let (mut client, server_io) = duplex(16 * 1024);
     let (mut server_reader, mut server_writer) = tokio::io::split(server_io);
 
     let command = run_research_fetch_command(
         "task-fetch-denied",
-        format!("{}/article", server.uri()),
+        "https://blocked.invalid/article".into(),
         vec!["not-the-mock-domain.example".into()],
         4096,
     );
@@ -1701,16 +1774,7 @@ async fn run_research_fetch_denies_domain_outside_allowlist_and_persists_nothing
         .await;
     assert!(
         outcome.is_err(),
-        "domain-denied fetch must fail the command"
-    );
-    assert_eq!(
-        server
-            .received_requests()
-            .await
-            .expect("requests tracked")
-            .len(),
-        0,
-        "no network call should happen for a denied domain"
+        "failed service fetch must fail the command"
     );
 
     let records = journal
@@ -1723,11 +1787,9 @@ async fn run_research_fetch_denies_domain_outside_allowlist_and_persists_nothing
 }
 
 #[tokio::test]
-async fn run_research_fetch_blocks_ssrf_targets_and_persists_nothing() {
-    let _private = evohime_tool_runtime::lock_private_override(Some(false));
-
+async fn run_research_fetch_fails_when_research_service_unavailable() {
     let path = std::env::temp_dir().join(format!(
-        "evohime-ipc-research-fetch-ssrf-{}.db",
+        "evohime-ipc-research-fetch-unavail-{}.db",
         std::process::id()
     ));
     let _ = std::fs::remove_file(&path);
@@ -1738,9 +1800,9 @@ async fn run_research_fetch_blocks_ssrf_targets_and_persists_nothing() {
     let (mut server_reader, mut server_writer) = tokio::io::split(server_io);
 
     let command = run_research_fetch_command(
-        "task-fetch-ssrf",
-        "http://127.0.0.1:9/".into(),
-        vec!["127.0.0.1".into()],
+        "task-fetch-unavail",
+        "https://example.invalid/article".into(),
+        vec!["example.invalid".into()],
         4096,
     );
     transport::write_frame(&mut client, &command.encode_to_vec())
@@ -1749,59 +1811,10 @@ async fn run_research_fetch_blocks_ssrf_targets_and_persists_nothing() {
     let outcome = bridge
         .process_once(&mut server_reader, &mut server_writer)
         .await;
-    assert!(outcome.is_err(), "ssrf-blocked fetch must fail the command");
+    assert!(outcome.is_err(), "missing research service must fail");
 
     let records = journal
-        .list_research_evidence("task-fetch-ssrf")
-        .await
-        .expect("list succeeds");
-    assert!(records.is_empty(), "no evidence should be persisted");
-
-    let _ = std::fs::remove_file(path);
-}
-
-#[tokio::test]
-async fn run_research_fetch_rejects_oversized_response_and_persists_nothing() {
-    let server = wiremock::MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("GET"))
-        .and(wiremock::matchers::path("/big"))
-        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("x".repeat(4_096)))
-        .mount(&server)
-        .await;
-    let _private = evohime_tool_runtime::lock_private_override(Some(true));
-    let domain = reqwest::Url::parse(&server.uri())
-        .expect("mock uri parses")
-        .host_str()
-        .expect("mock uri has host")
-        .to_ascii_lowercase();
-
-    let path = std::env::temp_dir().join(format!(
-        "evohime-ipc-research-fetch-oversized-{}.db",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_file(&path);
-    let journal = EventJournal::open(&path).expect("journal opens");
-    let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
-    let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator);
-    let (mut client, server_io) = duplex(16 * 1024);
-    let (mut server_reader, mut server_writer) = tokio::io::split(server_io);
-
-    let command = run_research_fetch_command(
-        "task-fetch-oversized",
-        format!("{}/big", server.uri()),
-        vec![domain],
-        16,
-    );
-    transport::write_frame(&mut client, &command.encode_to_vec())
-        .await
-        .expect("fetch command writes");
-    let outcome = bridge
-        .process_once(&mut server_reader, &mut server_writer)
-        .await;
-    assert!(outcome.is_err(), "oversized response must fail the command");
-
-    let records = journal
-        .list_research_evidence("task-fetch-oversized")
+        .list_research_evidence("task-fetch-unavail")
         .await
         .expect("list succeeds");
     assert!(records.is_empty(), "no evidence should be persisted");
