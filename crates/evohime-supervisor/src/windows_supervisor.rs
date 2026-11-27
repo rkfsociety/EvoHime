@@ -1826,7 +1826,7 @@ async fn wait_for_core(
             return child.wait().await;
         }
         tick = tick.wrapping_add(1);
-        if tick % SERVICE_SCAN_INTERVAL_TICKS == 0 {
+        if tick.is_multiple_of(SERVICE_SCAN_INTERVAL_TICKS) {
             if let Some(install_dir) = install_dir {
                 let events = scan_service_pool(install_dir, service_pool);
                 log_runtime_events(logger, &events);
