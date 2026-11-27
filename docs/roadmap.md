@@ -8,7 +8,7 @@
 [`plans/README.md`](plans/README.md).
 
 Текущая активная очередь содержит незавершённые implementation contracts
-`180`, `184–188`, `191` и `193–195`.
+`180`, `184–188`, `191`, `193–195` и `202`.
 
 ## Текущий продукт
 EvoHime — один локальный Windows-клиент Ева, распространяемый через постоянный
@@ -38,6 +38,8 @@ EvoHime — один локальный Windows-клиент Ева, распр�
 Компонентный манифест, выборочная транзакция, UI bundle и recovery являются
 текущим базовым контрактом поставки; детали описаны в
 [`architecture.md`](architecture.md), а проверки — в [`release-evidence.md`](release-evidence.md).
+Направление микроядерной декомпозиции (`план 202`) выделяет прикладные сервисы и
+декларативные данные (`core-assets`) в независимые модули с быстрыми обновлениями.
 
 Развивать declarative capability descriptors и workflow composition поверх
 существующих ToolRegistry, Capability/Skill Registry, workflow runtime и

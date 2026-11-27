@@ -64,8 +64,9 @@
 - [Этап 4 — вынос `model-router` (при целесообразности), полная верификация и закрытие](./202-4-core-microkernel-decomposition.md)
 
 ## Критерии готовности
-- [ ] Создан единый контракт `evohime-service-contract` и `ModuleRegistry` в `evohime-core`.
-- [ ] Список модулей для CI, релизов и апдейтера генерируется/валидируется из единого источника.
-- [ ] `core-assets` обновляется без компиляции Rust.
-- [ ] Прикладные модули собираются и публикуются изолированными workflow без пересборки `core`.
-- [ ] `supervisor` и `updater` поддерживают точечный перезапуск сервиса без перезапуска `EvoHime.exe` и `evohime-core.exe`.
+- [x] Создан единый контракт `evohime-service-contract` и `ModuleRegistry` в `evohime-core`.
+- [x] Список модулей для CI, релизов и апдейтера генерируется/валидируется из единого источника (`modules.manifest.json`).
+- [x] `core-assets` обновляется без компиляции Rust.
+- [x] Прикладные модули собираются и публикуются изолированными workflow без пересборки `core`.
+- [x] `supervisor` (`service_pool.rs`) и `updater` (`evohime-update-agent` / `evohime-updater`) поддерживают точечное обновление и перезапуск изолированных сервисов без закрытия `EvoHime.exe` и `evohime-core.exe`.
+- [ ] Полный перенос оставшейся прикладной логики из `evohime-core` и зелёный прогон всех 25 модулей в CI (Этап 4).
