@@ -7,6 +7,7 @@ if ($router -notmatch 'gh workflow run') { throw 'Router does not dispatch indep
 if ($router -match 'git diff|git log|github\.event\.before|MANUAL_BASE|base:') { throw 'Router still uses commit/path diff as the production release criterion.' }
 if ($router -notmatch 'module-\$module-v|Latest-Version|release-versions/\$module\.txt') { throw 'Router does not compare module versions with module releases.' }
 if ($router -notmatch 'release-versions/installer\.txt') { throw 'Router does not track installer version.' }
+if ($router -notmatch 'installerNeedsUpdaterSync') { throw 'Router does not rebuild installer when updater changes.' }
 if ($router -notmatch "'installer' = 'installer\.yml'") { throw 'Router does not dispatch the web installer workflow.' }
 if ($router -notmatch 'installerTag = .installer.') { throw 'Router does not probe the single installer release explicitly.' }
 if ($router -notmatch 'probeOutput = @\(gh api') { throw 'Router does not probe the installer release explicitly.' }

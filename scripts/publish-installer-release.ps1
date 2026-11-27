@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory)] [string]$SetupPath,
     [Parameter(Mandatory)] [ValidatePattern('^\d+\.\d+\.\d+$')] [string]$Version,
@@ -11,11 +11,15 @@ if (-not $env:GH_TOKEN) { throw 'GH_TOKEN is required.' }
 $setup = (Resolve-Path $SetupPath).Path
 if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw "Installer setup missing: $setup" }
 $manifestPath = Join-Path (Split-Path -Parent $setup) 'EvoHime-Setup.json'
+$updaterVersionPath = Join-Path $PSScriptRoot '..\release-versions\updater.txt'
+$updaterVersion = (Get-Content -LiteralPath $updaterVersionPath -Raw).Trim()
+if ($updaterVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid updater version: $updaterVersion" }
 $manifest = [ordered]@{
     version = 2
     product = 'EvoHime'
     kind = 'web-installer'
     installerVersion = $Version
+    updaterVersion = $updaterVersion
     asset = 'EvoHime-Setup.exe'
     commit = $Commit
     branch = 'main'

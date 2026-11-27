@@ -105,6 +105,7 @@ jobs:
             }
             return @($versions | Sort-Object Value -Descending | Select-Object -First 1)
           }
+          $updaterSelected = $false
           foreach ($module in $modules) {
             $versionPath = Join-Path $env:GITHUB_WORKSPACE "release-versions/$module.txt"
             if (-not (Test-Path -LiteralPath $versionPath -PathType Leaf)) { throw "Не найден файл версии: $versionPath" }
@@ -113,6 +114,7 @@ jobs:
             if ($null -eq $current) { throw "Некорректная версия $module`: $currentText" }
             $latest = Latest-Version $module
             $selected = $manualSet.Contains($module) -or ($manual.Count -eq 0 -and ($latest.Count -eq 0 -or $current -gt $latest[0].Value -or $currentText -ne $latest[0].Text))
+            if ($module -eq 'updater') { $updaterSelected = $selected }
             $value = $selected.ToString().ToLowerInvariant()
             "$module=$value" >> $env:GITHUB_OUTPUT
             if ($selected) {
@@ -159,16 +161,22 @@ jobs:
               gh release download $installerTag --repo $env:REPOSITORY --pattern EvoHime-Setup.json --dir $env:RUNNER_TEMP --clobber 2>&1 | Out-Null
             } | Out-Null
           }
+          $updaterVersionPath = Join-Path $env:GITHUB_WORKSPACE 'release-versions/updater.txt'
+          $updaterText = (Get-Content -LiteralPath $updaterVersionPath -Raw).Trim()
+          $publishedInstallerText = $null
+          $publishedUpdaterText = $null
           if (-not $releaseAbsent -and (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
             $published = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
             $publishedInstallerText = ([string]$published.installerVersion).Trim()
+            $publishedUpdaterText = ([string]$published.updaterVersion).Trim()
             $installerLatest = Parse-Version $publishedInstallerText
             if ($null -eq $installerLatest) { throw 'Опубликованный installer manifest содержит некорректную версию.' }
           }
-          $installerSelected = $manualSet.Contains('installer') -or ($manual.Count -eq 0 -and ($null -eq $installerLatest -or $installerCurrent -gt $installerLatest -or $installerText -ne $publishedInstallerText))
+          $installerNeedsUpdaterSync = $updaterSelected -or ($publishedUpdaterText -ne $updaterText)
+          $installerSelected = $manualSet.Contains('installer') -or ($manual.Count -eq 0 -and ($null -eq $installerLatest -or $installerCurrent -gt $installerLatest -or $installerText -ne $publishedInstallerText -or $installerNeedsUpdaterSync))
           "installer=$($installerSelected.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-          if ($installerSelected) { Write-Host "installer: $installerText -> $($installerLatest ?? 'нет релиза'), workflow будет запущен" }
-          else { Write-Host "installer: $installerText уже опубликован, workflow пропускается" }
+          if ($installerSelected) { Write-Host "installer: $installerText -> $($installerLatest ?? 'нет релиза') (updater: $updaterText -> $($publishedUpdaterText ?? 'не указан')), workflow будет запущен" }
+          else { Write-Host "installer: $installerText уже опубликован (updater: $updaterText), workflow пропускается" }
       - name: Регрессия recovery updater
         shell: pwsh
         run: ./scripts/repair-updater.tests.ps1
