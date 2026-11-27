@@ -12,6 +12,8 @@ mod pulse;
 mod runtime_loop;
 mod schedule_contract;
 mod scheduler_state;
+#[cfg_attr(not(test), allow(dead_code))]
+mod service_pool;
 
 mod local_provider;
 #[cfg(windows)]

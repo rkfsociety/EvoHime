@@ -71,6 +71,22 @@ struct RegistryState {
     capability_owner: BTreeMap<String, String>,
 }
 
+/// Canonical list of isolated service module executables discovered beside
+/// `evohime-core.exe`.
+pub const SERVICE_MODULE_EXECUTABLES: [&str; 11] = [
+    "evohime-evals.exe",
+    "evohime-media-voice.exe",
+    "evohime-research.exe",
+    "evohime-remote.exe",
+    "evohime-ambient.exe",
+    "evohime-computer-use.exe",
+    "evohime-workflow.exe",
+    "evohime-rag-memory.exe",
+    "evohime-tools-workspace.exe",
+    "evohime-tools-exec.exe",
+    "evohime-model-adapters.exe",
+];
+
 /// Thread-safe registry and invocation proxy for external service modules.
 #[derive(Clone, Default)]
 pub struct ModuleRegistry {
@@ -187,6 +203,31 @@ impl ModuleRegistry {
     /// Creates an empty [`ModuleRegistry`].
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Discovers isolated service executables inside `bin_dir`, queries their
+    /// capabilities via [`StdioProcessTransport`], and registers every healthy
+    /// service. Missing executables are skipped cleanly.
+    pub async fn discover_and_attach_services(&self, bin_dir: &Path) -> Vec<String> {
+        let mut attached = Vec::new();
+        for exe_name in SERVICE_MODULE_EXECUTABLES {
+            let exe_path = bin_dir.join(exe_name);
+            if !exe_path.is_file() {
+                continue;
+            }
+            let transport: Arc<dyn ServiceTransport> =
+                Arc::new(StdioProcessTransport::new(&exe_path));
+            let Ok(ServiceResponse::Capabilities(descriptor)) =
+                transport.send(ServiceRequest::DescribeCapabilities).await
+            else {
+                continue;
+            };
+            let service_id = descriptor.service_id.clone();
+            if self.register(descriptor, transport).is_ok() {
+                attached.push(service_id);
+            }
+        }
+        attached
     }
 
     /// Validates and registers a service module with its transport.

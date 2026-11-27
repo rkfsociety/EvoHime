@@ -915,7 +915,7 @@ impl UpdateTransaction {
     ];
 
     /// Native component paths that may be updated independently.
-    pub const SELECTABLE_COMPONENTS: [&'static str; 9] = [
+    pub const SELECTABLE_COMPONENTS: [&'static str; 20] = [
         "EvoHime.exe",
         "evohime-core.exe",
         "evohime-supervisor.exe",
@@ -925,7 +925,28 @@ impl UpdateTransaction {
         "evohime-transaction.exe",
         "evohime-verify.exe",
         "evohime-hive-daemon.exe",
+        "evohime-evals.exe",
+        "evohime-media-voice.exe",
+        "evohime-research.exe",
+        "evohime-remote.exe",
+        "evohime-ambient.exe",
+        "evohime-computer-use.exe",
+        "evohime-workflow.exe",
+        "evohime-rag-memory.exe",
+        "evohime-tools-workspace.exe",
+        "evohime-tools-exec.exe",
+        "evohime-model-adapters.exe",
     ];
+
+    /// Returns `true` when `restart` targets an isolated service (`service:<id>`)
+    /// or requires no process restart (`none`), allowing updates without
+    /// restarting `EvoHime.exe` or `evohime-core.exe`.
+    pub fn is_isolated_service_restart(restart: &str) -> bool {
+        restart == "none"
+            || restart
+                .strip_prefix("service:")
+                .is_some_and(|id| !id.trim().is_empty())
+    }
 
     /// Prepares a transaction covering the required native components.
     pub fn prepare(install_dir: &Path, state_dir: &Path) -> io::Result<Self> {
