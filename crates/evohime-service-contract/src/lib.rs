@@ -13,6 +13,7 @@
 //! them uniformly without compile-time coupling to module internals.
 
 use std::collections::BTreeSet;
+use std::io::{self, Read, Write};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -311,6 +312,138 @@ pub fn decode_frame<T: DeserializeOwned>(frame: &[u8]) -> Result<T, ServiceContr
     serde_json::from_slice(&frame[4..]).map_err(|err| {
         ServiceContractError::invalid_input(format!("deserialize failed: {err}"))
     })
+}
+
+/// Trait implemented by every isolated EvoHime service module.
+pub trait ServiceHandler: Send + Sync {
+    /// Returns the static capability advertisement for this service.
+    fn descriptor(&self) -> ServiceDescriptor;
+
+    /// Returns the current runtime health report for this service.
+    fn health(&self) -> ServiceHealthReport;
+
+    /// Executes one capability request and returns its JSON output payload.
+    fn invoke(
+        &self,
+        capability: &str,
+        payload: serde_json::Value,
+        caller_session_id: Option<&str>,
+    ) -> Result<serde_json::Value, ServiceContractError>;
+}
+
+/// Dispatches one [`ServiceRequest`] against a [`ServiceHandler`] implementation.
+pub fn dispatch_request<H: ServiceHandler>(
+    handler: &H,
+    request: ServiceRequest,
+) -> ServiceResponse {
+    match request {
+        ServiceRequest::Ping => ServiceResponse::Pong {
+            contract_version: SERVICE_CONTRACT_VERSION,
+        },
+        ServiceRequest::Health => ServiceResponse::Health(handler.health()),
+        ServiceRequest::DescribeCapabilities => {
+            ServiceResponse::Capabilities(handler.descriptor())
+        }
+        ServiceRequest::Invoke {
+            request_id,
+            capability,
+            payload,
+            caller_session_id,
+        } => {
+            let descriptor = handler.descriptor();
+            if !descriptor
+                .capabilities
+                .iter()
+                .any(|cap| cap.name == capability)
+            {
+                return ServiceResponse::Error {
+                    request_id: Some(request_id),
+                    error: ServiceContractError::not_found(format!(
+                        "capability '{capability}' is not supported by '{}'",
+                        descriptor.service_id
+                    )),
+                };
+            }
+            match handler.invoke(&capability, payload, caller_session_id.as_deref()) {
+                Ok(result) => ServiceResponse::InvokeResult {
+                    request_id,
+                    payload: result,
+                },
+                Err(error) => ServiceResponse::Error {
+                    request_id: Some(request_id),
+                    error,
+                },
+            }
+        }
+        ServiceRequest::Shutdown => ServiceResponse::ShuttingDown,
+    }
+}
+
+/// Serves length-prefixed [`ServiceRequest`] / [`ServiceResponse`] frames over
+/// an arbitrary synchronous byte stream until EOF or [`ServiceRequest::Shutdown`].
+pub fn serve_stream<H: ServiceHandler, R: Read, W: Write>(
+    handler: &H,
+    reader: &mut R,
+    writer: &mut W,
+) -> io::Result<()> {
+    let mut len_buf = [0u8; 4];
+    loop {
+        match reader.read_exact(&mut len_buf) {
+            Ok(()) => {}
+            Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => return Ok(()),
+            Err(err) => return Err(err),
+        }
+        let payload_len = u32::from_be_bytes(len_buf) as usize;
+        if payload_len > MAX_SERVICE_FRAME_BYTES {
+            let err_resp = ServiceResponse::Error {
+                request_id: None,
+                error: ServiceContractError::invalid_input(format!(
+                    "frame payload {payload_len} bytes exceeds limit {MAX_SERVICE_FRAME_BYTES}"
+                )),
+            };
+            let encoded = encode_frame(&err_resp)
+                .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.message))?;
+            writer.write_all(&encoded)?;
+            writer.flush()?;
+            return Ok(());
+        }
+        let mut payload = vec![0u8; payload_len];
+        reader.read_exact(&mut payload)?;
+        let request: ServiceRequest = match serde_json::from_slice(&payload) {
+            Ok(req) => req,
+            Err(err) => {
+                let err_resp = ServiceResponse::Error {
+                    request_id: None,
+                    error: ServiceContractError::invalid_input(format!(
+                        "invalid request json: {err}"
+                    )),
+                };
+                let encoded = encode_frame(&err_resp)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.message))?;
+                writer.write_all(&encoded)?;
+                writer.flush()?;
+                continue;
+            }
+        };
+        let is_shutdown = matches!(request, ServiceRequest::Shutdown);
+        let response = dispatch_request(handler, request);
+        let encoded = encode_frame(&response)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.message))?;
+        writer.write_all(&encoded)?;
+        writer.flush()?;
+        if is_shutdown {
+            return Ok(());
+        }
+    }
+}
+
+/// Runs [`serve_stream`] on standard input and standard output.
+pub fn serve_stdio<H: ServiceHandler>(handler: &H) -> io::Result<()> {
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut reader = stdin.lock();
+    let mut writer = stdout.lock();
+    serve_stream(handler, &mut reader, &mut writer)
 }
 
 #[cfg(test)]

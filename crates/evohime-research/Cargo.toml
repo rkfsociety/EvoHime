@@ -1,0 +1,16 @@
+[package]
+name = "evohime-research"
+version = "0.1.0"
+publish = false
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "evohime-research"
+path = "src/main.rs"
+
+[dependencies]
+evohime-service-contract = { path = "../evohime-service-contract" }
+serde_json = { workspace = true }

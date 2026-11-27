@@ -8,12 +8,16 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::{Arc, RwLock};
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex, RwLock};
 
 use evohime_service_contract::{
-    validate_descriptor, ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor,
-    ServiceRequest, ServiceResponse,
+    decode_frame, encode_frame, validate_descriptor, MAX_SERVICE_FRAME_BYTES,
+    ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceRequest,
+    ServiceResponse,
 };
 
 /// Boxed `Send` future returned by [`ServiceTransport`].
@@ -68,6 +72,106 @@ struct RegistryState {
 #[derive(Clone, Default)]
 pub struct ModuleRegistry {
     state: Arc<RwLock<RegistryState>>,
+}
+
+/// [`ServiceTransport`] backed by a child service-module process speaking
+/// `evohime-service-contract` frames over `stdin`/`stdout`.
+pub struct StdioProcessTransport {
+    executable: PathBuf,
+    process: Mutex<Option<Child>>,
+}
+
+impl StdioProcessTransport {
+    /// Creates a lazy process transport for `executable`.
+    pub fn new(executable: impl AsRef<Path>) -> Self {
+        Self {
+            executable: executable.as_ref().to_path_buf(),
+            process: Mutex::new(None),
+        }
+    }
+
+    fn send_blocking(&self, request: ServiceRequest) -> Result<ServiceResponse, ServiceContractError> {
+        let frame = encode_frame(&request)?;
+        let mut guard = self.process.lock().map_err(|_| {
+            ServiceContractError::unavailable("service process lock poisoned")
+        })?;
+        if guard.is_none() {
+            let child = Command::new(&self.executable)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|err| {
+                    ServiceContractError::unavailable(format!(
+                        "failed to spawn {}: {err}",
+                        self.executable.display()
+                    ))
+                })?;
+            *guard = Some(child);
+        }
+        let child = guard.as_mut().ok_or_else(|| {
+            ServiceContractError::unavailable("service process handle missing")
+        })?;
+        let stdin = child.stdin.as_mut().ok_or_else(|| {
+            ServiceContractError::unavailable("service stdin is unavailable")
+        })?;
+        if let Err(err) = stdin.write_all(&frame).and_then(|()| stdin.flush()) {
+            *guard = None;
+            return Err(ServiceContractError::unavailable(format!(
+                "failed to write to service stdin: {err}"
+            )));
+        }
+        let stdout = child.stdout.as_mut().ok_or_else(|| {
+            ServiceContractError::unavailable("service stdout is unavailable")
+        })?;
+        let mut len_buf = [0u8; 4];
+        if let Err(err) = stdout.read_exact(&mut len_buf) {
+            *guard = None;
+            return Err(ServiceContractError::unavailable(format!(
+                "failed to read response header: {err}"
+            )));
+        }
+        let payload_len = u32::from_be_bytes(len_buf) as usize;
+        if payload_len > MAX_SERVICE_FRAME_BYTES {
+            *guard = None;
+            return Err(ServiceContractError::invalid_input(format!(
+                "service response {payload_len} bytes exceeds limit {MAX_SERVICE_FRAME_BYTES}"
+            )));
+        }
+        let mut full_frame = Vec::with_capacity(4 + payload_len);
+        full_frame.extend_from_slice(&len_buf);
+        full_frame.resize(4 + payload_len, 0);
+        if let Err(err) = stdout.read_exact(&mut full_frame[4..]) {
+            *guard = None;
+            return Err(ServiceContractError::unavailable(format!(
+                "failed to read response body: {err}"
+            )));
+        }
+        if matches!(request, ServiceRequest::Shutdown) {
+            *guard = None;
+        }
+        decode_frame(&full_frame)
+    }
+}
+
+impl Drop for StdioProcessTransport {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.process.lock() {
+            if let Some(mut child) = guard.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+    }
+}
+
+impl ServiceTransport for StdioProcessTransport {
+    fn send(
+        &self,
+        request: ServiceRequest,
+    ) -> ServiceFuture<'_, Result<ServiceResponse, ServiceContractError>> {
+        Box::pin(async move { self.send_blocking(request) })
+    }
 }
 
 impl ModuleRegistry {

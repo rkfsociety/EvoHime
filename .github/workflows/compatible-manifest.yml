@@ -15,6 +15,10 @@ on:
       - verifier module
       - updater module
       - hive module
+      - core-assets module
+      - evals module
+      - media-voice module
+      - research module
     types: [completed]
   workflow_dispatch:
 

@@ -1,0 +1,26 @@
+name: evals module
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/evohime-evals-service/**'
+      - 'crates/evohime-service-contract/**'
+      - 'release-versions/evals.txt'
+      - '.github/workflows/evals.yml'
+      - '.github/workflows/module-native.yml'
+
+concurrency:
+  group: evohime-module-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  module:
+    uses: ./.github/workflows/module-native.yml
+    permissions: { contents: write }
+    with:
+      module: evals
+      package: evohime-evals-service
+      artifact: evohime-evals.exe
+      version_file: release-versions/evals.txt

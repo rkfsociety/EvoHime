@@ -119,6 +119,33 @@
       "dependencies": []
     },
     {
+      "id": "evals",
+      "kind": "native",
+      "artifact": "evohime-evals.exe",
+      "restart": "service:evals",
+      "version_file": "release-versions/evals.txt",
+      "workflow": ".github/workflows/evals.yml",
+      "dependencies": []
+    },
+    {
+      "id": "media-voice",
+      "kind": "native",
+      "artifact": "evohime-media-voice.exe",
+      "restart": "service:media-voice",
+      "version_file": "release-versions/media-voice.txt",
+      "workflow": ".github/workflows/media-voice.yml",
+      "dependencies": []
+    },
+    {
+      "id": "research",
+      "kind": "native",
+      "artifact": "evohime-research.exe",
+      "restart": "service:research",
+      "version_file": "release-versions/research.txt",
+      "workflow": ".github/workflows/research.yml",
+      "dependencies": []
+    },
+    {
       "id": "installer",
       "kind": "installer",
       "artifact": "EvoHime-Setup.exe",
