@@ -70,3 +70,4 @@
 - [x] Прикладные модули собираются и публикуются изолированными workflow без пересборки `core`.
 - [x] `supervisor` (`service_pool.rs`) и `updater` (`evohime-update-agent` / `evohime-updater`) поддерживают точечное обновление и перезапуск изолированных сервисов без закрытия `EvoHime.exe` и `evohime-core.exe`.
 - [ ] Финальная CI-верификация и публикация всех 26 модулей в GitHub Actions (Этап 4, после `push`).
+- [ ] Фактический перенос оставшейся бизнес-логики и тестов из `evohime-core`, переключение всех вызовов на `ModuleRegistry` и очистка `evohime-core` — детализировано и выполняется по [Плану 203](./203-0-core-service-migration-and-cleanup.md).

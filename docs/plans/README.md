@@ -36,15 +36,16 @@
 | 193 | [Agent Coordination, Loop Guards и Session Recall](193-0-core-agent-coordination-loop-guards-and-session-recall.md) | active; анализ DeepSeek Harness, audit checkout и trace evidence 2026-11-17 (лимит шагов маскировался как completed) |
 | 194 | [Background Jobs Control Center](194-0-core-background-jobs-control-center.md) | active; UX/IPC поверх реализованного background-execution/v1 |
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
-| 202 | [Микроядерная декомпозиция Core и независимые модули-сервисы](202-0-core-microkernel-decomposition.md) | active (реализация завершена, ожидает CI-прогона после `push`); 12 сервисов + `core-assets`, `ModuleRegistry`, `modules.manifest.json` (26 модулей) и поддержка в `updater`/`supervisor` |
+| 202 | [Микроядерная декомпозиция Core и независимые модули-сервисы](202-0-core-microkernel-decomposition.md) | active (каркас готов); контракт `evohime-service-contract`, `ModuleRegistry`, `core-assets`, 12 сервисов, `modules.manifest.json` (26 модулей) и `updater`/`supervisor` реализованы; перенос вызовов и очистка ядра вынесены в План 203 |
+| 203 | [Фактический перенос вызовов из `evohime-core` в внешние сервисы и очистка микроядра](203-0-core-service-migration-and-cleanup.md) | active; 4 волны переноса логики/тестов, переключения на `ModuleRegistry` и удаления старых модулей из `evohime-core` |
 
-Незавершённые numbered plans: `184–188`, `191`, `193–195` и `202`.
+Незавершённые numbered plans: `184–188`, `191`, `193–195`, `202` и `203`.
 
 Номера `149–172`, `182–183` и `196–201` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая
 работа получает следующий свободный номер только после проверки дубликатов и
-зависимостей; следующий номер — `203`, текущий active catalog — `184–188`,
-`191`, `193–195` и `202`. Номера issues в активных планах — исторические
+зависимостей; следующий номер — `204`, текущий active catalog — `184–188`,
+`191`, `193–195`, `202` и `203`. Номера issues в активных планах — исторические
 идентификаторы постановок и не являются текущим источником статуса или
 критерием закрытия.
 
