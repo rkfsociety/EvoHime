@@ -116,6 +116,15 @@ pub(super) fn extract_ui_bundle(archive_path: &Path, destination: &Path) -> Resu
     result
 }
 
+pub(super) fn extract_core_assets(archive_path: &Path, destination: &Path) -> Result<(), String> {
+    extract_ui_bundle(archive_path, destination)?;
+    if !destination.join("manifest.json").is_file() {
+        let _ = fs::remove_dir_all(destination);
+        return Err("updater: core-assets archive не содержит manifest.json".to_owned());
+    }
+    Ok(())
+}
+
 pub(super) fn extract_ui_bundle_inner(
     archive_path: &Path,
     destination: &Path,

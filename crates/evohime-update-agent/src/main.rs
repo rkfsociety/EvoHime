@@ -462,6 +462,7 @@ const MODULE_IDS: &[&str] = &[
     "shell-host",
     "ui-bundle",
     "core",
+    "core-assets",
     "supervisor",
     "cli",
     "analysis-worker",
@@ -471,6 +472,17 @@ const MODULE_IDS: &[&str] = &[
     "updater",
     "verifier",
     "hive",
+    "evals",
+    "media-voice",
+    "research",
+    "remote-a2a",
+    "ambient",
+    "computer-use",
+    "workflow-engine",
+    "rag-memory",
+    "tools-workspace",
+    "tools-exec",
+    "model-adapters",
 ];
 const MAX_JSON_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_LOCAL_JSON_BYTES: usize = 256 * 1024;
@@ -1378,6 +1390,10 @@ fn is_module_staged_and_valid(
             verify_file_matches_candidate(&staging.join("ui-bundle.zip"), update)
                 && staging.join("ui-bundle").join("index.html").is_file()
         }
+        "core-assets" => {
+            verify_file_matches_candidate(&staging.join("core-assets.zip"), update)
+                && staging.join("core-assets").join("manifest.json").is_file()
+        }
         "updater" => {
             verify_file_matches_candidate(&staging.join("updater.zip"), update)
                 && staging.join("updater").is_dir()
@@ -1424,12 +1440,14 @@ fn prune_stale_staged_entries(staging: &Path, updates: &[UpdateCandidate]) {
         .map(|update| match update.module.as_str() {
             "shell-host" => "shell-host.zip",
             "ui-bundle" => "ui-bundle.zip",
+            "core-assets" => "core-assets.zip",
             "updater" => "updater.zip",
             _ => update.artifact.as_str(),
         })
         .collect();
     let keep_shell = updates.iter().any(|u| u.module == "shell-host");
     let keep_ui = updates.iter().any(|u| u.module == "ui-bundle");
+    let keep_core_assets = updates.iter().any(|u| u.module == "core-assets");
     let keep_updater = updates.iter().any(|u| u.module == "updater");
     if let Ok(entries) = fs::read_dir(staging) {
         for entry in entries.flatten() {
@@ -1442,6 +1460,7 @@ fn prune_stale_staged_entries(staging: &Path, updates: &[UpdateCandidate]) {
                 || keep_files.contains(name_str)
                 || (name_str == "shell-host" && keep_shell)
                 || (name_str == "ui-bundle" && keep_ui)
+                || (name_str == "core-assets" && keep_core_assets)
                 || ((name_str == "updater" || name_str == "evohime-updater.exe.next")
                     && keep_updater)
             {
@@ -1537,6 +1556,7 @@ fn stage_updates_into_cache_with(
             let destination = match update.module.as_str() {
                 "shell-host" => work.join("shell-host.zip"),
                 "ui-bundle" => work.join("ui-bundle.zip"),
+                "core-assets" => work.join("core-assets.zip"),
                 "updater" => work.join("updater.zip"),
                 _ => {
                     if update.artifact.contains('/')
@@ -1567,6 +1587,9 @@ fn stage_updates_into_cache_with(
                 }
                 "ui-bundle" => {
                     extract_ui_bundle(&destination, &work.join("ui-bundle"))?;
+                }
+                "core-assets" => {
+                    extract_core_assets(&destination, &work.join("core-assets"))?;
                 }
                 "updater" => {
                     extract_updater_package(&destination, &work.join("updater-package"))?;
@@ -1606,6 +1629,13 @@ fn stage_updates_into_cache_with(
                         &staging.join("ui-bundle.zip"),
                     )?;
                     replace_staged_path(&work.join("ui-bundle"), &staging.join("ui-bundle"))?;
+                }
+                "core-assets" => {
+                    replace_staged_path(
+                        &work.join("core-assets.zip"),
+                        &staging.join("core-assets.zip"),
+                    )?;
+                    replace_staged_path(&work.join("core-assets"), &staging.join("core-assets"))?;
                 }
                 "updater" => {
                     replace_staged_path(&work.join("updater.zip"), &staging.join("updater.zip"))?;
@@ -1692,6 +1722,7 @@ fn apply_updates_inner(
     for update in updates {
         if update.module != "updater"
             && update.module != "ui-bundle"
+            && update.module != "core-assets"
             && update.module != "shell-host"
             && update.module != "listener-runtime"
         {
@@ -1705,6 +1736,7 @@ fn apply_updates_inner(
         applied.push(update);
     }
     let ui_update = updates.iter().find(|update| update.module == "ui-bundle");
+    let core_assets_update = updates.iter().find(|update| update.module == "core-assets");
     let client = if runtime_update.is_some() {
         Some(updater_http_client(resolve_github_token(
             &read_update_config(&data_dir.join("update.json"))?,
@@ -1713,6 +1745,18 @@ fn apply_updates_inner(
         None
     };
     if selected.is_empty() && ui_update.is_none() {
+        if let Some(update) = core_assets_update {
+            let assets_dest = install_dir.join("assets").join("core-assets");
+            let staged_assets = staging.join("core-assets");
+            fs::create_dir_all(install_dir.join("assets")).map_err(|e| e.to_string())?;
+            replace_staged_path(&staged_assets, &assets_dest)?;
+            let component_updates = vec![update];
+            merge_installed_manifest_to(
+                install_dir,
+                &component_updates,
+                &install_dir.join("evohime.components.json"),
+            )?;
+        }
         if let (Some(update), Some(client)) = (runtime_update, client.as_ref()) {
             apply_listener_runtime(client, update, data_dir, progress)?;
         }
@@ -1752,11 +1796,16 @@ fn apply_updates_inner(
         .cloned()
         .collect::<Vec<_>>();
     progress("Применение модулей", 0, None);
-    write_status_requiring_exit(
-        data_dir,
-        "Загрузка завершена. Закрываю окно на время применения…",
-        updates,
-    );
+    let only_isolated_services = updates
+        .iter()
+        .all(|u| evohime_tx::UpdateTransaction::is_isolated_service_restart(&u.restart));
+    if !only_isolated_services {
+        write_status_requiring_exit(
+            data_dir,
+            "Загрузка завершена. Закрываю окно на время применения…",
+            updates,
+        );
+    }
     // The recovery/update agent owns the transaction engine directly. It must
     // not depend on the currently installed transaction executable: that file
     // may be missing, corrupt, or be the very component being repaired.
@@ -1777,7 +1826,19 @@ fn apply_updates_inner(
     })
     .map_err(|error| format!("updater: встроенное применение модулей не удалось: {error}"))?;
     progress("Модули применены", 100, None);
-    let mut component_updates = applied.into_iter().chain(ui_update).collect::<Vec<_>>();
+    if core_assets_update.is_some() {
+        let assets_dest = install_dir.join("assets").join("core-assets");
+        let staged_assets = staging.join("core-assets");
+        if staged_assets.is_dir() {
+            fs::create_dir_all(install_dir.join("assets")).map_err(|e| e.to_string())?;
+            replace_staged_path(&staged_assets, &assets_dest)?;
+        }
+    }
+    let mut component_updates = applied
+        .into_iter()
+        .chain(ui_update)
+        .chain(core_assets_update)
+        .collect::<Vec<_>>();
     if let Some(update) = updater_update {
         let manifest_next = install_dir.join("evohime.components.json.next");
         component_updates.push(update);
