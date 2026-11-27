@@ -3649,22 +3649,72 @@ export function HiveDashboard({
         </section>
 
         <header className="hive-hud-top" ref={hudTopRef}>
-          <div className="hive-hud-top__brand">
-            <p className="hive-console__eyebrow">Hive / Eva</p>
-            <h1>{translate('Улей (Hive)')}</h1>
-            <p className="hive-hud-top__subtitle">{translate('Единый центр управления Ульем и Королевой Евой')}</p>
-            <div className="hive-hud-top__dept-summary">
-              <h2>{translate('Департаменты улья')}</h2>
-              <span>
-                {hiveLoading ? (
-                  <HiveSkeleton className="hive-skeleton--text" />
-                ) : showingConnectedIdleState ? (
-                  translate('Нет активных агентов')
-                ) : (
-                  `${translate('Активно:')} ${agentsOnline} / ${capacityLabel}`
-                )}
-              </span>
+          <div className="hive-hud-top__left">
+            <div className="hive-hud-top__brand">
+              <p className="hive-console__eyebrow">Hive / Eva</p>
+              <h1>{translate('Улей (Hive)')}</h1>
+              <p className="hive-hud-top__subtitle">{translate('Единый центр управления Ульем и Королевой Евой')}</p>
+              <div className="hive-hud-top__dept-summary">
+                <h2>{translate('Департаменты улья')}</h2>
+                <span>
+                  {hiveLoading ? (
+                    <HiveSkeleton className="hive-skeleton--text" />
+                  ) : showingConnectedIdleState ? (
+                    translate('Нет активных агентов')
+                  ) : (
+                    `${translate('Активно:')} ${agentsOnline} / ${capacityLabel}`
+                  )}
+                </span>
+              </div>
             </div>
+
+            <section className="hive-hud-agents" aria-label={translate('Активные агенты')}>
+              <div className="hive-panel__head">
+                <h3>{translate('Активные агенты')} ({agentsOnline})</h3>
+                {selectedDepartmentLabel ? (
+                  <button
+                    type="button"
+                    className="hive-filter-chip"
+                    onClick={() => setSelectedDepartment(null)}
+                  >
+                    <span>{translate(selectedDepartmentLabel)}</span>
+                    <span aria-hidden="true">×</span>
+                  </button>
+                ) : null}
+              </div>
+              {hiveLoading ? (
+                <ul className="hive-agent-list hive-agent-list--loading" aria-label={translate('Загрузка агентов')}>
+                  {[1, 2, 3].map((item) => <li key={item}><HiveSkeleton className="hive-skeleton--avatar" /><HiveSkeleton className="hive-skeleton--agent" /></li>)}
+                </ul>
+              ) : hive && visibleAgents.length > 0 ? (
+                <ul className="hive-agent-list">
+                  {visibleAgents.slice(0, 8).map((agent) => {
+                    const agentLabel = agent.displayName || agent.id || translate(departmentLabel(agent.role)) || 'Агент'
+                    return (
+                    <li key={agent.id}>
+                      <span className="hive-agent__avatar" aria-hidden="true">{agentMonogram(agentLabel)}</span>
+                      <div className="hive-agent__body">
+                        <div className="hive-agent__topline">
+                          <strong>{agentLabel}</strong>
+                          <span className="hive-role-badge">{translate(departmentLabel(agent.role))}</span>
+                        </div>
+                        <small>{translate(agent.currentAction) || translate('ожидание')}</small>
+                      </div>
+                      <span className="hive-agent__meta">{agent.spawnedSubagents} / {agent.ceiling}</span>
+                    </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <p className="hive-empty hive-hud-agents__empty">
+                  {selectedDepartment
+                    ? translate('В выбранном департаменте активных агентов нет.')
+                    : connected
+                      ? translate('Активных агентов нет.')
+                      : translate('Core недоступен — ожидается актуальная проекция.')}
+                </p>
+              )}
+            </section>
           </div>
         </header>
 
@@ -3683,56 +3733,8 @@ export function HiveDashboard({
         ) : null}
 
         <div className="hive-dock">
-          <section className="hive-dock__card hive-dock__card--agents" aria-label={translate('Активные агенты')}>
-            <div className="hive-panel__head">
-              <h3>{translate('Активные агенты')} ({agentsOnline})</h3>
-              {selectedDepartmentLabel ? (
-                <button
-                  type="button"
-                  className="hive-filter-chip"
-                  onClick={() => setSelectedDepartment(null)}
-                >
-                  <span>{translate(selectedDepartmentLabel)}</span>
-                  <span aria-hidden="true">×</span>
-                </button>
-              ) : (
-                <span>{translate('глубина и подагенты')}</span>
-              )}
-            </div>
-            {hiveLoading ? (
-              <ul className="hive-agent-list hive-agent-list--loading" aria-label={translate('Загрузка агентов')}>
-                {[1, 2, 3].map((item) => <li key={item}><HiveSkeleton className="hive-skeleton--avatar" /><HiveSkeleton className="hive-skeleton--agent" /></li>)}
-              </ul>
-            ) : hive && visibleAgents.length > 0 ? (
-              <ul className="hive-agent-list">
-                {visibleAgents.slice(0, 8).map((agent) => {
-                  const agentLabel = agent.displayName || agent.id || translate(departmentLabel(agent.role)) || 'Агент'
-                  return (
-                  <li key={agent.id}>
-                    <span className="hive-agent__avatar" aria-hidden="true">{agentMonogram(agentLabel)}</span>
-                    <div className="hive-agent__body">
-                      <div className="hive-agent__topline">
-                        <strong>{agentLabel}</strong>
-                        <span className="hive-role-badge">{translate(departmentLabel(agent.role))}</span>
-                      </div>
-                      <small>{translate(agent.currentAction) || translate('ожидание')}</small>
-                    </div>
-                    <span className="hive-agent__meta">{agent.spawnedSubagents} / {agent.ceiling}</span>
-                  </li>
-                  )
-                })}
-              </ul>
-            ) : (
-              <p className="hive-empty">
-                {selectedDepartment
-                  ? translate('В выбранном департаменте активных агентов нет.')
-                  : connected
-                    ? translate('Активных агентов нет.')
-                    : translate('Core недоступен — ожидается актуальная проекция.')}
-              </p>
-            )}
-
-            <section className="hive-watched" aria-label={translate('Проекты под наблюдением')}>
+          <section className="hive-dock__card hive-dock__card--agents" aria-label={translate('Проекты под наблюдением')}>
+            <section className="hive-watched">
               <div className="hive-panel__head">
                 <h4>{translate('Проекты под наблюдением')}</h4>
                 <span>{hive?.watchedRepositories.length ?? 0}</span>

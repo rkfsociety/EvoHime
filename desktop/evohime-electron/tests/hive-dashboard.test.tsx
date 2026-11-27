@@ -273,7 +273,10 @@ describe('hive dashboard', () => {
     expect(screen.getByRole('heading', { name: 'Королева Ева' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Метрики улья' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Ход работы Королевы' })).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'Активные агенты (2)' })).toBeTruthy()
+    const agentsHeading = screen.getByRole('heading', { name: 'Активные агенты (2)' })
+    expect(agentsHeading).toBeTruthy()
+    expect(agentsHeading.closest('.hive-hud-top')).toBeTruthy()
+    expect(agentsHeading.closest('.hive-dock')).toBeNull()
 
     // Департаменты теперь отрисовываются внутри сцены архипелага: в jsdom
     // WebGL/3D-текст не попадает в DOM как обычные текстовые узлы. Наличие
