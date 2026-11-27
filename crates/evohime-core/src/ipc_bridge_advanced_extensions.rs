@@ -1559,12 +1559,11 @@ mod a2a_ipc_tests {
         drop(bridge);
         let restarted = IpcBridge::new(EventJournal::open(&db_path).unwrap());
         let db = restarted.journal.database().lock().await;
-        let pending =
-            evohime_local_storage::external_agent_a2a_store::list_nonterminal_bindings(
-                db.connection(),
-                10,
-            )
-            .unwrap();
+        let pending = evohime_local_storage::external_agent_a2a_store::list_nonterminal_bindings(
+            db.connection(),
+            10,
+        )
+        .unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].state, "unknown_outcome");
         assert_eq!(pending[0].remote_task_id.as_deref(), Some("remote-task-1"));

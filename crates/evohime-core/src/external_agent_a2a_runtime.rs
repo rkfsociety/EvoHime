@@ -215,7 +215,12 @@ impl A2aHttpTransport {
         ttl_ms: i64,
     ) -> Result<RemoteAgentCardSnapshot, A2aRuntimeError> {
         let bytes = self
-            .request_bytes(profile, reqwest::Method::GET, ".well-known/agent.json", None)
+            .request_bytes(
+                profile,
+                reqwest::Method::GET,
+                ".well-known/agent.json",
+                None,
+            )
             .await?;
         parse_card_response(profile, &bytes, fetched_at_ms, ttl_ms)
     }
@@ -616,9 +621,7 @@ mod tests {
         let p = profile();
         registry.register_profile(p.clone()).unwrap();
         let body = br#"{"skills":[{"id":"code.review","capability":"agent.execute"}],"auth_schemes":["bearer"]}"#;
-        registry
-            .refresh_card(&p.id, body, 10, 60_000)
-            .unwrap();
+        registry.refresh_card(&p.id, body, 10, 60_000).unwrap();
 
         let states = [
             ("reg", RemoteTaskState::Registered, None),
@@ -627,7 +630,11 @@ mod tests {
             ("input", RemoteTaskState::InputRequired, Some("r-inp")),
             ("auth", RemoteTaskState::AuthRequired, Some("r-auth")),
             ("running", RemoteTaskState::Running, Some("r-run")),
-            ("cancel_req", RemoteTaskState::CancelRequested, Some("r-can")),
+            (
+                "cancel_req",
+                RemoteTaskState::CancelRequested,
+                Some("r-can"),
+            ),
             ("done", RemoteTaskState::Completed, Some("r-done")),
             ("rejected", RemoteTaskState::Rejected, Some("r-rej")),
             ("failed", RemoteTaskState::Failed, Some("r-fail")),
@@ -665,13 +672,20 @@ mod tests {
                     .reconcile(&binding.binding_id, (*rid).to_owned(), rev, 210)
                     .unwrap();
                 let b = registry
-                    .transition(&binding.binding_id, RemoteTaskState::Submitted, b.revision, 211)
+                    .transition(
+                        &binding.binding_id,
+                        RemoteTaskState::Submitted,
+                        b.revision,
+                        211,
+                    )
                     .unwrap();
                 rev = b.revision;
             }
             if !matches!(
                 target_state,
-                RemoteTaskState::Registered | RemoteTaskState::Submitting | RemoteTaskState::Submitted
+                RemoteTaskState::Registered
+                    | RemoteTaskState::Submitting
+                    | RemoteTaskState::Submitted
             ) {
                 if *target_state == RemoteTaskState::Completed {
                     let b = registry
