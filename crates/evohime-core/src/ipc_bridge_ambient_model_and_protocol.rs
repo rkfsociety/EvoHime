@@ -1099,7 +1099,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn apply_live_provider_config_updates_shared_gateway_for_new_tasks_without_mutating_existing_snapshot() {
+    async fn apply_live_provider_config_updates_shared_gateway_for_new_tasks_without_mutating_existing_snapshot(
+    ) {
         let dir = tempfile::tempdir().expect("tempdir");
         let journal = EventJournal::open(dir.path().join("events.db")).expect("open journal");
         let initial_gateway = Arc::new(evohime_model_gateway::mock_gateway(vec!["old".into()]));

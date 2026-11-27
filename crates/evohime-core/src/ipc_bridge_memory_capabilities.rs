@@ -973,7 +973,12 @@ impl IpcBridge {
         };
         let key_present = self
             .gateway_config_snapshot()
-            .and_then(|config| config.routes.get(&config.default_route).map(|route| route.configured()))
+            .and_then(|config| {
+                config
+                    .routes
+                    .get(&config.default_route)
+                    .map(|route| route.configured())
+            })
             .unwrap_or(false);
         let metadata_valid = !provider_id.is_empty() && !model_id.is_empty();
         crate::doctor::ProviderProbe {

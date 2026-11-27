@@ -343,9 +343,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 None => gateway,
             };
             let gateway_arc = std::sync::Arc::new(gateway);
-            let slot = std::sync::Arc::new(std::sync::RwLock::new(std::sync::Arc::clone(
-                &gateway_arc,
-            )));
+            let slot =
+                std::sync::Arc::new(std::sync::RwLock::new(std::sync::Arc::clone(&gateway_arc)));
             shared_gateway = Some(std::sync::Arc::clone(&slot));
             std::sync::Arc::new(
                 evohime_core::ToolAgent::new_with_approvals(

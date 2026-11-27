@@ -2093,11 +2093,12 @@ function dispatch(
       }
       // Never log the value, only that a write happened.
       log('info', 'shell.provider_saved', { provider, configured: summary.configured })
+      const envPayload = typeof providers.environment === 'function' ? providers.environment() : {}
       const liveUpdate = client.send({
         updateProviderConfig: {
           schemaVersion: 1,
           requestId: randomUUID(),
-          envJson: Buffer.from(JSON.stringify(providers.environment()), 'utf8')
+          envJson: Buffer.from(JSON.stringify(envPayload), 'utf8')
         }
       })
       const appliedLive = liveUpdate === 'queued'
@@ -2120,11 +2121,12 @@ function dispatch(
       if (!profile?.configured) return failure('invalid-payload', 'Сначала настрой ключ выбранного провайдера.')
       const selectedSummary = providers.select(provider, profileId ?? undefined)
       log('info', 'shell.provider_selected', { provider, ...(profileId ? { profileId } : {}) })
+      const envPayload = typeof providers.environment === 'function' ? providers.environment() : {}
       const liveUpdate = client.send({
         updateProviderConfig: {
           schemaVersion: 1,
           requestId: randomUUID(),
-          envJson: Buffer.from(JSON.stringify(providers.environment()), 'utf8')
+          envJson: Buffer.from(JSON.stringify(envPayload), 'utf8')
         }
       })
       return { ok: true, value: { summary: selectedSummary, restarted: false, appliedLive: liveUpdate === 'queued' } }
@@ -2139,11 +2141,12 @@ function dispatch(
       if (profileId !== undefined && requestedProvider !== 'openai_compatible') return failure('invalid-payload', 'Профиль допустим только для OpenAI-compatible провайдера.')
       const summary = providers.clearKey(requestedProvider ?? undefined, profileId ?? undefined)
       log('info', 'shell.provider_key_cleared', {})
+      const envPayload = typeof providers.environment === 'function' ? providers.environment() : {}
       const liveUpdate = client.send({
         updateProviderConfig: {
           schemaVersion: 1,
           requestId: randomUUID(),
-          envJson: Buffer.from(JSON.stringify(providers.environment()), 'utf8')
+          envJson: Buffer.from(JSON.stringify(envPayload), 'utf8')
         }
       })
       return { ok: true, value: { summary, restarted: false, appliedLive: liveUpdate === 'queued' } }

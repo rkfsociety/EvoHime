@@ -148,6 +148,7 @@ const providers = {
     providerSummary = { ...providerSummary, configured: false }
     return providerSummary
   },
+  environment: () => ({ MODEL_PROVIDER: providerSummary.provider }),
   saveHiveApiKey: () => true,
   saveHiveFallbackApiKey: () => true
 }
@@ -647,18 +648,20 @@ describe('renderer command surface', () => {
     expect(sent).toHaveLength(1)
   })
 
-  it('stores a provider key locally and never forwards it to Core', async () => {
+  it('stores a provider key locally and updates Core for new sessions without restarting', async () => {
     const outcome = (await invoke('provider.save', {
       provider: 'literouter',
       apiKey: 'sk-secret-value',
       model: 'deepseek:free',
       baseUrl: 'https://api.literouter.com/v1',
       tier: 'paid'
-    })) as { ok: true; value: { summary: ProviderSummary; restarted: boolean } }
+    })) as { ok: true; value: { summary: ProviderSummary; restarted: boolean; appliedLive?: boolean } }
 
     expect(outcome.value.summary.configured).toBe(true)
-    expect(outcome.value.restarted).toBe(true)
-    expect(restarts).toHaveLength(1)
+    expect(outcome.value.restarted).toBe(false)
+    expect(outcome.value.appliedLive).toBe(true)
+    expect(restarts).toHaveLength(0)
+    expect(sent).toContainEqual(expect.objectContaining({ updateProviderConfig: expect.any(Object) }))
     // The key belongs to the main process; no Core command may carry it.
     expect(JSON.stringify(sent)).not.toContain('sk-secret-value')
     expect(invoke('provider.get', {})).toMatchObject({

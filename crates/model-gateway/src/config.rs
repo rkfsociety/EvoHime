@@ -66,13 +66,14 @@ impl RequestPacingConfig {
     }
 
     /// Reads `MODEL_PROVIDER_REQUEST_PACING_*` settings from a key-value map.
-    pub fn from_lookup(
-        provider: ProviderKind,
-        lookup: &dyn Fn(&str) -> Option<String>,
-    ) -> Self {
+    pub fn from_lookup(provider: ProviderKind, lookup: &dyn Fn(&str) -> Option<String>) -> Self {
         let default = Self::for_provider(provider);
         Self {
-            enabled: lookup_bool(lookup, "MODEL_PROVIDER_REQUEST_PACING_ENABLED", default.enabled),
+            enabled: lookup_bool(
+                lookup,
+                "MODEL_PROVIDER_REQUEST_PACING_ENABLED",
+                default.enabled,
+            ),
             interval_ms: lookup_u64(
                 lookup,
                 "MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS",
@@ -971,8 +972,7 @@ impl ModelGatewayConfig {
             return parse_routes_json_with_lookup(&raw_routes, true, lookup);
         }
 
-        let default_route =
-            lookup("MODEL_DEFAULT_ROUTE").unwrap_or_else(|| "default".to_string());
+        let default_route = lookup("MODEL_DEFAULT_ROUTE").unwrap_or_else(|| "default".to_string());
         let provider = lookup("MODEL_PROVIDER")
             .and_then(|value| ProviderKind::parse(&value))
             .unwrap_or(ProviderKind::LiteRouter);
@@ -2332,14 +2332,20 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("MODEL_PROVIDER".into(), "openai_compatible".into());
         vars.insert("OPENAI_API_KEY".into(), "sk-test-map".into());
-        vars.insert("OPENAI_BASE_URL".into(), "https://api.example.com/v1".into());
+        vars.insert(
+            "OPENAI_BASE_URL".into(),
+            "https://api.example.com/v1".into(),
+        );
         vars.insert("OPENAI_MODEL".into(), "gpt-4o-mini".into());
         vars.insert(
             "MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON".into(),
             r#"{"*":{"enabled":true,"rpm":12,"daily_token_quota":50000,"reset_schedule_enabled":true,"reset_time_minutes":90,"reset_utc_offset_hours":2}}"#.into(),
         );
         let config = ModelGatewayConfig::from_env_map(&vars).expect("valid env map");
-        let route = config.routes.get(&config.default_route).expect("default route");
+        let route = config
+            .routes
+            .get(&config.default_route)
+            .expect("default route");
         assert_eq!(route.provider, ProviderKind::OpenAICompatible);
         assert_eq!(route.literouter.model, "gpt-4o-mini");
         assert_eq!(route.daily_token_quota, Some(50_000));
