@@ -1188,6 +1188,7 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Сохранено локально и применится при следующем подключении Core.': 'Saved locally and will apply on the next Core connection.',
   'Провайдер сохранён, но Core не перезапустился. Перезапусти приложение вручную.': 'Provider saved, but Core did not restart. Restart the app manually.',
   'Сохранено, но Core не перезапустился. Перезапусти приложение вручную.': 'Saved, but Core did not restart. Restart the app manually.',
+  'Рассуждения': 'Reasoning',
   'Скрыть детали': 'Hide details',
   'Открыть детали': 'Show details',
   'пользовательская': 'custom',

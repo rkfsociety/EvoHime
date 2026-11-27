@@ -1656,6 +1656,10 @@ body {
   min-width: 0;
 }
 
+.message--thought .thought__summary {
+  margin-bottom: 4px;
+}
+
 .activity__summary {
   display: flex;
   align-items: center;

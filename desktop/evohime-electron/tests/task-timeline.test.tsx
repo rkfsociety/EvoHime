@@ -1005,4 +1005,62 @@ describe('task timeline', () => {
     }))
     await waitFor(() => expect(resolvedApprovalId).toBe('approval-1'))
   })
+
+  it('collapses intermediate model reasoning by default while keeping the final answer expanded', async () => {
+    const chat = {
+      id: 'chat-thought',
+      workspacePath: 'C:\\work\\repo',
+      title: 'Чат',
+      createdMs: 1,
+      updatedMs: 1,
+      taskIds: ['task-thought'],
+      messages: [{ taskId: 'task-thought', prompt: 'Проверь проект', atMs: 1 }]
+    }
+    const page = {
+      sequenceId: 10,
+      taskId: '',
+      eventType: 'conversation.event_log',
+      payload: '',
+      conversationEventLog: {
+        conversationId: 'chat-thought',
+        mode: 'history' as const,
+        latestSequence: 5,
+        events: [
+          conversationProjection(1, 'e-1', 'user_message_accepted', 'task-thought', { content: 'Проверь проект' }),
+          conversationProjection(2, 'e-2', 'assistant_message_delta', 'task-thought', { content: 'Начну с изучения папки проекта.' }),
+          conversationProjection(3, 'e-3', 'tool_started', 'task-thought', { tool_name: 'filesystem_list' }),
+          conversationProjection(4, 'e-4', 'tool_output', 'task-thought', { tool_name: 'filesystem_list', output: 'README.md' }),
+          conversationProjection(5, 'e-5', 'task_completed', 'task-thought', { final_message: 'Готово, всё в порядке.' })
+        ].map((event) => ({ ...event, conversationId: 'chat-thought' })),
+        hasMoreBefore: false,
+        nextBeforeSequence: 0,
+        replayGap: null,
+        errorCode: '',
+        errorMessage: ''
+      }
+    }
+    respond = (command) => command === 'chat.open' ? ok(chat) : ok([])
+
+    render(
+      <TaskTimeline
+        connection="connected"
+        events={[page]}
+        workspace="C:\\work\\repo"
+        chatId="chat-thought"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    expect(await screen.findByText('Готово, всё в порядке.')).toBeTruthy()
+    const toggle = screen.getByRole('button', { name: /Рассуждения/ })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText('Начну с изучения папки проекта.')).toBeNull()
+
+    await userEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('Начну с изучения папки проекта.')).toBeTruthy()
+  })
 })

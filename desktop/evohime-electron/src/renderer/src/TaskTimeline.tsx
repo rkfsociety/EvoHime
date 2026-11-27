@@ -53,6 +53,7 @@ type TimelineItemDescriptor =
       readonly entry: ReturnType<typeof buildTranscript>['entries'][number]
       readonly keySuffix: string
       readonly activeActivity: boolean
+      readonly collapsibleThought: boolean
     }
 
 interface TaskEventIndexCache {
@@ -698,12 +699,14 @@ export function TaskTimeline({
               && !transcript.finished
               && running
               && !visibleApproval
+            const collapsibleThought = isCollapsibleThought(transcript.entries, index)
             return {
               key: `${entry.kind}-${entry.id}-${keySuffix}`,
               kind: 'transcript' as const,
               entry,
               keySuffix,
-              activeActivity
+              activeActivity,
+              collapsibleThought
             }
           })
         ]
@@ -717,12 +720,14 @@ export function TaskTimeline({
         && !finished
         && running
         && !visibleApproval
+      const collapsibleThought = isCollapsibleThought(entries, index)
       return {
         key: `${entry.kind}-${entry.id}-${keySuffix}`,
         kind: 'transcript' as const,
         entry,
         keySuffix,
-        activeActivity
+        activeActivity,
+        collapsibleThought
       }
     })
   }, [conversation, entries, finished, running, visibleApproval])
@@ -743,7 +748,8 @@ export function TaskTimeline({
           entryTimes,
           copiedMessageId,
           setCopiedMessageId,
-          item.activeActivity
+          item.activeActivity,
+          item.collapsibleThought
         )
       }
       const messageId = item.key
@@ -1317,13 +1323,30 @@ function ComposerIcon({ name, className = '' }: { readonly name: ComposerIconNam
   return <UiIcon name={name} size={16} className={`composer__icon${className.length > 0 ? ` ${className}` : ''}`} />
 }
 
+function isCollapsibleThought(
+  entries: readonly ReturnType<typeof buildTranscript>['entries'][number][],
+  index: number
+): boolean {
+  if (entries[index]?.kind !== 'agent') return false
+  for (let nextIndex = index + 1; nextIndex < entries.length; nextIndex += 1) {
+    if (entries[nextIndex]?.kind !== 'agent') return true
+  }
+  return false
+}
+
+function thoughtPreview(text: string): string {
+  const firstLine = text.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ?? ''
+  return firstLine.length > 96 ? `${firstLine.slice(0, 93)}…` : firstLine
+}
+
 function renderTranscriptEntry(
   entry: ReturnType<typeof buildTranscript>['entries'][number],
   keySuffix: string,
   entryTimes: React.MutableRefObject<Map<string, number>>,
   copiedMessageId: string | null,
   onCopy: (id: string) => void,
-  activeActivity = false
+  activeActivity = false,
+  collapsibleThought = false
 ): React.JSX.Element {
   if (entry.kind === 'approval') {
     return (
@@ -1355,6 +1378,7 @@ function renderTranscriptEntry(
       id={messageId}
       text={entry.text}
       failed={entry.kind === 'result' && entry.failed}
+      collapsible={entry.kind === 'agent' && collapsibleThought}
       entryTimes={entryTimes}
       copied={copiedMessageId === messageId}
       onCopy={onCopy}
@@ -1367,6 +1391,7 @@ interface TranscriptMessageProps {
   readonly id: string
   readonly text: string
   readonly failed: boolean
+  readonly collapsible: boolean
   readonly entryTimes: React.MutableRefObject<Map<string, number>>
   readonly copied: boolean
   readonly onCopy: (id: string) => void
@@ -1377,11 +1402,48 @@ const TranscriptMessage = memo(function TranscriptMessage({
   id,
   text,
   failed,
+  collapsible,
   entryTimes,
   copied,
   onCopy
 }: TranscriptMessageProps): React.JSX.Element {
   useAppLocale()
+  const [thoughtOpen, setThoughtOpen] = useState(false)
+  if (collapsible) {
+    const preview = thoughtPreview(text)
+    return (
+      <li className="message message--agent message--thought">
+        <button
+          type="button"
+          className="activity__summary thought__summary"
+          onClick={() => setThoughtOpen((value) => !value)}
+          aria-expanded={thoughtOpen}
+        >
+          <span className="activity__icon" aria-hidden="true">
+            <UiIcon name="message" size={14} />
+          </span>
+          <span className="activity__label">
+            {preview.length > 0 ? `${translate('Рассуждения')} · ${preview}` : translate('Рассуждения')}
+          </span>
+          <span className="activity__chevron" aria-hidden="true">
+            <UiIcon name={thoughtOpen ? 'chevron-down' : 'chevron-right'} size={12} />
+          </span>
+        </button>
+        {thoughtOpen ? (
+          <>
+            <div className="message__bubble"><MarkdownMessage text={text} /></div>
+            <MessageActions
+              id={id}
+              text={text}
+              atMs={messageTime(entryTimes, id)}
+              copied={copied}
+              onCopy={onCopy}
+            />
+          </>
+        ) : null}
+      </li>
+    )
+  }
   return (
     <li
       className={`message message--agent${kind === 'result' && failed ? ' message--error' : ''}`}
@@ -1401,6 +1463,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
   && previous.id === next.id
   && previous.text === next.text
   && previous.failed === next.failed
+  && previous.collapsible === next.collapsible
   && previous.entryTimes === next.entryTimes
   && previous.copied === next.copied
   && previous.onCopy === next.onCopy
