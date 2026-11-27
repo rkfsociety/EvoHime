@@ -1,6 +1,6 @@
 use super::*;
 
-fn format_queen_failure_message(error: &str) -> String {
+fn format_failure_message(error: &str, queen: bool) -> String {
     let trimmed = error.trim();
     let lower = trimmed.to_ascii_lowercase();
     if lower.contains("permission_denied")
@@ -9,20 +9,28 @@ fn format_queen_failure_message(error: &str) -> String {
         || lower.contains("workspace_boundary")
         || lower.contains("workspace boundary")
     {
-        return "Королева Ева: У меня нет прав на выполнение этого действия. Проверьте, что указан правильный путь к песочнице и у меня есть доступ к файлам.".to_owned();
+        return if queen {
+            "Королева Ева: У меня нет прав на выполнение этого действия. Проверьте, что указан правильный путь к песочнице и у меня есть доступ к файлам.".to_owned()
+        } else {
+            "Ева: У меня нет прав на выполнение этого действия. Проверь разрешения и выбранную рабочую папку.".to_owned()
+        };
     }
     let reason = if trimmed.is_empty() || trimmed == "task_failed" {
         "внутренняя ошибка выполнения"
     } else {
         trimmed
     };
-    format!(
-        "Королева Ева: Я не смогла выполнить задачу. Причина: {reason}. Пожалуйста, проверьте настройки песочницы (eva_workspace_path) или лимиты провайдера."
-    )
+    if queen {
+        format!(
+            "Королева Ева: Я не смогла выполнить задачу. Причина: {reason}. Пожалуйста, проверьте настройки песочницы (eva_workspace_path) или лимиты провайдера."
+        )
+    } else {
+        format!("Ева: Не удалось выполнить задачу. Причина: {reason}.")
+    }
 }
 
-async fn emit_task_failed(events: &EventSink, task_id: String, error: String) {
-    let message = format_queen_failure_message(&error);
+async fn emit_task_failed(events: &EventSink, task_id: String, error: String, queen: bool) {
+    let message = format_failure_message(&error, queen);
     let _ = events
         .send(CoreEvent::AssistantDelta {
             task_id: task_id.clone(),
@@ -43,6 +51,15 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             goal_id,
             session_binding,
         } => {
+            // The Queen persona belongs to the Hive system conversation and to
+            // EvaPulse work only; a regular workspace chat must not speak as
+            // the Queen when its task fails.
+            let queen_task = preferred_route_hint.as_deref() == Some("hive")
+                || conversation.as_ref().is_some_and(|conversation| {
+                    conversation.conversation_id
+                        == crate::conversation_event_log::HIVE_SYSTEM_CHAT_ID
+                })
+                || task_id.starts_with("eva-pulse-");
             let cancellation = CancellationToken::new();
             let run_id = format!("agent-{}", uuid::Uuid::new_v4());
             let mut state_guard = state.lock().await;
@@ -67,7 +84,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 ) {
                     state_guard.tasks.remove(&task_id);
                     drop(state_guard);
-                    emit_task_failed(&events, task_id, error).await;
+                    emit_task_failed(&events, task_id, error, queen_task).await;
                     return;
                 }
             }
@@ -98,6 +115,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 task_id,
                                 "hive workspace is not configured: set the source directory in Hive settings"
                                     .into(),
+                                queen_task,
                             )
                             .await;
                             return;
@@ -143,7 +161,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     Err(error) => {
                         state_guard.tasks.remove(&task_id);
                         drop(state_guard);
-                        emit_task_failed(&events, task_id, error).await;
+                        emit_task_failed(&events, task_id, error, queen_task).await;
                         return;
                     }
                 }
@@ -206,6 +224,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             &events,
                             task_id,
                             "conversation history could not be loaded".into(),
+                            queen_task,
                         )
                         .await;
                         return;
@@ -238,6 +257,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     &events,
                     task_id,
                     "background task capacity is exhausted".into(),
+                    queen_task,
                 )
                 .await;
                 return;
@@ -263,7 +283,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             });
                             let events = state_guard.events.clone();
                             drop(state_guard);
-                            emit_task_failed(&events, task_id, warning).await;
+                            emit_task_failed(&events, task_id, warning, queen_task).await;
                             return;
                         }
                         Err(error) => {
@@ -275,6 +295,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 &events,
                                 task_id,
                                 format!("task checkpoint recovery failed: {error}"),
+                                queen_task,
                             )
                             .await;
                             return;
@@ -299,6 +320,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             &events,
                             task_id,
                             format!("task checkpoint could not be persisted: {error}"),
+                            queen_task,
                         )
                         .await;
                         return;
@@ -315,6 +337,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             &events,
                             task_id,
                             format!("agent run could not acquire durable lease: {error}"),
+                            queen_task,
                         )
                         .await;
                         return;
@@ -959,6 +982,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             format!(
                                 "agent run lease was lost; outcome requires reconciliation: {error}"
                             ),
+                            queen_task,
                         )
                         .await;
                     }
@@ -977,7 +1001,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         if matches!(error, AgentRunError::Cancelled) {
                             let _ = events.send(CoreEvent::TaskStopped { task_id }).await;
                         } else {
-                            emit_task_failed(&events, task_id, error.to_string()).await;
+                            emit_task_failed(&events, task_id, error.to_string(), queen_task).await;
                         }
                     }
                 }
@@ -2020,13 +2044,21 @@ mod timeout_tests {
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(16);
         let events = EventSink::new(event_tx);
 
-        emit_task_failed(&events, "task-perm".into(), "permission_denied".into()).await;
+        // A regular workspace chat must not speak as the Hive Queen.
+        emit_task_failed(
+            &events,
+            "task-perm".into(),
+            "permission_denied".into(),
+            false,
+        )
+        .await;
         let perm_delta = event_rx.recv().await.expect("perm assistant delta");
         let perm_failed = event_rx.recv().await.expect("perm task failed");
         match perm_delta {
             CoreEvent::AssistantDelta { task_id, content } => {
                 assert_eq!(task_id, "task-perm");
-                assert!(content.contains("Королева Ева:"));
+                assert!(content.contains("Ева:"));
+                assert!(!content.contains("Королева Ева:"));
                 assert!(content.contains("У меня нет прав"));
             }
             other => panic!("expected AssistantDelta, got {other:?}"),
@@ -2040,6 +2072,7 @@ mod timeout_tests {
             &events,
             "task-rate".into(),
             "provider rate limit reached".into(),
+            false,
         )
         .await;
         let rate_delta = event_rx.recv().await.expect("rate assistant delta");
@@ -2047,7 +2080,8 @@ mod timeout_tests {
         match rate_delta {
             CoreEvent::AssistantDelta { task_id, content } => {
                 assert_eq!(task_id, "task-rate");
-                assert!(content.contains("Королева Ева: Я не смогла выполнить задачу."));
+                assert!(content.contains("Ева: Не удалось выполнить задачу."));
+                assert!(!content.contains("Королева Ева:"));
                 assert!(content.contains("provider rate limit reached"));
             }
             other => panic!("expected AssistantDelta, got {other:?}"),
@@ -2055,6 +2089,29 @@ mod timeout_tests {
         assert!(matches!(
             rate_failed,
             CoreEvent::TaskFailed { ref task_id, .. } if task_id == "task-rate"
+        ));
+
+        // Hive-owned work keeps the Queen persona.
+        emit_task_failed(
+            &events,
+            "task-queen".into(),
+            "provider rate limit reached".into(),
+            true,
+        )
+        .await;
+        let queen_delta = event_rx.recv().await.expect("queen assistant delta");
+        let queen_failed = event_rx.recv().await.expect("queen task failed");
+        match queen_delta {
+            CoreEvent::AssistantDelta { task_id, content } => {
+                assert_eq!(task_id, "task-queen");
+                assert!(content.contains("Королева Ева: Я не смогла выполнить задачу."));
+                assert!(content.contains("provider rate limit reached"));
+            }
+            other => panic!("expected AssistantDelta, got {other:?}"),
+        }
+        assert!(matches!(
+            queen_failed,
+            CoreEvent::TaskFailed { ref task_id, .. } if task_id == "task-queen"
         ));
     }
 

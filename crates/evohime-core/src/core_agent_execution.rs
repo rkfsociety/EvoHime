@@ -32,6 +32,22 @@ fn subagent_tool_allowed(name: &str) -> bool {
     SUBAGENT_TOOL_ALLOWLIST.contains(&name)
 }
 
+/// Parses model-supplied tool-call arguments without failing the run.
+///
+/// A malformed argument payload is a model input error, not a runtime failure:
+/// the tool layer rejects the `Null` input with a typed `InvalidInput`, and the
+/// model can retry within the iteration budget. Returning an
+/// `AgentRunError::Internal` here used to kill an otherwise healthy task.
+pub(crate) fn tool_call_arguments(raw: &str) -> serde_json::Value {
+    match serde_json::from_str(raw) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "malformed tool-call arguments; using Null input");
+            serde_json::Value::Null
+        }
+    }
+}
+
 /// Denies every mutating or external permission for one subagent session.
 fn hive_world_permission_modes() -> [(
     evohime_permissions::Permission,
@@ -2204,8 +2220,12 @@ impl ToolAgent {
                 provenance_result.response_id.as_deref(),
             ) {
                 for (ordinal, call) in tool_calls.iter().enumerate() {
-                    let arguments: serde_json::Value = serde_json::from_str(&call.arguments)
-                        .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+                    // A malformed tool-call argument is a model input error,
+                    // not a runtime failure. The execution path below uses the
+                    // same `Null` fallback, so the tool rejects the call with a
+                    // typed `InvalidInput` and the model can retry instead of
+                    // losing the whole task.
+                    let arguments = tool_call_arguments(&call.arguments);
                     let tool_args_hash = evohime_model_provenance::canonical_args_hash(&arguments)
                         .map_err(|error| AgentRunError::Internal(error.to_string()))?;
                     journal
@@ -2450,8 +2470,7 @@ impl ToolAgent {
             for call in tool_calls {
                 let hook_sequence = observability_sequence;
                 observability_sequence = observability_sequence.saturating_add(1);
-                let mut input =
-                    serde_json::from_str(&call.arguments).unwrap_or(serde_json::Value::Null);
+                let mut input = tool_call_arguments(&call.arguments);
                 let guardrail_blocked = match sensitive_data_guardrails::redact_json(
                     &sensitive_data_guardrails::default_policy("tool"),
                     &input,
@@ -3625,8 +3644,9 @@ mod tests {
         adaptive_catalog_query, apply_read_only_subagent_modes, apply_session_permission_mode,
         bounded_tool_output, grant_session_plan_execution_permissions,
         inject_observed_expected_hash, model_tool_observation, request_allows_mutation,
-        subagent_tool_allowed, tool_preflight_can_be_offered, update_observed_file_revision,
-        ToolAgent, MAX_TRACE_TOOL_OUTPUT_BYTES, TOOL_OUTPUT_TRUNCATION_SUFFIX,
+        subagent_tool_allowed, tool_call_arguments, tool_preflight_can_be_offered,
+        update_observed_file_revision, ToolAgent, MAX_TRACE_TOOL_OUTPUT_BYTES,
+        TOOL_OUTPUT_TRUNCATION_SUFFIX,
     };
     use crate::logging::redact_boundary_text;
     use crate::sensitive_data_guardrails;
@@ -3635,6 +3655,20 @@ mod tests {
     };
     use evohime_tool_runtime::{ToolContext, ToolPreflightDecision, ToolRegistry};
     use std::sync::Arc;
+
+    #[test]
+    fn malformed_tool_call_arguments_degrade_to_null_instead_of_failing_the_task() {
+        let parsed = tool_call_arguments(r#"{"path":"src/lib.rs"}"#);
+        assert_eq!(parsed["path"], "src/lib.rs");
+
+        // The model can emit broken JSON; the runtime must keep going so the
+        // tool layer reports a typed InvalidInput and the model can retry.
+        assert_eq!(
+            tool_call_arguments("{\"path\": \"unterminated"),
+            serde_json::Value::Null
+        );
+        assert_eq!(tool_call_arguments(""), serde_json::Value::Null);
+    }
 
     #[test]
     fn subagent_tool_allowlist_stays_read_only() {
