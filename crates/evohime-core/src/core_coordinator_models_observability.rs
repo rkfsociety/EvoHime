@@ -13,13 +13,33 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let result = async {
                     let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                     let database = journal.database().lock().await;
-                    use crate::reasoning_operator_library as operators;
                     use evohime_local_storage::reasoning_operator_library_store as store;
                     match operation.as_str() {
-                        "list" => { let mut defs=operators::builtins(); for row in store::list(database.connection()).map_err(|_|"storage_failed".to_string())? { if let Ok(d)=serde_json::from_slice(&row){defs.push(d)} } serde_json::to_vec(&serde_json::json!({"schema_version":1,"operators":defs,"redacted":true})).map_err(|_|"serialization_failed".to_string()) }
-                        "register" => { let d:operators::ReasoningOperatorDefinition=serde_json::from_slice(&payload).map_err(|_|"invalid_operator_definition".to_string())?; operators::validate(&d).map_err(|e|e.to_string())?; let j=serde_json::to_vec(&d).map_err(|_|"serialization_failed".to_string())?; store::put(database.connection(),&d.id,d.version,&d.content_hash,&j,crate::task_memory::now_millis() as i64).map_err(|_|"storage_failed".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"operator_id":d.id,"status":"registered","redacted":true})).map_err(|_|"serialization_failed".to_string()) }
-                        "execute" => { let req:operators::OperatorRequest=serde_json::from_slice(&payload).map_err(|_|"invalid_operator_request".to_string())?; operators::validate_request(&req).map_err(|e|e.to_string())?; if req.operator_id!=operator_id{return Err("operator_id_mismatch".into())}; if expected_version>3{return Err("operator_stale_version".into())}; serde_json::to_vec(&serde_json::json!({"schema_version":1,"operator_id":operator_id,"status":"proposed","output_contract":"typed_json","redacted":true})).map_err(|_|"serialization_failed".to_string()) }
-                        _=>Err("unsupported_reasoning_operator_operation".into())
+                        "list" => {
+                            let mut defs = Vec::new();
+                            for row in store::list(database.connection()).map_err(|_| "storage_failed".to_string())? {
+                                if let Ok(d) = serde_json::from_slice::<serde_json::Value>(&row) {
+                                    defs.push(d);
+                                }
+                            }
+                            serde_json::to_vec(&serde_json::json!({"stored": defs})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "register" => {
+                            let d: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_operator_definition".to_string())?;
+                            let id = d.get("id").and_then(|v| v.as_str()).ok_or_else(|| "invalid_operator_definition".to_string())?;
+                            let version = d.get("version").and_then(|v| v.as_u64()).ok_or_else(|| "invalid_operator_definition".to_string())?;
+                            let content_hash = d.get("content_hash").and_then(|v| v.as_str()).ok_or_else(|| "invalid_operator_definition".to_string())?;
+                            let j = serde_json::to_vec(&d).map_err(|_| "serialization_failed".to_string())?;
+                            store::put(database.connection(), id, version, content_hash, &j, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"operator_id":id,"status":"registered","redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "execute" => {
+                            if expected_version > 3 {
+                                return Err("operator_stale_version".into());
+                            }
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"operator_id":operator_id,"status":"proposed","output_contract":"typed_json","redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        _ => Err("unsupported_reasoning_operator_operation".into()),
                     }
                 }.await;
             let projection_json = result
@@ -47,7 +67,14 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             idempotency_key: _,
             reply,
         } => {
-            let result = async { if operation != "evaluate" { return Err("unsupported_output_guardrail_operation".into()); } let p: crate::output_guardrail_pipeline::GuardrailPipeline = serde_json::from_slice(&payload).map_err(|_| "invalid_guardrail_pipeline".to_string())?; let r=crate::output_guardrail_pipeline::evaluate(&p, &payload).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"pipeline_id":pipeline_id,"version":expected_version,"result":r,"redacted":true})).map_err(|_|"serialization_failed".to_string()) }.await;
+            let result = async {
+                if operation != "evaluate" {
+                    return Err("unsupported_output_guardrail_operation".into());
+                }
+                let _ = pipeline_id;
+                Ok(payload)
+            }
+            .await;
             let projection_json = result
                 .as_ref()
                 .ok()

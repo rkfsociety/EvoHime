@@ -8,6 +8,8 @@
 
 pub(crate) mod deterministic_review_execution_plan;
 pub mod execution_trace_evaluation;
+#[allow(dead_code)]
+pub(crate) mod extension_conformance_kit;
 /// Multi-reviewer ensemble validation and conservative finding reconciliation.
 pub mod multi_reviewer_ensemble;
 
@@ -117,6 +119,34 @@ impl ServiceHandler for EvalsService {
                     description: "Validates and marks a multi-reviewer ensemble run as cancelled.".to_owned(),
                     input_schema: serde_json::json!({ "type": "object" }),
                     required_permissions: vec!["evals.execute".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "evals.conformance_run".to_owned(),
+                    description: "Runs extension conformance probes against a descriptor and fault mode.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["subject_id", "value"],
+                        "properties": {
+                            "subject_id": { "type": "string" },
+                            "value": { "type": "object" }
+                        }
+                    }),
+                    required_permissions: vec!["evals.execute".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "evals.conformance_register".to_owned(),
+                    description: "Stages and commits extension descriptors inside a conformance transaction.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["evals.execute".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "evals.conformance_inspect".to_owned(),
+                    description: "Reports conformance kit schema version and supported extension kinds.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["evals.read".to_owned()],
                     supports_streaming: false,
                 },
             ],
@@ -273,6 +303,82 @@ impl ServiceHandler for EvalsService {
                 serde_json::to_value(req.run)
                     .map_err(|e| ServiceContractError::unavailable(e.to_string()))
             }
+            "evals.conformance_run" => {
+                #[derive(serde::Deserialize)]
+                struct RunReq {
+                    subject_id: String,
+                    value: serde_json::Value,
+                }
+                let req: RunReq = serde_json::from_value(payload).map_err(|_| {
+                    ServiceContractError::invalid_input("invalid_conformance_payload")
+                })?;
+                let d: extension_conformance_kit::ExtensionDescriptor =
+                    serde_json::from_value(req.value.get("descriptor").cloned().ok_or_else(
+                        || ServiceContractError::invalid_input("descriptor_required"),
+                    )?)
+                    .map_err(|_| ServiceContractError::invalid_input("invalid_descriptor"))?;
+                let p: extension_conformance_kit::ConformanceProbe = serde_json::from_value(
+                    req.value
+                        .get("probe")
+                        .cloned()
+                        .ok_or_else(|| ServiceContractError::invalid_input("probe_required"))?,
+                )
+                .map_err(|_| ServiceContractError::invalid_input("invalid_probe"))?;
+                let fault: extension_conformance_kit::FaultMode = serde_json::from_value(
+                    req.value
+                        .get("fault")
+                        .cloned()
+                        .unwrap_or(serde_json::json!("none")),
+                )
+                .map_err(|_| ServiceContractError::invalid_input("invalid_fault"))?;
+                if d.subject_id != req.subject_id {
+                    return Err(ServiceContractError::invalid_input("subject_id_mismatch"));
+                }
+                let report = extension_conformance_kit::run(&d, &p, fault)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                serde_json::to_value(report)
+                    .map_err(|e| ServiceContractError::unavailable(e.to_string()))
+            }
+            "evals.conformance_register" => {
+                let descriptors: Vec<extension_conformance_kit::ExtensionDescriptor> =
+                    serde_json::from_value(payload.get("descriptors").cloned().ok_or_else(
+                        || ServiceContractError::invalid_input("descriptors_required"),
+                    )?)
+                    .map_err(|_| ServiceContractError::invalid_input("invalid_descriptors"))?;
+                let fault: extension_conformance_kit::FaultMode = serde_json::from_value(
+                    payload
+                        .get("fault")
+                        .cloned()
+                        .unwrap_or(serde_json::json!("none")),
+                )
+                .map_err(|_| ServiceContractError::invalid_input("invalid_fault"))?;
+                let mut t = extension_conformance_kit::RegistrationTransaction::default();
+                for d in descriptors {
+                    t.stage(d)
+                        .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                }
+                let committed = t
+                    .commit(fault)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                Ok(serde_json::json!({
+                    "status": "registered_ephemeral",
+                    "count": committed.len(),
+                    "redacted": true,
+                }))
+            }
+            "evals.conformance_inspect" => Ok(serde_json::json!({
+                "status": "available",
+                "schema_version": extension_conformance_kit::SCHEMA_VERSION,
+                "kinds": [
+                    "integration_provider",
+                    "external_agent_adapter",
+                    "workbench",
+                    "ui_extension",
+                    "declarative_component_provider"
+                ],
+                "production_execution": false,
+                "redacted": true,
+            })),
             other => Err(ServiceContractError::not_found(format!(
                 "unknown evals capability: {other}"
             ))),

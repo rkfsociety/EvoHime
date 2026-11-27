@@ -13,6 +13,10 @@ pub mod confidence_gated_model_cascade;
 pub mod interactive_model_compare_workbench;
 pub mod local_inference_scheduler;
 pub mod local_model_compatibility_gateway;
+#[allow(dead_code)]
+pub(crate) mod output_guardrail_pipeline;
+#[allow(dead_code)]
+pub(crate) mod reasoning_operator_library;
 
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
@@ -57,6 +61,49 @@ impl ServiceHandler for ModelRouterService {
                     required_permissions: vec!["model.read".to_owned()],
                     supports_streaming: false,
                 },
+                ServiceCapabilityDescriptor {
+                    name: "model_router.operator_builtins".to_owned(),
+                    description: "Lists built-in reasoning operator definitions.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object", "properties": {} }),
+                    required_permissions: vec!["model.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "model_router.operator_validate".to_owned(),
+                    description: "Validates a reasoning operator definition.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["model.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "model_router.operator_validate_request".to_owned(),
+                    description: "Validates a reasoning operator execution request.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["operator_id", "request"],
+                        "properties": {
+                            "operator_id": { "type": "string" },
+                            "request": { "type": "object" }
+                        }
+                    }),
+                    required_permissions: vec!["model.route".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "model_router.guardrail_evaluate".to_owned(),
+                    description: "Validates and evaluates an output guardrail pipeline.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["pipeline_id", "version", "pipeline", "raw_bytes_len"],
+                        "properties": {
+                            "pipeline_id": { "type": "string" },
+                            "version": { "type": "integer" },
+                            "pipeline": { "type": "object" }
+                        }
+                    }),
+                    required_permissions: vec!["model.route".to_owned()],
+                    supports_streaming: false,
+                },
             ],
         }
     }
@@ -96,6 +143,58 @@ impl ServiceHandler for ModelRouterService {
                 "local_runtime": "ready",
                 "active_models": []
             })),
+            "model_router.operator_builtins" => {
+                let defs = reasoning_operator_library::builtins();
+                serde_json::to_value(defs)
+                    .map_err(|e| ServiceContractError::unavailable(e.to_string()))
+            }
+            "model_router.operator_validate" => {
+                let d: reasoning_operator_library::ReasoningOperatorDefinition =
+                    serde_json::from_value(payload).map_err(|_| {
+                        ServiceContractError::invalid_input("invalid_operator_definition")
+                    })?;
+                reasoning_operator_library::validate(&d)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                serde_json::to_value(d)
+                    .map_err(|e| ServiceContractError::unavailable(e.to_string()))
+            }
+            "model_router.operator_validate_request" => {
+                #[derive(serde::Deserialize)]
+                struct ExecReq {
+                    operator_id: String,
+                    request: reasoning_operator_library::OperatorRequest,
+                }
+                let req: ExecReq = serde_json::from_value(payload)
+                    .map_err(|_| ServiceContractError::invalid_input("invalid_operator_request"))?;
+                reasoning_operator_library::validate_request(&req.request)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                if req.request.operator_id != req.operator_id {
+                    return Err(ServiceContractError::invalid_input("operator_id_mismatch"));
+                }
+                Ok(serde_json::json!({ "status": "validated" }))
+            }
+            "model_router.guardrail_evaluate" => {
+                #[derive(serde::Deserialize)]
+                struct GuardrailReq {
+                    pipeline_id: String,
+                    version: u64,
+                    pipeline: output_guardrail_pipeline::GuardrailPipeline,
+                }
+                let req: GuardrailReq = serde_json::from_value(payload).map_err(|_| {
+                    ServiceContractError::invalid_input("invalid_guardrail_pipeline")
+                })?;
+                let bytes = serde_json::to_vec(&req.pipeline)
+                    .map_err(|e| ServiceContractError::unavailable(e.to_string()))?;
+                let result = output_guardrail_pipeline::evaluate(&req.pipeline, &bytes)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                Ok(serde_json::json!({
+                    "schema_version": 1,
+                    "pipeline_id": req.pipeline_id,
+                    "version": req.version,
+                    "result": result,
+                    "redacted": true,
+                }))
+            }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown model-router capability: {other}"
             ))),

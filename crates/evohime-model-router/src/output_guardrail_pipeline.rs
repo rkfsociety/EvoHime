@@ -1,5 +1,6 @@
 //! Core-owned validators/transforms for outputs before acceptance or handoff.
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 pub const SCHEMA_VERSION: u32 = 1;
 pub const MAX_STAGES: usize = 32;
 pub const MAX_INPUT_BYTES: usize = 512 * 1024;
@@ -76,7 +77,7 @@ pub fn evaluate(p: &GuardrailPipeline, input: &[u8]) -> Result<GuardrailResult, 
         .any(|s| s.enabled && s.kind == StageKind::Redact);
     Ok(GuardrailResult {
         status: "accepted".into(),
-        output_hash: crate::architect_editor_model_pipeline::hash(&String::from_utf8_lossy(input)),
+        output_hash: format!("sha256:{}", hex::encode(sha2::Sha256::digest(input))),
         redacted,
         failed_stage: None,
         retries: 0,

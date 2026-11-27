@@ -1311,6 +1311,32 @@ impl IpcBridge {
         operation: String,
         request: generated::ReasoningOperatorLibraryCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let mut payload_bytes = request.payload;
+        match operation.as_str() {
+            "register" => {
+                let d: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                    .map_err(|_| FrameError::Io("invalid_operator_definition".into()))?;
+                let validated = self
+                    .invoke_required_service("model_router.operator_validate", d)
+                    .await?;
+                payload_bytes =
+                    serde_json::to_vec(&validated).map_err(|e| FrameError::Io(e.to_string()))?;
+            }
+            "execute" => {
+                let req_json: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                    .map_err(|_| FrameError::Io("invalid_operator_request".into()))?;
+                let _ = self
+                    .invoke_required_service(
+                        "model_router.operator_validate_request",
+                        serde_json::json!({
+                            "operator_id": request.operator_id,
+                            "request": req_json,
+                        }),
+                    )
+                    .await?;
+            }
+            _ => {}
+        }
         let coordinator = self
             .coordinator
             .as_ref()
@@ -1318,20 +1344,41 @@ impl IpcBridge {
         let (reply, response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::ReasoningOperatorLibrary {
-                operation,
+                operation: operation.clone(),
                 operator_id: request.operator_id,
-                payload: request.payload,
+                payload: payload_bytes,
                 expected_version: request.expected_version,
                 idempotency_key: request.idempotency_key,
                 reply,
             })
             .await
             .map_err(|e| FrameError::Io(e.to_string()))?;
-        response
+        let out_bytes = response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
-            .map_err(IpcBridgeError::from)
+            .map_err(IpcBridgeError::from)?;
+        if operation == "list" {
+            let stored: serde_json::Value = serde_json::from_slice(&out_bytes)
+                .map_err(|_| FrameError::Io("corrupt_operators".into()))?;
+            let mut defs = self
+                .invoke_required_service("model_router.operator_builtins", serde_json::json!({}))
+                .await?
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            if let Some(extra) = stored.get("stored").and_then(|v| v.as_array()) {
+                defs.extend(extra.iter().cloned());
+            }
+            return serde_json::to_vec(&serde_json::json!({
+                "schema_version": 1,
+                "operators": defs,
+                "redacted": true,
+            }))
+            .map_err(|e| FrameError::Io(e.to_string()))
+            .map_err(IpcBridgeError::from);
+        }
+        Ok(out_bytes)
     }
 
     pub(crate) async fn dispatch_output_guardrail_pipeline(
@@ -1339,6 +1386,23 @@ impl IpcBridge {
         operation: String,
         request: generated::OutputGuardrailPipelineCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let mut payload_bytes = request.payload;
+        if operation == "evaluate" {
+            let pipeline: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_guardrail_pipeline".into()))?;
+            let evaluated = self
+                .invoke_required_service(
+                    "model_router.guardrail_evaluate",
+                    serde_json::json!({
+                        "pipeline_id": request.pipeline_id,
+                        "version": request.expected_version,
+                        "pipeline": pipeline,
+                    }),
+                )
+                .await?;
+            payload_bytes =
+                serde_json::to_vec(&evaluated).map_err(|e| FrameError::Io(e.to_string()))?;
+        }
         let coordinator = self
             .coordinator
             .as_ref()
@@ -1348,7 +1412,7 @@ impl IpcBridge {
             .dispatch(CoreCommand::OutputGuardrailPipeline {
                 operation,
                 pipeline_id: request.pipeline_id,
-                payload: request.payload,
+                payload: payload_bytes,
                 expected_version: request.expected_version,
                 idempotency_key: request.idempotency_key,
                 reply,
@@ -1639,6 +1703,37 @@ impl IpcBridge {
         operation: String,
         request: generated::ExtensionConformanceKitCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        if request.subject_id.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.expected_version > u64::MAX - 1
+        {
+            return Err(FrameError::Io("invalid_conformance_request".into()).into());
+        }
+        let value: serde_json::Value = serde_json::from_slice(&request.payload)
+            .map_err(|_| FrameError::Io("invalid_conformance_payload".into()))?;
+        let computed = match operation.as_str() {
+            "run" => {
+                self.invoke_required_service(
+                    "evals.conformance_run",
+                    serde_json::json!({
+                        "subject_id": request.subject_id,
+                        "value": value,
+                    }),
+                )
+                .await?
+            }
+            "register" => {
+                self.invoke_required_service("evals.conformance_register", value)
+                    .await?
+            }
+            "inspect" => {
+                self.invoke_required_service("evals.conformance_inspect", serde_json::json!({}))
+                    .await?
+            }
+            _ => return Err(FrameError::Io("unsupported_conformance_operation".into()).into()),
+        };
+        let payload_bytes =
+            serde_json::to_vec(&computed).map_err(|e| FrameError::Io(e.to_string()))?;
         let c = self
             .coordinator
             .as_ref()
@@ -1647,7 +1742,7 @@ impl IpcBridge {
         c.dispatch(CoreCommand::ExtensionConformanceKit {
             operation,
             subject_id: request.subject_id,
-            payload: request.payload,
+            payload: payload_bytes,
             expected_version: request.expected_version,
             idempotency_key: request.idempotency_key,
             reply,
