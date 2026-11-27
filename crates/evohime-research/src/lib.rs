@@ -142,7 +142,10 @@ mod tests {
             },
         );
         match resp {
-            ServiceResponse::InvokeResult { request_id, payload } => {
+            ServiceResponse::InvokeResult {
+                request_id,
+                payload,
+            } => {
                 assert_eq!(request_id, "q1");
                 assert_eq!(payload["query"], "rust ipc");
             }

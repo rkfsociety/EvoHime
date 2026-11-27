@@ -355,9 +355,9 @@ pub mod automation_acceptance;
 pub mod automation_runtime;
 pub mod automation_scheduler;
 pub mod automation_simulation;
+pub mod core_assets;
 #[cfg(test)]
 mod core_tests;
-pub mod core_assets;
 pub mod durable_background_execution;
 pub(crate) mod durable_background_execution_runtime;
 pub mod module_registry;

@@ -14,7 +14,7 @@ if ($router -notmatch 'releaseAbsent.*HTTP.*404') { throw 'Router does not disti
 if ($router -notmatch 'Не удалось проверить installer release') { throw 'Router does not fail closed on installer release network errors.' }
 if ($router -notmatch '\$releaseAbsent\) \{ \$global:LASTEXITCODE = 0 \}') { throw 'Router does not clear the expected 404 exit code.' }
 if ($router -match 'gh release download installer.*2>\$null') { throw 'Router hides installer release errors.' }
-foreach ($workflow in @('core.yml','supervisor.yml','cli.yml','analysis-worker.yml','listener-module.yml','listener.yml','transaction.yml','verifier.yml','shell-host.yml','ui-bundle.yml','update-agent.yml')) {
+foreach ($workflow in @('core.yml','core-assets.yml','supervisor.yml','cli.yml','analysis-worker.yml','listener-module.yml','listener.yml','transaction.yml','verifier.yml','shell-host.yml','ui-bundle.yml','update-agent.yml','evals.yml','media-voice.yml','research.yml','remote-a2a.yml','ambient.yml','computer-use.yml','workflow-engine.yml','rag-memory.yml','tools-workspace.yml','tools-exec.yml','model-adapters.yml')) {
     $text = Get-Content -LiteralPath (Join-Path $root ".github\workflows\$workflow") -Raw
     if ($text -match '(?m)^\s{2}push:') { throw "$workflow still has a direct push trigger." }
     if ($text -notmatch '(?m)^\s{2}workflow_call:') { throw "$workflow is not reusable." }
@@ -66,7 +66,8 @@ if ($installer -notmatch '(?m)^\s+cancel-in-progress:\s*true\s*$') { throw 'web 
 if ($installer -notmatch 'release-versions\\installer\.txt') { throw 'web installer workflow does not consume the canonical installer version.' }
 if ($installer -notmatch 'build-installer-source\.ps1') { throw 'web installer workflow does not build the minimal source.' }
 if ($installer -notmatch 'installer-content\.tests\.ps1') { throw 'web installer workflow misses the content gate.' }
-foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analysis-worker','listener','listener-runtime','transaction','verifier','updater')) {
+$manifestModules = @((Get-Content -LiteralPath (Join-Path $root 'modules.manifest.json') -Raw | ConvertFrom-Json).modules | Where-Object { $_.id -ne 'installer' } | ForEach-Object { [string]$_.id })
+foreach ($module in $manifestModules) {
     $expected = $module + ': ${{ steps.select.outputs.' + $module + ' }}'
     if ($router -notmatch [regex]::Escape($expected)) { throw "Router output is missing: $module" }
 }
@@ -82,7 +83,7 @@ if ($manifestDispatch -lt 0 -or $finalFailure -lt $manifestDispatch) { throw 'Ro
 if ($dispatchBlock -notmatch 'workflowFailures = \[System\.Collections\.Generic\.List\[string\]\]::new\(\)') { throw 'Router does not retain child workflow failures while continuing to manifest publication.' }
 if ($dispatchBlock -notmatch 'Resolve-DispatchedRun \(\[PSCustomObject\]@\{ Module = .compatible-manifest.') { throw 'Router does not wait for the compatibility manifest workflow.' }
 if ($dispatchBlock -notmatch 'workflowFailures\.Count -eq 0') { throw 'Router may publish the installer after a module workflow failure.' }
-foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analysis-worker','listener','listener-runtime','transaction','verifier','updater','hive')) {
+foreach ($module in $manifestModules) {
     if ($dispatchBlock -notmatch [regex]::Escape("'$module'")) { throw "Dispatch map is missing: $module" }
 }
 $coreCargoToml = Get-Content -LiteralPath (Join-Path $root 'crates\evohime-core\Cargo.toml') -Raw

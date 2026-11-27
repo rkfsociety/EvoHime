@@ -137,7 +137,10 @@ mod tests {
             },
         );
         match resp {
-            ServiceResponse::InvokeResult { request_id, payload } => {
+            ServiceResponse::InvokeResult {
+                request_id,
+                payload,
+            } => {
                 assert_eq!(request_id, "r1");
                 assert!(payload["suites"].is_array());
             }

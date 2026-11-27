@@ -42,7 +42,8 @@ impl ServiceHandler for RagMemoryService {
                 },
                 ServiceCapabilityDescriptor {
                     name: "memory.extract".to_owned(),
-                    description: "Extracts bounded memory candidates from conversation context.".to_owned(),
+                    description: "Extracts bounded memory candidates from conversation context."
+                        .to_owned(),
                     input_schema: serde_json::json!({
                         "type": "object",
                         "required": ["text"],
@@ -102,7 +103,9 @@ impl ServiceHandler for RagMemoryService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evohime_service_contract::{dispatch_request, validate_descriptor, ServiceRequest, ServiceResponse};
+    use evohime_service_contract::{
+        dispatch_request, validate_descriptor, ServiceRequest, ServiceResponse,
+    };
 
     #[test]
     fn descriptor_and_dispatch_work() {

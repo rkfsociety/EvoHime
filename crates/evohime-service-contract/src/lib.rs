@@ -278,9 +278,8 @@ pub fn encode_frame<T: Serialize>(value: &T) -> Result<Vec<u8>, ServiceContractE
             payload.len()
         )));
     }
-    let len = u32::try_from(payload.len()).map_err(|_| {
-        ServiceContractError::invalid_input("frame payload length overflows u32")
-    })?;
+    let len = u32::try_from(payload.len())
+        .map_err(|_| ServiceContractError::invalid_input("frame payload length overflows u32"))?;
     let mut frame = Vec::with_capacity(4 + payload.len());
     frame.extend_from_slice(&len.to_be_bytes());
     frame.extend_from_slice(&payload);
@@ -309,9 +308,8 @@ pub fn decode_frame<T: DeserializeOwned>(frame: &[u8]) -> Result<T, ServiceContr
             frame.len()
         )));
     }
-    serde_json::from_slice(&frame[4..]).map_err(|err| {
-        ServiceContractError::invalid_input(format!("deserialize failed: {err}"))
-    })
+    serde_json::from_slice(&frame[4..])
+        .map_err(|err| ServiceContractError::invalid_input(format!("deserialize failed: {err}")))
 }
 
 /// Trait implemented by every isolated EvoHime service module.
@@ -341,9 +339,7 @@ pub fn dispatch_request<H: ServiceHandler>(
             contract_version: SERVICE_CONTRACT_VERSION,
         },
         ServiceRequest::Health => ServiceResponse::Health(handler.health()),
-        ServiceRequest::DescribeCapabilities => {
-            ServiceResponse::Capabilities(handler.descriptor())
-        }
+        ServiceRequest::DescribeCapabilities => ServiceResponse::Capabilities(handler.descriptor()),
         ServiceRequest::Invoke {
             request_id,
             capability,
@@ -503,14 +499,18 @@ mod tests {
         let mut dup = valid.clone();
         dup.capabilities.push(dup.capabilities[0].clone());
         assert_eq!(
-            validate_descriptor(&dup).expect_err("duplicate must fail").code,
+            validate_descriptor(&dup)
+                .expect_err("duplicate must fail")
+                .code,
             ServiceErrorCode::InvalidInput
         );
 
         let mut bad_id = valid;
         bad_id.service_id = "Bad/Id".to_owned();
         assert_eq!(
-            validate_descriptor(&bad_id).expect_err("bad id must fail").code,
+            validate_descriptor(&bad_id)
+                .expect_err("bad id must fail")
+                .code,
             ServiceErrorCode::InvalidInput
         );
     }

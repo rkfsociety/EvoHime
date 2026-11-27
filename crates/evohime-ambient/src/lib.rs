@@ -75,7 +75,9 @@ impl ServiceHandler for AmbientService {
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.trim().is_empty())
                     .ok_or_else(|| {
-                        ServiceContractError::invalid_input("experiment_id must be a non-empty string")
+                        ServiceContractError::invalid_input(
+                            "experiment_id must be a non-empty string",
+                        )
                     })?;
                 Ok(serde_json::json!({ "experiment_id": experiment_id, "status": "accepted" }))
             }
@@ -89,7 +91,9 @@ impl ServiceHandler for AmbientService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evohime_service_contract::{dispatch_request, validate_descriptor, ServiceRequest, ServiceResponse};
+    use evohime_service_contract::{
+        dispatch_request, validate_descriptor, ServiceRequest, ServiceResponse,
+    };
 
     #[test]
     fn descriptor_and_dispatch_work() {

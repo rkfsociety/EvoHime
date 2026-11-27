@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 param(
   # Итоговая точка сравнения. По умолчанию origin/main; HEAD~1 удобен для локальной
   # проверки последнего коммита, когда origin/main уже совпадает с HEAD.
@@ -46,6 +46,11 @@ try {
   }
 
   if ($touchesRouterOrVersions) {
+    Write-Host 'pre-push-check: validating modules.manifest.json...'
+    & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-modules-manifest.ps1')
+    if ($LASTEXITCODE -ne 0) {
+      throw 'check-modules-manifest.ps1 failed.'
+    }
     Write-Host 'pre-push-check: running module-router smoke & decoupling guard tests...'
     & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'module-router.tests.ps1')
     if ($LASTEXITCODE -ne 0) {

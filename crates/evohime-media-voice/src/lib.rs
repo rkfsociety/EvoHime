@@ -151,7 +151,10 @@ mod tests {
             },
         );
         match resp {
-            ServiceResponse::InvokeResult { request_id, payload } => {
+            ServiceResponse::InvokeResult {
+                request_id,
+                payload,
+            } => {
                 assert_eq!(request_id, "m1");
                 assert_eq!(payload["chars"], 5);
             }

@@ -16,10 +16,15 @@ if (-not $env:GITHUB_REPOSITORY) { throw 'GITHUB_REPOSITORY is required.' }
 $output = Join-Path $env:RUNNER_TEMP 'evohime.compatible.json'
 
 if (-not $PublishOnly) {
-$moduleIds = @(
-    'shell-host', 'ui-bundle', 'core', 'supervisor', 'cli', 'analysis-worker',
-    'listener', 'listener-runtime', 'transaction', 'verifier', 'updater', 'hive'
-)
+$modulesManifestPath = Join-Path $PSScriptRoot '..\modules.manifest.json'
+if (-not (Test-Path -LiteralPath $modulesManifestPath -PathType Leaf)) {
+    throw "Не найден modules.manifest.json: $modulesManifestPath"
+}
+$modulesManifest = Get-Content -LiteralPath $modulesManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+$moduleIds = @($modulesManifest.modules | Where-Object { $_.id -ne 'installer' } | ForEach-Object { [string]$_.id })
+if ($moduleIds.Count -eq 0) {
+    throw 'В modules.manifest.json не найдено ни одного модуля.'
+}
 $releasePages = Invoke-WithRetry -FailureMessage 'Не удалось получить список модульных релизов.' -Command {
     $rawPages = Invoke-GhRaw -Command {
         gh api --paginate --slurp "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"

@@ -759,6 +759,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "evohime-ambient"
+version = "0.1.0"
+dependencies = [
+ "evohime-service-contract",
+ "serde_json",
+]
+
+[[package]]
 name = "evohime-cli"
 version = "0.1.0"
 dependencies = [
@@ -788,6 +796,14 @@ dependencies = [
  "prost",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "evohime-computer-use"
+version = "0.1.0"
+dependencies = [
+ "evohime-service-contract",
+ "serde_json",
 ]
 
 [[package]]
@@ -822,6 +838,7 @@ dependencies = [
  "evohime-permissions",
  "evohime-receipts",
  "evohime-remote",
+ "evohime-service-contract",
  "evohime-tool-runtime",
  "futures-util",
  "hex",
@@ -873,6 +890,14 @@ dependencies = [
  "sha2",
  "thiserror 2.0.21",
  "walkdir",
+]
+
+[[package]]
+name = "evohime-evals-service"
+version = "0.1.0"
+dependencies = [
+ "evohime-service-contract",
+ "serde_json",
 ]
 
 [[package]]
@@ -974,6 +999,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "evohime-media-voice"
+version = "0.1.0"
+dependencies = [
+ "evohime-service-contract",
+ "serde_json",
+]
+
+[[package]]
+name = "evohime-model-adapters"
+version = "0.1.0"
+dependencies = [
+ "evohime-service-contract",
+ "serde_json",
+]
+
+[[package]]
 name = "evohime-model-gateway"
 version = "0.1.0"
 dependencies = [
@@ -1018,6 +1059,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "evohime-rag-memory"
+version = "0.1.0"
+dependencies = [
+ "evohime-service-contract",
+ "serde_json",
+]
+
+[[package]]
 name = "evohime-receipts"
 version = "0.1.0"
 dependencies = [
@@ -1041,10 +1090,28 @@ dependencies = [
 name = "evohime-remote"
 version = "0.1.0"
 dependencies = [
+ "evohime-service-contract",
  "hex",
  "serde",
  "serde_json",
  "sha2",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "evohime-research"
+version = "0.1.0"
+dependencies = [
+ "evohime-service-contract",
+ "serde_json",
+]
+
+[[package]]
+name = "evohime-service-contract"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
 ]
 
@@ -1093,6 +1160,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "evohime-tools-exec"
+version = "0.1.0"
+dependencies = [
+ "evohime-service-contract",
+ "serde_json",
+]
+
+[[package]]
+name = "evohime-tools-workspace"
+version = "0.1.0"
+dependencies = [
+ "evohime-service-contract",
+ "serde_json",
+]
+
+[[package]]
 name = "evohime-update-agent"
 version = "0.1.0"
 dependencies = [
@@ -1116,6 +1199,14 @@ dependencies = [
  "sha2",
  "thiserror 2.0.21",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "evohime-workflow"
+version = "0.1.0"
+dependencies = [
+ "evohime-service-contract",
+ "serde_json",
 ]
 
 [[package]]

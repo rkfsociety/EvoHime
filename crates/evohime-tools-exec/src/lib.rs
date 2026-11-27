@@ -42,7 +42,8 @@ impl ServiceHandler for ToolsExecService {
                 },
                 ServiceCapabilityDescriptor {
                     name: "process.list".to_owned(),
-                    description: "Lists active background tasks managed for the workspace.".to_owned(),
+                    description: "Lists active background tasks managed for the workspace."
+                        .to_owned(),
                     input_schema: serde_json::json!({ "type": "object", "properties": {} }),
                     required_permissions: vec!["process.read".to_owned()],
                     supports_streaming: false,
@@ -89,7 +90,9 @@ impl ServiceHandler for ToolsExecService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evohime_service_contract::{dispatch_request, validate_descriptor, ServiceRequest, ServiceResponse};
+    use evohime_service_contract::{
+        dispatch_request, validate_descriptor, ServiceRequest, ServiceResponse,
+    };
 
     #[test]
     fn descriptor_and_dispatch_work() {

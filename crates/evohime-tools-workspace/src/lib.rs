@@ -42,7 +42,8 @@ impl ServiceHandler for ToolsWorkspaceService {
                 },
                 ServiceCapabilityDescriptor {
                     name: "fs.patch".to_owned(),
-                    description: "Applies a targeted text replacement inside a workspace file.".to_owned(),
+                    description: "Applies a targeted text replacement inside a workspace file."
+                        .to_owned(),
                     input_schema: serde_json::json!({
                         "type": "object",
                         "required": ["path"],
@@ -87,7 +88,9 @@ impl ServiceHandler for ToolsWorkspaceService {
                     .ok_or_else(|| {
                         ServiceContractError::invalid_input("path must be a non-empty string")
                     })?;
-                Ok(serde_json::json!({ "path": path, "capability": capability, "status": "accepted" }))
+                Ok(
+                    serde_json::json!({ "path": path, "capability": capability, "status": "accepted" }),
+                )
             }
             "git.status" => Ok(serde_json::json!({ "status": "accepted" })),
             other => Err(ServiceContractError::not_found(format!(
@@ -100,7 +103,9 @@ impl ServiceHandler for ToolsWorkspaceService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evohime_service_contract::{dispatch_request, validate_descriptor, ServiceRequest, ServiceResponse};
+    use evohime_service_contract::{
+        dispatch_request, validate_descriptor, ServiceRequest, ServiceResponse,
+    };
 
     #[test]
     fn descriptor_and_dispatch_work() {
