@@ -77,7 +77,32 @@ impl ServiceHandler for ToolsExecService {
                     .ok_or_else(|| {
                         ServiceContractError::invalid_input("command must be a non-empty string")
                     })?;
-                Ok(serde_json::json!({ "command": command, "status": "accepted" }))
+                let cwd = payload
+                    .get("cwd")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or(".");
+                #[cfg(windows)]
+                let output = std::process::Command::new("pwsh")
+                    .args(["-NoProfile", "-Command", command])
+                    .current_dir(cwd)
+                    .output();
+                #[cfg(not(windows))]
+                let output = std::process::Command::new("sh")
+                    .args(["-lc", command])
+                    .current_dir(cwd)
+                    .output();
+                let output = output.map_err(|err| {
+                    ServiceContractError::new(
+                        evohime_service_contract::ServiceErrorCode::Internal,
+                        format!("failed to execute command: {err}"),
+                    )
+                })?;
+                Ok(serde_json::json!({
+                    "exit_code": output.status.code().unwrap_or(-1),
+                    "stdout": String::from_utf8_lossy(&output.stdout),
+                    "stderr": String::from_utf8_lossy(&output.stderr),
+                }))
             }
             "process.list" => Ok(serde_json::json!({ "processes": [] })),
             other => Err(ServiceContractError::not_found(format!(

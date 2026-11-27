@@ -116,13 +116,57 @@ impl ServiceHandler for ToolsWorkspaceService {
                     .ok_or_else(|| {
                         ServiceContractError::invalid_input("path must be a non-empty string")
                     })?;
+                let target = payload
+                    .get("target")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| {
+                        ServiceContractError::invalid_input("target must be a non-empty string")
+                    })?;
+                let replacement = payload
+                    .get("replacement")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        ServiceContractError::invalid_input("replacement must be a string")
+                    })?;
+                let content = std::fs::read_to_string(path).map_err(|err| {
+                    ServiceContractError::invalid_input(format!("cannot read {path}: {err}"))
+                })?;
+                if !content.contains(target) {
+                    return Err(ServiceContractError::invalid_input(
+                        "target text not found in file",
+                    ));
+                }
+                let updated = content.replacen(target, replacement, 1);
+                std::fs::write(path, &updated).map_err(|err| {
+                    ServiceContractError::invalid_input(format!("cannot write {path}: {err}"))
+                })?;
                 Ok(serde_json::json!({
                     "path": path,
-                    "capability": capability,
-                    "status": "accepted"
+                    "replaced": true
                 }))
             }
-            "git.status" => Ok(serde_json::json!({ "status": "accepted" })),
+            "git.status" => {
+                let cwd = payload
+                    .get("cwd")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or(".");
+                let output = std::process::Command::new("git")
+                    .args(["-C", cwd, "status", "--short"])
+                    .output()
+                    .map_err(|err| {
+                        ServiceContractError::new(
+                            evohime_service_contract::ServiceErrorCode::Internal,
+                            format!("failed to run git status: {err}"),
+                        )
+                    })?;
+                Ok(serde_json::json!({
+                    "exit_code": output.status.code().unwrap_or(-1),
+                    "stdout": String::from_utf8_lossy(&output.stdout),
+                    "stderr": String::from_utf8_lossy(&output.stderr),
+                }))
+            }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown tools-workspace capability: {other}"
             ))),

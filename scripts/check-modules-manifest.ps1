@@ -30,6 +30,15 @@ foreach ($mod in $manifest.modules) {
     if (-not (Test-Path -LiteralPath $workflowPath -PathType Leaf)) {
         throw "Missing workflow for '$($mod.id)': $workflowPath"
     }
+    $wfRaw = Get-Content -LiteralPath $workflowPath -Raw
+    if ($mod.kind -eq 'native' -and $wfRaw -match 'module-native\.yml') {
+        if ($wfRaw -notmatch ('artifact:\s*' + [regex]::Escape($mod.artifact))) {
+            throw "Workflow $($mod.workflow) artifact mismatch for '$($mod.id)' (expected $($mod.artifact))"
+        }
+        if ($wfRaw -notmatch ('version_file:\s*' + [regex]::Escape($mod.version_file))) {
+            throw "Workflow $($mod.workflow) version_file mismatch for '$($mod.id)' (expected $($mod.version_file))"
+        }
+    }
 }
 
 foreach ($mod in $manifest.modules) {
