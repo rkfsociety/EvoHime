@@ -101,18 +101,35 @@ pub const CLIENT_USER_AGENT: &str = concat!("EvoHime/", env!("CARGO_PKG_VERSION"
 pub const CLIENT_HTTP_REFERER: &str = "https://github.com/rkfsociety/EvoHime";
 /// Default `X-Title` attribution header sent on model-gateway requests.
 pub const CLIENT_X_TITLE: &str = "EvoHime";
+/// Default `X-OpenRouter-Title` attribution header.
+///
+/// OpenRouter and compatible aggregators read this spelling first and keep
+/// `X-Title` only as a backwards-compatible fallback, so both are sent.
+pub const CLIENT_X_OPENROUTER_TITLE: &str = CLIENT_X_TITLE;
 
 /// Returns a `reqwest::ClientBuilder` preconfigured with EvoHime client
-/// identification headers (`User-Agent`, `HTTP-Referer`, and `X-Title`).
+/// identification headers (`User-Agent`, `HTTP-Referer`, `Referer`,
+/// `X-Title`, and `X-OpenRouter-Title`).
 pub fn client_builder_with_identity() -> reqwest::ClientBuilder {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         reqwest::header::HeaderName::from_static("http-referer"),
         reqwest::header::HeaderValue::from_static(CLIENT_HTTP_REFERER),
     );
+    // Aggregators disagree on which referer spelling they read: OpenRouter
+    // uses the custom `HTTP-Referer`, while LiteRouter-style dashboards also
+    // look at the standard `Referer` request header.
+    headers.insert(
+        reqwest::header::REFERER,
+        reqwest::header::HeaderValue::from_static(CLIENT_HTTP_REFERER),
+    );
     headers.insert(
         reqwest::header::HeaderName::from_static("x-title"),
         reqwest::header::HeaderValue::from_static(CLIENT_X_TITLE),
+    );
+    headers.insert(
+        reqwest::header::HeaderName::from_static("x-openrouter-title"),
+        reqwest::header::HeaderValue::from_static(CLIENT_X_OPENROUTER_TITLE),
     );
     reqwest::Client::builder()
         .user_agent(CLIENT_USER_AGENT)

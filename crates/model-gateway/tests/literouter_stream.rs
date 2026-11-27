@@ -309,7 +309,15 @@ async fn literouter_sends_evohime_identity_headers() {
         ))
         .and(header("x-title", evohime_model_gateway::CLIENT_X_TITLE))
         .and(header(
+            "x-openrouter-title",
+            evohime_model_gateway::CLIENT_X_OPENROUTER_TITLE,
+        ))
+        .and(header(
             "http-referer",
+            evohime_model_gateway::CLIENT_HTTP_REFERER,
+        ))
+        .and(header(
+            "referer",
             evohime_model_gateway::CLIENT_HTTP_REFERER,
         ))
         .respond_with(
