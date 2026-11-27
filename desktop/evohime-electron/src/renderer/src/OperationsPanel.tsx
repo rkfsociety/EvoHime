@@ -3733,30 +3733,6 @@ export function HiveDashboard({
         ) : null}
 
         <div className="hive-dock">
-          <section className="hive-dock__card hive-dock__card--agents" aria-label={translate('Проекты под наблюдением')}>
-            <section className="hive-watched">
-              <div className="hive-panel__head">
-                <h4>{translate('Проекты под наблюдением')}</h4>
-                <span>{hive?.watchedRepositories.length ?? 0}</span>
-              </div>
-              {hive && hive.watchedRepositories.length > 0 ? (
-                <ul className="hive-watched__list">
-                  {hive.watchedRepositories.map((repository) => (
-                    <li key={repository.path} className="hive-watched__item">
-                      <div className="hive-watched__body">
-                        <strong title={repository.path}>{shortRepositoryPath(repository.path)}</strong>
-                        {repository.currentTask ? <small>{translate(repository.currentTask)}</small> : null}
-                      </div>
-                      <span className={`hive-watched__status hive-watched__status--${repository.status}`}>{translate(repository.status)}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="hive-empty hive-empty--compact">{translate('Нет отслеживаемых проектов')}</p>
-              )}
-            </section>
-          </section>
-
           <section className="hive-dock__card hive-dock__card--budget" aria-label={translate('Провайдер и лимиты')}>
             <div className="hive-budget-card">
               <div className="hive-budget-card__head">
