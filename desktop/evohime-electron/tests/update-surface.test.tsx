@@ -388,4 +388,37 @@ describe('standalone updater window', () => {
     expect(document.querySelectorAll('.updater-module-chip')).toHaveLength(5)
     expect(screen.queryByText(/^\+\d+$/)).toBeNull()
   })
+
+  it('uses a 3-column grid without tabs or truncation when 24 modules are updated', async () => {
+    const ids = Array.from({ length: 24 }, (_, idx) => `mod-${idx + 1}`)
+    const installedModules = Object.fromEntries(ids.map((id) => [id, '0.0.1']))
+    const availableModuleVersions = Object.fromEntries(ids.map((id) => [id, '0.0.2']))
+    const availableModuleChanges = Object.fromEntries(
+      ids.map((id) => [id, [`Полное читаемое описание обновления для ${id}`]])
+    )
+    const resize = vi.fn(async () => {})
+    window.evohimeUpdater = {
+      getStatus: vi.fn(async () => updaterUiStatus(status({
+        phase: 'applying',
+        message: 'Скачивание mod-3 — 25%',
+        activeModule: 'mod-3',
+        completedModules: ['mod-1', 'mod-2'],
+        availableModules: ids,
+        installedModules,
+        availableModuleVersions,
+        availableModuleChanges
+      }))),
+      subscribe: vi.fn(() => () => {}),
+      close: vi.fn(async () => {}),
+      minimize: vi.fn(async () => {}),
+      resize
+    }
+
+    render(<UpdaterApp />)
+    await waitFor(() => expect(document.querySelector('[data-module-id="mod-24"]')).toBeTruthy())
+    expect(document.querySelectorAll('.updater-module-chip')).toHaveLength(24)
+    expect(document.querySelector('.updater-changelog--grid-3')).toBeTruthy()
+    expect(screen.getByText('Полное читаемое описание обновления для mod-24')).toBeTruthy()
+    expect(resize).toHaveBeenCalledWith(expect.objectContaining({ width: 1500 }))
+  })
 })

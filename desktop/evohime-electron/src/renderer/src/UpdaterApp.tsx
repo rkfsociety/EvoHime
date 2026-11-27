@@ -21,7 +21,7 @@ const fallback: UpdaterUiStatus = {
 const SPINNER_RADIUS = 16
 const SPINNER_CIRCUMFERENCE = 2 * Math.PI * SPINNER_RADIUS
 const MIN_WINDOW_HEIGHT = 440
-const MAX_WINDOW_HEIGHT = 740
+const MAX_WINDOW_HEIGHT = 960
 
 type UpdaterStepId = 'check' | 'download' | 'install'
 type UpdaterStepState = 'done' | 'active' | 'pending' | 'error'
@@ -107,9 +107,9 @@ function resolveModuleNotes(module: UpdaterUiModule, moduleCount: number): reado
 }
 
 function resolveWindowWidth(moduleCount: number): number {
-  if (moduleCount <= 1) return 860
-  if (moduleCount <= 5) return 920
-  return 960
+  if (moduleCount <= 4) return 920
+  if (moduleCount <= 12) return 1240
+  return 1500
 }
 
 function StepIcon({ id, state }: { readonly id: UpdaterStepId; readonly state: UpdaterStepState }): React.JSX.Element {
@@ -238,11 +238,13 @@ export function UpdaterApp(): React.JSX.Element {
   const canHideToTray = (status.phase === 'applying' || status.phase === 'checking')
     && typeof window.evohimeUpdater?.hideToTray === 'function'
 
-  const densityClass = updatableModules.length >= 7
-    ? 'updater-changelog--dense'
-    : updatableModules.length <= 1
-      ? 'updater-changelog--single'
-      : 'updater-changelog--medium'
+  const densityClass = updatableModules.length <= 1
+    ? 'updater-changelog--single'
+    : updatableModules.length <= 4
+      ? 'updater-changelog--medium'
+      : updatableModules.length <= 12
+        ? 'updater-changelog--grid-2'
+        : 'updater-changelog--grid-3'
 
   useLayoutEffect(() => {
     const resize = window.evohimeUpdater?.resize

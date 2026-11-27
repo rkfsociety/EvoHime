@@ -179,9 +179,9 @@ button { font: inherit; }
 .updater-hero-column {
   position: relative;
   display: flex;
-  width: 37%;
-  min-width: 300px;
-  max-width: 356px;
+  width: 28%;
+  min-width: 248px;
+  max-width: 312px;
   flex: 0 0 auto;
   flex-direction: column;
   overflow: hidden;
@@ -658,7 +658,8 @@ button { font: inherit; }
 
 .updater-module-row__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 8px;
   min-width: 0;
 }
@@ -704,13 +705,14 @@ button { font: inherit; }
 }
 
 .updater-module-row__label {
-  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
   color: #f1f5ff;
   font-size: 12px;
   font-weight: 650;
   line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .updater-module-row__version {
@@ -749,6 +751,43 @@ button { font: inherit; }
   line-height: 1.4;
 }
 
+.updater-changelog--grid-2 .updater-changelog-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.updater-changelog--grid-3 .updater-changelog-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.updater-changelog--grid-2 .updater-module-row,
+.updater-changelog--grid-3 .updater-module-row {
+  padding: 6px 9px;
+  border: 1px solid rgb(255 255 255 / 7%);
+  background: rgb(255 255 255 / 2%);
+  gap: 3px;
+}
+
+.updater-changelog--grid-2 .updater-module-row--active,
+.updater-changelog--grid-3 .updater-module-row--active {
+  border-color: rgb(141 130 232 / 72%);
+  background: linear-gradient(90deg, rgb(141 130 232 / 14%), rgb(94 168 255 / 8%));
+}
+
+.updater-changelog--grid-3 .updater-module-row__label {
+  font-size: 11.5px;
+}
+
+.updater-changelog--grid-3 .updater-module-row__note {
+  font-size: 11px;
+  line-height: 1.28;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .updater-changelog--dense .updater-changelog-card__head {
   margin-bottom: 5px;
 }
@@ -763,11 +802,10 @@ button { font: inherit; }
 }
 
 .updater-changelog--dense .updater-module-row__note {
-  overflow: hidden;
   font-size: 11px;
   line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 @keyframes updater-chip-pulse {

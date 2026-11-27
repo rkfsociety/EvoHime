@@ -201,8 +201,8 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
 
     const bounds = updaterWindow.getBounds()
     const workArea = screen.getDisplayMatching(bounds).workArea
-    const maxWidth = Math.max(820, Math.min(1040, workArea.width - 32))
-    const maxHeight = Math.max(420, Math.min(760, workArea.height - 32))
+    const maxWidth = Math.max(820, Math.min(1560, workArea.width - 32))
+    const maxHeight = Math.max(420, Math.min(980, workArea.height - 32))
     const width = Math.max(820, Math.min(maxWidth, Math.round(candidate.width)))
     const height = Math.max(420, Math.min(maxHeight, Math.round(candidate.height)))
     if (bounds.width === width && bounds.height === height) return
