@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-11-26.
+Обновлено: 2026-11-27.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -1504,3 +1504,10 @@ Core: `ModelGateway` хранит пул всех настроенных про�
 тест), `git diff --check`. Последующий baseline `0a853f88` прошёл Core, UI
 bundle, shell-host, CLI, compatible manifest и остальные module release gates;
 исторические workflow/run IDs записаны в `release-evidence.md`.
+
+## Plans 199, 200, 201 — Архипелаг архитектуры, сотовая симуляция и разделение Core/Hive (закрыты 2026-11-27)
+
+- **План 199:** read-only сканер архитектуры (`HiveCityMapSnapshot`, `GetCityMap` на control pipe Улья) в `evohime-hive-daemon` и прямой клиент `hive-daemon-client.ts` в Electron main.
+- **План 200:** единый 2D Canvas в `HiveCityScene.tsx` (3D-зависимости `three` и `@react-three/fiber` удалены), `HoneycombEngine` (Кольцо 0 Цитадель Королевы с 1–6 выходами, Кольцо 1 сектора по 3 агента одной роли, Кольца 2+ модули проекта), dev-стенд `hive-studio`.
+- **План 201:** прямая зависимость `evohime-core -> evohime-hive` полностью удалена из `crates/evohime-core/Cargo.toml` и `crates/evohime-core/src/lib.rs`; единственная общая точка — `evohime-hive-contract`. UI читает состояние Улья напрямую из `evohime-hive-daemon`.
+- Зелёные CI-прогоны (`2026-11-26`) зафиксированы в [`release-evidence.md`](release-evidence.md); временные файлы `docs/plans/199-*.md`, `200-*.md`, `201-*.md` удалены.

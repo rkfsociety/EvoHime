@@ -3691,3 +3691,15 @@ hash, approvals expose only categories/counts/reason codes, and unsupported
 OCR/image/audio or remote sanitizer paths remain blocked. CI verification is
 pending for this local commit; no claim of passing full Rust/IPC integration
 or Electron checks is made here.
+
+## Plans 199, 200, 201 — Живой архипелаг, сотовая архитектура и разделение Core/Hive (закрыты 2026-11-27)
+
+Реализация подтверждена зелёными CI-прогонами на ветке `main` (`2026-11-26`):
+- `Rust documentation`: [45904474998](https://github.com/rkfsociety/EvoHime/actions/runs/45904474998) (`success`)
+- `module router`: [45904474806](https://github.com/rkfsociety/EvoHime/actions/runs/45904474806) (`success`)
+- `core module`: [45904545331](https://github.com/rkfsociety/EvoHime/actions/runs/45904545331) (`success`)
+- `hive module`: [45904548563](https://github.com/rkfsociety/EvoHime/actions/runs/45904548563) (`success`)
+- `ui-bundle module`: [45904542295](https://github.com/rkfsociety/EvoHime/actions/runs/45904542295) (`success`)
+- `compatible release manifest`: [45905760804](https://github.com/rkfsociety/EvoHime/actions/runs/45905760804) (`success`)
+
+Зависимость `evohime-core -> evohime-hive` удалена; `evohime-core` зависит только от `evohime-hive-contract`. Временные файлы планов `199`, `200`, `201` удалены из `docs/plans/`.

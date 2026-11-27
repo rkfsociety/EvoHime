@@ -1,7 +1,8 @@
 # План 191.0 — Core-owned tool surface hardening и доставка skills агенту
 
-Статус: active implementation contract. Исходной issue нет: направление выведено из
-аудита checkout, план не означает, что перечисленные дефекты уже исправлены.
+Статус: active implementation contract (частично реализован в checkout). Исходной issue нет: направление выведено из аудита checkout.
+
+> **Обновление 2026-11-27:** часть задач tool surface hardening уже реализована в `main` (`EXPECTED_TOOL_COUNT` связан с `BUILTIN_TOOL_COUNT`, выровнены input schemas в `manifest.rs`, `browser_session_*` отфильтрованы на границе каталога, `git_commit` больше не делает `git add -A`, добавлена Unicode/RU-токенизация в `adaptive_tool_catalog` и инструмент `script_execute`). Открытыми остаются доставка skills агенту (`skill_context: &[]` в `core_coordinator_tasks.rs`), версионирование профиля системного промпта и завершение этапов `191.3–191.4`.
 
 ## Цель
 

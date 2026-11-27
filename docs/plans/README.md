@@ -1,7 +1,7 @@
 # Планы реализации
 
 Каталог `docs/plans/` содержит только незавершённые implementation contracts.
-Обновлено: 2026-11-25. Наличие комплекта `NN-0` ... `NN-4` означает, что
+Обновлено: 2026-11-27. Наличие комплекта `NN-0` ... `NN-4` означает, что
 направление ещё не закрыто; статус реализации не выводится из одного файла
 плана.
 
@@ -15,7 +15,7 @@
 ## Закрытые направления
 Временные plan-файлы закрытых направлений удалены после переноса их контракта
 и evidence в канонические документы. К закрытым относятся планы `01–179`,
-`181`, `183`, `189–190` (включая `144`), `192`, `196`, `197` и `198`; планы `127–130` закрыты как MVP-контуры
+`181`, `183`, `189–190` (включая `144`), `192`, `196`, `197`, `198`, `199`, `200` и `201`; планы `127–130` закрыты как MVP-контуры
 с явно сохранёнными `unavailable` deployment/adapter gates. Их отсутствие
 из каталога не означает отсутствие контракта: он находится в
 `architecture.md`, `docs/architecture/*.md` и `current-state.md`.
@@ -33,21 +33,18 @@
 | 186 | [Core-owned Local Typed-Decision Fast Path](186-0-core-local-typed-decision-fast-path.md) | active; исторический источник issue #162 |
 | 187 | [Core-owned Windows Native Computer Use](187-0-core-windows-native-computer-use.md) | active; исторический источник issue #163; blocking dependencies 184–185 |
 | 188 | [Core-owned Research Experiment Tree](188-0-core-research-experiment-tree.md) | active; исторический источник issue #164 |
-| 191 | [Core-owned tool surface hardening и доставка skills агенту](191-0-core-tool-surface-and-skill-delivery.md) | active; выведен из аудита checkout, без исходного issue |
+| 191 | [Core-owned tool surface hardening и доставка skills агенту](191-0-core-tool-surface-and-skill-delivery.md) | active (частично реализован); tool schemas, `git_commit`, фильтрация `browser_session_*` и RU-токенизация сделаны, открыта доставка skills (`skill_context`) и 191.3–191.4 |
 | 193 | [Agent Coordination, Loop Guards и Session Recall](193-0-core-agent-coordination-loop-guards-and-session-recall.md) | active; анализ DeepSeek Harness, audit checkout и trace evidence 2026-11-17 (лимит шагов маскировался как completed) |
 | 194 | [Background Jobs Control Center](194-0-core-background-jobs-control-center.md) | active; UX/IPC поверх реализованного background-execution/v1 |
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
-| 199 | [Живой город-архипелаг реальной архитектуры Улья](199-0-hive-living-architecture-archipelago.md) | active; этапы 199.1–199.3 реализованы (3D-рендер заменён на 2D Canvas планом 200), ожидает 199.4 (CI/release evidence и закрытие) |
-| 200 | [Сотовая архитектура Улья, конвейер Королевы и динамическая симуляция](200-0-hive-queen-honeycomb-simulation.md) | implemented; локальные проверки и `evohime-hive` пройдены, ожидает завершения CI (`c832e354`) и закрытия |
-| 201 | [Полноценное разделение модулей evohime-core и evohime-hive](201-0-core-hive-module-decoupling.md) | implemented; этапы `201.1–201.4` выполнены, ожидает подтверждения CI и закрытия |
 
-Незавершённые numbered plans: `180`, `184–188`, `191`, `193–195`, `199`, `200` и `201`.
+Незавершённые numbered plans: `180`, `184–188`, `191` и `193–195`.
 
-Номера `149–172` и `182–183` являются закрытыми идентификаторами очереди.
+Номера `149–172`, `182–183` и `196–201` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая
 работа получает следующий свободный номер только после проверки дубликатов и
 зависимостей; следующий номер — `202`, текущий active catalog — `180`,
-`184–188`, `191`, `193–195`, `199`, `200` и `201`. Номера issues в активных планах — исторические
+`184–188`, `191` и `193–195`. Номера issues в активных планах — исторические
 идентификаторы постановок и не являются текущим источником статуса или
 критерием закрытия.
 
