@@ -1603,7 +1603,7 @@ impl crate::module_registry::ServiceTransport for MockResearchTransport {
     fn send(
         &self,
         request: evohime_service_contract::ServiceRequest,
-    ) -> evohime_service_contract::ServiceFuture<
+    ) -> crate::module_registry::ServiceFuture<
         '_,
         Result<
             evohime_service_contract::ServiceResponse,
