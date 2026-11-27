@@ -80,7 +80,7 @@ impl ServiceHandler for ToolsWorkspaceService {
         _caller_session_id: Option<&str>,
     ) -> Result<serde_json::Value, ServiceContractError> {
         match capability {
-            "fs.read" | "fs.patch" => {
+            "fs.read" => {
                 let path = payload
                     .get("path")
                     .and_then(|v| v.as_str())
@@ -88,9 +88,39 @@ impl ServiceHandler for ToolsWorkspaceService {
                     .ok_or_else(|| {
                         ServiceContractError::invalid_input("path must be a non-empty string")
                     })?;
-                Ok(
-                    serde_json::json!({ "path": path, "capability": capability, "status": "accepted" }),
-                )
+                let content = std::fs::read_to_string(path).map_err(|err| {
+                    ServiceContractError::invalid_input(format!("cannot read {path}: {err}"))
+                })?;
+                const MAX_READ_BYTES: usize = 256 * 1024;
+                let truncated = content.len() > MAX_READ_BYTES;
+                let slice = if truncated {
+                    let mut end = MAX_READ_BYTES;
+                    while !content.is_char_boundary(end) {
+                        end = end.saturating_sub(1);
+                    }
+                    &content[..end]
+                } else {
+                    content.as_str()
+                };
+                Ok(serde_json::json!({
+                    "path": path,
+                    "content": slice,
+                    "truncated": truncated
+                }))
+            }
+            "fs.patch" => {
+                let path = payload
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .ok_or_else(|| {
+                        ServiceContractError::invalid_input("path must be a non-empty string")
+                    })?;
+                Ok(serde_json::json!({
+                    "path": path,
+                    "capability": capability,
+                    "status": "accepted"
+                }))
             }
             "git.status" => Ok(serde_json::json!({ "status": "accepted" })),
             other => Err(ServiceContractError::not_found(format!(

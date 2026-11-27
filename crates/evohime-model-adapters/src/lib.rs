@@ -79,9 +79,10 @@ impl ServiceHandler for ModelAdaptersService {
                     .ok_or_else(|| {
                         ServiceContractError::invalid_input("raw_text must be a string")
                     })?;
+                let calls = parse_embedded_tool_calls(raw_text);
                 Ok(serde_json::json!({
                     "chars": raw_text.chars().count(),
-                    "tool_calls": []
+                    "tool_calls": calls
                 }))
             }
             "adapter.normalize_edit" => Ok(serde_json::json!({ "status": "normalized" })),
@@ -90,6 +91,33 @@ impl ServiceHandler for ModelAdaptersService {
             ))),
         }
     }
+}
+
+/// Extracts `<tool_call>{...}</tool_call>` JSON objects from raw model output
+/// and normalizes dotted tool names (`fs.read` -> `fs_read`).
+pub fn parse_embedded_tool_calls(raw_text: &str) -> Vec<serde_json::Value> {
+    const OPEN_TAG: &str = "<tool_call>";
+    const CLOSE_TAG: &str = "</tool_call>";
+    let mut results = Vec::new();
+    let mut rest = raw_text;
+    while let Some(start) = rest.find(OPEN_TAG) {
+        let after_open = &rest[start + OPEN_TAG.len()..];
+        let Some(end) = after_open.find(CLOSE_TAG) else {
+            break;
+        };
+        let block = after_open[..end].trim();
+        if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(block) {
+            if let Some(name) = parsed.get("name").and_then(|v| v.as_str()) {
+                let normalized = name.replace('.', "_");
+                if let Some(obj) = parsed.as_object_mut() {
+                    obj.insert("name".to_owned(), serde_json::Value::String(normalized));
+                }
+                results.push(parsed);
+            }
+        }
+        rest = &after_open[end + CLOSE_TAG.len()..];
+    }
+    results
 }
 
 #[cfg(test)]
@@ -108,10 +136,20 @@ mod tests {
             ServiceRequest::Invoke {
                 request_id: "ma1".to_owned(),
                 capability: "adapter.parse_tool_calls".to_owned(),
-                payload: serde_json::json!({ "raw_text": "ok" }),
+                payload: serde_json::json!({
+                    "raw_text": "thinking... <tool_call>{\"name\":\"fs.read\",\"arguments\":{\"path\":\"Cargo.toml\"}}</tool_call>"
+                }),
                 caller_session_id: None,
             },
         );
-        assert!(matches!(resp, ServiceResponse::InvokeResult { .. }));
+        match resp {
+            ServiceResponse::InvokeResult { payload, .. } => {
+                let calls = payload["tool_calls"].as_array().expect("tool_calls array");
+                assert_eq!(calls.len(), 1);
+                assert_eq!(calls[0]["name"], "fs_read");
+                assert_eq!(calls[0]["arguments"]["path"], "Cargo.toml");
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
     }
 }
