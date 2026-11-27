@@ -7,6 +7,10 @@
 //! Isolated `model-router` service module for local model runtime management,
 //! free-provider health probing, and purpose-based route selection.
 
+/// Confidence-gated model cascade decision contracts.
+pub mod confidence_gated_model_cascade;
+/// Interactive model comparison workbench metadata contracts.
+pub mod interactive_model_compare_workbench;
 pub mod local_inference_scheduler;
 pub mod local_model_compatibility_gateway;
 

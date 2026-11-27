@@ -4,7 +4,7 @@
 //! rank, or mutate a memory store.
 //!
 //! ```
-//! use evohime_core::temporal_memory_facts::{canonical_hash, projection, validate, Lifecycle, TemporalMemoryFactsRecord, SCHEMA_VERSION};
+//! use evohime_rag_memory::temporal_memory_facts::{canonical_hash, projection, validate, Lifecycle, TemporalMemoryFactsRecord, SCHEMA_VERSION};
 //! let mut facts = TemporalMemoryFactsRecord {
 //!     schema_version: SCHEMA_VERSION, id: "facts-1".into(), revision: 1,
 //!     lifecycle: Lifecycle::Active, scope: "workspace-opaque-id".into(),

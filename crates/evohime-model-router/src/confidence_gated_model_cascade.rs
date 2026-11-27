@@ -22,7 +22,7 @@ pub enum CascadeDecision {
 /// Versioned policy that gates cascade eligibility by model confidence.
 ///
 /// ```
-/// use evohime_core::confidence_gated_model_cascade::{CascadeDecision, CascadePolicy, SCHEMA_VERSION};
+/// use evohime_model_router::confidence_gated_model_cascade::{CascadeDecision, CascadePolicy, SCHEMA_VERSION};
 /// let policy = CascadePolicy {
 ///     schema_version: SCHEMA_VERSION,
 ///     policy_id: "default".into(),

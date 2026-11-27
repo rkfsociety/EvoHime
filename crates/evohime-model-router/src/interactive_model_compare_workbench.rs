@@ -4,7 +4,7 @@
 //! models or compare their outputs.
 //!
 //! ```
-//! use evohime_core::interactive_model_compare_workbench::{canonical_hash, projection, validate, InteractiveModelCompareWorkbenchRecord, Lifecycle, SCHEMA_VERSION};
+//! use evohime_model_router::interactive_model_compare_workbench::{canonical_hash, projection, validate, InteractiveModelCompareWorkbenchRecord, Lifecycle, SCHEMA_VERSION};
 //! let mut workbench = InteractiveModelCompareWorkbenchRecord {
 //!     schema_version: SCHEMA_VERSION, id: "compare-1".into(), revision: 1,
 //!     lifecycle: Lifecycle::Active, scope: "workspace-opaque-id".into(),

@@ -4,7 +4,7 @@
 //! commands or attest to repository state by itself.
 //!
 //! ```
-//! use evohime_core::verified_git_checkpoints::{canonical_hash, projection, validate, Lifecycle, VerifiedGitCheckpointsRecord, SCHEMA_VERSION};
+//! use evohime_tools_workspace::verified_git_checkpoints::{canonical_hash, projection, validate, Lifecycle, VerifiedGitCheckpointsRecord, SCHEMA_VERSION};
 //! let mut checkpoint = VerifiedGitCheckpointsRecord {
 //!     schema_version: SCHEMA_VERSION,
 //!     id: "checkpoint-1".into(),

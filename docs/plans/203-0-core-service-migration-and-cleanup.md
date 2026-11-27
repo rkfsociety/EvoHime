@@ -33,7 +33,7 @@
 - [План 202](./202-0-core-microkernel-decomposition.md) — базовая инфраструктура микроядра и `ModuleRegistry` (готова).
 
 ## Критерии готовности плана
-- [ ] Все перечисленные в этапах 1–4 прикладные файлы и их тесты удалены из `crates/evohime-core/src`.
-- [ ] Все соответствующие вызовы в `core_coordinator_*`, `core_agent_*` и `ipc_bridge_*` работают через `ModuleRegistry`.
+- [ ] Все перечисленные в этапах 1–4 прикладные файлы и их тесты удалены из `crates/evohime-core/src` (прогресс: перенесены и удалены из `evohime-core` 23 изолированных модуля по волнам 1–4; продолжается перенос оставшихся тесно связанных кластеров).
+- [ ] Все соответствующие вызовы в `core_coordinator_*`, `core_agent_*` и `ipc_bridge_*` работают через `ModuleRegistry` (прогресс: `ModuleRegistry` подключён в `IpcBridge`, переключены `voice_input_dictation`, `project_knowledge_notebook`, `offline_experience_consolidation`, `experience_replay_library`).
 - [ ] Неиспользуемые зависимости удалены из `crates/evohime-core/Cargo.toml`.
 - [ ] Полный прогон CI всех 26 модулей и `Rust documentation` зелёный; время сборки/тестов `core.yml` заметно сокращено и зафиксировано в `docs/release-evidence.md`.

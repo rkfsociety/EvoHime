@@ -1208,7 +1208,11 @@ name = "evohime-tools-workspace"
 version = "0.1.0"
 dependencies = [
  "evohime-service-contract",
+ "hex",
+ "serde",
  "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

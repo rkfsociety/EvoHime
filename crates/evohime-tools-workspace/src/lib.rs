@@ -6,6 +6,9 @@
 
 //! Isolated `tools-workspace` service module for file, patch, search, and Git tools.
 
+/// Verified Git checkpoint metadata contracts.
+pub mod verified_git_checkpoints;
+
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
     ServiceHealthReport, ServiceHealthStatus, SERVICE_CONTRACT_VERSION,

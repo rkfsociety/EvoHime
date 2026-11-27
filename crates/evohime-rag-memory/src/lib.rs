@@ -12,6 +12,8 @@ pub mod experience_replay_library;
 pub mod offline_experience_consolidation;
 /// Project-scoped knowledge notebook validation and pinning contracts.
 pub mod project_knowledge_notebook;
+/// Temporal memory fact metadata contracts.
+pub mod temporal_memory_facts;
 
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
