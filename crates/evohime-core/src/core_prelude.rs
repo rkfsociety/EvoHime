@@ -1206,6 +1206,63 @@ pub(crate) fn classify_shell_verification(
     )
 }
 
+/// Classifies verification outcomes across both `shell_execute` and structured
+/// verification tools (`script_execute`, `cargo_test`, `cargo_check`,
+/// `cargo_clippy`, `cargo_build`, `cargo_fmt`).
+pub(crate) fn classify_tool_verification(
+    tool_name: &str,
+    arguments: &str,
+    outcome: &recovery::ToolOutcome,
+) -> (Option<bool>, Option<bool>) {
+    match tool_name {
+        "shell_execute" => classify_shell_verification(arguments, outcome),
+        "script_execute" => {
+            let input = serde_json::from_str::<serde_json::Value>(arguments)
+                .unwrap_or(serde_json::Value::Null);
+            let script = input
+                .get("script")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            let is_verification_script = [
+                "test", "check", "verify", "lint", "validate", "gate", "audit",
+            ]
+            .iter()
+            .any(|marker| script.contains(marker));
+            if !is_verification_script {
+                return (None, None);
+            }
+            let status_ok = outcome.ok
+                && outcome
+                    .structured
+                    .get("timed_out")
+                    .and_then(serde_json::Value::as_bool)
+                    != Some(true)
+                && outcome
+                    .structured
+                    .get("exit_code")
+                    .and_then(serde_json::Value::as_i64)
+                    == Some(0);
+            (Some(status_ok), None)
+        }
+        "cargo_test" | "cargo_check" | "cargo_clippy" | "cargo_build" | "cargo_fmt" => {
+            let status_ok = outcome.ok
+                && outcome
+                    .structured
+                    .get("timed_out")
+                    .and_then(serde_json::Value::as_bool)
+                    != Some(true)
+                && outcome
+                    .structured
+                    .get("exit_code")
+                    .and_then(serde_json::Value::as_i64)
+                    .is_none_or(|code| code == 0);
+            (Some(status_ok), None)
+        }
+        _ => (None, None),
+    }
+}
+
 /// Program basename without a Windows executable suffix, lowercased, so
 /// `.\gradlew.bat`, `C:\repo\gradlew.bat` and `gradlew` classify the same way.
 fn normalized_program_name(program: &str) -> String {
@@ -1274,7 +1331,7 @@ pub(crate) fn delivery_next_step_for_agent(
     } else if !progress.mutation_done && requirements.mutation {
         "НЕМЕДЛЕННО внеси требуемое изменение через filesystem_patch или filesystem_write (если для expected_hash или уточнения текста нужно сначала прочитать целевой файл через filesystem_read — прочитай его и сразу внеси правку). Не пиши отчёт и не задавай вопросов."
     } else if !progress.verification_done && requirements.verification {
-        "НЕМЕДЛЕННО вызови shell_execute с полным JSON-объектом, например {\"program\":\"cargo\",\"args\":[\"test\"],\"cwd\":\".\"}. Не вызывай shell_execute с пустыми аргументами и не пиши отчёт."
+        "НЕМЕДЛЕННО выполни проверку: для прямых команд (например git diff --check или cargo) используй shell_execute с полным JSON-объектом, а для скриптов проверки (.ps1/.py/.js) — script_execute. Не запускай интерпретаторы через shell_execute и не пиши отчёт."
     } else if !progress.commit_done && requirements.commit {
         "НЕМЕДЛЕННО вызови git_commit с task-only сообщением и явным списком paths текущей задачи. Не пиши отчёт."
     } else {

@@ -3301,6 +3301,15 @@ impl ToolAgent {
                             verification_test_passed = outcome.ok;
                         }
                     }
+                } else {
+                    let (actual_test, actual_diff) =
+                        classify_tool_verification(&call.name, &call.arguments, &outcome);
+                    if let Some(value) = actual_test {
+                        verification_test_passed = value;
+                    }
+                    if let Some(value) = actual_diff {
+                        diff_check_passed = value;
+                    }
                 }
                 let lightweight_verification_passed = diff_check_passed || commit_done;
                 verification_done = (!delivery_requirements.verification

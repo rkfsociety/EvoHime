@@ -37,7 +37,7 @@ const INTERPRETERS: &[InterpreterSpec] = &[
     InterpreterSpec {
         id: "powershell",
         candidates: &["pwsh", "powershell"],
-        launcher_flags: &["-NoProfile", "-NonInteractive"],
+        launcher_flags: &["-NoProfile", "-NonInteractive", "-File"],
         forbidden_flags: &["command", "c", "encodedcommand", "enc", "e", "ec", "file"],
     },
     InterpreterSpec {
@@ -145,12 +145,14 @@ pub async fn execute(
         });
     }
 
-    let cwd = match input.cwd.as_deref() {
+    let cwd = strip_windows_verbatim_prefix(&match input.cwd.as_deref() {
         Some(path) => resolve_workspace_script(ctx, path)?,
         None => ctx.sandbox()?.root().to_path_buf(),
-    };
+    });
 
-    let script_display = script_path.display().to_string();
+    let script_display = strip_windows_verbatim_prefix(&script_path)
+        .display()
+        .to_string();
     let mut invocation: Vec<String> = spec
         .launcher_flags
         .iter()
@@ -315,11 +317,35 @@ fn validate_invocation(
             ),
         });
     }
-    validate_script_args(spec, args)?;
+    let user_tail = if args.len() >= spec.launcher_flags.len()
+        && args
+            .iter()
+            .zip(spec.launcher_flags.iter())
+            .all(|(arg, flag)| arg.eq_ignore_ascii_case(flag))
+    {
+        &args[spec.launcher_flags.len()..]
+    } else {
+        args
+    };
+    validate_script_args(spec, user_tail)?;
     validate_script_arguments(args).map_err(|error| ToolError::InvalidInput {
         tool: NAME.into(),
         message: error.to_string(),
     })
+}
+
+/// Removes the Windows verbatim prefix (`\\?\` or `\\?\UNC\`) that
+/// `std::fs::canonicalize` adds. PowerShell's AuthorizationManager rejects
+/// `\\?\`-prefixed script paths with `SecurityError` even for local files.
+fn strip_windows_verbatim_prefix(path: &std::path::Path) -> PathBuf {
+    let raw = path.to_string_lossy();
+    if let Some(unc) = raw.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{unc}"))
+    } else if let Some(plain) = raw.strip_prefix(r"\\?\") {
+        PathBuf::from(plain)
+    } else {
+        path.to_path_buf()
+    }
 }
 
 /// Resolves an interpreter candidate against `PATH` and runs the script.
@@ -565,5 +591,52 @@ mod tests {
 
         let resolved = resolve_workspace_script(&ctx, ".").expect("`.` must resolve to root");
         assert_eq!(resolved, dir.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn strip_windows_verbatim_prefix_normalizes_local_and_unc_paths() {
+        assert_eq!(
+            strip_windows_verbatim_prefix(std::path::Path::new(
+                r"\\?\D:\github\EvoHime\scripts\documentation.tests.ps1"
+            )),
+            PathBuf::from(r"D:\github\EvoHime\scripts\documentation.tests.ps1")
+        );
+        assert_eq!(
+            strip_windows_verbatim_prefix(std::path::Path::new(r"\\?\UNC\server\share\test.ps1")),
+            PathBuf::from(r"\\server\share\test.ps1")
+        );
+        assert_eq!(
+            strip_windows_verbatim_prefix(std::path::Path::new("/tmp/check.py")),
+            PathBuf::from("/tmp/check.py")
+        );
+    }
+
+    #[test]
+    fn powershell_launcher_file_flag_is_allowed_while_user_file_flag_stays_banned() {
+        let powershell = interpreter_spec("powershell").unwrap();
+        assert!(validate_invocation(
+            powershell,
+            r"C:\Program Files\PowerShell\7\pwsh.exe",
+            &[
+                "-NoProfile".into(),
+                "-NonInteractive".into(),
+                "-File".into(),
+                r"D:\repo\scripts\check.ps1".into(),
+            ],
+        )
+        .is_ok());
+        assert!(validate_invocation(
+            powershell,
+            r"C:\Program Files\PowerShell\7\pwsh.exe",
+            &[
+                "-NoProfile".into(),
+                "-NonInteractive".into(),
+                "-File".into(),
+                r"D:\repo\scripts\check.ps1".into(),
+                "-File".into(),
+                r"C:\evil.ps1".into(),
+            ],
+        )
+        .is_err());
     }
 }

@@ -798,6 +798,38 @@ mod tests {
             ),
             (Some(false), None)
         );
+        assert_eq!(
+            super::classify_tool_verification(
+                "script_execute",
+                r#"{"interpreter":"powershell","script":"scripts/documentation.tests.ps1"}"#,
+                &success,
+            ),
+            (Some(true), None)
+        );
+        assert_eq!(
+            super::classify_tool_verification(
+                "script_execute",
+                r#"{"interpreter":"powershell","script":"scripts/pre-push-check.ps1"}"#,
+                &failed,
+            ),
+            (Some(false), None)
+        );
+        assert_eq!(
+            super::classify_tool_verification(
+                "script_execute",
+                r#"{"interpreter":"python","script":"scripts/generate.py"}"#,
+                &success,
+            ),
+            (None, None)
+        );
+        assert_eq!(
+            super::classify_tool_verification(
+                "cargo_test",
+                r#"{"package":"evohime-core"}"#,
+                &success,
+            ),
+            (Some(true), None)
+        );
     }
 
     #[test]
