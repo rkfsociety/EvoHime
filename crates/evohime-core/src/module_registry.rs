@@ -73,7 +73,7 @@ struct RegistryState {
 
 /// Canonical list of isolated service module executables discovered beside
 /// `evohime-core.exe`.
-pub const SERVICE_MODULE_EXECUTABLES: [&str; 11] = [
+pub const SERVICE_MODULE_EXECUTABLES: [&str; 12] = [
     "evohime-evals.exe",
     "evohime-media-voice.exe",
     "evohime-research.exe",
@@ -85,6 +85,7 @@ pub const SERVICE_MODULE_EXECUTABLES: [&str; 11] = [
     "evohime-tools-workspace.exe",
     "evohime-tools-exec.exe",
     "evohime-model-adapters.exe",
+    "evohime-model-router.exe",
 ];
 
 /// Thread-safe registry and invocation proxy for external service modules.

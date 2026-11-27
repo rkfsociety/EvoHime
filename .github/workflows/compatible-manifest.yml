@@ -27,6 +27,7 @@ on:
       - tools-workspace module
       - tools-exec module
       - model-adapters module
+      - model-router module
     types: [completed]
   workflow_dispatch:
 

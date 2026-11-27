@@ -915,7 +915,7 @@ impl UpdateTransaction {
     ];
 
     /// Native component paths that may be updated independently.
-    pub const SELECTABLE_COMPONENTS: [&'static str; 20] = [
+    pub const SELECTABLE_COMPONENTS: [&'static str; 21] = [
         "EvoHime.exe",
         "evohime-core.exe",
         "evohime-supervisor.exe",
@@ -936,6 +936,7 @@ impl UpdateTransaction {
         "evohime-tools-workspace.exe",
         "evohime-tools-exec.exe",
         "evohime-model-adapters.exe",
+        "evohime-model-router.exe",
     ];
 
     /// Returns `true` when `restart` targets an isolated service (`service:<id>`)

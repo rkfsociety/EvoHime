@@ -483,6 +483,7 @@ const MODULE_IDS: &[&str] = &[
     "tools-workspace",
     "tools-exec",
     "model-adapters",
+    "model-router",
 ];
 const MAX_JSON_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_LOCAL_JSON_BYTES: usize = 256 * 1024;

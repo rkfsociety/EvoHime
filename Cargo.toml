@@ -28,6 +28,7 @@ members = [
   "crates/evohime-tools-workspace",
   "crates/evohime-tools-exec",
   "crates/evohime-model-adapters",
+  "crates/evohime-model-router",
   "crates/evohime-receipts",
   "crates/evohime-model-provenance",
   "crates/evohime-remote",

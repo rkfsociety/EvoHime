@@ -218,6 +218,15 @@
       "dependencies": []
     },
     {
+      "id": "model-router",
+      "kind": "native",
+      "artifact": "evohime-model-router.exe",
+      "restart": "service:model-router",
+      "version_file": "release-versions/model-router.txt",
+      "workflow": ".github/workflows/model-router.yml",
+      "dependencies": []
+    },
+    {
       "id": "installer",
       "kind": "installer",
       "artifact": "EvoHime-Setup.exe",

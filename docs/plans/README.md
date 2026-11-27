@@ -36,7 +36,7 @@
 | 193 | [Agent Coordination, Loop Guards и Session Recall](193-0-core-agent-coordination-loop-guards-and-session-recall.md) | active; анализ DeepSeek Harness, audit checkout и trace evidence 2026-11-17 (лимит шагов маскировался как completed) |
 | 194 | [Background Jobs Control Center](194-0-core-background-jobs-control-center.md) | active; UX/IPC поверх реализованного background-execution/v1 |
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
-| 202 | [Микроядерная декомпозиция Core и независимые модули-сервисы](202-0-core-microkernel-decomposition.md) | active (в процессе); `evohime-service-contract`, `ModuleRegistry`, `modules.manifest.json`, `core-assets`, 11 сервисов и поддержка в `updater`/`supervisor` реализованы; впереди доперенос оставшейся логики и CI-закрытие |
+| 202 | [Микроядерная декомпозиция Core и независимые модули-сервисы](202-0-core-microkernel-decomposition.md) | active (реализация завершена, ожидает CI-прогона после `push`); 12 сервисов + `core-assets`, `ModuleRegistry`, `modules.manifest.json` (26 модулей) и поддержка в `updater`/`supervisor` |
 
 Незавершённые numbered plans: `184–188`, `191`, `193–195` и `202`.
 

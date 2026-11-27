@@ -14,7 +14,7 @@ if ($router -notmatch 'releaseAbsent.*HTTP.*404') { throw 'Router does not disti
 if ($router -notmatch 'Не удалось проверить installer release') { throw 'Router does not fail closed on installer release network errors.' }
 if ($router -notmatch '\$releaseAbsent\) \{ \$global:LASTEXITCODE = 0 \}') { throw 'Router does not clear the expected 404 exit code.' }
 if ($router -match 'gh release download installer.*2>\$null') { throw 'Router hides installer release errors.' }
-foreach ($workflow in @('core.yml','core-assets.yml','supervisor.yml','cli.yml','analysis-worker.yml','listener-module.yml','listener.yml','transaction.yml','verifier.yml','shell-host.yml','ui-bundle.yml','update-agent.yml','evals.yml','media-voice.yml','research.yml','remote-a2a.yml','ambient.yml','computer-use.yml','workflow-engine.yml','rag-memory.yml','tools-workspace.yml','tools-exec.yml','model-adapters.yml')) {
+foreach ($workflow in @('core.yml','core-assets.yml','supervisor.yml','cli.yml','analysis-worker.yml','listener-module.yml','listener.yml','transaction.yml','verifier.yml','shell-host.yml','ui-bundle.yml','update-agent.yml','evals.yml','media-voice.yml','research.yml','remote-a2a.yml','ambient.yml','computer-use.yml','workflow-engine.yml','rag-memory.yml','tools-workspace.yml','tools-exec.yml','model-adapters.yml','model-router.yml')) {
     $text = Get-Content -LiteralPath (Join-Path $root ".github\workflows\$workflow") -Raw
     if ($text -match '(?m)^\s{2}push:') { throw "$workflow still has a direct push trigger." }
     if ($text -notmatch '(?m)^\s{2}workflow_call:') { throw "$workflow is not reusable." }

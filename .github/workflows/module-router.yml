@@ -46,6 +46,7 @@ jobs:
       tools-workspace: ${{ steps.select.outputs.tools-workspace }}
       tools-exec: ${{ steps.select.outputs.tools-exec }}
       model-adapters: ${{ steps.select.outputs.model-adapters }}
+      model-router: ${{ steps.select.outputs.model-router }}
       installer: ${{ steps.select.outputs.installer }}
     steps:
       - uses: actions/checkout@v7
@@ -59,7 +60,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           MANUAL_MODULES: ${{ inputs.modules }}
         run: |
-          $modules = @('shell-host', 'ui-bundle', 'core', 'core-assets', 'supervisor', 'cli', 'analysis-worker', 'listener', 'listener-runtime', 'transaction', 'verifier', 'updater', 'hive', 'evals', 'media-voice', 'research', 'remote-a2a', 'ambient', 'computer-use', 'workflow-engine', 'rag-memory', 'tools-workspace', 'tools-exec', 'model-adapters')
+          $modules = @('shell-host', 'ui-bundle', 'core', 'core-assets', 'supervisor', 'cli', 'analysis-worker', 'listener', 'listener-runtime', 'transaction', 'verifier', 'updater', 'hive', 'evals', 'media-voice', 'research', 'remote-a2a', 'ambient', 'computer-use', 'workflow-engine', 'rag-memory', 'tools-workspace', 'tools-exec', 'model-adapters', 'model-router')
           $manual = @($env:MANUAL_MODULES -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
           $manualSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
           foreach ($module in $manual) {
@@ -216,10 +217,11 @@ jobs:
             'tools-workspace' = '${{ needs.changes.outputs.tools-workspace }}'
             'tools-exec' = '${{ needs.changes.outputs.tools-exec }}'
             'model-adapters' = '${{ needs.changes.outputs.model-adapters }}'
+            'model-router' = '${{ needs.changes.outputs.model-router }}'
             'installer' = '${{ needs.changes.outputs.installer }}'
           }
           $workflowFiles = @{
-            'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'core-assets' = 'core-assets.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'; 'updater' = 'update-agent.yml'; 'hive' = 'hive.yml'; 'evals' = 'evals.yml'; 'media-voice' = 'media-voice.yml'; 'research' = 'research.yml'; 'remote-a2a' = 'remote-a2a.yml'; 'ambient' = 'ambient.yml'; 'computer-use' = 'computer-use.yml'; 'workflow-engine' = 'workflow-engine.yml'; 'rag-memory' = 'rag-memory.yml'; 'tools-workspace' = 'tools-workspace.yml'; 'tools-exec' = 'tools-exec.yml'; 'model-adapters' = 'model-adapters.yml'; 'installer' = 'installer.yml'
+            'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'core-assets' = 'core-assets.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'; 'updater' = 'update-agent.yml'; 'hive' = 'hive.yml'; 'evals' = 'evals.yml'; 'media-voice' = 'media-voice.yml'; 'research' = 'research.yml'; 'remote-a2a' = 'remote-a2a.yml'; 'ambient' = 'ambient.yml'; 'computer-use' = 'computer-use.yml'; 'workflow-engine' = 'workflow-engine.yml'; 'rag-memory' = 'rag-memory.yml'; 'tools-workspace' = 'tools-workspace.yml'; 'tools-exec' = 'tools-exec.yml'; 'model-adapters' = 'model-adapters.yml'; 'model-router' = 'model-router.yml'; 'installer' = 'installer.yml'
           }
           function Invoke-GhRetry {
             param(

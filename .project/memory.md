@@ -29,7 +29,7 @@
 
 ## Модульная поставка и сервисы
 
-- Канонический реестр всех 25 модулей продукта находится в
+- Канонический реестр всех 26 модулей продукта находится в
   [`modules.manifest.json`](../modules.manifest.json); скрипт
   `scripts/publish-compatible-manifest.ps1` читает список модулей из него,
   а `scripts/check-modules-manifest.ps1` проверяет соответствие версий и

@@ -76,6 +76,7 @@ const MODULE_LABELS: Readonly<Record<string, string>> = {
   'tools-workspace': 'Инструменты файлов и Git',
   'tools-exec': 'Выполнение команд и сборки',
   'model-adapters': 'Адаптеры и парсеры моделей',
+  'model-router': 'Маршрутизатор моделей',
   installer: 'Установщик'
 }
 

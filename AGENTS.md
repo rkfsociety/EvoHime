@@ -230,7 +230,7 @@ Test-NetConnection index.crates.io -Port 443
     причину и перепроверяй до `push`.
 19. Изолированные модули-сервисы (`evals`, `media-voice`, `research`,
     `remote-a2a`, `ambient`, `computer-use`, `workflow-engine`, `rag-memory`,
-    `tools-workspace`, `tools-exec`, `model-adapters`) общаются с `evohime-core`
+    `tools-workspace`, `tools-exec`, `model-adapters`, `model-router`) общаются с `evohime-core`
     только через `evohime-service-contract` и не должны зависеть от
     `evohime-core` в `Cargo.toml`. Канонический реестр модулей —
     `modules.manifest.json` (проверка: `pwsh -NoProfile -File .\scripts\check-modules-manifest.ps1`).

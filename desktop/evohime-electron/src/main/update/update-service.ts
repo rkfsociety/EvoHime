@@ -46,7 +46,7 @@ import { reportUpdateFailure } from './update-issue-reporter'
 
 export const TRANSACTION_EXECUTABLE = 'evohime-transaction.exe'
 export const SHELL_EXECUTABLE = 'EvoHime.exe'
-const MODULE_IDS = ['shell-host', 'ui-bundle', 'core', 'core-assets', 'supervisor', 'cli', 'analysis-worker', 'listener', 'listener-runtime', 'transaction', 'updater', 'verifier', 'hive', 'evals', 'media-voice', 'research', 'remote-a2a', 'ambient', 'computer-use', 'workflow-engine', 'rag-memory', 'tools-workspace', 'tools-exec', 'model-adapters'] as const
+const MODULE_IDS = ['shell-host', 'ui-bundle', 'core', 'core-assets', 'supervisor', 'cli', 'analysis-worker', 'listener', 'listener-runtime', 'transaction', 'updater', 'verifier', 'hive', 'evals', 'media-voice', 'research', 'remote-a2a', 'ambient', 'computer-use', 'workflow-engine', 'rag-memory', 'tools-workspace', 'tools-exec', 'model-adapters', 'model-router'] as const
 
 export type GateOutcome = 'continue' | 'applying' | 'failed'
 

@@ -64,6 +64,7 @@ $modulePaths = @{
     'tools-workspace' = @('crates/evohime-tools-workspace')
     'tools-exec' = @('crates/evohime-tools-exec')
     'model-adapters' = @('crates/evohime-model-adapters')
+    'model-router' = @('crates/evohime-model-router')
     'transaction' = @('crates/evohime-updater')
     'verifier' = @('crates/evohime-receipts')
     'updater' = @(
@@ -114,6 +115,7 @@ $summaryText = if ($Summary) { $Summary } else {
         'tools-workspace' { 'Модуль инструментов файлов и Git: чтение, патчи, поиск и работа с репозиторием.'; break }
         'tools-exec' { 'Модуль выполнения команд: запуск оболочки, скриптов, процессов и сборки.'; break }
         'model-adapters' { 'Модуль адаптеров моделей: парсинг вызовов инструментов и нормализация ответов.'; break }
+        'model-router' { 'Модуль маршрутизации моделей: выбор провайдера, пробы доступа и локальный раннер.'; break }
         default { "Компонент `$Module` поставлен как самостоятельный модуль EvoHime."; break }
     }
 }

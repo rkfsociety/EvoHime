@@ -1,0 +1,16 @@
+[package]
+name = "evohime-model-router"
+version = "0.1.0"
+publish = false
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "evohime-model-router"
+path = "src/main.rs"
+
+[dependencies]
+evohime-service-contract = { path = "../evohime-service-contract" }
+serde_json = { workspace = true }
