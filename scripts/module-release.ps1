@@ -61,6 +61,9 @@ $modulePaths = @{
     'computer-use' = @('crates/evohime-computer-use')
     'workflow-engine' = @('crates/evohime-workflow')
     'rag-memory' = @('crates/evohime-rag-memory')
+    'tools-workspace' = @('crates/evohime-tools-workspace')
+    'tools-exec' = @('crates/evohime-tools-exec')
+    'model-adapters' = @('crates/evohime-model-adapters')
     'transaction' = @('crates/evohime-updater')
     'verifier' = @('crates/evohime-receipts')
     'updater' = @(
@@ -108,6 +111,9 @@ $summaryText = if ($Summary) { $Summary } else {
         'computer-use' { 'Модуль управления экраном и IDE: GUI-автоматизация и мост к редактору.'; break }
         'workflow-engine' { 'Модуль сценариев: выполнение workflow, расписания, триггеры и фоновые задания.'; break }
         'rag-memory' { 'Модуль поиска по проекту и памяти: индексация кода и извлечение фактов.'; break }
+        'tools-workspace' { 'Модуль инструментов файлов и Git: чтение, патчи, поиск и работа с репозиторием.'; break }
+        'tools-exec' { 'Модуль выполнения команд: запуск оболочки, скриптов, процессов и сборки.'; break }
+        'model-adapters' { 'Модуль адаптеров моделей: парсинг вызовов инструментов и нормализация ответов.'; break }
         default { "Компонент `$Module` поставлен как самостоятельный модуль EvoHime."; break }
     }
 }

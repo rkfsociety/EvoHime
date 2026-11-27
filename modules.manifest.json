@@ -191,6 +191,33 @@
       "dependencies": []
     },
     {
+      "id": "tools-workspace",
+      "kind": "native",
+      "artifact": "evohime-tools-workspace.exe",
+      "restart": "service:tools-workspace",
+      "version_file": "release-versions/tools-workspace.txt",
+      "workflow": ".github/workflows/tools-workspace.yml",
+      "dependencies": []
+    },
+    {
+      "id": "tools-exec",
+      "kind": "native",
+      "artifact": "evohime-tools-exec.exe",
+      "restart": "service:tools-exec",
+      "version_file": "release-versions/tools-exec.txt",
+      "workflow": ".github/workflows/tools-exec.yml",
+      "dependencies": []
+    },
+    {
+      "id": "model-adapters",
+      "kind": "native",
+      "artifact": "evohime-model-adapters.exe",
+      "restart": "service:model-adapters",
+      "version_file": "release-versions/model-adapters.txt",
+      "workflow": ".github/workflows/model-adapters.yml",
+      "dependencies": []
+    },
+    {
       "id": "installer",
       "kind": "installer",
       "artifact": "EvoHime-Setup.exe",

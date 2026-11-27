@@ -45,6 +45,9 @@
 - `computer-use` (~15 КБ сейчас, высокий рост) — GUI-автоматизация, мобильная автоматизация, IDE-мост (убирает Win32-GUI зависимости из ядра).
 - `workflow-engine` (>500 КБ) — движок сценариев, расписания, триггеры, фоновые задания.
 - `rag-memory` (>450 КБ) — `workspace_rag*`, `memory_extraction*`, `offline_experience_consolidation`, `experience_replay_library`.
+- `tools-workspace` — файловые инструменты, патчи, поиск, архивы и Git/worktree (`filesystem*`, `patch`, `search`, `git*`).
+- `tools-exec` — выполнение команд, скриптов и сборки (`shell*`, `process`, `script`, `cargo`).
+- `model-adapters` — парсинг вызовов инструментов от разных моделей (`legacy_parser`, `model_edit_protocol_registry`, `structured_response_contract`).
 - `model-router` (>300 КБ, финальный этап) — локальный раннер/адаптация моделей и маршрутизация бесплатных провайдеров.
 
 ## Зависимости

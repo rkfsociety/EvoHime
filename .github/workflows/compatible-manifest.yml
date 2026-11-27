@@ -24,6 +24,9 @@ on:
       - computer-use module
       - workflow-engine module
       - rag-memory module
+      - tools-workspace module
+      - tools-exec module
+      - model-adapters module
     types: [completed]
   workflow_dispatch:
 

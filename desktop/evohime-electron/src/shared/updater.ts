@@ -73,6 +73,9 @@ const MODULE_LABELS: Readonly<Record<string, string>> = {
   'computer-use': 'Управление экраном и IDE',
   'workflow-engine': 'Движок сценариев',
   'rag-memory': 'Поиск по проекту и память',
+  'tools-workspace': 'Инструменты файлов и Git',
+  'tools-exec': 'Выполнение команд и сборки',
+  'model-adapters': 'Адаптеры и парсеры моделей',
   installer: 'Установщик'
 }
 
