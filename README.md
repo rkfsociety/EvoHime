@@ -36,8 +36,9 @@ You can switch the interface language in appearance settings between English and
 EvoHime separates UI rendering from execution and state ownership:
 
 - **Electron Desktop UI** — responsive desktop interface that renders live task state over an authenticated local named pipe;
-- **Rust Core Runtime** — owns workspace access, tool execution, approval checks, and local SQLite storage;
-- **Supervised Runtime** — a dedicated Windows supervisor process manages lifecycle, Job Object isolation, and automatic recovery if the core crashes.
+- **Rust Microkernel Core** — owns session orchestration, approval checks, local SQLite storage, and routes capabilities across isolated service modules;
+- **Isolated Service Modules & Assets** — independent binaries (`tools-workspace`, `tools-exec`, `model-adapters`, `research`, `rag-memory`, `workflow-engine`, `media-voice`, `evals`, `remote-a2a`, `ambient`, `computer-use`, `hive`, `listener`) and the `core-assets` bundle that update independently without rebuilding the whole core;
+- **Supervised Runtime** — a dedicated Windows supervisor process manages lifecycle, Job Object isolation, targeted service restarts, and automatic recovery.
 
 ## Providers and Models
 

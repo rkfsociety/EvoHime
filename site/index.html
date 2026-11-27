@@ -418,12 +418,14 @@
         </div>
 
         <div class="arch-box" id="architecture" aria-label="EvoHime process architecture">
-          <div class="arch-title">Process Isolation Architecture</div>
+          <div class="arch-title">Microkernel &amp; Modular Service Architecture</div>
 <pre>EvoHime.exe               Electron desktop UI (IPC projection only)
         │ named pipe (authenticated desktop-ipc-v1)
-evohime-core.exe          Rust Core runtime, tools, approvals, SQLite
+evohime-core.exe          Rust microkernel: orchestration, approvals, SQLite
+        ├──► service modules  tools, model-adapters, research, rag-memory, workflow, hive, listener
+        ├──► core-assets      declarative prompts, recipes &amp; policies (no-rebuild updates)
         ▲
-evohime-supervisor.exe    Windows Job Object, lifecycle &amp; crash recovery</pre>
+evohime-supervisor.exe    Windows Job Object, targeted service restarts &amp; crash recovery</pre>
         </div>
       </div>
     </section>
@@ -440,11 +442,11 @@ evohime-supervisor.exe    Windows Job Object, lifecycle &amp; crash recovery</pr
 
         <div class="grid">
           <article class="card">
-            <span class="card-tag">01 / RUST CORE</span>
-            <h3>Rust Core Runtime</h3>
+            <span class="card-tag">01 / MICROKERNEL &amp; MODULES</span>
+            <h3>Rust Microkernel &amp; Services</h3>
             <p>
-              High-performance native Rust runtime owns workspace access, tool execution,
-              local SQLite state, and permission enforcement without external Node.js dependencies.
+              A lean Rust microkernel owns SQLite state and permission enforcement while isolated
+              service modules (tools, model adapters, research, RAG, workflows, Hive) update independently.
             </p>
           </article>
 
