@@ -166,27 +166,124 @@ impl IpcBridge {
         &self,
         request: generated::MultiReviewerEnsembleCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let mut payload_bytes = request.payload;
+        match request.operation.as_str() {
+            "save_profile" => {
+                let profile: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                    .map_err(|_| FrameError::Io("invalid_ensemble_profile".into()))?;
+                let validated = self
+                    .invoke_required_service("evals.ensemble_validate_profile", profile)
+                    .await?;
+                payload_bytes =
+                    serde_json::to_vec(&validated).map_err(|e| FrameError::Io(e.to_string()))?;
+            }
+            "start" => {
+                let run: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                    .map_err(|_| FrameError::Io("invalid_ensemble_run".into()))?;
+                let prepared = self
+                    .invoke_required_service(
+                        "evals.ensemble_prepare_start",
+                        serde_json::json!({
+                            "run": run,
+                            "expected_revision": request.expected_revision,
+                        }),
+                    )
+                    .await?;
+                payload_bytes =
+                    serde_json::to_vec(&prepared).map_err(|e| FrameError::Io(e.to_string()))?;
+            }
+            "reconcile" => {
+                let candidates: serde_json::Value = serde_json::from_slice(&payload_bytes)
+                    .map_err(|_| FrameError::Io("invalid_candidates".into()))?;
+                let clusters = self
+                    .invoke_required_service("evals.ensemble_reconcile", candidates)
+                    .await?;
+                payload_bytes =
+                    serde_json::to_vec(&clusters).map_err(|e| FrameError::Io(e.to_string()))?;
+            }
+            _ => {}
+        }
         let coordinator = self
             .coordinator
             .as_ref()
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        if request.operation == "cancel" {
+            let (get_reply, get_resp) = oneshot::channel();
+            coordinator
+                .dispatch(CoreCommand::MultiReviewerEnsemble {
+                    operation: "get_raw".to_owned(),
+                    ensemble_id: request.ensemble_id.clone(),
+                    payload: Vec::new(),
+                    expected_revision: request.expected_revision,
+                    idempotency_key: request.idempotency_key.clone(),
+                    reply: get_reply,
+                })
+                .await
+                .map_err(|e| FrameError::Io(e.to_string()))?;
+            let raw_bytes = get_resp
+                .await
+                .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+                .map_err(FrameError::Io)
+                .map_err(IpcBridgeError::from)?;
+            let run: serde_json::Value = serde_json::from_slice(&raw_bytes)
+                .map_err(|_| FrameError::Io("corrupt_ensemble_run".into()))?;
+            let cancelled = self
+                .invoke_required_service(
+                    "evals.ensemble_prepare_cancel",
+                    serde_json::json!({
+                        "run": run,
+                        "expected_revision": request.expected_revision,
+                    }),
+                )
+                .await?;
+            payload_bytes =
+                serde_json::to_vec(&cancelled).map_err(|e| FrameError::Io(e.to_string()))?;
+        }
         let (reply, response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::MultiReviewerEnsemble {
-                operation: request.operation,
+                operation: request.operation.clone(),
                 ensemble_id: request.ensemble_id,
-                payload: request.payload,
+                payload: payload_bytes,
                 expected_revision: request.expected_revision,
                 idempotency_key: request.idempotency_key,
                 reply,
             })
             .await
             .map_err(|e| FrameError::Io(e.to_string()))?;
-        response
+        let out_bytes = response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
-            .map_err(IpcBridgeError::from)
+            .map_err(IpcBridgeError::from)?;
+        if request.operation == "status" {
+            let wrapper: serde_json::Value = serde_json::from_slice(&out_bytes)
+                .map_err(|_| FrameError::Io("corrupt_ensemble_run".into()))?;
+            let status = wrapper
+                .get("status")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            let raw_run = wrapper
+                .get("run")
+                .cloned()
+                .ok_or_else(|| FrameError::Io("corrupt_ensemble_run".into()))?;
+            let run = self
+                .invoke_required_service("evals.ensemble_validate_run", raw_run)
+                .await?;
+            let slot_count = run
+                .get("slot_statuses")
+                .and_then(|v| v.as_array())
+                .map_or(0, Vec::len);
+            return serde_json::to_vec(&serde_json::json!({
+                "status": status,
+                "ensemble_id": run.get("id").cloned().unwrap_or(serde_json::Value::Null),
+                "revision": run.get("profile_revision").cloned().unwrap_or(serde_json::Value::Null),
+                "slot_count": slot_count,
+            }))
+            .map_err(|e| FrameError::Io(e.to_string()))
+            .map_err(IpcBridgeError::from);
+        }
+        Ok(out_bytes)
     }
 
     pub(crate) async fn dispatch_language_intelligence(

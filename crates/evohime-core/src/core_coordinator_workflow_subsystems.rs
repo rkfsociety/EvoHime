@@ -119,39 +119,48 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 let database = journal.database().lock().await;
                 match operation.as_str() {
                     "save_profile" => {
-                        let profile: crate::multi_reviewer_ensemble::ReviewerEnsembleProfile = serde_json::from_slice(&payload).map_err(|_| "invalid_ensemble_profile".to_string())?;
-                        crate::multi_reviewer_ensemble::validate_profile(&profile).map_err(|e| e.to_string())?;
+                        let profile: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_ensemble_profile".to_string())?;
+                        let id = profile.get("id").and_then(|v| v.as_str()).ok_or_else(|| "invalid_ensemble_profile".to_string())?;
+                        let revision = profile.get("revision").and_then(|v| v.as_u64()).ok_or_else(|| "invalid_ensemble_profile".to_string())?;
+                        let content_hash = profile.get("content_hash").and_then(|v| v.as_str()).ok_or_else(|| "invalid_ensemble_profile".to_string())?;
                         let json = serde_json::to_vec(&profile).map_err(|e| e.to_string())?;
-                        let saved = evohime_local_storage::multi_reviewer_ensemble_store::put_profile(database.connection(), &profile.id, profile.revision, &profile.content_hash, &json, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
-                        serde_json::to_vec(&serde_json::json!({"status": if saved {"stored"} else {"duplicate"}, "ensemble_id": profile.id, "revision": profile.revision})).map_err(|e| e.to_string())
+                        let saved = evohime_local_storage::multi_reviewer_ensemble_store::put_profile(database.connection(), id, revision, content_hash, &json, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({"status": if saved {"stored"} else {"duplicate"}, "ensemble_id": id, "revision": revision})).map_err(|e| e.to_string())
                     }
-                    "start" | "status" => {
-                        if operation == "start" {
-                            let mut run: crate::multi_reviewer_ensemble::ReviewerEnsembleRun = serde_json::from_slice(&payload).map_err(|_| "invalid_ensemble_run".to_string())?;
-                            crate::multi_reviewer_ensemble::validate_run(&run).map_err(|e| e.to_string())?;
-                            run.revision = expected_revision.saturating_add(1).max(run.revision);
-                            run.status = crate::multi_reviewer_ensemble::RunStatus::Running;
-                            run.content_hash = crate::multi_reviewer_ensemble::run_hash(&run).map_err(|e| e.to_string())?;
-                            let json = serde_json::to_vec(&run).map_err(|e| e.to_string())?;
-                            evohime_local_storage::multi_reviewer_ensemble_store::put_run(database.connection(), &run.id, &run.profile_ref, run.profile_revision, &run.content_hash, &json, "running", crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"status":"running","ensemble_id":run.id,"revision":run.revision})).map_err(|e| e.to_string())
-                        } else {
-                            let (json, status) = evohime_local_storage::multi_reviewer_ensemble_store::get_run(database.connection(), &ensemble_id).map_err(|e| e.to_string())?.ok_or_else(|| "ensemble_not_found".to_string())?;
-                            let run: crate::multi_reviewer_ensemble::ReviewerEnsembleRun = serde_json::from_slice(&json).map_err(|_| "corrupt_ensemble_run".to_string())?;
-                            crate::multi_reviewer_ensemble::validate_run(&run).map_err(|e| e.to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"status":status,"ensemble_id":run.id,"revision":run.profile_revision,"slot_count":run.slot_statuses.len()})).map_err(|e| e.to_string())
-                        }
+                    "start" => {
+                        let run: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_ensemble_run".to_string())?;
+                        let id = run.get("id").and_then(|v| v.as_str()).ok_or_else(|| "invalid_ensemble_run".to_string())?;
+                        let profile_ref = run.get("profile_ref").and_then(|v| v.as_str()).ok_or_else(|| "invalid_ensemble_run".to_string())?;
+                        let profile_revision = run.get("profile_revision").and_then(|v| v.as_u64()).ok_or_else(|| "invalid_ensemble_run".to_string())?;
+                        let content_hash = run.get("content_hash").and_then(|v| v.as_str()).ok_or_else(|| "invalid_ensemble_run".to_string())?;
+                        let revision = run.get("revision").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let json = serde_json::to_vec(&run).map_err(|e| e.to_string())?;
+                        evohime_local_storage::multi_reviewer_ensemble_store::put_run(database.connection(), id, profile_ref, profile_revision, content_hash, &json, "running", crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({"status":"running","ensemble_id":id,"revision":revision})).map_err(|e| e.to_string())
                     }
-                    "reconcile" => { let candidates: Vec<crate::multi_reviewer_ensemble::NormalizedReviewFindingCandidate> = serde_json::from_slice(&payload).map_err(|_| "invalid_candidates".to_string())?; let clusters = crate::multi_reviewer_ensemble::reconcile_candidates(&candidates).map_err(|e| e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"reconciled","ensemble_id":ensemble_id,"cluster_count":clusters.len(),"clusters":clusters})).map_err(|e| e.to_string()) }
-                    "cancel" => {
+                    "status" => {
+                        let (json, status) = evohime_local_storage::multi_reviewer_ensemble_store::get_run(database.connection(), &ensemble_id).map_err(|e| e.to_string())?.ok_or_else(|| "ensemble_not_found".to_string())?;
+                        let run: serde_json::Value = serde_json::from_slice(&json).map_err(|_| "corrupt_ensemble_run".to_string())?;
+                        serde_json::to_vec(&serde_json::json!({"status": status, "run": run})).map_err(|e| e.to_string())
+                    }
+                    "get_raw" => {
                         let (json, _) = evohime_local_storage::multi_reviewer_ensemble_store::get_run(database.connection(), &ensemble_id).map_err(|e| e.to_string())?.ok_or_else(|| "ensemble_not_found".to_string())?;
-                        let mut run: crate::multi_reviewer_ensemble::ReviewerEnsembleRun = serde_json::from_slice(&json).map_err(|_| "corrupt_ensemble_run".to_string())?;
-                        crate::multi_reviewer_ensemble::validate_run(&run).map_err(|e| e.to_string())?;
-                        if expected_revision != 0 && expected_revision != run.revision { return Err("stale_ensemble_revision".into()); }
-                        run.revision = run.revision.saturating_add(1); run.status = crate::multi_reviewer_ensemble::RunStatus::Cancelled; run.content_hash = crate::multi_reviewer_ensemble::run_hash(&run).map_err(|e| e.to_string())?;
+                        Ok(json)
+                    }
+                    "reconcile" => {
+                        let clusters: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_candidates".to_string())?;
+                        let cluster_count = clusters.as_array().map_or(0, Vec::len);
+                        serde_json::to_vec(&serde_json::json!({"status":"reconciled","ensemble_id":ensemble_id,"cluster_count":cluster_count,"clusters":clusters})).map_err(|e| e.to_string())
+                    }
+                    "cancel" => {
+                        let run: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "corrupt_ensemble_run".to_string())?;
+                        let id = run.get("id").and_then(|v| v.as_str()).ok_or_else(|| "corrupt_ensemble_run".to_string())?;
+                        let profile_ref = run.get("profile_ref").and_then(|v| v.as_str()).ok_or_else(|| "corrupt_ensemble_run".to_string())?;
+                        let revision = run.get("revision").and_then(|v| v.as_u64()).ok_or_else(|| "corrupt_ensemble_run".to_string())?;
+                        let content_hash = run.get("content_hash").and_then(|v| v.as_str()).ok_or_else(|| "corrupt_ensemble_run".to_string())?;
                         let updated = serde_json::to_vec(&run).map_err(|e| e.to_string())?;
-                        evohime_local_storage::multi_reviewer_ensemble_store::put_run(database.connection(), &run.id, &run.profile_ref, run.revision, &run.content_hash, &updated, "cancelled", crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
-                        serde_json::to_vec(&serde_json::json!({"status":"cancelled","ensemble_id":run.id,"revision":run.revision})).map_err(|e| e.to_string())
+                        evohime_local_storage::multi_reviewer_ensemble_store::put_run(database.connection(), id, profile_ref, revision, content_hash, &updated, "cancelled", crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({"status":"cancelled","ensemble_id":id,"revision":revision})).map_err(|e| e.to_string())
                     },
                     _ => Err("unsupported_ensemble_operation".into()),
                 }

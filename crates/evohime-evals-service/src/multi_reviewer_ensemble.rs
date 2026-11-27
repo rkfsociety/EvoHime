@@ -565,7 +565,7 @@ pub fn validate_run(run: &ReviewerEnsembleRun) -> Result<(), EnsembleError> {
 /// # Example
 ///
 /// ```
-/// use evohime_core::multi_reviewer_ensemble::reconcile_candidates;
+/// use evohime_evals_service::multi_reviewer_ensemble::reconcile_candidates;
 ///
 /// let clusters = reconcile_candidates(&[])?;
 /// assert!(clusters.is_empty());
@@ -639,7 +639,7 @@ pub fn reconcile_candidates(
 /// # Example
 ///
 /// ```
-/// use evohime_core::multi_reviewer_ensemble::{
+/// use evohime_evals_service::multi_reviewer_ensemble::{
 ///     completion_verdict, CompletionVerdict, ProofState,
 /// };
 ///

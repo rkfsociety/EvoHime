@@ -8,6 +8,8 @@
 
 pub(crate) mod deterministic_review_execution_plan;
 pub mod execution_trace_evaluation;
+/// Multi-reviewer ensemble validation and conservative finding reconciliation.
+pub mod multi_reviewer_ensemble;
 
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
@@ -80,6 +82,41 @@ impl ServiceHandler for EvalsService {
                     description: "Computes the verdict for a deterministic review execution plan.".to_owned(),
                     input_schema: serde_json::json!({ "type": "object" }),
                     required_permissions: vec!["evals.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "evals.ensemble_validate_profile".to_owned(),
+                    description: "Validates a multi-reviewer ensemble profile.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["evals.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "evals.ensemble_prepare_start".to_owned(),
+                    description: "Validates and hashes an ensemble run before starting.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["evals.execute".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "evals.ensemble_validate_run".to_owned(),
+                    description: "Validates a stored multi-reviewer ensemble run.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["evals.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "evals.ensemble_reconcile".to_owned(),
+                    description: "Reconciles normalized review finding candidates across reviewers.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "array" }),
+                    required_permissions: vec!["evals.execute".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "evals.ensemble_prepare_cancel".to_owned(),
+                    description: "Validates and marks a multi-reviewer ensemble run as cancelled.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["evals.execute".to_owned()],
                     supports_streaming: false,
                 },
             ],
@@ -165,6 +202,76 @@ impl ServiceHandler for EvalsService {
                     .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
                 serde_json::to_value(verdict)
                     .map_err(|err| ServiceContractError::unavailable(err.to_string()))
+            }
+            "evals.ensemble_validate_profile" => {
+                let profile: multi_reviewer_ensemble::ReviewerEnsembleProfile =
+                    serde_json::from_value(payload).map_err(|_| {
+                        ServiceContractError::invalid_input("invalid_ensemble_profile")
+                    })?;
+                multi_reviewer_ensemble::validate_profile(&profile)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                serde_json::to_value(profile)
+                    .map_err(|e| ServiceContractError::unavailable(e.to_string()))
+            }
+            "evals.ensemble_prepare_start" => {
+                #[derive(serde::Deserialize)]
+                struct StartReq {
+                    run: multi_reviewer_ensemble::ReviewerEnsembleRun,
+                    expected_revision: u64,
+                }
+                let mut req: StartReq = serde_json::from_value(payload)
+                    .map_err(|_| ServiceContractError::invalid_input("invalid_ensemble_run"))?;
+                multi_reviewer_ensemble::validate_run(&req.run)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                req.run.revision = req
+                    .expected_revision
+                    .saturating_add(1)
+                    .max(req.run.revision);
+                req.run.status = multi_reviewer_ensemble::RunStatus::Running;
+                req.run.content_hash = multi_reviewer_ensemble::run_hash(&req.run)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                serde_json::to_value(req.run)
+                    .map_err(|e| ServiceContractError::unavailable(e.to_string()))
+            }
+            "evals.ensemble_validate_run" => {
+                let run: multi_reviewer_ensemble::ReviewerEnsembleRun =
+                    serde_json::from_value(payload)
+                        .map_err(|_| ServiceContractError::invalid_input("corrupt_ensemble_run"))?;
+                multi_reviewer_ensemble::validate_run(&run)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                serde_json::to_value(run)
+                    .map_err(|e| ServiceContractError::unavailable(e.to_string()))
+            }
+            "evals.ensemble_reconcile" => {
+                let candidates: Vec<multi_reviewer_ensemble::NormalizedReviewFindingCandidate> =
+                    serde_json::from_value(payload)
+                        .map_err(|_| ServiceContractError::invalid_input("invalid_candidates"))?;
+                let clusters = multi_reviewer_ensemble::reconcile_candidates(&candidates)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                serde_json::to_value(clusters)
+                    .map_err(|e| ServiceContractError::unavailable(e.to_string()))
+            }
+            "evals.ensemble_prepare_cancel" => {
+                #[derive(serde::Deserialize)]
+                struct CancelReq {
+                    run: multi_reviewer_ensemble::ReviewerEnsembleRun,
+                    expected_revision: u64,
+                }
+                let mut req: CancelReq = serde_json::from_value(payload)
+                    .map_err(|_| ServiceContractError::invalid_input("corrupt_ensemble_run"))?;
+                multi_reviewer_ensemble::validate_run(&req.run)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                if req.expected_revision != 0 && req.expected_revision != req.run.revision {
+                    return Err(ServiceContractError::invalid_input(
+                        "stale_ensemble_revision",
+                    ));
+                }
+                req.run.revision = req.run.revision.saturating_add(1);
+                req.run.status = multi_reviewer_ensemble::RunStatus::Cancelled;
+                req.run.content_hash = multi_reviewer_ensemble::run_hash(&req.run)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                serde_json::to_value(req.run)
+                    .map_err(|e| ServiceContractError::unavailable(e.to_string()))
             }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown evals capability: {other}"

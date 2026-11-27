@@ -226,7 +226,6 @@ pub mod message_intervention_policies;
 pub mod model_edit_protocol_registry;
 pub mod model_purpose_routing;
 pub mod model_resilience_policy;
-pub mod multi_reviewer_ensemble;
 pub(crate) mod observability;
 /// Defines rules that constrain tool and capability permissions.
 pub mod permission_rules;
