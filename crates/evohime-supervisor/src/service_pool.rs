@@ -21,6 +21,7 @@ pub enum ManagedServiceState {
     /// Service is undergoing a targeted hot-restart after an update.
     Restarting,
     /// Service failed to start or exited unexpectedly.
+    #[allow(dead_code)]
     Failed {
         /// Consecutive failure count for backoff decisions.
         consecutive_failures: u32,
@@ -91,6 +92,7 @@ impl ServicePool {
     }
 
     /// Marks a service as failed, incrementing its failure counter.
+    #[allow(dead_code)]
     pub fn mark_failed(
         &mut self,
         service_id: &str,

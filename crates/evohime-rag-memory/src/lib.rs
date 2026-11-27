@@ -88,7 +88,7 @@ impl ServiceHandler for RagMemoryService {
                     .unwrap_or(".");
                 let mut hits = Vec::new();
                 collect_rag_hits(std::path::Path::new(root), query, &mut hits, 20);
-                hits.sort_by(|a, b| b.1.cmp(&a.1));
+                hits.sort_by_key(|a| std::cmp::Reverse(a.1));
                 let matches = hits
                     .into_iter()
                     .map(|(path, score)| serde_json::json!({ "path": path, "score": score }))
