@@ -1084,7 +1084,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             graph_id,
             payload,
             expected_revision,
-            grants,
+            grants: _,
             reply,
         } => {
             let result = async {

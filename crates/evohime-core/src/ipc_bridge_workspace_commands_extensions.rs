@@ -1,7 +1,7 @@
 use super::*;
 
 impl IpcBridge {
-    async fn invoke_required_service(
+    pub(crate) async fn invoke_required_service(
         &self,
         capability_name: &str,
         payload: serde_json::Value,
