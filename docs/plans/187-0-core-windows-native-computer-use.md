@@ -42,6 +42,7 @@ After possible dispatch use UnknownOutcome and never retry blindly; invalidate o
 
 - Cross-modal grounding может предложить candidate refs, но не target/effect authority.
 - Screenshot optional; UI Automation preferred for supported controls.
+- По плану 202 исполняющий UIA/action adapter выносится в изолированный сервис-модуль `computer-use` (`evohime-computer-use.exe`) через `evohime-service-contract`, при этом `PolicyGate`, `approvals`, `ReceiptRuntime` и `EventJournal` остаются в `evohime-core`.
 
 ## Критерии готовности
 

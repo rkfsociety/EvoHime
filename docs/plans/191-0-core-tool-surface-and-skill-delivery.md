@@ -49,10 +49,13 @@ dispatch, честные input schemas, отсутствие рекламиру�
 
 ## Граница
 
-`tool-runtime` остаётся владельцем декларации и исполнения инструментов;
-`evohime-core` остаётся владельцем policy, отбора каталога, промпта, доставки
-skills и durable trace. Направление не создаёт второй реестр инструментов,
-второй skill registry, второй prompt owner или альтернативный approval-путь.
+`tool-runtime` и выносимые по плану 202 сервисы (`tools-workspace`, `tools-exec`,
+`model-adapters`) отвечают за разбор и исполнение инструментов через
+`evohime-service-contract`; `evohime-core` остаётся владельцем policy, отбора
+каталога, промпта, доставки skills и durable trace. Направление не создаёт
+второй реестр инструментов, второй skill registry, второй prompt owner или
+альтернативный approval-путь (декларативные тексты/схемы могут поставляться
+через `core-assets`).
 
 ## Изменяемые контракты
 
