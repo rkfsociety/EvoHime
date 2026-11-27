@@ -1,0 +1,7 @@
+{
+  "schema": "evohime.policies.v1",
+  "defaults": {
+    "require_approval_for_write": true,
+    "require_approval_for_shell": true
+  }
+}

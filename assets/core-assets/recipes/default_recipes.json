@@ -1,0 +1,10 @@
+{
+  "schema": "evohime.recipes.v1",
+  "recipes": [
+    {
+      "id": "workspace.quick_audit",
+      "title": "Быстрая проверка репозитория",
+      "capabilities": ["fs.list", "git.status"]
+    }
+  ]
+}

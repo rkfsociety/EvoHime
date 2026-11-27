@@ -68,7 +68,26 @@ impl ServiceHandler for WorkflowEngineService {
         _caller_session_id: Option<&str>,
     ) -> Result<serde_json::Value, ServiceContractError> {
         match capability {
-            "workflow.list" => Ok(serde_json::json!({ "workflows": [] })),
+            "workflow.list" => {
+                let dir = payload
+                    .get("dir")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or(".");
+                let mut workflows = Vec::new();
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for entry in entries.flatten().take(100) {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                                workflows.push(stem.to_owned());
+                            }
+                        }
+                    }
+                }
+                workflows.sort();
+                Ok(serde_json::json!({ "workflows": workflows }))
+            }
             "workflow.run" => {
                 let workflow_id = payload
                     .get("workflow_id")

@@ -112,6 +112,31 @@ pub fn load_core_assets_or_fallback(
     }
 }
 
+/// Loads a UTF-8 text asset (such as a prompt template) relative to
+/// `assets_root`, rejecting path traversal or oversized files and falling back
+/// to `builtin_default`.
+pub fn load_text_asset_or_default(
+    assets_root: &Path,
+    relative_path: &str,
+    builtin_default: &str,
+) -> String {
+    if relative_path.is_empty()
+        || relative_path.contains("..")
+        || relative_path.starts_with('/')
+        || relative_path.starts_with('\\')
+    {
+        return builtin_default.to_owned();
+    }
+    let candidate = assets_root.join(relative_path);
+    let Ok(bytes) = std::fs::read(candidate) else {
+        return builtin_default.to_owned();
+    };
+    if bytes.len() > MAX_CORE_ASSETS_MANIFEST_BYTES {
+        return builtin_default.to_owned();
+    }
+    String::from_utf8(bytes).unwrap_or_else(|_| builtin_default.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

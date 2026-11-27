@@ -320,6 +320,47 @@ impl ModuleRegistry {
             .collect()
     }
 
+    /// Probes every registered module with `Ping` and updates its availability
+    /// state in place, returning the number of healthy modules.
+    pub async fn refresh_health(&self) -> usize {
+        let targets = {
+            let Ok(guard) = self.state.read() else {
+                return 0;
+            };
+            guard
+                .modules
+                .iter()
+                .map(|(id, m)| (id.clone(), Arc::clone(&m.transport)))
+                .collect::<Vec<_>>()
+        };
+        let mut healthy = 0usize;
+        for (service_id, transport) in targets {
+            match transport.send(ServiceRequest::Ping).await {
+                Ok(ServiceResponse::Pong { .. }) => {
+                    let _ = self.set_availability(&service_id, ModuleAvailability::Ready);
+                    healthy = healthy.saturating_add(1);
+                }
+                Ok(other) => {
+                    let _ = self.set_availability(
+                        &service_id,
+                        ModuleAvailability::Unavailable {
+                            reason: format!("unexpected ping response: {other:?}"),
+                        },
+                    );
+                }
+                Err(err) => {
+                    let _ = self.set_availability(
+                        &service_id,
+                        ModuleAvailability::Unavailable {
+                            reason: err.message,
+                        },
+                    );
+                }
+            }
+        }
+        healthy
+    }
+
     /// Returns the capability descriptor for `capability_name`, if registered.
     pub fn capability(&self, capability_name: &str) -> Option<ServiceCapabilityDescriptor> {
         let guard = self.state.read().ok()?;
