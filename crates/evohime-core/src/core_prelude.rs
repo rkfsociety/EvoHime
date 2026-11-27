@@ -944,10 +944,12 @@ pub(crate) fn resolve_model_mcp_input(
     .map_err(|error| format!("mcp_call output serialization failed: {error}"))
 }
 
-/// Budget for a whole task: many model calls plus tool runs, so it has to be
-/// larger than the per-request timeout in `ProviderResilienceConfig`.
-/// Максимальная длительность одной автономной задачи в секундах.
-pub const DEFAULT_TASK_TIMEOUT_SECONDS: u64 = 900;
+/// Default whole-task time limit in seconds.
+///
+/// `0` disables the overall task deadline so autonomous tasks are never cut off
+/// by wall-clock time; set `EVOHIME_TASK_TIMEOUT_SECONDS` to a positive value
+/// to enforce a deadline explicitly.
+pub const DEFAULT_TASK_TIMEOUT_SECONDS: u64 = 0;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct DeliveryRequirements {

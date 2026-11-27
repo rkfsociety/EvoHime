@@ -143,12 +143,13 @@ mod tests {
         assert_eq!(visible_agent_text("<function_calls>\n<invoke/>"), "");
     }
 
-    /// A task runs several model calls in a loop, so its budget must outlast a
-    /// single request; the old default cut working agents off at 60 seconds.
+    /// Whole tasks have no wall-clock deadline by default (`0` disables the
+    /// task-level timeout), while individual model calls remain bounded.
     #[test]
-    fn task_budget_outlasts_one_model_request() {
+    fn task_has_no_default_wall_clock_timeout() {
         let per_request = crate::provider_resilience::ProviderResilienceConfig::default();
-        assert!(DEFAULT_TASK_TIMEOUT_SECONDS > per_request.model_timeout_secs);
+        assert_eq!(DEFAULT_TASK_TIMEOUT_SECONDS, 0);
+        assert!(per_request.model_timeout_secs > 0);
     }
 
     struct NeverExecutor;
