@@ -3068,9 +3068,10 @@ impl ToolAgent {
             &format!("Пользователь: {user_prompt}\nАгент: {assistant_reply}"),
             budget_chars,
         );
+        let extraction_prompt = resolve_memory_extraction_prompt();
         self.call_extractor(
             task_id,
-            MEMORY_EXTRACTION_PROMPT,
+            &extraction_prompt,
             context,
             false,
             Some(source),

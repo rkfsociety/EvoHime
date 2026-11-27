@@ -638,4 +638,61 @@ mod tests {
             .expect_err("must fail with permission denied");
         assert_eq!(err.code, ServiceErrorCode::PermissionDenied);
     }
+
+    #[tokio::test]
+    async fn invoke_if_ready_returns_none_when_missing_or_unavailable_and_refresh_health_recovers()
+    {
+        let registry = ModuleRegistry::new();
+        assert!(registry
+            .invoke_if_ready(
+                "req-4",
+                "evals.run",
+                serde_json::json!({}),
+                None,
+                |_| Ok(())
+            )
+            .await
+            .is_none());
+
+        registry
+            .register(
+                sample_descriptor("evals", "evals.run"),
+                Arc::new(MockTransport),
+            )
+            .expect("register");
+        assert_eq!(registry.list_ready_capabilities().len(), 1);
+
+        registry
+            .set_availability(
+                "evals",
+                ModuleAvailability::Unavailable {
+                    reason: "maintenance".to_owned(),
+                },
+            )
+            .expect("set unavailable");
+        assert!(registry
+            .invoke_if_ready(
+                "req-5",
+                "evals.run",
+                serde_json::json!({}),
+                None,
+                |_| Ok(())
+            )
+            .await
+            .is_none());
+
+        assert_eq!(registry.refresh_health().await, 1);
+        let res = registry
+            .invoke_if_ready(
+                "req-6",
+                "evals.run",
+                serde_json::json!({}),
+                None,
+                |_| Ok(()),
+            )
+            .await
+            .expect("ready module must return Some")
+            .expect("invoke succeeds");
+        assert_eq!(res["handled_by"], "evals.run");
+    }
 }

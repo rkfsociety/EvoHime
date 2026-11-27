@@ -100,6 +100,20 @@ pub(crate) const MEMORY_EXTRACTION_PROMPT: &str = "\
 токены, ключи и другие секреты. Неизвестные поля запрещены. Если запоминать \
 нечего — верни {\"candidates\":[]}.";
 
+pub(crate) fn resolve_memory_extraction_prompt() -> String {
+    let assets_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|dir| dir.join("assets").join("core-assets")));
+    match assets_dir {
+        Some(dir) => crate::core_assets::load_text_asset_or_default(
+            &dir,
+            "prompts/memory_extraction.txt",
+            MEMORY_EXTRACTION_PROMPT,
+        ),
+        None => MEMORY_EXTRACTION_PROMPT.to_owned(),
+    }
+}
+
 /// System prompt of the ambient extractor (04.6). It differs from the dialog
 /// one in what it may propose at all: `constraint` and `decision` are refused
 /// outright, and the evidence locator carries the episode instead of a
