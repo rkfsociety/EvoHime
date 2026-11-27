@@ -18,3 +18,5 @@
   `expect` или `panic`; crate roots закрепляют это через
   `cfg_attr(not(test), deny(...))`. Build scripts возвращают ошибки через
   `Result`. Внутренние и интеграционные тесты могут использовать эти вызовы.
+- Изолированные модули-сервисы используют `evohime-service-contract` и не
+  должны зависеть от `evohime-core` в `Cargo.toml`.

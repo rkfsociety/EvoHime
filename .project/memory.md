@@ -26,3 +26,15 @@
   командой `git clean -fdX -- <path>`. Флаг `-X` ограничивает очистку
   игнорируемыми файлами; продолжай только если dry-run перечисляет ожидаемый
   build output. Этот способ проверен на `desktop/evohime-electron/out`.
+
+## Модульная поставка и сервисы
+
+- Канонический реестр всех 25 модулей продукта находится в
+  [`modules.manifest.json`](../modules.manifest.json); скрипт
+  `scripts/publish-compatible-manifest.ps1` читает список модулей из него,
+  а `scripts/check-modules-manifest.ps1` проверяет соответствие версий и
+  workflow-файлов.
+- Декларативный пакет `core-assets` (`core-assets.zip`) распаковывается
+  `evohime-update-agent` в `assets/core-assets` (отдельно от
+  `UpdateTransaction::SELECTABLE_COMPONENTS`), а сервисы с
+  `restart = "service:<id>"` обновляются без закрытия окна приложения.
