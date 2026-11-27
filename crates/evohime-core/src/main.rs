@@ -184,6 +184,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let _permission_audit_task =
         evohime_core::attach_permission_audit_sink(journal.clone(), &tools).await;
     evohime_core::permission_rules::apply_rules(tools.permissions(), &data_dir).await;
+    let module_registry = evohime_core::module_registry::ModuleRegistry::new();
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(bin_dir) = exe_path.parent().map(std::path::Path::to_path_buf) {
+            let assets_dir = bin_dir.join("assets").join("core-assets");
+            let loaded_assets =
+                evohime_core::core_assets::load_core_assets_or_fallback(&assets_dir, None);
+            tracing::info!(?loaded_assets, "core-assets startup check");
+            let registry_bg = module_registry.clone();
+            tokio::spawn(async move {
+                let attached = registry_bg.discover_and_attach_services(&bin_dir).await;
+                tracing::info!(count = attached.len(), modules = ?attached, "isolated service modules attached");
+            });
+        }
+    }
     let approvals = evohime_core::ApprovalCoordinator::default();
     let routing_approvals = evohime_core::RoutingApprovalRegistry::default();
     let mut model_config = match evohime_model_gateway::ModelGatewayConfig::from_env() {
