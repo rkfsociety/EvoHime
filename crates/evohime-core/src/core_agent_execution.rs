@@ -250,21 +250,36 @@ fn is_unbounded_step_mode(max_iterations: usize) -> bool {
     max_iterations >= crate::core_agent::DEFAULT_TOOL_ITERATIONS
 }
 
+fn commit_block_reason(
+    requirements: DeliveryRequirements,
+    verification_test_passed: bool,
+    diff_check_passed: bool,
+) -> Option<&'static str> {
+    if !requirements.commit {
+        return None;
+    }
+    let missing_diff = requirements.diff_check && !diff_check_passed;
+    let missing_verification = requirements.verification_command && !verification_test_passed;
+    match (missing_verification, missing_diff) {
+        (true, true) => Some(
+            "git_commit blocked: сначала успешно выполни обязательную проверку (script_execute для .ps1/.py/.js или shell_execute для cargo/npm) и git diff --check",
+        ),
+        (true, false) => Some(
+            "git_commit blocked: git diff --check уже пройден, но не выполнена обязательная проверка или скрипт из запроса (используй script_execute для .ps1/.py/.js или shell_execute для cargo/npm)",
+        ),
+        (false, true) => Some(
+            "git_commit blocked: обязательная проверка пройдена, но не выполнен git diff --check через shell_execute",
+        ),
+        (false, false) => None,
+    }
+}
+
 fn commit_is_blocked_by_delivery_gate(
     requirements: DeliveryRequirements,
     verification_test_passed: bool,
     diff_check_passed: bool,
 ) -> bool {
-    if !requirements.commit {
-        return false;
-    }
-    if requirements.diff_check && !diff_check_passed {
-        return true;
-    }
-    if requirements.verification_command && !verification_test_passed {
-        return true;
-    }
-    false
+    commit_block_reason(requirements, verification_test_passed, diff_check_passed).is_some()
 }
 
 /// Serializes guardrail-redacted tool arguments for the conversation trace and
@@ -2540,12 +2555,16 @@ impl ToolAgent {
                         &observed_file_revisions,
                     );
                 }
-                let commit_blocked = call.name == "git_commit"
-                    && commit_is_blocked_by_delivery_gate(
+                let commit_block_message = if call.name == "git_commit" {
+                    commit_block_reason(
                         delivery_requirements,
                         verification_test_passed,
                         diff_check_passed,
-                    );
+                    )
+                } else {
+                    None
+                };
+                let commit_blocked = commit_block_message.is_some();
                 let outcome = if let Some(session_miss) = session_miss {
                     write_model_trace(
                         "tool.session_miss",
@@ -2641,12 +2660,10 @@ impl ToolAgent {
                             evohime_permissions::Permission::ShellExecute,
                         ),
                     )
-                } else if commit_blocked {
-                    recovery::ToolOutcome::from_error(
-                        evohime_tool_runtime::ToolError::Execution(
-                            "git_commit blocked: сначала успешно выполни обязательную проверку и git diff --check".to_string(),
-                        ),
-                    )
+                } else if let Some(reason) = commit_block_message {
+                    recovery::ToolOutcome::from_error(evohime_tool_runtime::ToolError::Execution(
+                        reason.to_string(),
+                    ))
                 } else {
                     if call.name == "git_commit" {
                         write_observability_hook(
@@ -4601,6 +4618,32 @@ mod conversation_history_tests {
             true,
             false
         ));
+    }
+
+    #[test]
+    fn commit_block_reason_names_only_the_missing_gate() {
+        let requirements = super::DeliveryRequirements {
+            research: true,
+            mutation: true,
+            verification: true,
+            diff_check: true,
+            commit: true,
+            verification_command: true,
+        };
+        let both = commit_block_reason(requirements, false, false).expect("both missing");
+        assert!(both.contains("script_execute"));
+        assert!(both.contains("git diff --check"));
+
+        let only_verification =
+            commit_block_reason(requirements, false, true).expect("verification missing");
+        assert!(only_verification.contains("git diff --check уже пройден"));
+        assert!(only_verification.contains("script_execute"));
+
+        let only_diff = commit_block_reason(requirements, true, false).expect("diff missing");
+        assert!(only_diff.contains("обязательная проверка пройдена"));
+        assert!(only_diff.contains("git diff --check"));
+
+        assert!(commit_block_reason(requirements, true, true).is_none());
     }
 
     #[test]
