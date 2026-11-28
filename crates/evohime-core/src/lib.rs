@@ -73,16 +73,15 @@ pub mod workspace_bootstrap_manifest;
 pub(crate) mod workspace_sets;
 
 mod ipc_bridge;
-pub(crate) use ipc_bridge::ipc_bridge_ambient_workflow::proposals as ipc_bridge_ambient_proposals;
-pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
-mod legacy_parser;
-pub use legacy_parser::visible_agent_text;
+pub use evohime_model_adapters::legacy_parser::visible_agent_text;
 #[cfg(test)]
-pub(crate) use legacy_parser::LEGACY_TOOL_NAMES;
-use legacy_parser::{
+pub(crate) use evohime_model_adapters::legacy_parser::LEGACY_TOOL_NAMES;
+use evohime_model_adapters::legacy_parser::{
     parse_legacy_function_calls, parse_natural_tool_intent, parse_plain_tool_call,
     parse_tagged_tool_call, parse_xml_named_tool_call, strip_legacy_function_blocks,
 };
+pub(crate) use ipc_bridge::ipc_bridge_ambient_workflow::proposals as ipc_bridge_ambient_proposals;
+pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
 mod logging;
 pub(crate) use logging::write_model_trace;
 use logging::{

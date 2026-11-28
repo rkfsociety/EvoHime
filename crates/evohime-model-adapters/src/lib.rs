@@ -6,6 +6,9 @@
 
 //! Isolated `model-adapters` service module for tool-call parsing and model output normalization.
 
+/// Legacy text-embedded tool-call parsers and visible-text projection.
+pub mod legacy_parser;
+
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
     ServiceHealthReport, ServiceHealthStatus, SERVICE_CONTRACT_VERSION,

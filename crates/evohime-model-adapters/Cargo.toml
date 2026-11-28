@@ -12,5 +12,8 @@ name = "evohime-model-adapters"
 path = "src/main.rs"
 
 [dependencies]
+evohime-model-gateway = { path = "../model-gateway" }
 evohime-service-contract = { path = "../evohime-service-contract" }
 serde_json = { workspace = true }
+evohime-tool-runtime = { path = "../tool-runtime" }
+tracing = { workspace = true }

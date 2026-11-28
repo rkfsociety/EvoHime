@@ -2,7 +2,7 @@ use evohime_model_gateway::NativeToolCall;
 use std::borrow::Cow;
 
 /// Имена инструментов, которые допускаются в legacy-тексте ответа модели.
-pub(crate) const LEGACY_TOOL_NAMES: &[&str] = &[
+pub const LEGACY_TOOL_NAMES: &[&str] = &[
     "agent_run",
     "filesystem_list",
     "filesystem_read",
@@ -91,7 +91,7 @@ const TOOL_CALL_MARKERS: [&str; 6] = [
 /// the shell would put XML in the middle of the conversation.
 ///
 /// ```
-/// use evohime_core::visible_agent_text;
+/// use evohime_model_adapters::legacy_parser::visible_agent_text;
 ///
 /// assert_eq!(
 ///     visible_agent_text("I'll inspect this. <function_calls>…"),
@@ -107,7 +107,8 @@ pub fn visible_agent_text<'a>(content: &'a str) -> Cow<'a, str> {
     Cow::Borrowed(content[..cut].trim())
 }
 
-pub(crate) fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToolCall> {
+/// Parses XML `<function_calls>` / `<invoke>` blocks embedded in model text.
+pub fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToolCall> {
     let mut calls = Vec::new();
     let mut json_cursor = 0;
     while let Some(relative_start) = content[json_cursor..].find("<function_calls>") {
@@ -197,7 +198,8 @@ pub(crate) fn parse_legacy_function_calls(content: &str, iteration: usize) -> Ve
     calls
 }
 
-pub(crate) fn parse_natural_tool_intent(content: &str, iteration: usize) -> Option<NativeToolCall> {
+/// Extracts a tool call from natural-language intent + fenced JSON or inline path.
+pub fn parse_natural_tool_intent(content: &str, iteration: usize) -> Option<NativeToolCall> {
     let lower = content.to_lowercase();
     let explicit_action = ["вызываю", "вызову", "вызвать", "запрашиваю"]
         .iter()
@@ -251,7 +253,8 @@ pub(crate) fn parse_natural_tool_intent(content: &str, iteration: usize) -> Opti
     })
 }
 
-pub(crate) fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
+/// Parses `<tool_call>` or `<tool_code>` tagged tool invocations.
+pub fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
     if let Some(start) = content.find("<tool_code>") {
         let body_start = start + "<tool_code>".len();
         let body_end = content[body_start..].find("</tool_code>")? + body_start;
@@ -321,7 +324,8 @@ pub(crate) fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<
     })
 }
 
-pub(crate) fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
+/// Parses plain-text `tool_name` + `key: value` lines from legacy model replies.
+pub fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
     // Строка целиком — имя инструмента. Принимается и каноническая форма, и
     // историческая с точками: модель могла напечатать старое имя по памяти.
     let name = content
@@ -402,7 +406,8 @@ pub(crate) fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<N
     })
 }
 
-pub(crate) fn parse_xml_named_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
+/// Parses XML tags named directly after a known legacy tool (`<tool_name>...</tool_name>`).
+pub fn parse_xml_named_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
     let name = LEGACY_TOOL_NAMES
         .iter()
         .find(|candidate| content.contains(&format!("<{}>", candidate)))
@@ -442,7 +447,8 @@ pub(crate) fn parse_xml_named_tool_call(content: &str, iteration: usize) -> Opti
     })
 }
 
-pub(crate) fn strip_legacy_function_blocks(content: &str) -> String {
+/// Removes `<function_calls>...</function_calls>` blocks from model text.
+pub fn strip_legacy_function_blocks(content: &str) -> String {
     let mut cleaned = String::with_capacity(content.len());
     let mut cursor = 0;
     while let Some(relative_start) = content[cursor..].find("<function_calls>") {

@@ -843,6 +843,7 @@ dependencies = [
  "evohime-listener-contract",
  "evohime-listener-ipc",
  "evohime-local-storage",
+ "evohime-model-adapters",
  "evohime-model-gateway",
  "evohime-model-provenance",
  "evohime-permissions",
@@ -1033,8 +1034,11 @@ dependencies = [
 name = "evohime-model-adapters"
 version = "0.1.0"
 dependencies = [
+ "evohime-model-gateway",
  "evohime-service-contract",
+ "evohime-tool-runtime",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
