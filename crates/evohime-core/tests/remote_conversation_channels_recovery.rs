@@ -1,4 +1,4 @@
-use evohime_core::remote_conversation_channels::*;
+use evohime_remote::remote_conversation_channels::*;
 
 #[test]
 fn revoke_duplicate_and_attachment_limits_fail_closed() {

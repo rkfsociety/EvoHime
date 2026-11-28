@@ -1,4 +1,4 @@
-use evohime_core::durable_remote_task_bridge as bridge;
+use evohime_remote::durable_remote_task_bridge as bridge;
 
 fn toolset() -> bridge::RemoteTaskToolset {
     bridge::RemoteTaskToolset {
