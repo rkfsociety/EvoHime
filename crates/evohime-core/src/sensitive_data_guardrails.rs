@@ -275,9 +275,20 @@ pub enum GuardrailError {
 
 /// Creates the default detector set for a named destination.
 pub fn default_policy(destination: impl Into<String>) -> PolicySnapshot {
+    build_policy_snapshot(destination.into(), Action::Block)
+}
+
+/// Creates a redacting policy for local tool outputs (such as `filesystem_read`)
+/// so a single matched key marker is redacted in-place instead of discarding
+/// the entire file output.
+pub fn tool_output_policy() -> PolicySnapshot {
+    build_policy_snapshot("tool".into(), Action::Redact)
+}
+
+fn build_policy_snapshot(destination: String, private_key_action: Action) -> PolicySnapshot {
     let policy = Policy {
         version: CONTRACT_VERSION,
-        destination: destination.into(),
+        destination,
         rules: vec![
             SensitiveDataRule {
                 id: "email".into(),
@@ -301,7 +312,7 @@ pub fn default_policy(destination: impl Into<String>) -> PolicySnapshot {
                 id: "private_key".into(),
                 version: 1,
                 detector: Detector::PrivateKey,
-                action: Action::Block,
+                action: private_key_action,
             },
             SensitiveDataRule {
                 id: "phone".into(),
@@ -1203,17 +1214,57 @@ fn mask(value: &str) -> String {
     )
 }
 
+fn find_private_key_matches(input: &str) -> Vec<(usize, usize)> {
+    const BEGIN_PREFIX: &str = "-----BEGIN";
+    const KEY_SUFFIX: &str = "PRIVATE KEY-----";
+    const END_PREFIX: &str = "-----END";
+    const MAX_HEADER_BYTES: usize = 64;
+    const MAX_PEM_BODY_BYTES: usize = 16 * 1024;
+
+    let mut matches = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(rel_start) = input[cursor..].find(BEGIN_PREFIX) {
+        let start = cursor + rel_start;
+        let header_slice = &input[start..];
+        let line_end = header_slice.find('\n').unwrap_or(header_slice.len());
+        let header_line = &header_slice[..line_end.min(MAX_HEADER_BYTES)];
+        let Some(rel_key_end) = header_line.find(KEY_SUFFIX) else {
+            cursor = start + BEGIN_PREFIX.len();
+            continue;
+        };
+        let header_label = &header_line[BEGIN_PREFIX.len()..rel_key_end];
+        let valid_label = header_label.is_empty()
+            || (header_label.starts_with(' ')
+                && header_label.bytes().all(|b| {
+                    b.is_ascii_uppercase() || b.is_ascii_digit() || b == b' ' || b == b'-'
+                }));
+        if !valid_label {
+            cursor = start + BEGIN_PREFIX.len();
+            continue;
+        }
+        let header_end = start + rel_key_end + KEY_SUFFIX.len();
+        let body_search_limit = input.len().min(header_end + MAX_PEM_BODY_BYTES);
+        let mut end = header_end;
+        if let Some(rel_end_marker) = input[header_end..body_search_limit].find(END_PREFIX) {
+            let end_marker_start = header_end + rel_end_marker;
+            let end_line_len = input[end_marker_start..]
+                .find('\n')
+                .unwrap_or(input.len() - end_marker_start);
+            let end_line =
+                &input[end_marker_start..end_marker_start + end_line_len.min(MAX_HEADER_BYTES)];
+            if let Some(rel_end_suffix) = end_line.find(KEY_SUFFIX) {
+                end = end_marker_start + rel_end_suffix + KEY_SUFFIX.len();
+            }
+        }
+        matches.push((start, end));
+        cursor = end;
+    }
+    matches
+}
+
 fn find_matches(input: &str, detector: Detector) -> Vec<(usize, usize)> {
     match detector {
-        Detector::PrivateKey => input
-            .find("-----BEGIN")
-            .and_then(|start| {
-                input[start..]
-                    .find("PRIVATE KEY-----")
-                    .map(|end| (start, start + end + "PRIVATE KEY-----".len()))
-            })
-            .into_iter()
-            .collect(),
+        Detector::PrivateKey => find_private_key_matches(input),
         Detector::BearerToken => input
             .match_indices("Bearer ")
             .map(|(start, _)| {
@@ -1505,5 +1556,30 @@ mod tests {
             redact_json(&policy, &payload).expect("chunked json redaction succeeds");
         let output = redacted["output"].as_str().expect("string output");
         assert!(!output.contains("alice@example.com"));
+    }
+
+    #[test]
+    fn tool_output_policy_redacts_key_blocks_without_hiding_surrounding_code() {
+        let code_only = "let a = \"-----BEGIN\";\nlet b = \"PRIVATE KEY-----\";\n";
+        assert!(find_private_key_matches(code_only).is_empty());
+
+        let file_content = concat!(
+            "fn before() -> i32 { 1 }\n",
+            "const TEST_KEY: &str = \"-----BEGIN RSA PRIVATE KEY-----\\nMIIEowIBAAK\\n-----END RSA PRIVATE KEY-----\";\n",
+            "const REAL_MULTILINE: &str = \"-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAK\n-----END RSA PRIVATE KEY-----\";\n",
+            "fn after() -> i32 { 2 }\n",
+        );
+        let redacted = redact_text_chunked(&tool_output_policy(), file_content)
+            .expect("tool output policy redacts key markers in-place");
+        assert!(redacted.value.contains("fn before() -> i32 { 1 }"));
+        assert!(redacted.value.contains("fn after() -> i32 { 2 }"));
+        assert!(!redacted.value.contains("MIIEowIBAAK"));
+        assert!(!redacted.value.contains("BEGIN RSA PRIVATE KEY"));
+
+        let model_policy = default_policy("model");
+        assert!(matches!(
+            redact_text_chunked(&model_policy, file_content),
+            Err(GuardrailError::Blocked(_))
+        ));
     }
 }

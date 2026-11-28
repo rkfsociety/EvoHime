@@ -424,6 +424,16 @@ pub(crate) fn redact_boundary_text(
     .map(|result| result.value)
 }
 
+pub(crate) fn redact_tool_output_text(
+    value: &str,
+) -> Result<String, sensitive_data_guardrails::GuardrailError> {
+    sensitive_data_guardrails::redact_text_chunked(
+        &sensitive_data_guardrails::tool_output_policy(),
+        value,
+    )
+    .map(|result| result.value)
+}
+
 pub(crate) fn write_observability_hook(
     task_id: &str,
     sequence: u64,

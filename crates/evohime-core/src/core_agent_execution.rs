@@ -3138,7 +3138,7 @@ impl ToolAgent {
                     &outcome.structured,
                     &mut observed_file_revisions,
                 );
-                let guarded_output = match redact_boundary_text("tool", &outcome.output) {
+                let guarded_output = match redact_tool_output_text(&outcome.output) {
                     Ok(value) => value,
                     Err(error) => {
                         tracing::warn!(%error, "tool output redaction failed");

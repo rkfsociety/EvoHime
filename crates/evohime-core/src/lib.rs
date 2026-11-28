@@ -83,7 +83,9 @@ use legacy_parser::{
 };
 mod logging;
 pub(crate) use logging::write_model_trace;
-use logging::{append_audit_line, redact_boundary_text, write_observability_hook};
+use logging::{
+    append_audit_line, redact_boundary_text, redact_tool_output_text, write_observability_hook,
+};
 pub use logging::{now_unix_millis, prune_old_logs, StructuredLogger};
 pub(crate) mod paths;
 pub use paths::get_data_directory;
