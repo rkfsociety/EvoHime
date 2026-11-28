@@ -22,6 +22,8 @@ use thiserror::Error;
 
 pub mod capability;
 pub mod chain;
+/// Conservative code-review lane verdict evaluation.
+pub mod code_review_lane;
 /// Bounded design-intent review metadata contracts.
 pub mod design_intent_review_lane;
 pub mod export;

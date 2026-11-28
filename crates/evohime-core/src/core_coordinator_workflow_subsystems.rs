@@ -237,28 +237,29 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 let store = evohime_local_storage::code_review_lane_store::CodeReviewStore::new(database.connection());
                 match operation.as_str() {
                     "save" => {
-                        let record: crate::code_review_lane::CodeReviewRecord = serde_json::from_slice(&payload).map_err(|_| "invalid_code_review_record".to_string())?;
+                        let record: evohime_local_storage::code_review_lane_store::CodeReviewRecord = serde_json::from_slice(&payload).map_err(|_| "invalid_code_review_record".to_string())?;
                         if !target_id.is_empty() && target_id != record.target.id { return Err("target_id_mismatch".to_string()); }
                         let saved = store.save(&record, (expected_revision > 0).then_some(expected_revision), &idempotency_key, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
                         serde_json::to_vec(&serde_json::json!({"status":"stored","review_id":saved.review_id,"revision":saved.revision,"verdict":saved.verdict,"target_hash":&saved.target.content_hash[..16.min(saved.target.content_hash.len())]})).map_err(|e| e.to_string())
                     }
                     "get" => {
                         let record = store.load_current(&review_id).map_err(|e| e.to_string())?.ok_or_else(|| "review_not_found".to_string())?;
-                        let verdict = crate::code_review_lane::conservative_verdict(&record).map_err(|e| e.to_string())?;
+                        let record_json = serde_json::to_value(&record).map_err(|e| e.to_string())?;
+                        let verdict = evohime_receipts::code_review_lane::conservative_verdict_json(&record_json).map_err(str::to_string)?;
                         serde_json::to_vec(&serde_json::json!({"status":"ok","review_id":record.review_id,"revision":record.revision,"verdict":verdict,"target_id":record.target.id,"target_hash":&record.target.content_hash[..16.min(record.target.content_hash.len())],"coverage":record.coverage.state,"finding_count":record.findings.len()})).map_err(|e| e.to_string())
                     }
                     "reconcile" => {
                         let request: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_reconcile_request".to_string())?;
-                        let mut previous: crate::code_review_lane::CodeReviewRecord = serde_json::from_value(request.get("previous").cloned().ok_or_else(|| "missing_previous_review".to_string())?).map_err(|_| "invalid_previous_review".to_string())?;
-                        let current_target: crate::code_review_lane::CodeReviewTarget = serde_json::from_value(request.get("current_target").cloned().ok_or_else(|| "missing_current_target".to_string())?).map_err(|_| "invalid_current_target".to_string())?;
+                        let mut previous: evohime_local_storage::code_review_lane_store::CodeReviewRecord = serde_json::from_value(request.get("previous").cloned().ok_or_else(|| "missing_previous_review".to_string())?).map_err(|_| "invalid_previous_review".to_string())?;
+                        let current_target: evohime_local_storage::code_review_lane_store::CodeReviewTarget = serde_json::from_value(request.get("current_target").cloned().ok_or_else(|| "missing_current_target".to_string())?).map_err(|_| "invalid_current_target".to_string())?;
                         let fingerprints: Vec<String> = serde_json::from_value(request.get("current_fingerprints").cloned().unwrap_or_else(|| serde_json::json!([]))).map_err(|_| "invalid_fingerprints".to_string())?;
-                        crate::code_review_lane::reconcile(&mut previous, &current_target, &fingerprints).map_err(|e| e.to_string())?;
-                        serde_json::to_vec(&serde_json::json!({"status":"reconciled","review_id":previous.review_id,"revision":previous.revision,"stale_findings":previous.findings.iter().filter(|f| matches!(f.state, crate::code_review_lane::FindingState::Stale)).count()})).map_err(|e| e.to_string())
+                        evohime_local_storage::code_review_lane_store::reconcile(&mut previous, &current_target, &fingerprints).map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({"status":"reconciled","review_id":previous.review_id,"revision":previous.revision,"stale_findings":previous.findings.iter().filter(|f| matches!(f.state, evohime_local_storage::code_review_lane_store::FindingState::Stale)).count()})).map_err(|e| e.to_string())
                     }
                     "interrupt" => {
-                        let mut record: crate::code_review_lane::CodeReviewRecord = serde_json::from_slice(&payload).map_err(|_| "invalid_code_review_record".to_string())?;
+                        let mut record: evohime_local_storage::code_review_lane_store::CodeReviewRecord = serde_json::from_slice(&payload).map_err(|_| "invalid_code_review_record".to_string())?;
                         record.interrupted = true;
-                        record.verdict = crate::code_review_lane::ReviewVerdict::ReviewIncomplete;
+                        record.verdict = evohime_local_storage::code_review_lane_store::ReviewVerdict::ReviewIncomplete;
                         let saved = store.save(&record, (expected_revision > 0).then_some(expected_revision), &idempotency_key, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
                         serde_json::to_vec(&serde_json::json!({"status":"interrupted","review_id":saved.review_id,"revision":saved.revision,"verdict":saved.verdict})).map_err(|e| e.to_string())
                     }
