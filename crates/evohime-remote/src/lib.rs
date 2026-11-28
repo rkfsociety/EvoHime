@@ -38,6 +38,8 @@ pub mod external_coding_agent_adapter;
 pub mod remote_client_control_plane;
 /// Authenticated, bounded remote conversation channel contracts.
 pub mod remote_conversation_channels;
+/// Service handler for the isolated `remote-a2a` module.
+pub mod service;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
