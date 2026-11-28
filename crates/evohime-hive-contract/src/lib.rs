@@ -17,10 +17,10 @@ use std::pin::Pin;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub mod control;
-pub mod honeycomb;
 /// Bounded composable termination condition algebra.
 pub mod composable_termination_conditions;
+pub mod control;
+pub mod honeycomb;
 pub mod pulse_boundary;
 pub mod settings;
 pub mod state;

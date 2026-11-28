@@ -89,9 +89,11 @@ pub async fn discover_hardware_with_registry(
     if let Some(registry) = registry {
         if let Ok(payload) = registry
             .invoke(
+                format!("probe-accelerator-{}", uuid::Uuid::new_v4()),
                 "model_router.probe_accelerator",
                 serde_json::json!({}),
                 None,
+                |_| Ok(()),
             )
             .await
         {
