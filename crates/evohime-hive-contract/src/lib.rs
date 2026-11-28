@@ -22,6 +22,12 @@ pub mod honeycomb;
 pub mod pulse_boundary;
 pub mod settings;
 pub mod state;
+/// Bounded team coordination policies and strategy contracts.
+pub mod team_coordination_policies;
+/// Bounded team resource budget contracts and validation.
+pub mod team_resource_budget;
+/// Bounded team SOP protocol contracts and session state machine.
+pub mod team_sop_protocols;
 
 /// Boxed `Send` future used for object-safe async contract traits.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;

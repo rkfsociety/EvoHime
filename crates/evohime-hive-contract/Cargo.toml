@@ -6,7 +6,9 @@ edition = "2021"
 
 [dependencies]
 evohime-model-gateway = { path = "../model-gateway" }
+hex = "0.4"
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = "0.11"
 thiserror = { workspace = true }
 uuid = "1"

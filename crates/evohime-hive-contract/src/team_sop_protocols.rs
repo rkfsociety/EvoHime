@@ -3,126 +3,221 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Schema version accepted by team SOP protocol contracts.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Maximum number of identifier entries in a list field.
 pub const MAX_ITEMS: usize = 64;
+/// Maximum number of participants in a team SOP protocol.
 pub const MAX_PARTICIPANTS: usize = 32;
+/// Maximum number of phases in a team SOP protocol.
 pub const MAX_PHASES: usize = 32;
+/// Maximum number of handoffs in a team SOP protocol.
 pub const MAX_HANDOFFS: usize = 64;
+/// Maximum review iterations allowed in a session.
 pub const MAX_REVIEW_ITERATIONS: u32 = 8;
+/// Maximum serialized byte size for canonical hashing.
 pub const MAX_CANONICAL_BYTES: usize = 64 * 1024;
 
+/// Versioned reference to a role profile and its content hash.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoleProfileRef {
+    /// Stable role profile identifier.
     pub id: String,
+    /// Positive profile revision.
     pub revision: u64,
+    /// SHA-256 hex digest of the role profile content.
     pub content_hash: String,
 }
+/// Participant slot definition inside a team SOP protocol.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamParticipantSlot {
+    /// Stable slot identifier.
     pub slot_id: String,
+    /// Bound role profile reference.
     pub role_profile_ref: RoleProfileRef,
+    /// Minimum number of participants in this slot.
     pub cardinality_min: u32,
+    /// Maximum number of participants in this slot.
     pub cardinality_max: u32,
+    /// Whether this slot is required for protocol execution.
     pub required: bool,
+    /// Maximum capabilities granted to participants in this slot.
     pub grants_ceiling: Vec<String>,
+    /// Allowed peer routing targets from this slot.
     pub allowed_peer_routes: Vec<String>,
 }
+/// Execution mode for a team SOP phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionMode {
+    /// Steps run one after another.
     Sequential,
+    /// Steps run concurrently.
     Parallel,
+    /// Fan-out to workers followed by fan-in aggregation.
     FanOutFanIn,
+    /// Iterative review loop.
     ReviewLoop,
+    /// Explicit human approval gate.
     HumanGate,
 }
+/// Single phase inside a team SOP protocol.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamPhase {
+    /// Stable phase identifier.
     pub id: String,
+    /// Human-readable phase name.
     pub name: String,
+    /// Participant slot IDs owning this phase.
     pub owners: Vec<String>,
+    /// Trigger condition for entering this phase.
     pub trigger: String,
+    /// Required input artifact or signal identifiers.
     pub required_inputs: Vec<String>,
+    /// Expected output artifact or signal identifiers.
     pub expected_outputs: Vec<String>,
+    /// Execution mode of the phase.
     pub execution_mode: ExecutionMode,
+    /// Exit criteria required to finish the phase.
     pub exit_criteria: Vec<String>,
+    /// Maximum review iterations allowed for this phase.
     pub max_review_iterations: u32,
 }
+/// Bounded handoff contract between producer and consumer slots.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamHandoff {
+    /// Stable handoff identifier.
     pub id: String,
+    /// Producer participant slot ID.
     pub producer_slot: String,
+    /// Output contract description.
     pub output_contract: String,
+    /// Consumer participant slot IDs.
     pub consumers: Vec<String>,
+    /// Whether this handoff is mandatory.
     pub required: bool,
+    /// Delivery mode identifier.
     pub delivery_mode: String,
 }
+/// Review policy bound to a protocol phase.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewPolicy {
+    /// Target phase identifier.
     pub phase_id: String,
+    /// Reviewer participant slot IDs.
     pub reviewer_slots: Vec<String>,
+    /// Maximum review iterations before escalation.
     pub max_iterations: u32,
 }
+/// Completion requirements for a team SOP protocol.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompletionContract {
+    /// Phases that must complete before session completion.
     pub required_phases: Vec<String>,
+    /// Evidence identifiers required on completion.
     pub required_evidence: Vec<String>,
 }
+/// Versioned team SOP protocol definition.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamProtocol {
+    /// Contract schema version.
     pub schema_version: u32,
+    /// Stable protocol identifier.
     pub id: String,
+    /// Positive protocol version.
     pub version: u64,
+    /// Human-readable protocol name.
     pub name: String,
+    /// Protocol description.
     pub description: String,
+    /// Primary objective of the protocol.
     pub objective: String,
+    /// Declared participant slots.
     pub participants: Vec<TeamParticipantSlot>,
+    /// Ordered protocol phases.
     pub phases: Vec<TeamPhase>,
+    /// Handoff contracts between slots.
     pub handoffs: Vec<TeamHandoff>,
+    /// Per-phase review policies.
     pub review_policies: Vec<ReviewPolicy>,
+    /// Completion requirements.
     pub completion_contract: CompletionContract,
+    /// Optional budget policy identifier.
     pub budget_policy: Option<String>,
+    /// Optional escalation policy identifier.
     pub escalation_policy: Option<String>,
+    /// Canonical SHA-256 hex digest of the protocol.
     pub content_hash: String,
 }
+/// Pinned immutable protocol snapshot bound to a session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProtocolSnapshot {
+    /// Protocol identifier.
     pub protocol_id: String,
+    /// Pinned protocol version.
     pub version: u64,
+    /// Canonical content hash of the pinned protocol.
     pub content_hash: String,
+    /// Serialized canonical JSON bytes of the protocol.
     pub protocol_json: Vec<u8>,
 }
+/// Lifecycle status of a team SOP session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionStatus {
+    /// Protocol snapshot is pinned and ready to start.
     Pinned,
+    /// Session is actively running.
     Running,
+    /// Session is paused awaiting review or input.
     Paused,
+    /// Session completed all required phases.
     Completed,
+    /// Session was cancelled.
     Cancelled,
+    /// Session is blocked on a dependency or gate.
     Blocked,
+    /// Session status is unknown.
     Unknown,
 }
+/// Runtime state of a team SOP session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamSession {
+    /// Stable session identifier.
     pub id: String,
+    /// Pinned protocol snapshot.
     pub snapshot: ProtocolSnapshot,
+    /// Identifier of the active phase.
     pub current_phase: String,
+    /// Identifiers of completed phases.
     pub completed_phases: Vec<String>,
+    /// Count of review iterations executed so far.
     pub review_iterations: u32,
+    /// Current session lifecycle status.
     pub status: SessionStatus,
+    /// Optional associated workflow run identifier.
     pub workflow_run_id: Option<String>,
+    /// Optimistic concurrency version.
     pub version: u64,
 }
+/// Validation and state-machine errors for team SOP protocols and sessions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TeamSopError {
+    /// Invalid field or payload.
     Invalid(&'static str),
+    /// Unsupported schema version.
     UnsupportedVersion(u32),
+    /// Entity already exists.
     Duplicate,
+    /// Entity was not found.
     NotFound,
+    /// Optimistic concurrency version mismatch.
     Stale,
+    /// Idempotency key reused with a different payload.
     IdempotencyConflict,
+    /// Caller lacks required capability.
     CapabilityDenied,
+    /// Configured size or iteration limit exceeded.
     Limit,
 }
 impl std::fmt::Display for TeamSopError {
@@ -152,6 +247,7 @@ fn text(v: &str) -> bool {
 fn ids(values: &[String]) -> bool {
     values.len() <= MAX_ITEMS && values.iter().all(|v| id(v))
 }
+/// Computes the canonical SHA-256 hex digest of a [`TeamProtocol`].
 pub fn canonical_hash(protocol: &TeamProtocol) -> Result<String, TeamSopError> {
     let mut copy = protocol.clone();
     copy.content_hash.clear();
@@ -161,6 +257,7 @@ pub fn canonical_hash(protocol: &TeamProtocol) -> Result<String, TeamSopError> {
     }
     Ok(hex::encode(Sha256::digest(bytes)))
 }
+/// Validates a [`TeamProtocol`] against schema, size, and reference bounds.
 pub fn validate_protocol(p: &TeamProtocol) -> Result<(), TeamSopError> {
     if p.schema_version != CONTRACT_VERSION {
         return Err(TeamSopError::UnsupportedVersion(p.schema_version));
@@ -260,16 +357,22 @@ pub fn validate_protocol(p: &TeamProtocol) -> Result<(), TeamSopError> {
     }
     Ok(())
 }
+/// In-memory registry of team SOP protocols, sessions, and idempotency keys.
 #[derive(Debug, Default)]
 pub struct TeamSopRegistry {
+    /// Registered protocols indexed by ID.
     pub protocols: BTreeMap<String, TeamProtocol>,
+    /// Active and historical sessions indexed by ID.
     pub sessions: BTreeMap<String, TeamSession>,
+    /// Idempotency keys mapped to canonical payload hashes.
     pub idempotency: BTreeMap<String, String>,
 }
 impl TeamSopRegistry {
+    /// Lists all registered team protocols.
     pub fn list(&self) -> Vec<TeamProtocol> {
         self.protocols.values().cloned().collect()
     }
+    /// Validates and registers a new team protocol idempotently.
     pub fn create(&mut self, mut p: TeamProtocol, key: &str) -> Result<TeamProtocol, TeamSopError> {
         validate_protocol(&p)?;
         if self.protocols.contains_key(&p.id) {
@@ -288,6 +391,7 @@ impl TeamSopRegistry {
         self.protocols.insert(p.id.clone(), p.clone());
         Ok(p)
     }
+    /// Revises an existing team protocol with optimistic concurrency checking.
     pub fn revise(
         &mut self,
         mut p: TeamProtocol,
@@ -312,6 +416,7 @@ impl TeamSopRegistry {
         self.protocols.insert(p.id.clone(), p.clone());
         Ok(p)
     }
+    /// Pins a protocol version and starts a new team SOP session.
     pub fn start(
         &mut self,
         session_id: String,
@@ -351,6 +456,7 @@ impl TeamSopRegistry {
         self.sessions.insert(session_id, s.clone());
         Ok(s)
     }
+    /// Advances an active session to the next phase or completes it.
     pub fn advance(&mut self, id: &str, expected: u64) -> Result<TeamSession, TeamSopError> {
         let s = self.sessions.get_mut(id).ok_or(TeamSopError::NotFound)?;
         if s.version != expected {
@@ -375,6 +481,7 @@ impl TeamSopRegistry {
         s.version += 1;
         Ok(s.clone())
     }
+    /// Cancels an active or paused session.
     pub fn cancel(&mut self, id: &str) -> Result<TeamSession, TeamSopError> {
         let s = self.sessions.get_mut(id).ok_or(TeamSopError::NotFound)?;
         if !matches!(
@@ -387,6 +494,7 @@ impl TeamSopRegistry {
         Ok(s.clone())
     }
 
+    /// Records a review step on a session, resuming or pausing within the limit.
     pub fn review(
         &mut self,
         id: &str,

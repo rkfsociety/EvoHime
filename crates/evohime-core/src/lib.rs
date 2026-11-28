@@ -63,7 +63,7 @@ pub mod sensitive_data_guardrails;
 pub(crate) mod standing_approval_profiles;
 pub mod task_ownership_lease_fencing;
 pub mod team_coordinator;
-pub(crate) mod team_sop_protocols;
+pub(crate) use evohime_hive_contract::team_sop_protocols;
 pub(crate) mod typed_context_references;
 pub mod verified_technical_diagram_artifacts;
 pub mod workflow_optimization_lab;
@@ -251,8 +251,10 @@ pub mod skill_trust_pipeline;
 /// Provides task-scoped memory identifiers and operations.
 pub mod task_memory;
 pub(crate) mod task_worktree_isolation;
-pub mod team_coordination_policies;
-pub mod team_resource_budget;
+/// Bounded team coordination policies re-exported from `evohime-hive-contract`.
+pub use evohime_hive_contract::team_coordination_policies;
+/// Bounded team resource budget contracts re-exported from `evohime-hive-contract`.
+pub use evohime_hive_contract::team_resource_budget;
 mod trace_diagnostics;
 pub mod typed_agent_handoff_contract;
 pub use task_memory::project_scope_id;
