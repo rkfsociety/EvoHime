@@ -265,8 +265,8 @@ mod tests {
     #[test]
     fn descriptor_advertises_review_capabilities() {
         let service = VerifierService::new();
-        let names: Vec<&str> = service
-            .descriptor()
+        let descriptor = service.descriptor();
+        let names: Vec<&str> = descriptor
             .capabilities
             .iter()
             .map(|capability| capability.name.as_str())
@@ -275,7 +275,7 @@ mod tests {
             names,
             vec!["verifier.plan_review_run", "verifier.plan_revision_run"]
         );
-        assert_eq!(service.descriptor().service_id, "verifier");
+        assert_eq!(descriptor.service_id, "verifier");
     }
 
     #[test]

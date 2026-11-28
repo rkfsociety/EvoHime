@@ -4,7 +4,8 @@
 //! реальным Core execution path и durable-состоянием
 //! (`evohime_local_storage::workflow_store`). Он владеет только
 //! планированием и состоянием; сами эффекты выполняет инъектируемый
-//! [`NodeAdapter`], а approval — [`WorkflowApprovalGate`], который в продукте
+//! [`NodeAdapter`](crate::workflow_runtime::NodeAdapter), а approval —
+//! [`WorkflowApprovalGate`](crate::workflow_runtime::WorkflowApprovalGate), который в продукте
 //! ведёт к тому же approval registry, что и обычные инструменты.
 //!
 //! Инварианты, ради которых модуль существует:
