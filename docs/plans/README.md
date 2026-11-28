@@ -37,14 +37,15 @@
 | 194 | [Background Jobs Control Center](194-0-core-background-jobs-control-center.md) | active; UX/IPC поверх реализованного background-execution/v1 |
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
 | 203 | [Фактический перенос вызовов из `evohime-core` в внешние сервисы и очистка микроядра](203-0-core-service-migration-and-cleanup.md) | active; 4 волны переноса логики/тестов, переключения на `ModuleRegistry` и удаления старых модулей из `evohime-core` |
+| 204 | [Стандартизация имён инструментов под привычный агентский лексикон](204-0-core-agent-tool-naming-standardization.md) | active; переименование `filesystem_*`/`shell_execute`/`http_fetch` в `read`/`write`/`edit`/`grep`/`glob`/`bash`/`web_fetch` без старых имён |
 
-Незавершённые numbered plans: `184–188`, `191`, `193–195`, `202` и `203`.
+Незавершённые numbered plans: `184–188`, `191`, `193–195`, `202`, `203` и `204`.
 
 Номера `149–172`, `182–183` и `196–201` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая
 работа получает следующий свободный номер только после проверки дубликатов и
-зависимостей; следующий номер — `204`, текущий active catalog — `184–188`,
-`191`, `193–195`, `202` и `203`. Номера issues в активных планах — исторические
+зависимостей; следующий номер — `205`, текущий active catalog — `184–188`,
+`191`, `193–195`, `202`, `203` и `204`. Номера issues в активных планах — исторические
 идентификаторы постановок и не являются текущим источником статуса или
 критерием закрытия.
 
