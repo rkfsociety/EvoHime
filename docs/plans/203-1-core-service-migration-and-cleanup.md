@@ -21,3 +21,10 @@
 ## Проверка этапа
 - `cargo test --locked -p evohime-computer-use -p evohime-ambient -p evohime-media-voice -p evohime-research` (в CI) и узкие тесты `evohime-core`.
 - Контрактные тесты в `evohime-core` подтверждают делегирование в `ModuleRegistry` и корректный `Unavailable` fallback при отсутствии бинарника сервиса.
+
+## Статус проверки (2026-11-28, чтение кода + узкие локальные тесты)
+- `computer-use` — ✅ полностью: все 4 файла перенесены в `evohime-computer-use`, из ядра удалены; тесты зелёные.
+- `research` — ✅ полностью: 5 файлов перенесены (контракты — в `research_types.rs` и `external_source_acquisition_runtime.rs`), из ядра удалены; `research.fetch_url`, `research.capture_evidence`, `research.grounded_session`, `research.validate_grounded` идут через `invoke_required_service`, персист в SQLite — через persistence-порт ядра; контрактные тесты с mock-сервисом остались в `ipc_bridge_tests_workspace_research.rs`; тесты зелёные.
+- `media-voice` — ⚠️ частично: `vision_contract`, `voice_command`, `voice_input_dictation`, `optional_voice_output_adapter` перенесены; `voice.command_parse`, `voice.dictation_*`, `media.validate_image` идут через `ModuleRegistry`; **`image_generation.rs` (76 КБ) остаётся в ядре** как оркестрация над SQLite (job-слоты, durable-восстановление) — вынос требует persistence-порта; локальная валидация `validate_output` осталась только как `#[cfg(test)]`-хелпер.
+- `ambient` — ⚠️ частично: `ambient_proactivity.rs`, `autonomous_metric_experiment_runtime.rs`, `temporal_signal_intelligence.rs` перенесены; `ambient.proactivity_decide` и `voice.command_parse` идут через `invoke_if_ready`; контрактные тесты с `MockAmbientServiceTransport` в ядре; **`ambient.rs` (85 КБ, ~1900 строк) остаётся в ядре** — политика/контроль/реестры слушания живут в данных ядра и SQLite.
+- Узкие локальные тесты: computer-use 5/5, ambient 16/16, media-voice 17/17, research 22/22 — зелёные. Полный CI-прогон подтверждает push.
