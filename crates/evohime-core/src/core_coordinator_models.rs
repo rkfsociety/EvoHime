@@ -373,67 +373,74 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
         } => {
             let result = async {
                     if idempotency_key.is_empty() { return Err("invalid_architecture_snapshot_idempotency_key".into()); }
-                    if workspace_root.len() > crate::architecture_snapshot::MAX_ID * 4 { return Err("workspace_root_too_long".into()); }
+                    if workspace_root.len() > 512 { return Err("workspace_root_too_long".into()); }
                     let request: ArchitectureSnapshotRequest = if payload.is_empty() {
                         ArchitectureSnapshotRequest::default()
                     } else {
                         serde_json::from_slice(&payload).map_err(|_| "invalid_architecture_snapshot_payload".to_string())?
                     };
-                    let root = request.workspace_root.as_deref().filter(|v| !v.is_empty()).unwrap_or(&workspace_root);
+                    let _root = request.workspace_root.as_deref().filter(|v| !v.is_empty()).unwrap_or(&workspace_root);
                     let id = if snapshot_id.is_empty() { "architecture-current" } else { snapshot_id.as_str() };
                     match operation.as_str() {
                         "get" | "evidence" | "open_evidence" | "upstream" | "downstream" | "route" => {
                             let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                             let db = journal.database().lock().await;
                             let record = evohime_local_storage::architecture_snapshot_store::get(db.connection(), id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "architecture_snapshot_not_found".to_string())?;
-                            let json = record.record_json;
-                            let snapshot: crate::architecture_snapshot::ArchitectureSnapshot = serde_json::from_slice(&json).map_err(|_| "corrupt_architecture_snapshot".to_string())?;
-                            if operation == "evidence" || operation == "open_evidence" { return serde_json::to_vec(&serde_json::json!({"status":"ok","snapshot_id":id,"evidence":snapshot.components.iter().flat_map(|c| c.evidence.iter()).collect::<Vec<_>>(),"open_mode":operation == "open_evidence","redacted":true})).map_err(|_| "serialization_failed".to_string()); }
+                            let snapshot: serde_json::Value = serde_json::from_slice(&record.record_json).map_err(|_| "corrupt_architecture_snapshot".to_string())?;
+                            if operation == "evidence" || operation == "open_evidence" {
+                                let evidence = snapshot
+                                    .get("components")
+                                    .and_then(|v| v.as_array())
+                                    .into_iter()
+                                    .flatten()
+                                    .flat_map(|c| c.get("evidence").and_then(|e| e.as_array()).into_iter().flatten())
+                                    .cloned()
+                                    .collect::<Vec<_>>();
+                                return serde_json::to_vec(&serde_json::json!({"status":"ok","snapshot_id":id,"evidence":evidence,"open_mode":operation == "open_evidence","redacted":true})).map_err(|_| "serialization_failed".to_string());
+                            }
                             if operation == "get" { return serde_json::to_vec(&serde_json::json!({"status":"ok","snapshot":snapshot,"redacted":true})).map_err(|_| "serialization_failed".to_string()); }
                             let subject = request.subject_id.as_deref().unwrap_or_default();
-                            let ids: Vec<&str> = match operation.as_str() {
-                                "upstream" => snapshot.relationships.iter().filter(|r| r.to == subject).map(|r| r.from.as_str()).take(64).collect(),
-                                "downstream" => snapshot.relationships.iter().filter(|r| r.from == subject).map(|r| r.to.as_str()).take(64).collect(),
-                                _ => snapshot.relationships.iter().filter(|r| r.from == subject || r.to == subject).flat_map(|r| [r.from.as_str(), r.to.as_str()]).take(64).collect(),
+                            let relationships = snapshot.get("relationships").and_then(|v| v.as_array()).into_iter().flatten();
+                            let ids: Vec<String> = match operation.as_str() {
+                                "upstream" => relationships
+                                    .filter(|r| r.get("to").and_then(|v| v.as_str()) == Some(subject))
+                                    .filter_map(|r| r.get("from").and_then(|v| v.as_str()).map(str::to_owned))
+                                    .take(64)
+                                    .collect(),
+                                "downstream" => relationships
+                                    .filter(|r| r.get("from").and_then(|v| v.as_str()) == Some(subject))
+                                    .filter_map(|r| r.get("to").and_then(|v| v.as_str()).map(str::to_owned))
+                                    .take(64)
+                                    .collect(),
+                                _ => relationships
+                                    .filter(|r| r.get("from").and_then(|v| v.as_str()) == Some(subject) || r.get("to").and_then(|v| v.as_str()) == Some(subject))
+                                    .flat_map(|r| [
+                                        r.get("from").and_then(|v| v.as_str()).map(str::to_owned),
+                                        r.get("to").and_then(|v| v.as_str()).map(str::to_owned),
+                                    ])
+                                    .flatten()
+                                    .take(64)
+                                    .collect(),
                             };
                             serde_json::to_vec(&serde_json::json!({"status":"ok","operation":operation,"subject_id":subject,"related_ids":ids,"route_is_not_impact":true,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "refresh" | "rebuild" | "current" => {
                             let revision = request.source_revision.as_deref().unwrap_or("working-tree");
-                            let root_path = std::path::Path::new(root);
-                            let allowed_roots = if request.allowed_roots.is_empty() {
-                                vec![root.to_owned()]
-                            } else {
-                                request.allowed_roots.clone()
-                            };
-                            crate::architecture_snapshot_runtime::authorize_root(root_path, &allowed_roots).map_err(|e| e.to_string())?;
-                            let workspace_identity = crate::architecture_snapshot_runtime::source_fingerprint(root_path, revision);
-                            let snapshot = crate::architecture_snapshot_runtime::extract(root_path, &workspace_identity, revision, id).map_err(|e| e.to_string())?;
-                            let hash = crate::architecture_snapshot::snapshot_hash(&snapshot).map_err(|e| e.to_string())?;
+                            let workspace_identity = request.workspace_identity.as_deref().ok_or_else(|| "service_module_unavailable:tools.architecture_extract".to_string())?;
+                            let hash = request.snapshot_hash.as_deref().ok_or_else(|| "service_module_unavailable:tools.architecture_extract".to_string())?;
+                            let snapshot = request.snapshot.ok_or_else(|| "service_module_unavailable:tools.architecture_extract".to_string())?;
                             let json = serde_json::to_vec(&snapshot).map_err(|_| "serialization_failed".to_string())?;
                             let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                             let db = journal.database().lock().await;
                             evohime_local_storage::architecture_snapshot_store::set_refresh_state(db.connection(), id, "accepted", None, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?;
-                            evohime_local_storage::architecture_snapshot_store::put(db.connection(), evohime_local_storage::architecture_snapshot_store::PutInput { snapshot_id: id, workspace_identity: &workspace_identity, source_revision: revision, snapshot_hash: &hash, state: "accepted", record_json: &json, updated_at_ms: crate::task_memory::now_millis() as i64 }).map_err(|_| "storage_failed".to_string())?;
+                            evohime_local_storage::architecture_snapshot_store::put(db.connection(), evohime_local_storage::architecture_snapshot_store::PutInput { snapshot_id: id, workspace_identity, source_revision: revision, snapshot_hash: hash, state: "accepted", record_json: &json, updated_at_ms: crate::task_memory::now_millis() as i64 }).map_err(|_| "storage_failed".to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":"accepted","snapshot_id":id,"snapshot_hash":hash,"projection":snapshot,"redacted":true})).map_err(|_| "serialization_failed".to_string())
-                        }
-                        "compare" => {
-                            let before = request.before.ok_or_else(|| "before_required".to_string())?;
-                            let after = request.after.ok_or_else(|| "after_required".to_string())?;
-                            let delta = crate::architecture_snapshot::delta(&before, &after).map_err(|e| e.to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"status":"compared","delta":delta,"redacted":true})).map_err(|_| "serialization_failed".to_string())
-                        }
-                        "review" => {
-                            let expected = request.expected.ok_or_else(|| "expected_required".to_string())?;
-                            let actual = request.actual.ok_or_else(|| "actual_required".to_string())?;
-                            let result = crate::architecture_snapshot::review(&expected, &actual).map_err(|e| e.to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"status":"reviewed","review":result,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "inspect" => {
                             let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                             let db = journal.database().lock().await;
-                            let identity = crate::architecture_snapshot_runtime::source_fingerprint(std::path::Path::new(root), "working-tree");
-                            let records = evohime_local_storage::architecture_snapshot_store::list(db.connection(), &identity, 64).map_err(|_| "storage_failed".to_string())?;
+                            let identity = request.workspace_identity.as_deref().ok_or_else(|| "service_module_unavailable:tools.architecture_fingerprint".to_string())?;
+                            let records = evohime_local_storage::architecture_snapshot_store::list(db.connection(), identity, 64).map_err(|_| "storage_failed".to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":"ok","snapshots":records,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         _ => Err("unsupported_architecture_snapshot_operation".into()),

@@ -2083,6 +2083,137 @@ impl IpcBridge {
         operation: String,
         request: generated::ArchitectureSnapshotCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let mut payload_bytes = request.payload;
+        let parsed: serde_json::Value = if payload_bytes.is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_slice(&payload_bytes)
+                .map_err(|_| FrameError::Io("invalid_architecture_snapshot_payload".into()))?
+        };
+        let root = parsed
+            .get("workspace_root")
+            .and_then(|v| v.as_str())
+            .filter(|v| !v.is_empty())
+            .unwrap_or(&request.workspace_root);
+        let id = if request.snapshot_id.is_empty() {
+            "architecture-current"
+        } else {
+            request.snapshot_id.as_str()
+        };
+        match operation.as_str() {
+            "compare" => {
+                let before = parsed
+                    .get("before")
+                    .cloned()
+                    .ok_or_else(|| FrameError::Io("before_required".into()))?;
+                let after = parsed
+                    .get("after")
+                    .cloned()
+                    .ok_or_else(|| FrameError::Io("after_required".into()))?;
+                let out = self
+                    .invoke_required_service(
+                        "tools.architecture_compare",
+                        serde_json::json!({ "before": before, "after": after }),
+                    )
+                    .await?;
+                return serde_json::to_vec(&serde_json::json!({
+                    "status": "compared",
+                    "delta": out.get("delta").cloned().unwrap_or(serde_json::Value::Null),
+                    "redacted": true,
+                }))
+                .map_err(|e| FrameError::Io(e.to_string()).into());
+            }
+            "review" => {
+                let expected = parsed
+                    .get("expected")
+                    .cloned()
+                    .ok_or_else(|| FrameError::Io("expected_required".into()))?;
+                let actual = parsed
+                    .get("actual")
+                    .cloned()
+                    .ok_or_else(|| FrameError::Io("actual_required".into()))?;
+                let out = self
+                    .invoke_required_service(
+                        "tools.architecture_review",
+                        serde_json::json!({ "expected": expected, "actual": actual }),
+                    )
+                    .await?;
+                return serde_json::to_vec(&serde_json::json!({
+                    "status": "reviewed",
+                    "review": out.get("review").cloned().unwrap_or(serde_json::Value::Null),
+                    "redacted": true,
+                }))
+                .map_err(|e| FrameError::Io(e.to_string()).into());
+            }
+            "refresh" | "rebuild" | "current" => {
+                let revision = parsed
+                    .get("source_revision")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("working-tree");
+                let allowed_roots = parsed
+                    .get("allowed_roots")
+                    .and_then(|v| v.as_array())
+                    .filter(|arr| !arr.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| vec![serde_json::Value::String(root.to_owned())]);
+                let extracted = self
+                    .invoke_required_service(
+                        "tools.architecture_extract",
+                        serde_json::json!({
+                            "root": root,
+                            "revision": revision,
+                            "snapshot_id": id,
+                            "allowed_roots": allowed_roots,
+                        }),
+                    )
+                    .await?;
+                let mut merged = parsed.as_object().cloned().unwrap_or_default();
+                merged.insert(
+                    "workspace_identity".to_owned(),
+                    extracted
+                        .get("workspace_identity")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                );
+                merged.insert(
+                    "snapshot_hash".to_owned(),
+                    extracted
+                        .get("snapshot_hash")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                );
+                merged.insert(
+                    "snapshot".to_owned(),
+                    extracted
+                        .get("snapshot")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                );
+                payload_bytes =
+                    serde_json::to_vec(&merged).map_err(|e| FrameError::Io(e.to_string()))?;
+            }
+            "inspect" => {
+                let fp = self
+                    .invoke_required_service(
+                        "tools.architecture_fingerprint",
+                        serde_json::json!({
+                            "root": root,
+                            "revision": "working-tree",
+                        }),
+                    )
+                    .await?;
+                let mut merged = parsed.as_object().cloned().unwrap_or_default();
+                merged.insert(
+                    "workspace_identity".to_owned(),
+                    fp.get("workspace_identity")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                );
+                payload_bytes =
+                    serde_json::to_vec(&merged).map_err(|e| FrameError::Io(e.to_string()))?;
+            }
+            _ => {}
+        }
         let c = self
             .coordinator
             .as_ref()
@@ -2092,7 +2223,7 @@ impl IpcBridge {
             operation,
             snapshot_id: request.snapshot_id,
             workspace_root: request.workspace_root,
-            payload: request.payload,
+            payload: payload_bytes,
             expected_version: request.expected_version,
             idempotency_key: request.idempotency_key,
             reply,

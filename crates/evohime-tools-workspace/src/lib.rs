@@ -7,6 +7,10 @@
 //! Isolated `tools-workspace` service module for file, patch, search, and Git tools.
 
 #[allow(dead_code)]
+pub(crate) mod architecture_snapshot;
+#[allow(dead_code)]
+pub(crate) mod architecture_snapshot_runtime;
+#[allow(dead_code)]
 pub(crate) mod code_diagnostics_feedback_loop;
 #[allow(dead_code)]
 pub(crate) mod static_analysis_packs;
@@ -149,6 +153,46 @@ impl ServiceHandler for ToolsWorkspaceService {
                             "expected_revision": { "type": "integer" },
                             "request": { "type": "object" }
                         }
+                    }),
+                    required_permissions: vec!["fs.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "tools.architecture_extract".to_owned(),
+                    description: "Extracts and hashes a bounded architecture snapshot for an allowed workspace root.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["root", "revision", "snapshot_id", "allowed_roots"]
+                    }),
+                    required_permissions: vec!["fs.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "tools.architecture_compare".to_owned(),
+                    description: "Computes a deterministic delta between two architecture snapshots.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["before", "after"]
+                    }),
+                    required_permissions: vec!["fs.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "tools.architecture_review".to_owned(),
+                    description: "Reviews an architecture delta against expected changes.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["expected", "actual"]
+                    }),
+                    required_permissions: vec!["fs.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "tools.architecture_fingerprint".to_owned(),
+                    description: "Computes the canonical workspace source fingerprint.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["root", "revision"]
                     }),
                     required_permissions: vec!["fs.read".to_owned()],
                     supports_streaming: false,
@@ -410,6 +454,79 @@ impl ServiceHandler for ToolsWorkspaceService {
                     "adapter": "metadata_only",
                 }))
             }
+            "tools.architecture_extract" => {
+                #[derive(serde::Deserialize)]
+                struct ExtractRequest {
+                    root: String,
+                    revision: String,
+                    snapshot_id: String,
+                    allowed_roots: Vec<String>,
+                }
+                let req: ExtractRequest = serde_json::from_value(payload).map_err(|_| {
+                    ServiceContractError::invalid_input("invalid_architecture_extract_request")
+                })?;
+                let root_path = std::path::Path::new(&req.root);
+                architecture_snapshot_runtime::authorize_root(root_path, &req.allowed_roots)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                let workspace_identity =
+                    architecture_snapshot_runtime::source_fingerprint(root_path, &req.revision);
+                let snapshot = architecture_snapshot_runtime::extract(
+                    root_path,
+                    &workspace_identity,
+                    &req.revision,
+                    &req.snapshot_id,
+                )
+                .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                let snapshot_hash = architecture_snapshot::snapshot_hash(&snapshot)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                Ok(serde_json::json!({
+                    "workspace_identity": workspace_identity,
+                    "source_revision": req.revision,
+                    "snapshot_hash": snapshot_hash,
+                    "snapshot": snapshot,
+                }))
+            }
+            "tools.architecture_compare" => {
+                #[derive(serde::Deserialize)]
+                struct CompareRequest {
+                    before: architecture_snapshot::ArchitectureSnapshot,
+                    after: architecture_snapshot::ArchitectureSnapshot,
+                }
+                let req: CompareRequest = serde_json::from_value(payload).map_err(|_| {
+                    ServiceContractError::invalid_input("invalid_architecture_compare_request")
+                })?;
+                let delta = architecture_snapshot::delta(&req.before, &req.after)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                Ok(serde_json::json!({ "delta": delta }))
+            }
+            "tools.architecture_review" => {
+                #[derive(serde::Deserialize)]
+                struct ReviewRequest {
+                    expected: architecture_snapshot::ExpectedArchitectureDelta,
+                    actual: architecture_snapshot::ArchitectureDelta,
+                }
+                let req: ReviewRequest = serde_json::from_value(payload).map_err(|_| {
+                    ServiceContractError::invalid_input("invalid_architecture_review_request")
+                })?;
+                let review = architecture_snapshot::review(&req.expected, &req.actual)
+                    .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                Ok(serde_json::json!({ "review": review }))
+            }
+            "tools.architecture_fingerprint" => {
+                #[derive(serde::Deserialize)]
+                struct FingerprintRequest {
+                    root: String,
+                    revision: String,
+                }
+                let req: FingerprintRequest = serde_json::from_value(payload).map_err(|_| {
+                    ServiceContractError::invalid_input("invalid_architecture_fingerprint_request")
+                })?;
+                let workspace_identity = architecture_snapshot_runtime::source_fingerprint(
+                    std::path::Path::new(&req.root),
+                    &req.revision,
+                );
+                Ok(serde_json::json!({ "workspace_identity": workspace_identity }))
+            }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown tools-workspace capability: {other}"
             ))),
@@ -491,5 +608,16 @@ mod tests {
             },
         );
         assert!(matches!(resp, ServiceResponse::InvokeResult { .. }));
+
+        let fp = dispatch_request(
+            &svc,
+            ServiceRequest::Invoke {
+                request_id: "tw2".to_owned(),
+                capability: "tools.architecture_fingerprint".to_owned(),
+                payload: serde_json::json!({ "root": ".", "revision": "working-tree" }),
+                caller_session_id: None,
+            },
+        );
+        assert!(matches!(fp, ServiceResponse::InvokeResult { .. }));
     }
 }

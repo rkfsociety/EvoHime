@@ -470,7 +470,7 @@ mod tests {
             relationships: vec![],
             boundaries: vec![],
             coverage: Coverage {
-                extractor_version: crate::routing_trace::ROUTING_CATALOG_VERSION.into(),
+                extractor_version: "routing-catalog/v1".into(),
                 covered_kinds: vec!["process".into()],
                 diagnostics: vec![],
                 omissions: vec![],

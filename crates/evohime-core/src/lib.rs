@@ -259,8 +259,6 @@ pub mod typed_agent_handoff_contract;
 pub use task_memory::project_scope_id;
 pub(crate) mod agent_git_change_sets;
 pub(crate) mod architect_editor_model_pipeline;
-pub(crate) mod architecture_snapshot;
-pub(crate) mod architecture_snapshot_runtime;
 mod core_protocol;
 pub mod plan_context;
 pub mod plan_review;

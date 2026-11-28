@@ -114,13 +114,19 @@ pub(crate) struct ArchitectureSnapshotRequest {
     #[serde(default)]
     pub(crate) allowed_roots: Vec<String>,
     #[serde(default)]
-    pub(crate) before: Option<crate::architecture_snapshot::ArchitectureSnapshot>,
+    pub(crate) before: Option<serde_json::Value>,
     #[serde(default)]
-    pub(crate) after: Option<crate::architecture_snapshot::ArchitectureSnapshot>,
+    pub(crate) after: Option<serde_json::Value>,
     #[serde(default)]
-    pub(crate) expected: Option<crate::architecture_snapshot::ExpectedArchitectureDelta>,
+    pub(crate) expected: Option<serde_json::Value>,
     #[serde(default)]
-    pub(crate) actual: Option<crate::architecture_snapshot::ArchitectureDelta>,
+    pub(crate) actual: Option<serde_json::Value>,
+    #[serde(default)]
+    pub(crate) workspace_identity: Option<String>,
+    #[serde(default)]
+    pub(crate) snapshot_hash: Option<String>,
+    #[serde(default)]
+    pub(crate) snapshot: Option<serde_json::Value>,
 }
 /// Типизированные параметры операций локального model runtime manager.
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
