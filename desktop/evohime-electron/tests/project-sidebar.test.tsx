@@ -25,7 +25,11 @@ beforeEach(() => {
     invoke: (async (command: RendererCommand, payload: unknown) => {
       calls.push({ command, payload })
       if (command === 'workspace.list') return ok({ selected: 'C:\\work\\repo', options: [option('C:\\work\\repo'), option('C:\\work\\other')] })
-      if (command === 'chat.list') return ok(chats)
+      if (command === 'workspace.select') {
+        const { path } = payload as { path: string }
+        return ok({ selected: path, options: [option('C:\\work\\repo'), option('C:\\work\\other')] })
+      }
+      if (command === 'chat.listAll') return ok(chats)
       if (command === 'chat.create') {
         const created = { id: 'chat-2', workspacePath: 'C:\\work\\repo', title: 'Новый чат', createdMs: 3, updatedMs: 3, taskIds: [], messages: [] }
         chats = [{ ...created, messageCount: 0 }, ...chats]
@@ -77,10 +81,45 @@ describe('project sidebar', () => {
     expect(screen.getAllByRole('button', { name: /Новый чат/ })).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Запланировано' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Плагины' })).toBeNull()
-    expect(screen.getByRole('heading', { name: 'Чаты' })).toBeTruthy()
     expect(await screen.findByRole('list', { name: 'Список проектов' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'repo' })).toBeTruthy()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Изучи проект' })).toBeTruthy())
+  })
+
+  it('nests chats of the selected project inside its tree node', async () => {
+    renderSidebar()
+    const tree = await screen.findByRole('list', { name: 'Список проектов' })
+    const chat = await screen.findByRole('button', { name: 'Изучи проект' })
+    expect(tree.contains(chat)).toBe(true)
+    // Секции «Чаты» с отдельным списком больше нет — чаты живут в дереве.
+    expect(screen.queryByRole('heading', { name: 'Чаты' })).toBeNull()
+  })
+
+  it('collapses and expands a project chat list from the chevron', async () => {
+    renderSidebar()
+    await screen.findByRole('button', { name: 'Изучи проект' })
+    await userEvent.click(screen.getByRole('button', { name: 'Свернуть чаты проекта repo' }))
+    expect(screen.queryByRole('button', { name: 'Изучи проект' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Развернуть чаты проекта repo' }))
+    expect(screen.getByRole('button', { name: 'Изучи проект' })).toBeTruthy()
+  })
+
+  it('opens a chat from another project and switches the workspace with it', async () => {
+    const { props } = renderSidebar({ workspace: 'C:\\work\\other' })
+    await screen.findByRole('button', { name: 'repo' })
+    // Чаты видны только у раскрытых проектов — сначала раскрываем repo.
+    await userEvent.click(screen.getByRole('button', { name: 'Развернуть чаты проекта repo' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Изучи проект' }))
+    expect(calls).toContainEqual({ command: 'workspace.select', payload: { path: 'C:\\work\\repo' } })
+    expect(props.onWorkspaceChange).toHaveBeenCalledWith('C:\\work\\repo')
+    expect(props.onChatChange).toHaveBeenCalledWith('chat-1')
+  })
+
+  it('shows standalone chats under their own group', async () => {
+    chats = [{ id: 'chat-solo', workspacePath: null, title: 'Отдельный чат', updatedMs: 5, messageCount: 0 }]
+    renderSidebar({ workspace: null })
+    expect(await screen.findByRole('button', { name: 'Без проекта' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Отдельный чат' })).toBeTruthy()
   })
 
   it('opens project actions menu (explorer, delete) and starts a new chat in a project', async () => {

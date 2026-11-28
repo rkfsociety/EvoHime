@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import type { ChatSummary, ConnectionState, WorkspaceOption } from '@shared/api'
 
 import { useShellApi } from './shell-api'
-import { translate, useT } from './i18n'
+import { useT } from './i18n'
 import { UiIcon } from './UiIcon'
 
 /**
@@ -57,10 +57,19 @@ export function ProjectSidebar({
   const [openChatMenu, setOpenChatMenu] = useState<FloatingMenuState<string> | null>(null)
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  /** Lowercase project paths (or '' for standalone chats) with visible chat lists. */
+  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set())
   const projectsRef = useRef<HTMLElement | null>(null)
-  const chatsRef = useRef<HTMLUListElement | null>(null)
+  const treeRef = useRef<HTMLUListElement | null>(null)
   const projectMenuRef = useRef<HTMLDivElement | null>(null)
   const chatMenuRef = useRef<HTMLDivElement | null>(null)
+
+  // Текущий проект (или группу чатов без проекта) всегда раскрываем: что бы
+  // ни происходило в оболочке, пользователь видит чаты активного места.
+  useEffect(() => {
+    const key = workspace === null ? '' : workspace.toLowerCase()
+    setExpandedGroups((current) => (current.has(key) ? current : new Set(current).add(key)))
+  }, [workspace])
 
   useEffect(() => {
     if (!openProjectMenu && !openChatMenu) return
@@ -69,7 +78,7 @@ export function ProjectSidebar({
       if (openProjectMenu && !projectsRef.current?.contains(target) && !projectMenuRef.current?.contains(target)) {
         setOpenProjectMenu(null)
       }
-      if (openChatMenu && !chatsRef.current?.contains(target) && !chatMenuRef.current?.contains(target)) {
+      if (openChatMenu && !treeRef.current?.contains(target) && !chatMenuRef.current?.contains(target)) {
         setOpenChatMenu(null)
       }
     }
@@ -134,9 +143,9 @@ export function ProjectSidebar({
 
   const loadChats = useCallback(async () => {
     if (!api) return
-    const outcome = await api.invoke('chat.list', { workspacePath: workspace })
+    const outcome = await api.invoke('chat.listAll', {})
     if (outcome.ok) setChats(outcome.value)
-  }, [api, workspace])
+  }, [api])
 
   useEffect(() => {
     void loadChats()
@@ -192,13 +201,42 @@ export function ProjectSidebar({
     }
   }, [api])
 
-  const startNewChatInProject = useCallback(async (path: string) => {
-    setOpenProjectMenu(null)
-    if (workspace === null || !samePath(workspace, path)) {
-      await selectWorkspace(path)
-    }
-    onChatChange(null)
-  }, [onChatChange, selectWorkspace, workspace])
+  const toggleGroup = useCallback((key: string) => {
+    setExpandedGroups((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+
+  const startNewChatInGroup = useCallback(
+    async (path: string | null) => {
+      setOpenProjectMenu(null)
+      setExpandedGroups((current) => new Set(current).add(path === null ? '' : path.toLowerCase()))
+      if (path === null) {
+        if (workspace !== null) onWorkspaceChange(null)
+      } else if (workspace === null || !samePath(workspace, path)) {
+        await selectWorkspace(path)
+      }
+      onChatChange(null)
+    },
+    [onChatChange, onWorkspaceChange, selectWorkspace, workspace]
+  )
+
+  const openChat = useCallback(
+    async (chat: ChatSummary) => {
+      // Чат живёт в своём проекте: открытие попутно переключает оболочку
+      // на этот проект, чтобы новая задача пошла в правильной папке.
+      if (chat.workspacePath === null) {
+        if (workspace !== null) onWorkspaceChange(null)
+      } else if (workspace === null || !samePath(workspace, chat.workspacePath)) {
+        await selectWorkspace(chat.workspacePath)
+      }
+      onChatChange(chat.id)
+    },
+    [onChatChange, onWorkspaceChange, selectWorkspace, workspace]
+  )
 
   const removeChat = useCallback(
     async (id: string) => {
@@ -206,7 +244,9 @@ export function ProjectSidebar({
       setOpenChatMenu(null)
       const outcome = await api.invoke('chat.remove', { chatId: id })
       if (!outcome.ok) return
-      setChats(outcome.value)
+      // Дерево держит чаты всех проектов, а main отвечает списком одного —
+      // поэтому правим общий список локально.
+      setChats((current) => current.filter((chat) => chat.id !== id))
       if (id === chatId) onChatChange(null)
       onChatsChanged?.()
     },
@@ -219,7 +259,7 @@ export function ProjectSidebar({
       setOpenChatMenu(null)
       const outcome = await api.invoke('chat.archive', { chatId: id, archived: true })
       if (!outcome.ok) return
-      setChats(outcome.value)
+      setChats((current) => current.filter((chat) => chat.id !== id))
       if (id === chatId) onChatChange(null)
       onChatsChanged?.()
     },
@@ -243,8 +283,9 @@ export function ProjectSidebar({
 
   const connected = CONNECTED_STATES.includes(connection)
   const activeProject = projects.find((project) => workspace !== null && samePath(project.path, workspace))
+  const chatGroups = useMemo(() => buildChatGroups(projects, chats), [projects, chats])
   const openProjectTarget = openProjectMenu
-    ? projects.find((project) => samePath(openProjectMenu.key, project.path)) ?? null
+    ? chatGroups.find((group) => samePath(openProjectMenu.key, group.path ?? '')) ?? null
     : null
   const openChatTarget = openChatMenu
     ? chats.find((chat) => chat.id === openChatMenu.key) ?? null
@@ -288,187 +329,197 @@ export function ProjectSidebar({
             <UiIcon name="folder-plus" size={14} />
           </button>
         </div>
-        {projects.length === 0 ? (
-          <p className="chat-rail__projects-empty">{t('Без проекта')}</p>
+
+        {activeProject?.available === false ? (
+          <p role="alert" className="chat-rail__warning">
+            {t('Папка недоступна: её переименовали, удалили или диск не подключён.')}
+          </p>
+        ) : null}
+
+        {chatGroups.length === 0 ? (
+          <p className="chat-rail__projects-empty">{t('Добавь проект — и чаты появятся внутри него.')}</p>
         ) : (
           <ul
-            className="chat-rail__projects"
+            className="chat-rail__projects chat-rail__tree"
             aria-label={t('Список проектов')}
             onScroll={() => {
               if (openProjectMenu) setOpenProjectMenu(null)
+              if (openChatMenu) setOpenChatMenu(null)
             }}
           >
-            {projects.map((project) => {
-              const name = basename(project.path)
-              const active = workspace !== null && samePath(project.path, workspace)
-              const menuOpen = openProjectMenu !== null && samePath(openProjectMenu.key, project.path)
+            {chatGroups.map((group) => {
+              const active = group.path !== null && workspace !== null && samePath(group.path, workspace)
+              const expanded = expandedGroups.has(group.key)
+              const name = group.path === null ? t('Без проекта') : basename(group.path)
+              const menuOpen = openProjectMenu !== null && group.path !== null && samePath(openProjectMenu.key, group.path)
               return (
-                <li
-                  key={project.path}
-                  className={`chat-rail__project-row${active ? ' chat-rail__project-row--active' : ''}${!project.available ? ' chat-rail__project-row--missing' : ''}`}
-                >
-                  <button
-                    type="button"
-                    className="chat-rail__project-btn"
-                    aria-current={active ? 'true' : undefined}
-                    title={project.path}
-                    onClick={() => void selectWorkspace(project.path)}
+                <li key={group.key} className="chat-rail__tree-group">
+                  <div
+                    className={`chat-rail__project-row${active ? ' chat-rail__project-row--active' : ''}${!group.available ? ' chat-rail__project-row--missing' : ''}`}
                   >
-                    <span className="chat-rail__project-icon" aria-hidden="true">
-                      <UiIcon name="folder" size={14} />
-                    </span>
-                    <span className="chat-rail__project-name">{name}</span>
-                  </button>
-                  <div className="chat-rail__project-actions">
                     <button
                       type="button"
-                      className="chat-rail__project-action"
-                      aria-label={t('Действия с проектом {name}').replace('{name}', name)}
-                      aria-expanded={menuOpen}
-                      title={t('Действия с проектом')}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        if (menuOpen) {
-                          setOpenProjectMenu(null)
-                          return
-                        }
-                        const rect = event.currentTarget.getBoundingClientRect()
-                        setOpenChatMenu(null)
-                        setOpenProjectMenu({
-                          key: project.path,
-                          left: rect.left,
-                          top: rect.bottom + 4,
-                          anchorTop: rect.top
-                        })
-                      }}
+                      className={`chat-rail__chevron${expanded ? ' chat-rail__chevron--open' : ''}`}
+                      aria-expanded={expanded}
+                      aria-label={(expanded ? t('Свернуть чаты проекта {name}') : t('Развернуть чаты проекта {name}')).replace('{name}', name)}
+                      title={expanded ? t('Свернуть') : t('Развернуть')}
+                      onClick={() => toggleGroup(group.key)}
                     >
-                      <UiIcon name="more-horizontal" size={13} />
+                      <UiIcon name="chevron-right" size={12} />
                     </button>
                     <button
                       type="button"
-                      className="chat-rail__project-action"
-                      aria-label={t('Создать чат в проекте {name}').replace('{name}', name)}
-                      title={t('Новый чат в этом проекте')}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        void startNewChatInProject(project.path)
+                      className="chat-rail__project-btn"
+                      aria-current={active ? 'true' : undefined}
+                      title={group.path ?? undefined}
+                      onClick={() => {
+                        toggleGroup(group.key)
+                        void selectWorkspace(group.path ?? '')
                       }}
                     >
-                      <UiIcon name="plus" size={13} />
+                      <span className="chat-rail__project-icon" aria-hidden="true">
+                        <UiIcon name="folder" size={14} />
+                      </span>
+                      <span className="chat-rail__project-name">{name}</span>
+                      {group.chats.length > 0 ? (
+                        <span className="chat-rail__project-count" aria-hidden="true">{group.chats.length}</span>
+                      ) : null}
                     </button>
+                    <div className="chat-rail__project-actions">
+                      {group.path !== null ? (
+                        <button
+                          type="button"
+                          className="chat-rail__project-action"
+                          aria-label={t('Действия с проектом {name}').replace('{name}', name)}
+                          aria-expanded={menuOpen}
+                          title={t('Действия с проектом')}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            if (menuOpen) {
+                              setOpenProjectMenu(null)
+                              return
+                            }
+                            const rect = event.currentTarget.getBoundingClientRect()
+                            setOpenChatMenu(null)
+                            setOpenProjectMenu({
+                              key: group.path!,
+                              left: rect.left,
+                              top: rect.bottom + 4,
+                              anchorTop: rect.top
+                            })
+                          }}
+                        >
+                          <UiIcon name="more-horizontal" size={13} />
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="chat-rail__project-action"
+                        aria-label={t('Создать чат в проекте {name}').replace('{name}', name)}
+                        title={t('Новый чат в этом проекте')}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void startNewChatInGroup(group.path)
+                        }}
+                      >
+                        <UiIcon name="plus" size={13} />
+                      </button>
+                    </div>
                   </div>
+                  {expanded ? (
+                    group.chats.length === 0 ? (
+                      <p className="chat-rail__tree-empty">{t('Чатов пока нет. Начни с нового чата.')}</p>
+                    ) : (
+                      <ul className="chat-rail__project-chats">
+                        {group.chats.map((chat) => {
+                          const chatMenuOpen = openChatMenu?.key === chat.id
+                          const isRenaming = renamingChatId === chat.id
+                          return (
+                            <li key={chat.id} className="chats__row">
+                              {isRenaming ? (
+                                <input
+                                  type="text"
+                                  className="chats__rename-input"
+                                  aria-label={t('Новое название чата')}
+                                  value={renameDraft}
+                                  autoFocus
+                                  maxLength={80}
+                                  onChange={(event) => setRenameDraft(event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                      event.preventDefault()
+                                      void commitRenameChat(chat.id)
+                                    } else if (event.key === 'Escape') {
+                                      setRenamingChatId(null)
+                                    }
+                                  }}
+                                  onBlur={() => void commitRenameChat(chat.id)}
+                                />
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="chats__item"
+                                    aria-current={chat.id === chatId ? 'true' : undefined}
+                                    onClick={() => void openChat(chat)}
+                                    title={chat.title}
+                                  >
+                                    <span className="chats__item-icon" aria-hidden="true"><UiIcon name="message" size={13} /></span>
+                                    <span className="chats__item-title">{chat.title}</span>
+                                  </button>
+                                  <div className="chat-rail__project-actions chat-rail__chat-actions">
+                                    <button
+                                      type="button"
+                                      className="chat-rail__project-action"
+                                      aria-label={t('Действия с чатом {title}').replace('{title}', chat.title)}
+                                      aria-expanded={chatMenuOpen}
+                                      title={t('Действия с чатом')}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        if (chatMenuOpen) {
+                                          setOpenChatMenu(null)
+                                          return
+                                        }
+                                        const rect = event.currentTarget.getBoundingClientRect()
+                                        setOpenProjectMenu(null)
+                                        setOpenChatMenu({
+                                          key: chat.id,
+                                          left: rect.left,
+                                          top: rect.bottom + 4,
+                                          anchorTop: rect.top
+                                        })
+                                      }}
+                                    >
+                                      <UiIcon name="more-horizontal" size={13} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="chat-rail__project-action"
+                                      aria-label={t('Архивировать чат {title}').replace('{title}', chat.title)}
+                                      title={t('Архивировать чат')}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        void archiveChat(chat.id)
+                                      }}
+                                    >
+                                      <UiIcon name="archive" size={13} />
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )
+                  ) : null}
                 </li>
               )
             })}
           </ul>
         )}
       </section>
-
-      <div className="chat-rail__heading">
-        <div>
-          <h2>{t('Чаты')}</h2>
-          <small>{translate(workspace ? basename(workspace) : t('Без проекта'))}</small>
-        </div>
-      </div>
-
-      {activeProject?.available === false ? (
-        <p role="alert" className="chat-rail__warning">
-          {t('Папка недоступна: её переименовали, удалили или диск не подключён.')}
-        </p>
-      ) : null}
-
-      {chats.length === 0 ? (
-        <p className="chat-rail__empty">{t('Чатов пока нет. Начни с нового чата.')}</p>
-      ) : (
-        <ul
-          className="chats__list"
-          ref={chatsRef}
-          onScroll={() => {
-            if (openChatMenu) setOpenChatMenu(null)
-          }}
-        >
-          {chats.map((chat) => {
-            const chatMenuOpen = openChatMenu?.key === chat.id
-            const isRenaming = renamingChatId === chat.id
-            return (
-              <li key={chat.id} className="chats__row">
-                {isRenaming ? (
-                  <input
-                    type="text"
-                    className="chats__rename-input"
-                    aria-label={t('Новое название чата')}
-                    value={renameDraft}
-                    autoFocus
-                    maxLength={80}
-                    onChange={(event) => setRenameDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault()
-                        void commitRenameChat(chat.id)
-                      } else if (event.key === 'Escape') {
-                        setRenamingChatId(null)
-                      }
-                    }}
-                    onBlur={() => void commitRenameChat(chat.id)}
-                  />
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="chats__item"
-                      aria-current={chat.id === chatId ? 'true' : undefined}
-                      onClick={() => onChatChange(chat.id)}
-                      title={chat.title}
-                    >
-                      <span className="chats__item-icon" aria-hidden="true"><UiIcon name="message" size={13} /></span>
-                      <span className="chats__item-title">{chat.title}</span>
-                    </button>
-                    <div className="chat-rail__project-actions chat-rail__chat-actions">
-                      <button
-                        type="button"
-                        className="chat-rail__project-action"
-                        aria-label={t('Действия с чатом {title}').replace('{title}', chat.title)}
-                        aria-expanded={chatMenuOpen}
-                        title={t('Действия с чатом')}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          if (chatMenuOpen) {
-                            setOpenChatMenu(null)
-                            return
-                          }
-                          const rect = event.currentTarget.getBoundingClientRect()
-                          setOpenProjectMenu(null)
-                          setOpenChatMenu({
-                            key: chat.id,
-                            left: rect.left,
-                            top: rect.bottom + 4,
-                            anchorTop: rect.top
-                          })
-                        }}
-                      >
-                        <UiIcon name="more-horizontal" size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="chat-rail__project-action"
-                        aria-label={t('Архивировать чат {title}').replace('{title}', chat.title)}
-                        title={t('Архивировать чат')}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void archiveChat(chat.id)
-                        }}
-                      >
-                        <UiIcon name="archive" size={13} />
-                      </button>
-                    </div>
-                  </>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
-      {openProjectMenu && openProjectTarget
+      {openProjectMenu && openProjectTarget !== null && openProjectTarget.path !== null
         ? createPortal(
             <div
               ref={projectMenuRef}
@@ -480,7 +531,7 @@ export function ProjectSidebar({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => void openWorkspaceInExplorer(openProjectTarget.path)}
+                onClick={() => void openWorkspaceInExplorer(openProjectTarget.path!)}
               >
                 <UiIcon name="folder" size={13} />
                 <span>{t('Открыть в проводнике')}</span>
@@ -489,7 +540,7 @@ export function ProjectSidebar({
                 type="button"
                 role="menuitem"
                 className="chat-rail__project-menu-danger"
-                onClick={() => void forgetWorkspace(openProjectTarget.path)}
+                onClick={() => void forgetWorkspace(openProjectTarget.path!)}
               >
                 <UiIcon name="x" size={13} />
                 <span>{t('Удалить из списка')}</span>
@@ -552,4 +603,51 @@ function samePath(left: string, right: string): boolean {
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter((part) => part.length > 0)
   return parts.at(-1) ?? path
+}
+
+/** One expandable node of the sidebar tree: a project (or standalone chats) with its chats. */
+interface ChatGroup {
+  /** Lowercase path key; '' marks the standalone group. */
+  readonly key: string
+  /** null — чаты без проекта; для таких чатов папка не выбирается. */
+  readonly path: string | null
+  readonly chats: readonly ChatSummary[]
+  /** false — папка числится в списке, но недоступна на диске. */
+  readonly available: boolean
+}
+
+/**
+ * Groups chats by their project in list order: known projects first, then
+ * chats of forgotten folders (kept reachable instead of disappearing), then
+ * standalone chats.
+ */
+function buildChatGroups(projects: readonly WorkspaceOption[], chats: readonly ChatSummary[]): ChatGroup[] {
+  const byKey = new Map<string, ChatSummary[]>()
+  const standalone: ChatSummary[] = []
+  for (const chat of chats) {
+    if (chat.workspacePath === null) {
+      standalone.push(chat)
+      continue
+    }
+    const key = chat.workspacePath.toLowerCase()
+    const bucket = byKey.get(key)
+    if (bucket) bucket.push(chat)
+    else byKey.set(key, [chat])
+  }
+  const groups: ChatGroup[] = projects.map((project) => ({
+    key: project.path.toLowerCase(),
+    path: project.path,
+    available: project.available,
+    chats: byKey.get(project.path.toLowerCase()) ?? []
+  }))
+  for (const [key, groupChats] of byKey) {
+    if (projects.some((project) => project.path.toLowerCase() === key)) continue
+    const path = groupChats[0]?.workspacePath
+    if (path === null || path === undefined) continue
+    groups.push({ key, path, available: true, chats: groupChats })
+  }
+  if (standalone.length > 0) {
+    groups.push({ key: '', path: null, available: true, chats: standalone })
+  }
+  return groups
 }

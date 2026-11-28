@@ -1631,6 +1631,7 @@ export const RENDERER_COMMANDS = [
   'identity.get',
   'repository.get',
   'chat.list',
+  'chat.listAll',
   'chat.create',
   'chat.open',
   'chat.appendPrompt',
@@ -2144,6 +2145,7 @@ export interface CommandPayloads {
   'identity.get': Record<string, never>
   'repository.get': { workspacePath: string }
   'chat.list': { workspacePath: string | null; includeArchived?: boolean }
+  'chat.listAll': { includeArchived?: boolean }
   'chat.create': { workspacePath: string | null }
   'chat.open': { chatId: string }
   'chat.appendPrompt': { chatId: string; taskId: string; clientMessageId?: string; prompt: string }
@@ -2669,6 +2671,7 @@ export interface CommandResults {
   'identity.get': UserIdentity
   'repository.get': RepositorySummary | null
   'chat.list': readonly ChatSummary[]
+  'chat.listAll': readonly ChatSummary[]
   'chat.create': ChatRecord
   'chat.open': ChatRecord | null
   'chat.appendPrompt': ChatRecord | null

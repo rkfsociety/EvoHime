@@ -120,7 +120,7 @@ describe('responsive shell layout contract', () => {
 
   it('keeps row actions reachable by keyboard and touch', () => {
     expect(stylesheet).toContain('.projects__row:focus-within .projects__forget')
-    expect(stylesheet).toContain('.chats__list li:focus-within .chats__remove')
+    expect(stylesheet).toContain('.chats__row:focus-within .chat-rail__chat-actions')
     expect(stylesheet).toContain('@media (hover: none)')
     expect(stylesheet).toContain('pointer-events: auto;')
   })

@@ -92,6 +92,15 @@ export class ChatStore {
       .map(summarize)
   }
 
+  /** Chats of every workspace plus standalone chats, most recently used first. */
+  async listAll(includeArchived = false): Promise<ChatSummary[]> {
+    return (await this.read())
+      .chats
+      .filter((chat) => includeArchived || !chat.archived)
+      .sort((left, right) => right.updatedMs - left.updatedMs)
+      .map(summarize)
+  }
+
   async create(workspacePath: string | null): Promise<ChatRecord | null> {
     const normalized = normalizeChatWorkspacePath(workspacePath)
     if (normalized === undefined) return null

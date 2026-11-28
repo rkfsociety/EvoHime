@@ -59,6 +59,20 @@ describe('chat store', () => {
     expect(standalone.workspacePath).toBeNull()
   })
 
+  it('lists chats of all projects and standalone chats together', async () => {
+    const store = newStore()
+    const standalone = (await store.create(null))!
+    const alpha = (await store.create('C:\\work\\alpha'))!
+    const beta = (await store.create('C:\\work\\beta'))!
+
+    expect((await store.listAll()).map((chat) => chat.id)).toEqual([beta.id, alpha.id, standalone.id])
+
+    const archived = await store.setArchived(alpha.id, true)
+    expect(archived).not.toBeNull()
+    expect((await store.listAll()).map((chat) => chat.id)).toEqual([beta.id, standalone.id])
+    expect((await store.listAll(true)).map((chat) => chat.id)).toEqual([beta.id, alpha.id, standalone.id])
+  })
+
   it('names a chat after its first prompt and remembers the task', async () => {
     const store = newStore()
     const chat = await store.create('C:\\work\\repo')

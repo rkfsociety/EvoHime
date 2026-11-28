@@ -1754,6 +1754,11 @@ function dispatch(
       return chatOperation(chats.list(workspacePath, includeArchived), log, (result) => ({ ok: true, value: result }))
     }
 
+    case 'chat.listAll': {
+      const includeArchived = asRecord(payload)['includeArchived'] === true
+      return chatOperation(chats.listAll(includeArchived), log, (result) => ({ ok: true, value: result }))
+    }
+
     case 'chat.create': {
       const workspacePath = asOptionalWorkspacePath(asRecord(payload)['workspacePath'])
       if (workspacePath === undefined) return failure('invalid-payload', 'Некорректный путь проекта.')
