@@ -21,8 +21,10 @@ pub const NAME: &str = "shell_execute";
 pub const DESCRIPTION: &str = "Execute a program directly inside the workspace";
 /// Permission required before a process may be started.
 pub const PERMISSIONS: &[Permission] = &[Permission::ShellExecute];
-/// Default execution deadline; request-specific values cannot exceed this cap.
-pub const TIMEOUT: Duration = Duration::from_secs(30);
+/// Maximum execution deadline accepted by the registry for `shell_execute`.
+pub const TIMEOUT: Duration =
+    Duration::from_millis(crate::execution_policy_profiles::MAX_TIMEOUT_MS);
+const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 const MAX_OUTPUT: usize = 1024 * 1024;
 
 #[derive(Deserialize)]
@@ -79,7 +81,7 @@ pub async fn execute(
         &program,
         &args,
         cwd,
-        resolved.timeout(input.timeout_ms),
+        resolved.timeout(Some(input.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS))),
         &resolved,
         cancellation,
     )
@@ -629,5 +631,20 @@ mod tests {
             result.structured.get("ok").and_then(|v| v.as_bool()),
             Some(true)
         );
+    }
+
+    #[test]
+    fn shell_timeout_supports_multi_minute_requests_up_to_profile_cap() {
+        let resolved = ExecutionPolicyProfile::resolve(NAME).expect("shell profile resolves");
+        assert_eq!(
+            TIMEOUT,
+            Duration::from_millis(crate::execution_policy_profiles::MAX_TIMEOUT_MS)
+        );
+        assert_eq!(
+            resolved.timeout(Some(DEFAULT_TIMEOUT_MS)),
+            Duration::from_secs(60)
+        );
+        assert_eq!(resolved.timeout(Some(240_000)), Duration::from_secs(240));
+        assert_eq!(resolved.timeout(Some(600_000)), TIMEOUT);
     }
 }

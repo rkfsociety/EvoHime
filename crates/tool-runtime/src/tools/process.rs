@@ -16,8 +16,9 @@ pub const DESCRIPTION: &str =
     "Run a process with improved timeout and streaming (replaces shell_execute)";
 /// Permission required before the process can be started.
 pub const PERMISSIONS: &[Permission] = &[Permission::ShellExecute];
-/// Default maximum runtime for the process tool.
-pub const TIMEOUT: Duration = Duration::from_secs(60);
+/// Maximum runtime accepted by the registry for the process tool.
+pub const TIMEOUT: Duration =
+    Duration::from_millis(crate::execution_policy_profiles::MAX_TIMEOUT_MS);
 
 #[derive(Debug, Deserialize)]
 struct Input {

@@ -15,8 +15,8 @@ use tokio::process::{Child, Command};
 pub const CONTRACT_VERSION: u32 = 1;
 /// Maximum profile identifier length in bytes.
 pub const MAX_PROFILE_ID: usize = 64;
-/// Hard maximum process timeout in milliseconds.
-pub const MAX_TIMEOUT_MS: u64 = 60_000;
+/// Hard maximum process timeout in milliseconds (5 minutes).
+pub const MAX_TIMEOUT_MS: u64 = 300_000;
 /// Hard maximum captured output size in bytes.
 pub const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 

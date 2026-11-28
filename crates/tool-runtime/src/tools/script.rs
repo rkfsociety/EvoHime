@@ -14,9 +14,9 @@ pub const NAME: &str = "script_execute";
 pub const DESCRIPTION: &str = "Run a workspace script with an allow-listed interpreter (PowerShell, Python or Node); the script file must already exist in the workspace";
 /// Permission required before a script interpreter may be started.
 pub const PERMISSIONS: &[Permission] = &[Permission::ScriptExecute];
-/// Default execution deadline; request-specific values cannot exceed the
-/// execution profile cap.
-pub const TIMEOUT: Duration = Duration::from_secs(60);
+/// Maximum execution deadline accepted by the registry for `script_execute`.
+pub const TIMEOUT: Duration =
+    Duration::from_millis(crate::execution_policy_profiles::MAX_TIMEOUT_MS);
 /// Maximum size of a script file this tool will execute.
 pub const MAX_SCRIPT_BYTES: u64 = 1024 * 1024;
 
