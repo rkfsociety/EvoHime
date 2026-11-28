@@ -6,6 +6,8 @@
 
 //! Isolated `workflow-engine` service module implementing `evohime-service-contract`.
 
+/// Bounded automation snapshots and side-effect-free simulation primitives.
+pub mod automation_simulation;
 #[allow(dead_code)]
 pub(crate) mod batch_invocation_runtime;
 pub(crate) mod dependency_aware_task_graph;
@@ -116,6 +118,17 @@ impl ServiceHandler for WorkflowEngineService {
                         }
                     }),
                     required_permissions: vec!["workflow.execute".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "workflow.simulation_replay_hash".to_owned(),
+                    description: "Computes a deterministic replay hash for a simulation input."
+                        .to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["schema_version", "definition_revision", "ordered_events", "normalized_inputs", "frozen_clock_ms", "rng_seed", "provider_fixture_ids", "capability_snapshot", "policy_snapshot"]
+                    }),
+                    required_permissions: vec!["workflow.read".to_owned()],
                     supports_streaming: false,
                 },
             ],
@@ -293,6 +306,17 @@ impl ServiceHandler for WorkflowEngineService {
                 }
                 let projection = batch_invocation_runtime::projection(&req.value);
                 Ok(serde_json::json!({ "value": req.value, "projection": projection }))
+            }
+            "workflow.simulation_replay_hash" => {
+                let input: automation_simulation::ReplayInputV1 = serde_json::from_value(payload)
+                    .map_err(|err| {
+                    ServiceContractError::invalid_input(format!(
+                        "invalid_simulation_replay_input: {err}"
+                    ))
+                })?;
+                let hash = automation_simulation::replay_hash(&input)
+                    .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
+                Ok(serde_json::json!({ "replay_hash": hash }))
             }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown workflow-engine capability: {other}"

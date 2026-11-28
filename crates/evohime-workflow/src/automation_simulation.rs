@@ -245,4 +245,39 @@ mod tests {
         assert!(allow_simulation_effect(SimulationEffect::FakeProvider));
         assert!(redact_export("Bearer secret C:\\temp\\a").contains("REDACTED"));
     }
+    #[test]
+    fn replay_and_snapshot_are_equal_for_same_fixture() {
+        let snapshot = AutomationSnapshotV1::new(SnapshotInput {
+            run_id: "run",
+            definition_id: "fixture",
+            definition_revision: 1,
+            generation: 1,
+            sequence: 0,
+            state_json: "{}",
+            policy_snapshot: "policy",
+            approval_snapshot: "approval",
+            provenance: "fixture",
+        })
+        .unwrap();
+        assert!(snapshot.validate(1, None).is_ok());
+        let input = ReplayInputV1 {
+            schema_version: 1,
+            definition_revision: 1,
+            ordered_events: vec!["queued".into()],
+            normalized_inputs: "{}".into(),
+            frozen_clock_ms: 0,
+            rng_seed: 7,
+            provider_fixture_ids: vec!["fake".into()],
+            capability_snapshot: "cap".into(),
+            policy_snapshot: "policy".into(),
+        };
+        assert_eq!(replay_hash(&input).unwrap(), replay_hash(&input).unwrap());
+    }
+    #[test]
+    fn simulation_is_fail_closed_and_redacted() {
+        assert!(!allow_simulation_effect(SimulationEffect::Filesystem));
+        assert!(!allow_simulation_effect(SimulationEffect::Network));
+        assert!(allow_simulation_effect(SimulationEffect::FakeProvider));
+        assert!(!redact_export("Bearer secret C:\\work\\file").contains("secret C:"));
+    }
 }
