@@ -1111,7 +1111,9 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
+ "evohime-model-gateway",
  "evohime-permissions",
+ "futures-util",
  "hex",
  "ring",
  "rusqlite",
@@ -1120,6 +1122,8 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
  "uuid",
  "windows-sys 0.61.2",
  "zeroize",

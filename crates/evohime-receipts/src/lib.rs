@@ -28,6 +28,8 @@ pub mod code_review_lane;
 pub mod design_intent_review_lane;
 pub mod export;
 pub mod key_lifecycle;
+/// Read-only multi-model plan review and single-model revision.
+pub mod plan_review;
 pub mod runtime;
 mod runtime_contract;
 mod runtime_payload;

@@ -264,7 +264,8 @@ pub(crate) mod agent_git_change_sets;
 pub(crate) mod architect_editor_model_pipeline;
 mod core_protocol;
 pub mod plan_context;
-pub mod plan_review;
+/// Read-only multi-model plan review re-exported from `evohime-receipts`.
+pub use evohime_receipts::plan_review;
 pub mod prompt_strategy;
 pub(crate) mod task_checkpoint;
 pub(crate) mod telemetry;

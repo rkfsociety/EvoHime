@@ -18,12 +18,17 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 uuid = { version = "1", features = ["v7"] }
 zeroize = "1"
 rusqlite = { version = "0.43", features = ["bundled"] }
+evohime-model-gateway = { path = "../model-gateway" }
+futures-util = "0.3"
+tokio = { workspace = true, features = ["macros"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Memory", "Win32_System_Threading", "Win32_System_SystemInformation"] }
 
 [dev-dependencies]
 hex = "0.4"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [build-dependencies]
 serde_json = { workspace = true }
