@@ -37,6 +37,8 @@ mod runtime_request_contract;
 mod runtime_schema;
 mod runtime_signing;
 mod runtime_transaction;
+/// Verification evidence ledger and readiness evaluation contracts.
+pub mod verification_evidence_ledger;
 
 /// Schema version accepted by the canonical receipt payload validator.
 pub const RECEIPT_VERSION: u64 = 1;

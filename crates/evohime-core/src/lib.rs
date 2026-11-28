@@ -242,7 +242,6 @@ pub mod skill_source_lifecycle;
 pub(crate) mod structured_response_contract;
 pub(crate) mod support_bundle;
 pub mod tool_simulation_runtime;
-pub mod verification_evidence_ledger;
 pub mod workspace_state_checkpoints;
 pub use provider_resilience::{
     default_tool_specs, filter_readonly_tools, handle_provider_error, is_retriable_error,

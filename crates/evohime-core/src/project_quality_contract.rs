@@ -129,7 +129,7 @@ impl ProjectQualityContract {
 pub fn evaluate(
     contract: &ProjectQualityContract,
     target_id: impl Into<String>,
-    evidence: &[crate::verification_evidence_ledger::VerificationEvidence],
+    evidence: &[evohime_receipts::verification_evidence_ledger::VerificationEvidence],
 ) -> Result<QualityReadinessSnapshot, &'static str> {
     contract.validate()?;
     let mut missing = Vec::new();
@@ -137,7 +137,8 @@ pub fn evaluate(
     for constraint in &contract.constraints {
         let match_evidence = evidence.iter().find(|item| {
             item.lane_id == constraint.lane_id
-                && item.status == crate::verification_evidence_ledger::VerificationStatus::Passed
+                && item.status
+                    == evohime_receipts::verification_evidence_ledger::VerificationStatus::Passed
         });
         if match_evidence.is_none() && constraint.required {
             missing.push(constraint.id.clone());

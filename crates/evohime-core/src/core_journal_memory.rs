@@ -139,7 +139,7 @@ impl EventJournal {
         &self,
         target_id: &str,
         fingerprint: &str,
-        evidence: &crate::verification_evidence_ledger::VerificationEvidence,
+        evidence: &evohime_receipts::verification_evidence_ledger::VerificationEvidence,
     ) -> Result<bool, String> {
         evidence.validate().map_err(|error| error.to_string())?;
         let evidence_json = serde_json::to_vec(evidence).map_err(|error| error.to_string())?;
