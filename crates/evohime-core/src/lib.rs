@@ -192,7 +192,6 @@ pub(crate) mod github_public_repository;
 pub mod goal;
 pub mod guided_calibration_sessions;
 pub mod hardware_fit_evidence;
-pub mod hive_context;
 pub use evohime_hive_contract::settings as hive_settings;
 /// Read-only aggregated hive visualization snapshot for the operations panel.
 pub use evohime_hive_contract::state as hive_state;
