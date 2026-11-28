@@ -62,7 +62,8 @@ pub mod semantic_activity_motion_system;
 pub mod sensitive_data_guardrails;
 pub(crate) mod standing_approval_profiles;
 pub mod task_ownership_lease_fencing;
-pub mod team_coordinator;
+/// Bounded team coordinator contract re-exported from `evohime-hive-contract`.
+pub use evohime_hive_contract::team_coordinator;
 pub(crate) use evohime_hive_contract::team_sop_protocols;
 pub(crate) mod typed_context_references;
 pub mod verified_technical_diagram_artifacts;
@@ -243,7 +244,8 @@ pub use provider_resilience::{
 pub(crate) mod recovery;
 pub mod run_policy;
 pub use recovery::{classify_tool_outcome, DenialSource, ToolFailureKind, ToolOutcome};
-pub mod composable_termination_conditions;
+/// Replay-safe termination condition algebra re-exported from `evohime-hive-contract`.
+pub use evohime_hive_contract::composable_termination_conditions;
 pub(crate) mod refinement;
 pub(crate) mod scope;
 pub mod skill_registry;

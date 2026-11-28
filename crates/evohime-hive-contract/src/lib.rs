@@ -19,11 +19,15 @@ use thiserror::Error;
 
 pub mod control;
 pub mod honeycomb;
+/// Bounded composable termination condition algebra.
+pub mod composable_termination_conditions;
 pub mod pulse_boundary;
 pub mod settings;
 pub mod state;
 /// Bounded team coordination policies and strategy contracts.
 pub mod team_coordination_policies;
+/// Bounded team coordinator contract and routing proposals.
+pub mod team_coordinator;
 /// Bounded team resource budget contracts and validation.
 pub mod team_resource_budget;
 /// Bounded team SOP protocol contracts and session state machine.
