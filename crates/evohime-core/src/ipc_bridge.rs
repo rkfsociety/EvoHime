@@ -4,7 +4,7 @@ pub(crate) use crate::CoreReceiptSigner;
 #[path = "ipc_bridge_advanced_commands.rs"]
 mod ipc_bridge_advanced_commands;
 #[path = "ipc_bridge_ambient_workflow.rs"]
-mod ipc_bridge_ambient_workflow;
+pub(crate) mod ipc_bridge_ambient_workflow;
 #[path = "ipc_bridge_core_commands.rs"]
 mod ipc_bridge_core_commands;
 #[path = "ipc_bridge_goals_skills.rs"]

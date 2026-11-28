@@ -72,6 +72,7 @@ pub mod workspace_bootstrap_manifest;
 pub(crate) mod workspace_sets;
 
 mod ipc_bridge;
+pub(crate) use ipc_bridge::ipc_bridge_ambient_workflow::proposals as ipc_bridge_ambient_proposals;
 pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
 mod legacy_parser;
 pub use legacy_parser::visible_agent_text;

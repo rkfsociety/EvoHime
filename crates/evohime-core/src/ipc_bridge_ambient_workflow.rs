@@ -110,7 +110,7 @@ mod ambient_state;
 #[path = "ipc_bridge_automation.rs"]
 mod automation;
 #[path = "ipc_bridge_ambient_proposals.rs"]
-mod proposals;
+pub(crate) mod proposals;
 #[path = "ipc_bridge_ambient_transport.rs"]
 mod transport_domain;
 #[path = "ipc_bridge_workflow.rs"]

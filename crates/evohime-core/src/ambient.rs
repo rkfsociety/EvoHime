@@ -1311,9 +1311,9 @@ mod tests {
                         ..
                     } => Ok(evohime_service_contract::ServiceResponse::Error {
                         request_id: Some(request_id),
-                        error: evohime_service_contract::ServiceContractError::unknown_capability(
-                            capability,
-                        ),
+                        error: evohime_service_contract::ServiceContractError::not_found(format!(
+                            "unknown capability: {capability}"
+                        )),
                     }),
                     _ => Ok(evohime_service_contract::ServiceResponse::Pong {
                         contract_version: evohime_service_contract::SERVICE_CONTRACT_VERSION,
