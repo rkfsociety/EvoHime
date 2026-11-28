@@ -21,5 +21,8 @@
 - `npm run typecheck`, `npm test` в `desktop/evohime-electron`.
 - Проверка `evohime-cli` тестов в CI.
 
+## Release evidence
+- Зелёные проверки `ui-bundle.yml`, `shell-host.yml` (при правках `src/main/repair-service.ts`) и `cli.yml` в GitHub Actions.
+
 ## Rollback
 - Откат коммита UI/CLI этапа; при необходимости синхронный откат этапов 1–2.

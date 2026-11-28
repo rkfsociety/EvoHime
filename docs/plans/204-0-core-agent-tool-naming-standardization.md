@@ -30,8 +30,8 @@
 | `filesystem_stat` | `file_stat` | Метаданные файла |
 | `filesystem_mkdir` | `mkdir` | Создание каталога |
 
-Доменные инструменты с уже устоявшимися именами (`git_*`, `cargo_*`, `memory_search`, `goal_*`, `workflow_*`, `browser_*`, `archive_*`, `logs_*`, `mcp_call`, `agent_run`) сохраняют текущие названия.
-Пересечение `bash` / `process_run` / `script_execute` устраняется в рамках Этапа 1 (единый основной `bash` без двусмысленности).
+Доменные инструменты с уже устоявшимися именами (`git_*`, `cargo_*`, `memory_search`, `goal_*`, `workflow_*`, `browser_*`, `archive_*`, `logs_*`, `mcp_call`, `agent_run`, `script_execute`) сохраняют текущие названия: `script_execute` отвечает строго за запуск `.ps1`/`.py`/`.js` скриптов, не пересекаясь с `bash`.
+Дублирующий инструмент `process_run` (создававшийся как промежуточная замена `shell_execute`) выводится из реестра и каталога модели в пользу единого `bash`; ссылки на `process_run` (включая `workspace_bootstrap_manifest.rs`) переводятся на `bash`.
 
 ## Ограничения и инварианты
 - Все новые имена строго соответствуют каноническому лексикону `^[a-z][a-z0-9_]*$`.
@@ -50,5 +50,5 @@
 
 ## Критерии готовности
 - [ ] Все этапы `1–4` выполнены и подтверждены тестами.
-- [ ] В кодовой базе, схемах, промптах, UI и тестах не осталось старых канонических имён (`filesystem_*`, `shell_execute`, `http_fetch`).
-- [ ] CI всех затронутых модулей (`core`, `cli`, `tools-exec`, `ui-bundle` и `Rust documentation`) зелёный.
+- [ ] В кодовой базе, схемах, промптах, UI и тестах не осталось старых канонических имён (`filesystem_*`, `shell_execute`, `http_fetch`, `process_run`).
+- [ ] CI всех затронутых модулей (`core`, `cli`, `tools-exec`, `ui-bundle`, `shell-host` и `Rust documentation`) зелёный.
