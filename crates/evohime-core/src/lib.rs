@@ -48,7 +48,8 @@ pub mod git_remote_publication_protocol;
 pub mod headless_core_cli;
 /// Core-owned image-generation contracts and output validation.
 pub mod image_generation;
-pub mod knowledge_source_registry_project_role;
+/// Knowledge source registry contract re-exported from `evohime-rag-memory`.
+pub use evohime_rag_memory::knowledge_source_registry_project_role;
 pub mod local_model_adaptation;
 pub mod minimal_change_policy;
 pub(crate) mod privacy_and_telemetry_governance;
@@ -212,7 +213,7 @@ pub mod local_model_performance_calibration;
 pub(crate) mod local_model_runtime_manager;
 pub(crate) mod memory_api;
 pub(crate) mod memory_domain;
-pub(crate) mod memory_extraction;
+pub(crate) use evohime_rag_memory::memory_extraction;
 pub(crate) mod memory_governance;
 pub mod memory_views_and_adaptive_recall;
 pub mod message_intervention_policies;

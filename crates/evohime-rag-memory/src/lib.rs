@@ -8,6 +8,10 @@
 
 /// Bounded episodic experience replay records and context projection.
 pub mod experience_replay_library;
+/// Knowledge source registry and project-role contracts.
+pub mod knowledge_source_registry_project_role;
+/// Memory extraction lifecycle, verification and supersession rules.
+pub mod memory_extraction;
 /// Deterministic memory candidate ranking and citation validation.
 pub mod memory_retrieval;
 /// Bounded metadata contracts for offline experience consolidation.

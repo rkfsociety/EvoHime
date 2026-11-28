@@ -846,6 +846,7 @@ dependencies = [
  "evohime-model-gateway",
  "evohime-model-provenance",
  "evohime-permissions",
+ "evohime-rag-memory",
  "evohime-receipts",
  "evohime-remote",
  "evohime-service-contract",
@@ -1103,6 +1104,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 2.0.21",
+ "unicode-normalization",
 ]
 
 [[package]]

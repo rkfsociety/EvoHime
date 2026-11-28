@@ -34,32 +34,48 @@ pub const CANONICALIZER_VERSION: &str = "canonical-v1";
 /// `verification_confidence`.
 pub const VALIDATOR_VERSION: &str = "validator-v1";
 
+/// Maximum length of a memory statement in characters.
 pub const MAX_STATEMENT_CHARS: usize = 4_096;
+/// Bound or tuning constant: max canonical subject chars.
 pub const MAX_CANONICAL_SUBJECT_CHARS: usize = 512;
+/// Bound or tuning constant: max reason chars.
 pub const MAX_REASON_CHARS: usize = 1_024;
+/// Bound or tuning constant: max provenance bytes.
 pub const MAX_PROVENANCE_BYTES: usize = 8_192;
+/// Bound or tuning constant: max structured output bytes.
 pub const MAX_STRUCTURED_OUTPUT_BYTES: usize = 16 * 1024;
+/// Bound or tuning constant: max candidates per turn.
 pub const MAX_CANDIDATES_PER_TURN: usize = 5;
+/// Bound or tuning constant: max candidates per hour.
 pub const MAX_CANDIDATES_PER_HOUR: usize = 30;
+/// Bound or tuning constant: max extraction tokens per hour.
 pub const MAX_EXTRACTION_TOKENS_PER_HOUR: u64 = 100_000;
+/// Bound or tuning constant: max context messages.
 pub const MAX_CONTEXT_MESSAGES: usize = 10;
+/// Bound or tuning constant: max context tokens.
 pub const MAX_CONTEXT_TOKENS: usize = 2_048;
 
 /// Ambient-бюджеты (этап 04.6). Они отдельные и заведомо меньше диалоговых:
 /// речь идёт непрерывно, поэтому общий часовой лимит диалога ambient-путь
 /// выбрал бы за несколько минут и вытеснил бы извлечение из самого диалога.
 pub const MAX_AMBIENT_CANDIDATES_PER_HOUR: usize = 6;
+/// Bound or tuning constant: max ambient episodes per hour.
 pub const MAX_AMBIENT_EPISODES_PER_HOUR: usize = 12;
+/// Bound or tuning constant: max ambient extraction tokens per hour.
 pub const MAX_AMBIENT_EXTRACTION_TOKENS_PER_HOUR: u64 = 20_000;
 
 /// Задержки повторов на malformed output (мс) — максимум 2 повтора.
 pub const RETRY_DELAYS_MS: [u64; 2] = [250, 1_000];
+/// Bound or tuning constant: malformed breaker threshold.
 pub const MALFORMED_BREAKER_THRESHOLD: usize = 3;
+/// Bound or tuning constant: malformed breaker window ms.
 pub const MALFORMED_BREAKER_WINDOW_MS: u64 = 10 * 60 * 1_000;
+/// Bound or tuning constant: malformed breaker cooldown ms.
 pub const MALFORMED_BREAKER_COOLDOWN_MS: u64 = 15 * 60 * 1_000;
 
 /// Таймауты verification hook.
 pub const FILESYSTEM_VALIDATION_TIMEOUT_MS: u64 = 2_000;
+/// Bound or tuning constant: tool validation timeout ms.
 pub const TOOL_VALIDATION_TIMEOUT_MS: u64 = 5_000;
 
 const DAY_MS: u64 = 24 * 60 * 60 * 1_000;
@@ -72,18 +88,26 @@ pub const FORGET_BACKUP_RETENTION_MS: u64 = 7 * DAY_MS;
 // Bounded перечисления домена
 // ---------------------------------------------------------------------------
 
+/// Enumeration of memory kind values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryKind {
+    /// Variant: preference.
     Preference,
+    /// Variant: constraint.
     Constraint,
+    /// Variant: decision.
     Decision,
+    /// Variant: entity.
     Entity,
+    /// Variant: lesson.
     Lesson,
+    /// Variant: session summary.
     SessionSummary,
 }
 
 impl MemoryKind {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Preference => "preference",
@@ -95,6 +119,7 @@ impl MemoryKind {
         }
     }
 
+    /// Parses the stable wire string; unknown values are rejected.
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "preference" => Some(Self::Preference),
@@ -144,16 +169,22 @@ impl MemoryKind {
     }
 }
 
+/// Enumeration of memory scope level values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryScopeLevel {
+    /// Variant: task.
     Task,
+    /// Variant: project.
     Project,
+    /// Variant: workspace.
     Workspace,
+    /// Variant: session.
     Session,
 }
 
 impl MemoryScopeLevel {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Task => "task",
@@ -163,6 +194,7 @@ impl MemoryScopeLevel {
         }
     }
 
+    /// Parses the stable wire string; unknown values are rejected.
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "task" => Some(Self::Task),
@@ -186,12 +218,17 @@ impl MemoryScopeLevel {
     }
 }
 
+/// Enumeration of source trust values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceTrust {
+    /// Variant: user.
     User,
+    /// Variant: tool output.
     ToolOutput,
+    /// Variant: document.
     Document,
+    /// Variant: model inference.
     ModelInference,
     /// Постоянное слушание (04.6): говорящий не подтверждён, диаризации нет,
     /// поэтому доверия к такому источнику меньше, чем к любому другому.
@@ -199,6 +236,7 @@ pub enum SourceTrust {
 }
 
 impl SourceTrust {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::User => "user",
@@ -209,6 +247,7 @@ impl SourceTrust {
         }
     }
 
+    /// Parses the stable wire string; unknown values are rejected.
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "user" => Some(Self::User),
@@ -239,15 +278,20 @@ impl SourceTrust {
     }
 }
 
+/// Enumeration of privacy level values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrivacyLevel {
+    /// Variant: normal.
     Normal,
+    /// Variant: sensitive.
     Sensitive,
+    /// Variant: secret.
     Secret,
 }
 
 impl PrivacyLevel {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Normal => "normal",
@@ -256,6 +300,7 @@ impl PrivacyLevel {
         }
     }
 
+    /// Parses the stable wire string; unknown values are rejected.
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "normal" => Some(Self::Normal),
@@ -272,20 +317,28 @@ impl PrivacyLevel {
     }
 }
 
+/// Enumeration of confirmation state values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfirmationState {
     /// Результат model call до policy gate.
     Candidate,
+    /// Variant: pending confirmation.
     PendingConfirmation,
+    /// Variant: confirmed.
     Confirmed,
+    /// Variant: rejected.
     Rejected,
+    /// Variant: superseded.
     Superseded,
+    /// Variant: expired.
     Expired,
+    /// Variant: forgotten.
     Forgotten,
 }
 
 impl ConfirmationState {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Candidate => "candidate",
@@ -298,6 +351,7 @@ impl ConfirmationState {
         }
     }
 
+    /// Parses the stable wire string; unknown values are rejected.
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "candidate" => Some(Self::Candidate),
@@ -323,6 +377,7 @@ impl ConfirmationState {
     }
 }
 
+/// Enumeration of validation status values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ValidationStatus {
@@ -331,13 +386,16 @@ pub enum ValidationStatus {
     NotRequired,
     /// Проверка требуется, но ещё не выполнена.
     Pending,
+    /// Variant: valid.
     Valid,
+    /// Variant: invalid.
     Invalid,
     /// Валидатор не смог решить: запись остаётся pending.
     Unknown,
 }
 
 impl ValidationStatus {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::NotRequired => "not_required",
@@ -348,6 +406,7 @@ impl ValidationStatus {
         }
     }
 
+    /// Parses the stable wire string; unknown values are rejected.
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "not_required" => Some(Self::NotRequired),
@@ -365,6 +424,7 @@ impl ValidationStatus {
     }
 }
 
+/// Enumeration of extraction mode values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExtractionMode {
@@ -379,6 +439,7 @@ pub enum ExtractionMode {
 }
 
 impl ExtractionMode {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Disabled => "disabled",
@@ -387,6 +448,7 @@ impl ExtractionMode {
         }
     }
 
+    /// Parses the stable wire string; unknown values are rejected.
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "disabled" => Some(Self::Disabled),
@@ -403,11 +465,14 @@ impl ExtractionMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AmbientMemoryMode {
+    /// Variant: off.
     Off,
+    /// Variant: pending.
     Pending,
 }
 
 impl AmbientMemoryMode {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Off => "off",
@@ -427,20 +492,26 @@ impl AmbientMemoryMode {
         }
     }
 
+    /// Operation: is enabled.
     pub fn is_enabled(self) -> bool {
         matches!(self, Self::Pending)
     }
 }
 
+/// Enumeration of risk class values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RiskClass {
+    /// Variant: low.
     Low,
+    /// Variant: medium.
     Medium,
+    /// Variant: high.
     High,
 }
 
 impl RiskClass {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Low => "low",
@@ -454,52 +525,75 @@ impl RiskClass {
 // Ошибки
 // ---------------------------------------------------------------------------
 
+/// Enumeration of extraction error values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtractionError {
     /// Structured output больше лимита. Oversized output отклоняется целиком:
     /// без тримминга смысла и без сжатия.
     OversizedOutput {
+        /// Field: bytes.
         bytes: usize,
+        /// Field: max.
         max: usize,
     },
     /// JSON не разбирается или содержит неизвестные/недостающие поля.
     /// Содержимое никогда не логируется — только причина.
     MalformedOutput {
+        /// Field: reason.
         reason: MalformedReason,
     },
+    /// Variant: too many candidates.
     TooManyCandidates {
+        /// Field: count.
         count: usize,
+        /// Field: max.
         max: usize,
     },
+    /// Variant: unknown enum.
     UnknownEnum {
+        /// Field: field.
         field: &'static str,
     },
+    /// Variant: field too long.
     FieldTooLong {
+        /// Field: field.
         field: &'static str,
+        /// Field: max.
         max: usize,
     },
+    /// Variant: empty field.
     EmptyField(&'static str),
+    /// Variant: confidence out of range.
     ConfidenceOutOfRange {
+        /// Field: field.
         field: &'static str,
     },
     /// Нормализация не дала устойчивого subject.
     UnresolvedSubject,
     /// Rate limit / circuit breaker / бюджет токенов.
     Throttled {
+        /// Field: reason.
         reason: ThrottleReason,
     },
 }
 
+/// Enumeration of malformed reason values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MalformedReason {
+    /// Variant: not json.
     NotJson,
+    /// Variant: not an object.
     NotAnObject,
+    /// Variant: unknown field.
     UnknownField,
+    /// Variant: missing field.
     MissingField,
+    /// Variant: wrong type.
     WrongType,
 }
 
 impl MalformedReason {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::NotJson => "not_json",
@@ -511,22 +605,32 @@ impl MalformedReason {
     }
 }
 
+/// Enumeration of throttle reason values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThrottleReason {
+    /// Variant: turn limit.
     TurnLimit,
+    /// Variant: hourly limit.
     HourlyLimit,
+    /// Variant: token budget.
     TokenBudget,
+    /// Variant: circuit open.
     CircuitOpen,
+    /// Variant: mode disabled.
     ModeDisabled,
+    /// Variant: no explicit trigger.
     NoExplicitTrigger,
     /// Ambient-бюджеты считаются отдельно от диалоговых: иначе два разных
     /// троттлинга стали бы неразличимы в трассах.
     AmbientCandidateLimit,
+    /// Variant: ambient episode limit.
     AmbientEpisodeLimit,
+    /// Variant: reentrant.
     Reentrant,
 }
 
 impl ThrottleReason {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::TurnLimit => "turn_limit",
@@ -577,16 +681,27 @@ impl std::error::Error for ExtractionError {}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawCandidate {
+    /// Field: kind.
     pub kind: String,
+    /// Field: statement.
     pub statement: String,
+    /// Field: scope.
     pub scope: String,
+    /// Field: canonical subject.
     pub canonical_subject: String,
+    /// Field: model confidence.
     pub model_confidence: f64,
+    /// Field: verification confidence.
     pub verification_confidence: f64,
+    /// Field: reason.
     pub reason: String,
+    /// Field: evidence locator.
     pub evidence_locator: RawEvidenceLocator,
+    /// Field: privacy.
     pub privacy: String,
+    /// Field: source trust.
     pub source_trust: String,
+    /// Field: suggested ttl ms.
     pub suggested_ttl_ms: u64,
 }
 
@@ -601,23 +716,31 @@ pub struct RawEvidenceLocator {
     /// своих кандидатов по существующему индексу.
     #[serde(default)]
     pub episode_id: String,
+    /// Field: message id.
     #[serde(default)]
     pub message_id: String,
+    /// Field: task id.
     #[serde(default)]
     pub task_id: String,
+    /// Field: tool call id.
     #[serde(default)]
     pub tool_call_id: String,
+    /// Field: file path.
     #[serde(default)]
     pub file_path: String,
+    /// Field: content hash.
     #[serde(default)]
     pub content_hash: String,
+    /// Field: line start.
     #[serde(default)]
     pub line_start: u32,
+    /// Field: line end.
     #[serde(default)]
     pub line_end: u32,
 }
 
 impl RawEvidenceLocator {
+    /// Operation: is empty.
     pub fn is_empty(&self) -> bool {
         self.episode_id.trim().is_empty()
             && self.message_id.trim().is_empty()
@@ -646,19 +769,30 @@ impl RawEvidenceLocator {
 /// subject нормализован. Всё ещё не память — только вход для policy gate.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Candidate {
+    /// Field: kind.
     pub kind: MemoryKind,
+    /// Field: statement.
     pub statement: String,
+    /// Field: scope.
     pub scope: MemoryScopeLevel,
+    /// Field: canonical subject.
     pub canonical_subject: String,
+    /// Field: raw subject.
     pub raw_subject: String,
+    /// Field: model confidence.
     pub model_confidence: f64,
     /// Значение из модели игнорируется policy gate: оно нормализуется в 0.0 и
     /// поднимается только verification policy.
     pub verification_confidence: f64,
+    /// Field: reason.
     pub reason: String,
+    /// Field: evidence.
     pub evidence: RawEvidenceLocator,
+    /// Field: privacy.
     pub privacy: PrivacyLevel,
+    /// Field: source trust.
     pub source_trust: SourceTrust,
+    /// Field: suggested ttl ms.
     pub suggested_ttl_ms: u64,
 }
 
@@ -673,10 +807,14 @@ impl Candidate {
     }
 }
 
+/// Record type: conflict key.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConflictKey {
+    /// Field: kind.
     pub kind: MemoryKind,
+    /// Field: canonical subject.
     pub canonical_subject: String,
+    /// Field: scope.
     pub scope: MemoryScopeLevel,
 }
 
@@ -705,6 +843,7 @@ pub struct AliasTable {
 }
 
 impl AliasTable {
+    /// Creates a new value with default bounds.
     pub fn new() -> Self {
         Self::default()
     }
@@ -718,14 +857,17 @@ impl AliasTable {
         Ok(())
     }
 
+    /// Operation: resolve.
     pub fn resolve(&self, normalized: &str) -> Option<&str> {
         self.entries.get(normalized).map(String::as_str)
     }
 
+    /// Operation: len.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// Operation: is empty.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -764,12 +906,15 @@ pub fn normalize_subject(raw: &str) -> Result<String, ExtractionError> {
 /// `pending_confirmation`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CanonicalSubject {
+    /// Field: value.
     pub value: String,
+    /// Field: resolved via alias.
     pub resolved_via_alias: bool,
     /// Нормализация дала слишком короткий/неоднозначный ключ.
     pub ambiguous: bool,
 }
 
+/// Operation: canonicalize subject.
 pub fn canonicalize_subject(
     raw: &str,
     aliases: &AliasTable,
@@ -819,8 +964,10 @@ const EXPLICIT_TRIGGERS: &[&str] = &[
     "note that",
 ];
 
+/// Record type: trigger match.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TriggerMatch {
+    /// Field: keyword.
     pub keyword: &'static str,
 }
 
@@ -916,19 +1063,30 @@ fn has_high_risk_marker(statement: &str) -> bool {
 /// Версионируемые пороги. Конфигурируются только Core.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtractionPolicy {
+    /// Field: version.
     pub version: &'static str,
+    /// Field: low risk min confidence.
     pub low_risk_min_confidence: f64,
+    /// Field: medium risk min confidence.
     pub medium_risk_min_confidence: f64,
+    /// Field: min verification confidence.
     pub min_verification_confidence: f64,
+    /// Field: max candidates per turn.
     pub max_candidates_per_turn: usize,
+    /// Field: max candidates per hour.
     pub max_candidates_per_hour: usize,
+    /// Field: max statement chars.
     pub max_statement_chars: usize,
+    /// Field: max output bytes.
     pub max_output_bytes: usize,
+    /// Field: max tokens per hour.
     pub max_tokens_per_hour: u64,
     /// Ambient-бюджеты живут в той же policy, но своими полями: общий
     /// часовой лимит диалога речь выбрала бы за минуты.
     pub max_ambient_candidates_per_hour: usize,
+    /// Field: max ambient episodes per hour.
     pub max_ambient_episodes_per_hour: usize,
+    /// Field: max ambient tokens per hour.
     pub max_ambient_tokens_per_hour: u64,
 }
 
@@ -981,6 +1139,7 @@ pub fn classify_risk(candidate: &Candidate) -> RiskClass {
     }
 }
 
+/// Enumeration of policy outcome values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PolicyOutcome {
     /// Запись может стать активной памятью сразу.
@@ -991,26 +1150,41 @@ pub enum PolicyOutcome {
     Reject,
 }
 
+/// Enumeration of policy reason values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PolicyReason {
+    /// Variant: explicit user trigger low risk.
     ExplicitUserTriggerLowRisk,
+    /// Variant: open mode always pending.
     OpenModeAlwaysPending,
+    /// Variant: kind requires approval.
     KindRequiresApproval,
+    /// Variant: high risk requires approval.
     HighRiskRequiresApproval,
+    /// Variant: confidence below threshold.
     ConfidenceBelowThreshold,
+    /// Variant: untrusted source.
     UntrustedSource,
+    /// Variant: ambiguous subject.
     AmbiguousSubject,
+    /// Variant: sensitive privacy.
     SensitivePrivacy,
+    /// Variant: validation required.
     ValidationRequired,
+    /// Variant: secret never stored.
     SecretNeverStored,
+    /// Variant: extraction disabled.
     ExtractionDisabled,
+    /// Variant: no explicit trigger.
     NoExplicitTrigger,
+    /// Variant: session only.
     SessionOnly,
     /// Услышанное никогда не подтверждается само.
     AmbientNeverAutoConfirms,
 }
 
 impl PolicyReason {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ExplicitUserTriggerLowRisk => "explicit_user_trigger_low_risk",
@@ -1034,13 +1208,21 @@ impl PolicyReason {
 /// Решение policy gate. Именно оно, а не модель, определяет state записи.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolicyDecision {
+    /// Field: outcome.
     pub outcome: PolicyOutcome,
+    /// Field: state.
     pub state: ConfirmationState,
+    /// Field: risk.
     pub risk: RiskClass,
+    /// Field: reason.
     pub reason: PolicyReason,
+    /// Field: validation status.
     pub validation_status: ValidationStatus,
+    /// Field: ttl ms.
     pub ttl_ms: u64,
+    /// Field: policy version.
     pub policy_version: &'static str,
+    /// Field: extractor version.
     pub extractor_version: &'static str,
     /// Session-scoped запись не создаёт persistent row.
     pub session_only: bool,
@@ -1049,13 +1231,16 @@ pub struct PolicyDecision {
 /// Контекст turn'а: режим, явный триггер и источник.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TurnContext {
+    /// Field: mode.
     pub mode: ExtractionMode,
+    /// Field: trigger.
     pub trigger: Option<TriggerMatch>,
     /// Явное утверждение пользователя в этом turn'е (а не пересказ моделью).
     pub user_asserted: bool,
 }
 
 impl TurnContext {
+    /// Operation: strict with trigger.
     pub fn strict_with_trigger(keyword: &'static str) -> Self {
         Self {
             mode: ExtractionMode::Strict,
@@ -1064,6 +1249,7 @@ impl TurnContext {
         }
     }
 
+    /// Operation: open.
     pub fn open() -> Self {
         Self {
             mode: ExtractionMode::Open,
@@ -1323,9 +1509,11 @@ pub fn apply_ambient_privacy_floor(candidate: &mut Candidate) -> bool {
 // Парсинг structured output
 // ---------------------------------------------------------------------------
 
+/// Record type: raw extraction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawExtraction {
+    /// Field: candidates.
     pub candidates: Vec<RawCandidate>,
 }
 
@@ -1451,19 +1639,30 @@ pub fn validate_candidate(
 pub struct VerificationOutcome {
     /// `None` — валидатор не смог решить (`unknown`).
     pub valid: Option<bool>,
+    /// Field: confidence.
     pub confidence: f64,
+    /// Field: checked at ms.
     pub checked_at_ms: u64,
+    /// Field: validator version.
     pub validator_version: String,
+    /// Field: evidence digest.
     pub evidence_digest: String,
+    /// Field: reason.
     pub reason: String,
 }
 
+/// Record type: verification verdict.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VerificationVerdict {
+    /// Field: status.
     pub status: ValidationStatus,
+    /// Field: verification confidence.
     pub verification_confidence: f64,
+    /// Field: validated at ms.
     pub validated_at_ms: u64,
+    /// Field: validator version.
     pub validator_version: String,
+    /// Field: evidence digest.
     pub evidence_digest: String,
 }
 
@@ -1498,11 +1697,14 @@ pub fn apply_verification(
 /// Класс проверки, определяющий таймаут: filesystem/git — 2 с, tool/API — 5 с.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValidationTarget {
+    /// Variant: filesystem.
     Filesystem,
+    /// Variant: tool.
     Tool,
 }
 
 impl ValidationTarget {
+    /// Operation: timeout ms.
     pub fn timeout_ms(self) -> u64 {
         match self {
             Self::Filesystem => FILESYSTEM_VALIDATION_TIMEOUT_MS,
@@ -1590,6 +1792,7 @@ pub fn verification_is_stale(
 pub struct ExtractionLease(Arc<AtomicBool>);
 
 impl ExtractionLease {
+    /// Operation: try acquire.
     pub fn try_acquire(flag: Arc<AtomicBool>) -> Option<Self> {
         flag.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
@@ -1619,6 +1822,7 @@ pub struct ExtractionGuard {
 }
 
 impl ExtractionGuard {
+    /// Creates a new value with default bounds.
     pub fn new() -> Self {
         Self::default()
     }
@@ -1732,6 +1936,7 @@ impl ExtractionGuard {
         self.ambient_token_events.push((now_ms, tokens));
     }
 
+    /// Operation: ambient tokens in last hour.
     pub fn ambient_tokens_in_last_hour(&self, now_ms: u64) -> u64 {
         let window_start = now_ms.saturating_sub(60 * 60 * 1_000);
         self.ambient_token_events
@@ -1769,6 +1974,7 @@ impl ExtractionGuard {
         self.token_events.push((now_ms, tokens));
     }
 
+    /// Operation: tokens in last hour.
     pub fn tokens_in_last_hour(&self, now_ms: u64) -> u64 {
         let window_start = now_ms.saturating_sub(60 * 60 * 1_000);
         self.token_events
@@ -1790,11 +1996,13 @@ impl ExtractionGuard {
         }
     }
 
+    /// Operation: breaker is open.
     pub fn breaker_is_open(&self, now_ms: u64) -> bool {
         self.breaker_open_until_ms
             .is_some_and(|until| now_ms < until)
     }
 
+    /// Operation: breaker open until ms.
     pub fn breaker_open_until_ms(&self) -> Option<u64> {
         self.breaker_open_until_ms
     }
@@ -1826,23 +2034,36 @@ impl ExtractionGuard {
 /// Минимальное представление активной записи для сравнения с кандидатом.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ActiveMemorySummary {
+    /// Field: id.
     pub id: String,
+    /// Field: kind.
     pub kind: MemoryKind,
+    /// Field: canonical subject.
     pub canonical_subject: String,
+    /// Field: scope.
     pub scope: MemoryScopeLevel,
+    /// Field: statement.
     pub statement: String,
+    /// Field: state.
     pub state: ConfirmationState,
 }
 
+/// Enumeration of conflict verdict values.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConflictVerdict {
     /// Конфликта нет.
     None,
     /// Тот же смысл: дубликат, новую запись создавать не нужно.
-    Duplicate { existing_id: String },
+    Duplicate {
+        /// Identifier of the already stored memory entry.
+        existing_id: String,
+    },
     /// Несовместимые statements при равном ключе: старая запись остаётся
     /// активной, новая уходит в pending до явного выбора пользователя.
-    Conflict { existing_id: String },
+    Conflict {
+        /// Identifier of the already stored memory entry.
+        existing_id: String,
+    },
 }
 
 /// Конфликт определяется по `kind + canonical_subject + scope` и
@@ -1885,13 +2106,18 @@ fn statements_are_equivalent(left: &str, right: &str) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SupersessionReason {
+    /// Variant: user choice.
     UserChoice,
+    /// Variant: revalidated.
     Revalidated,
+    /// Variant: expired.
     Expired,
+    /// Variant: corrected.
     Corrected,
 }
 
 impl SupersessionReason {
+    /// Returns the stable wire string for this value.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::UserChoice => "user_choice",
@@ -1901,6 +2127,7 @@ impl SupersessionReason {
         }
     }
 
+    /// Parses the stable wire string; unknown values are rejected.
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "user_choice" => Some(Self::UserChoice),

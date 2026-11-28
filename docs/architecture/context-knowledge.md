@@ -81,7 +81,7 @@ fork request и metadata-only projection.
 
 ## Memory Extraction
 
-Извлечение фактов из диалога реализовано в `crates/evohime-core/src/memory_extraction.rs`. Этот раздел — канонический контракт поведения и границ подсистемы; подтверждённый статус текущего checkout указан в [`current-state.md`](../current-state.md).
+Извлечение фактов из диалога реализовано в `crates/evohime-rag-memory/src/memory_extraction.rs` (модуль `rag-memory`, ядро подключает его как библиотеку). Этот раздел — канонический контракт поведения и границ подсистемы; подтверждённый статус текущего checkout указан в [`current-state.md`](../current-state.md).
 
 - Единственный владелец extraction, policy, validation и storage — Core. Всё, что вернула модель, — это candidate, а не память.
 - По умолчанию работает `strict`-режим: извлечение запускается только после явного триггера пользователя («запомни», «важно», «ограничение» и эквиваленты). Режим переключается переменной `EVOHIME_MEMORY_EXTRACTION` (`disabled` | `strict` | `open`); в `open` результат всегда получает `pending_confirmation`. Даже при `disabled` ручной триггер продолжает работать.
