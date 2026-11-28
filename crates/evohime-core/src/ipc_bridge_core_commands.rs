@@ -1088,7 +1088,9 @@ impl IpcBridge {
             ambient_data_dir: None,
             proactivity: crate::ambient::AmbientProactivityRegistry::default(),
             workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
-            voice_commands: Arc::new(crate::voice_command::VoiceCommandRegistry::new()),
+            voice_commands: Arc::new(
+                crate::ipc_bridge_ambient_proposals::VoiceCommandRegistry::new(),
+            ),
             workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
             tool_simulation: Arc::new(tokio::sync::Mutex::new(
                 crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
@@ -1144,7 +1146,9 @@ impl IpcBridge {
             ambient_data_dir: None,
             proactivity: crate::ambient::AmbientProactivityRegistry::default(),
             workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
-            voice_commands: Arc::new(crate::voice_command::VoiceCommandRegistry::new()),
+            voice_commands: Arc::new(
+                crate::ipc_bridge_ambient_proposals::VoiceCommandRegistry::new(),
+            ),
             workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
             tool_simulation: Arc::new(tokio::sync::Mutex::new(
                 crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
@@ -1207,7 +1211,9 @@ impl IpcBridge {
             ambient_data_dir: None,
             proactivity: crate::ambient::AmbientProactivityRegistry::default(),
             workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
-            voice_commands: Arc::new(crate::voice_command::VoiceCommandRegistry::new()),
+            voice_commands: Arc::new(
+                crate::ipc_bridge_ambient_proposals::VoiceCommandRegistry::new(),
+            ),
             workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
             tool_simulation: Arc::new(tokio::sync::Mutex::new(
                 crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
@@ -1232,7 +1238,7 @@ impl IpcBridge {
     }
 
     /// Returns the shared registry used to track voice-command state.
-    pub fn voice_commands(&self) -> Arc<crate::voice_command::VoiceCommandRegistry> {
+    pub fn voice_commands(&self) -> Arc<crate::ipc_bridge_ambient_proposals::VoiceCommandRegistry> {
         self.voice_commands.clone()
     }
 

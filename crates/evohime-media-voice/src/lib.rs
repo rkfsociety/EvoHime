@@ -8,6 +8,8 @@
 
 pub mod optional_voice_output_adapter;
 pub mod vision_contract;
+/// Deterministic parser for wake-word voice commands.
+pub mod voice_command;
 /// Voice input dictation profile contract and validation.
 pub mod voice_input_dictation;
 
@@ -78,6 +80,18 @@ impl ServiceHandler for MediaVoiceService {
                     name: "voice.dictation_availability".to_owned(),
                     description: "Checks voice dictation profile availability.".to_owned(),
                     input_schema: serde_json::json!({ "type": "object" }),
+                    required_permissions: vec!["voice.input".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "voice.command_parse".to_owned(),
+                    description: "Parses a wake-word voice utterance into a structured intent."
+                        .to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["text"],
+                        "properties": { "text": { "type": "string" } }
+                    }),
                     required_permissions: vec!["voice.input".to_owned()],
                     supports_streaming: false,
                 },
@@ -192,6 +206,22 @@ impl ServiceHandler for MediaVoiceService {
                     "status": "accepted"
                 }))
             }
+            "voice.command_parse" => {
+                let text = payload
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| ServiceContractError::invalid_input("text must be a string"))?;
+                match voice_command::parse(text) {
+                    Some(intent) => Ok(serde_json::json!({
+                        "matched": true,
+                        "kind": intent.kind,
+                        "target": intent.target,
+                    })),
+                    None => Ok(serde_json::json!({
+                        "matched": false,
+                    })),
+                }
+            }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown media-voice capability: {other}"
             ))),
@@ -227,6 +257,44 @@ mod tests {
             } => {
                 assert_eq!(request_id, "m1");
                 assert_eq!(payload["chars"], 5);
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn voice_command_parse_capability_parses_and_ignores() {
+        let svc = MediaVoiceService::new();
+        let matched = dispatch_request(
+            &svc,
+            ServiceRequest::Invoke {
+                request_id: "vc1".to_owned(),
+                capability: "voice.command_parse".to_owned(),
+                payload: serde_json::json!({ "text": "Ева, открой хром" }),
+                caller_session_id: None,
+            },
+        );
+        match matched {
+            ServiceResponse::InvokeResult { payload, .. } => {
+                assert_eq!(payload["matched"], true);
+                assert_eq!(payload["kind"], "open_app");
+                assert_eq!(payload["target"], "хром");
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+
+        let ignored = dispatch_request(
+            &svc,
+            ServiceRequest::Invoke {
+                request_id: "vc2".to_owned(),
+                capability: "voice.command_parse".to_owned(),
+                payload: serde_json::json!({ "text": "открой окно" }),
+                caller_session_id: None,
+            },
+        );
+        match ignored {
+            ServiceResponse::InvokeResult { payload, .. } => {
+                assert_eq!(payload["matched"], false);
             }
             other => panic!("unexpected response: {other:?}"),
         }

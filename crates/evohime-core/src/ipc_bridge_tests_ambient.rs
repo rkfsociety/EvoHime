@@ -576,17 +576,88 @@ async fn agent_skills_ipc_is_typed_metadata_first_and_non_durable() {
 #[cfg(target_os = "windows")]
 #[tokio::test]
 async fn a_voice_command_card_appears_and_is_declined_without_launching_anything() {
+    struct MockMediaVoiceParseTransport;
+
+    impl crate::module_registry::ServiceTransport for MockMediaVoiceParseTransport {
+        fn send(
+            &self,
+            request: evohime_service_contract::ServiceRequest,
+        ) -> crate::module_registry::ServiceFuture<
+            '_,
+            Result<
+                evohime_service_contract::ServiceResponse,
+                evohime_service_contract::ServiceContractError,
+            >,
+        > {
+            Box::pin(async move {
+                match request {
+                    evohime_service_contract::ServiceRequest::Invoke {
+                        request_id,
+                        capability,
+                        payload,
+                        ..
+                    } if capability == "voice.command_parse" => {
+                        let target = if payload
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .is_some_and(|t| t.contains("блокнот"))
+                        {
+                            Some("блокнот")
+                        } else {
+                            None
+                        };
+                        let resp_payload = match target {
+                            Some(t) => serde_json::json!({
+                                "matched": true,
+                                "kind": "open_app",
+                                "target": t,
+                            }),
+                            None => serde_json::json!({ "matched": false }),
+                        };
+                        Ok(evohime_service_contract::ServiceResponse::InvokeResult {
+                            request_id,
+                            payload: resp_payload,
+                        })
+                    }
+                    _ => Ok(evohime_service_contract::ServiceResponse::Pong {
+                        contract_version: evohime_service_contract::SERVICE_CONTRACT_VERSION,
+                    }),
+                }
+            })
+        }
+    }
+
     let (bridge, _directory) = ambient_bridge("ambient-voice");
+    let descriptor = evohime_service_contract::ServiceDescriptor {
+        service_id: "media-voice".to_owned(),
+        version: "0.0.3".to_owned(),
+        contract_version: evohime_service_contract::SERVICE_CONTRACT_VERSION,
+        capabilities: vec![evohime_service_contract::ServiceCapabilityDescriptor {
+            name: "voice.command_parse".to_owned(),
+            description: "Parse voice command".to_owned(),
+            input_schema: serde_json::json!({ "type": "object" }),
+            required_permissions: vec!["voice.input".to_owned()],
+            supports_streaming: false,
+        }],
+    };
+    bridge
+        .module_registry()
+        .register(descriptor, Arc::new(MockMediaVoiceParseTransport))
+        .expect("media-voice registers");
+
     let policy = evohime_listener_contract::AmbientPolicy::default();
     let now_ms = crate::task_memory::now_millis();
-    let decision = crate::voice_command::decide(
+    let decision = crate::ipc_bridge_ambient_proposals::decide_voice_command(
+        &bridge.module_registry(),
         &bridge.voice_commands(),
         &policy,
         "Ева, открой блокнот",
         now_ms,
         "voice-1".to_owned(),
-    );
-    let crate::voice_command::Decision::Confirm(command) = decision else {
+    )
+    .await;
+    let crate::ipc_bridge_ambient_proposals::VoiceCommandDecision::Confirm(command) = decision
+    else {
         panic!("услышанное обязано ждать клика");
     };
     assert_eq!(command.app_id, "notepad");
@@ -626,6 +697,27 @@ async fn a_voice_command_card_appears_and_is_declined_without_launching_anything
     .await;
     assert_eq!(again["launched"], false);
     assert_eq!(again["error_code"], "not_found");
+}
+
+#[tokio::test]
+async fn voice_command_unavailable_media_voice_service_is_fail_closed() {
+    let (bridge, _directory) = ambient_bridge("ambient-voice-unavailable");
+    let policy = evohime_listener_contract::AmbientPolicy::default();
+    let now_ms = crate::task_memory::now_millis();
+    let decision = crate::ipc_bridge_ambient_proposals::decide_voice_command(
+        &bridge.module_registry(),
+        &bridge.voice_commands(),
+        &policy,
+        "Ева, открой блокнот",
+        now_ms,
+        "voice-unavail".to_owned(),
+    )
+    .await;
+    assert_eq!(
+        decision,
+        crate::ipc_bridge_ambient_proposals::VoiceCommandDecision::Ignore
+    );
+    assert!(bridge.voice_commands().list(now_ms).is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]

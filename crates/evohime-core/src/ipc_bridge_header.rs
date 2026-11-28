@@ -711,7 +711,7 @@ pub struct IpcBridge {
     /// Живёт на мосту, потому что оба конца пути ведут сюда: endpoint
     /// листенера кладёт карточку, панель её решает. Второй экземпляр означал
     /// бы карточку, которую некому принять.
-    voice_commands: Arc<crate::voice_command::VoiceCommandRegistry>,
+    voice_commands: Arc<crate::ipc_bridge_ambient_proposals::VoiceCommandRegistry>,
     tool_simulation: Arc<tokio::sync::Mutex<crate::tool_simulation_runtime::ToolSimulationRuntime>>,
     external_agents:
         Arc<tokio::sync::Mutex<crate::external_coding_agent_adapter::ExternalAgentRegistry>>,

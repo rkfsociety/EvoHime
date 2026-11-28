@@ -276,7 +276,6 @@ pub mod prompt_strategy;
 pub(crate) mod task_checkpoint;
 pub(crate) mod telemetry;
 pub(crate) mod visual_workflow_builder;
-pub(crate) mod voice_command;
 pub mod workflow;
 pub(crate) mod workflow_adapters;
 pub(crate) mod workflow_execution;

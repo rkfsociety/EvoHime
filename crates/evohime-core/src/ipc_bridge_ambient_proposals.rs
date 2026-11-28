@@ -290,8 +290,8 @@ impl IpcBridge {
         let now_ms = crate::task_memory::now_millis();
         let policy = crate::ambient::load_policy(&self.ambient_data_dir());
         let limit = usize::try_from(request.limit)
-            .unwrap_or(crate::voice_command::MAX_PENDING)
-            .clamp(1, crate::voice_command::MAX_PENDING);
+            .unwrap_or(VOICE_COMMAND_MAX_PENDING)
+            .clamp(1, VOICE_COMMAND_MAX_PENDING);
         let commands = self
             .voice_commands
             .list(now_ms)
@@ -347,7 +347,7 @@ impl IpcBridge {
         let registry = self.voice_commands.clone();
         let launch_command = command.clone();
         let launched = match tokio::task::spawn_blocking(move || {
-            crate::voice_command::launch(&registry, &launch_command, now_ms)
+            launch_voice_command(&registry, &launch_command, now_ms)
         })
         .await
         {
@@ -386,4 +386,215 @@ impl IpcBridge {
             }
         }
     }
+}
+
+pub(crate) const VOICE_COMMAND_TTL_MS: u64 = 5 * 60 * 1000;
+pub(crate) const VOICE_COMMAND_MAX_PENDING: usize = 8;
+const VOICE_CATALOG_TTL_MS: u64 = 5 * 60 * 1000;
+
+/// Услышанная голосовая команда, ждущая решения в памяти ядра.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PendingVoiceCommand {
+    pub command_id: String,
+    pub kind: evohime_listener_contract::VoiceCommandKind,
+    pub app_id: String,
+    pub title: String,
+    pub created_at_ms: u64,
+}
+
+impl PendingVoiceCommand {
+    pub const fn expires_at_ms(&self) -> u64 {
+        self.created_at_ms.saturating_add(VOICE_COMMAND_TTL_MS)
+    }
+
+    fn is_expired(&self, now_ms: u64) -> bool {
+        now_ms >= self.expires_at_ms()
+    }
+}
+
+/// Решение ядра по голосовой фразе после разбора в сервисе `media-voice`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum VoiceCommandDecision {
+    Ignore,
+    Confirm(PendingVoiceCommand),
+    Autorun(PendingVoiceCommand),
+}
+
+/// Очередь услышанных команд и кэш каталога приложений на стороне ядра.
+#[derive(Debug)]
+pub struct VoiceCommandRegistry {
+    pending: std::sync::Mutex<std::collections::VecDeque<PendingVoiceCommand>>,
+    catalog: std::sync::Mutex<
+        Option<(
+            u64,
+            std::sync::Arc<evohime_tool_runtime::app_catalog::AppCatalog>,
+        )>,
+    >,
+    fixed_catalog: Option<std::sync::Arc<evohime_tool_runtime::app_catalog::AppCatalog>>,
+}
+
+impl Default for VoiceCommandRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl VoiceCommandRegistry {
+    /// Creates an empty voice command queue.
+    pub fn new() -> Self {
+        Self {
+            pending: std::sync::Mutex::new(std::collections::VecDeque::new()),
+            catalog: std::sync::Mutex::new(None),
+            fixed_catalog: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_catalog(catalog: evohime_tool_runtime::app_catalog::AppCatalog) -> Self {
+        Self {
+            fixed_catalog: Some(std::sync::Arc::new(catalog)),
+            ..Self::new()
+        }
+    }
+
+    fn catalog(
+        &self,
+        now_ms: u64,
+    ) -> std::sync::Arc<evohime_tool_runtime::app_catalog::AppCatalog> {
+        if let Some(catalog) = &self.fixed_catalog {
+            return catalog.clone();
+        }
+        let mut slot = lock_voice_mutex(&self.catalog);
+        if let Some((built_at, catalog)) = slot.as_ref() {
+            if now_ms.saturating_sub(*built_at) < VOICE_CATALOG_TTL_MS && now_ms >= *built_at {
+                return catalog.clone();
+            }
+        }
+        let catalog = std::sync::Arc::new(evohime_tool_runtime::app_catalog::default_catalog());
+        *slot = Some((now_ms, catalog.clone()));
+        catalog
+    }
+
+    pub(crate) fn list(&self, now_ms: u64) -> Vec<PendingVoiceCommand> {
+        let mut pending = lock_voice_mutex(&self.pending);
+        pending.retain(|command| !command.is_expired(now_ms));
+        pending.iter().cloned().collect()
+    }
+
+    pub(crate) fn take(&self, command_id: &str, now_ms: u64) -> Option<PendingVoiceCommand> {
+        let mut pending = lock_voice_mutex(&self.pending);
+        pending.retain(|command| !command.is_expired(now_ms));
+        let index = pending
+            .iter()
+            .position(|command| command.command_id == command_id)?;
+        pending.remove(index)
+    }
+
+    pub(crate) fn expire(&self, now_ms: u64) -> Vec<PendingVoiceCommand> {
+        let mut pending = lock_voice_mutex(&self.pending);
+        let expired: Vec<PendingVoiceCommand> = pending
+            .iter()
+            .filter(|command| command.is_expired(now_ms))
+            .cloned()
+            .collect();
+        pending.retain(|command| !command.is_expired(now_ms));
+        expired
+    }
+
+    fn record(&self, command: PendingVoiceCommand) {
+        let mut pending = lock_voice_mutex(&self.pending);
+        pending.retain(|item| !item.is_expired(command.created_at_ms));
+        pending.retain(|item| item.app_id != command.app_id);
+        pending.push_back(command);
+        while pending.len() > VOICE_COMMAND_MAX_PENDING {
+            pending.pop_front();
+        }
+    }
+}
+
+fn lock_voice_mutex<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(error) => {
+            tracing::error!("voice command registry mutex poisoned; recovering state");
+            error.into_inner()
+        }
+    }
+}
+
+/// Делегирует разбор фразы в сервис `media-voice` и сопоставляет цель с
+/// локальным каталогом приложений. При недоступности сервиса работает fail-closed.
+pub(crate) async fn decide_voice_command(
+    module_registry: &crate::module_registry::ModuleRegistry,
+    registry: &VoiceCommandRegistry,
+    policy: &evohime_listener_contract::AmbientPolicy,
+    text: &str,
+    now_ms: u64,
+    command_id: String,
+) -> VoiceCommandDecision {
+    if !policy.voice_commands || policy.paused {
+        return VoiceCommandDecision::Ignore;
+    }
+    let parsed = match module_registry
+        .invoke_if_ready(
+            format!("voice-parse-{command_id}"),
+            "voice.command_parse",
+            serde_json::json!({ "text": text }),
+            None,
+            |_| Ok(()),
+        )
+        .await
+    {
+        Some(Ok(value)) => value,
+        Some(Err(err)) => {
+            tracing::warn!(%err, "media-voice voice.command_parse failed; ignoring utterance");
+            return VoiceCommandDecision::Ignore;
+        }
+        None => return VoiceCommandDecision::Ignore,
+    };
+    if !parsed
+        .get("matched")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return VoiceCommandDecision::Ignore;
+    }
+    let Some(target) = parsed
+        .get("target")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return VoiceCommandDecision::Ignore;
+    };
+    let catalog = registry.catalog(now_ms);
+    let evohime_tool_runtime::app_catalog::Resolution::Found(entry) = catalog.resolve(target)
+    else {
+        return VoiceCommandDecision::Ignore;
+    };
+    let command = PendingVoiceCommand {
+        command_id,
+        kind: evohime_listener_contract::VoiceCommandKind::OpenApp,
+        app_id: entry.id,
+        title: entry.title,
+        created_at_ms: now_ms,
+    };
+    if policy.voice_commands_autorun {
+        VoiceCommandDecision::Autorun(command)
+    } else {
+        registry.record(command.clone());
+        VoiceCommandDecision::Confirm(command)
+    }
+}
+
+pub(crate) fn launch_voice_command(
+    registry: &VoiceCommandRegistry,
+    command: &PendingVoiceCommand,
+    now_ms: u64,
+) -> Result<u32, String> {
+    let catalog = registry.catalog(now_ms);
+    let Some(entry) = catalog.get(&command.app_id) else {
+        return Err("каталог больше не знает это приложение".to_owned());
+    };
+    evohime_tool_runtime::app_catalog::launch(entry).map_err(|error| error.to_string())
 }

@@ -46,7 +46,9 @@ async fn handle_voice_command(
     policy: &evohime_listener_contract::AmbientPolicy,
     text: &str,
 ) {
-    use crate::voice_command::{decide, Decision};
+    use crate::ipc_bridge_ambient_proposals::{
+        decide_voice_command, launch_voice_command, VoiceCommandDecision,
+    };
     use evohime_listener_contract::VoiceCommandState;
 
     let registry = bridge.voice_commands();
@@ -57,15 +59,24 @@ async fn handle_voice_command(
         publish_voice_command(bridge, &expired, VoiceCommandState::Expired).await;
     }
     let command_id = uuid::Uuid::new_v4().to_string();
-    let decision = decide(&registry, policy, text, now_ms, command_id);
+    let module_registry = bridge.module_registry();
+    let decision = decide_voice_command(
+        &module_registry,
+        &registry,
+        policy,
+        text,
+        now_ms,
+        command_id,
+    )
+    .await;
     let (command, state) = match decision {
-        Decision::Ignore => return,
-        Decision::Confirm(command) => (command, VoiceCommandState::Pending),
-        Decision::Autorun(command) => {
+        VoiceCommandDecision::Ignore => return,
+        VoiceCommandDecision::Confirm(command) => (command, VoiceCommandState::Pending),
+        VoiceCommandDecision::Autorun(command) => {
             let launch_registry = registry.clone();
             let launch_command = command.clone();
             let launched = match tokio::task::spawn_blocking(move || {
-                crate::voice_command::launch(&launch_registry, &launch_command, now_ms)
+                launch_voice_command(&launch_registry, &launch_command, now_ms)
             })
             .await
             {
@@ -98,7 +109,7 @@ async fn handle_voice_command(
 
 async fn publish_voice_command(
     bridge: &Arc<IpcBridge>,
-    command: &crate::voice_command::PendingCommand,
+    command: &crate::ipc_bridge_ambient_proposals::PendingVoiceCommand,
     state: evohime_listener_contract::VoiceCommandState,
 ) {
     let (Ok(command_id), Ok(app_id)) = (

@@ -3,7 +3,7 @@ use super::*;
 impl IpcBridge {
     pub(crate) async fn publish_voice_command(
         &self,
-        command: &crate::voice_command::PendingCommand,
+        command: &crate::ipc_bridge_ambient_proposals::PendingVoiceCommand,
         state: evohime_listener_contract::VoiceCommandState,
     ) {
         let (Ok(command_id), Ok(app_id)) = (
