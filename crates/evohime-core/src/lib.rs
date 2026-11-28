@@ -184,8 +184,6 @@ pub(crate) mod event_trigger_runtime;
 pub(crate) mod execution_backend_registry;
 pub mod execution_environment_profiles;
 pub(crate) mod export;
-pub mod external_agent_a2a;
-pub mod external_agent_a2a_runtime;
 pub mod external_pulse;
 pub mod free_provider_reliability_routing;
 pub(crate) mod github_public_repository;

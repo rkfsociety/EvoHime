@@ -1125,12 +1125,15 @@ dependencies = [
 name = "evohime-remote"
 version = "0.1.0"
 dependencies = [
+ "evohime-model-gateway",
  "evohime-service-contract",
  "hex",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2",
  "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]

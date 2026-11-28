@@ -23,7 +23,7 @@ use evohime_model_gateway::PrivacyClass;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use evohime_remote::external_coding_agent_adapter::{
+use crate::external_coding_agent_adapter::{
     ExternalAgentProtocolKind, A2A_PROTOCOL_VERSION, MAX_ID_BYTES,
 };
 

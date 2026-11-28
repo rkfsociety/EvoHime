@@ -28,6 +28,10 @@
 
 /// Durable lifecycle state machine for remote tool operations.
 pub mod durable_remote_task_bridge;
+/// Bounded contract for outbound A2A remote-agent backends.
+pub mod external_agent_a2a;
+/// Runtime lifecycle boundary for outbound A2A remote-agent backends.
+pub mod external_agent_a2a_runtime;
 /// Bounded contract for supervised external coding-agent executors.
 pub mod external_coding_agent_adapter;
 /// Bounded remote client control-plane contract.

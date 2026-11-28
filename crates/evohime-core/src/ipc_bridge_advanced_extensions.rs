@@ -201,7 +201,7 @@ impl IpcBridge {
                 });
             }
             "a2a_profile_upsert" => {
-                let payload: crate::external_agent_a2a::RemoteAgentProfile =
+                let payload: evohime_remote::external_agent_a2a::RemoteAgentProfile =
                     match serde_json::from_slice(&request.payload) {
                         Ok(value) => value,
                         Err(_) => {
@@ -426,11 +426,13 @@ impl IpcBridge {
                         chrono::Utc::now().timestamp_millis(),
                     )
                 } else {
-                    let next: crate::external_agent_a2a::RemoteTaskState = payload
+                    let next: evohime_remote::external_agent_a2a::RemoteTaskState = payload
                         .get("state")
                         .cloned()
                         .and_then(|value| serde_json::from_value(value).ok())
-                        .unwrap_or(crate::external_agent_a2a::RemoteTaskState::Unavailable);
+                        .unwrap_or(
+                            evohime_remote::external_agent_a2a::RemoteTaskState::Unavailable,
+                        );
                     a2a.transition(
                         binding_id,
                         next,
@@ -461,7 +463,8 @@ impl IpcBridge {
                                 },
                             );
                         }
-                        projection = crate::external_agent_a2a::binding_projection(&binding)
+                        projection =
+                            evohime_remote::external_agent_a2a::binding_projection(&binding)
                     }
                     Err(error) => {
                         let _ = error;
@@ -1422,10 +1425,10 @@ impl IpcBridge {
 #[cfg(test)]
 mod a2a_ipc_tests {
     use super::*;
-    use crate::external_agent_a2a::{
+    use evohime_model_gateway::PrivacyClass;
+    use evohime_remote::external_agent_a2a::{
         build_profile, RemoteAgentEndpoint, RemoteAgentProfile, SCHEMA_VERSION,
     };
-    use evohime_model_gateway::PrivacyClass;
     use evohime_remote::external_coding_agent_adapter::{
         ExternalAgentProtocolKind, A2A_PROTOCOL_VERSION,
     };

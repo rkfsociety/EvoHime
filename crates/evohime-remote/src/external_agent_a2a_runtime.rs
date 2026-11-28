@@ -3,7 +3,7 @@
 //! The runtime deliberately owns only protocol lifecycle state. Scheduling,
 //! credentials, artifacts and workflow continuation remain owned by their
 //! existing Core subsystems. Network input is treated as untrusted and is
-//! reduced to the bounded card snapshot defined in [`super::external_agent_a2a`].
+//! reduced to the bounded card snapshot defined in [`crate::external_agent_a2a`].
 
 use std::collections::BTreeMap;
 use std::net::IpAddr;
@@ -16,10 +16,10 @@ use crate::external_agent_a2a::{
     apply_transition, build_binding, build_capsule, build_delegation, card_snapshot,
     reconcile_known_task, validate_endpoint, A2aError, ContextCapsule, DelegationRequest,
     RemoteAgentCardSnapshot, RemoteAgentProfile, RemoteAgentSkill, RemoteTaskBinding,
-    RemoteTaskState, SCHEMA_VERSION,
+    RemoteTaskState,
 };
+use crate::external_coding_agent_adapter::A2A_PROTOCOL_VERSION;
 use evohime_model_gateway::PrivacyClass;
-use evohime_remote::external_coding_agent_adapter::A2A_PROTOCOL_VERSION;
 
 /// Maximum bytes accepted from a discovery/card response.
 pub const MAX_CARD_RESPONSE_BYTES: usize = 128 * 1024;
@@ -554,6 +554,8 @@ pub fn transport_state(outcome: TransportOutcome) -> RemoteTaskState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::external_agent_a2a::SCHEMA_VERSION;
+    use crate::external_coding_agent_adapter::ExternalAgentProtocolKind;
 
     fn profile() -> RemoteAgentProfile {
         crate::external_agent_a2a::build_profile(RemoteAgentProfile {
@@ -561,10 +563,9 @@ mod tests {
             id: "runtime.agent".into(),
             revision: 1,
             display_name: "Runtime agent".into(),
-            protocol_kind:
-                evohime_remote::external_coding_agent_adapter::ExternalAgentProtocolKind::A2a {
-                    protocol_version: A2A_PROTOCOL_VERSION,
-                },
+            protocol_kind: ExternalAgentProtocolKind::A2a {
+                protocol_version: A2A_PROTOCOL_VERSION,
+            },
             endpoint: crate::external_agent_a2a::RemoteAgentEndpoint {
                 origin: "https://agents.example.com".into(),
                 allow_loopback: false,
@@ -757,10 +758,9 @@ mod tests {
             id: "loopback.agent".into(),
             revision: 1,
             display_name: "Loopback agent".into(),
-            protocol_kind:
-                evohime_remote::external_coding_agent_adapter::ExternalAgentProtocolKind::A2a {
-                    protocol_version: A2A_PROTOCOL_VERSION,
-                },
+            protocol_kind: ExternalAgentProtocolKind::A2a {
+                protocol_version: A2A_PROTOCOL_VERSION,
+            },
             endpoint: crate::external_agent_a2a::RemoteAgentEndpoint {
                 origin: format!("http://127.0.0.1:{port}"),
                 allow_loopback: true,

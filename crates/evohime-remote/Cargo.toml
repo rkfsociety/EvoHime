@@ -9,10 +9,15 @@ name = "evohime-remote"
 path = "src/main.rs"
 
 [dependencies]
+evohime-model-gateway = { path = "../model-gateway" }
 evohime-service-contract = { path = "../evohime-service-contract" }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "gzip", "brotli", "deflate", "stream"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.11"
 hex = "0.4"
 thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread"] }
 
