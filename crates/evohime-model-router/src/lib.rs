@@ -104,6 +104,13 @@ impl ServiceHandler for ModelRouterService {
                     required_permissions: vec!["model.route".to_owned()],
                     supports_streaming: false,
                 },
+                ServiceCapabilityDescriptor {
+                    name: "model_router.probe_accelerator".to_owned(),
+                    description: "Probes host GPU/accelerator memory via platform DXGI.".to_owned(),
+                    input_schema: serde_json::json!({ "type": "object", "properties": {} }),
+                    required_permissions: vec!["model.read".to_owned()],
+                    supports_streaming: false,
+                },
             ],
         }
     }
@@ -195,11 +202,47 @@ impl ServiceHandler for ModelRouterService {
                     "redacted": true,
                 }))
             }
+            "model_router.probe_accelerator" => Ok(serde_json::json!({
+                "accelerator_bytes": discover_accelerator_bytes(),
+            })),
             other => Err(ServiceContractError::not_found(format!(
                 "unknown model-router capability: {other}"
             ))),
         }
     }
+}
+
+#[cfg(windows)]
+fn discover_accelerator_bytes() -> Option<u64> {
+    use windows::Win32::Graphics::Dxgi::{
+        CreateDXGIFactory1, IDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE,
+    };
+
+    unsafe {
+        let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
+        let mut index = 0u32;
+        let mut largest = 0u64;
+        while let Ok(adapter) = factory.EnumAdapters1(index) {
+            if let Ok(description) = adapter.GetDesc1() {
+                if description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 == 0 {
+                    largest = largest.max(description.DedicatedVideoMemory as u64);
+                    if description.DedicatedVideoMemory == 0 {
+                        largest = largest.max((description.SharedSystemMemory / 2) as u64);
+                    }
+                }
+            }
+            index = index.saturating_add(1);
+            if index >= 32 {
+                break;
+            }
+        }
+        (largest > 0).then_some(largest)
+    }
+}
+
+#[cfg(not(windows))]
+fn discover_accelerator_bytes() -> Option<u64> {
+    None
 }
 
 #[cfg(test)]
@@ -226,6 +269,26 @@ mod tests {
             ServiceResponse::InvokeResult { payload, .. } => {
                 assert_eq!(payload["purpose"], "coding");
                 assert_eq!(payload["status"], "routed");
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn probe_accelerator_capability_returns_valid_json() {
+        let svc = ModelRouterService::new();
+        let resp = dispatch_request(
+            &svc,
+            ServiceRequest::Invoke {
+                request_id: "mr-probe".to_owned(),
+                capability: "model_router.probe_accelerator".to_owned(),
+                payload: serde_json::json!({}),
+                caller_session_id: None,
+            },
+        );
+        match resp {
+            ServiceResponse::InvokeResult { payload, .. } => {
+                assert!(payload.get("accelerator_bytes").is_some());
             }
             other => panic!("unexpected response: {other:?}"),
         }

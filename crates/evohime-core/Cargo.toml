@@ -53,7 +53,6 @@ base64 = "0.23"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_SystemInformation", "Win32_System_Threading"] }
-windows = { version = "0.62", features = ["Win32_Graphics_Dxgi"] }
 
 [dev-dependencies]
 wiremock = "0.6"

@@ -869,7 +869,6 @@ dependencies = [
  "tracing-subscriber",
  "unicode-normalization",
  "uuid",
- "windows",
  "windows-sys 0.61.2",
  "wiremock",
 ]
@@ -1078,6 +1077,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 2.0.21",
+ "windows",
 ]
 
 [[package]]

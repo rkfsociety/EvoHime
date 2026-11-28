@@ -58,7 +58,7 @@ pub fn discover_hardware() -> Result<LocalHardwareProfile, ManagerError> {
         revision: 1,
         cpu_threads,
         ram_bytes: memory.ullTotalPhys,
-        accelerator_bytes: discover_accelerator_bytes(),
+        accelerator_bytes: None,
         disk_free_bytes: available,
         runtime_candidates,
         fingerprint,
@@ -80,37 +80,27 @@ pub fn available_memory_bytes() -> Result<u64, ManagerError> {
     Ok(memory.ullAvailPhys)
 }
 
-#[cfg(windows)]
-fn discover_accelerator_bytes() -> Option<u64> {
-    use windows::Win32::Graphics::Dxgi::{
-        CreateDXGIFactory1, IDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE,
-    };
-
-    unsafe {
-        let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
-        let mut index = 0u32;
-        let mut largest = 0u64;
-        while let Ok(adapter) = factory.EnumAdapters1(index) {
-            if let Ok(description) = adapter.GetDesc1() {
-                if description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 == 0 {
-                    largest = largest.max(description.DedicatedVideoMemory as u64);
-                    if description.DedicatedVideoMemory == 0 {
-                        largest = largest.max((description.SharedSystemMemory / 2) as u64);
-                    }
-                }
-            }
-            index = index.saturating_add(1);
-            if index >= 32 {
-                break;
+/// Discovers host hardware and, when a `model-router` service is registered,
+/// enriches `accelerator_bytes` via `model_router.probe_accelerator`.
+pub async fn discover_hardware_with_registry(
+    registry: Option<&crate::module_registry::ModuleRegistry>,
+) -> Result<LocalHardwareProfile, ManagerError> {
+    let mut profile = discover_hardware()?;
+    if let Some(registry) = registry {
+        if let Ok(payload) = registry
+            .invoke(
+                "model_router.probe_accelerator",
+                serde_json::json!({}),
+                None,
+            )
+            .await
+        {
+            if let Some(bytes) = payload.get("accelerator_bytes").and_then(|v| v.as_u64()) {
+                profile.accelerator_bytes = Some(bytes);
             }
         }
-        (largest > 0).then_some(largest)
     }
-}
-
-#[cfg(not(windows))]
-fn discover_accelerator_bytes() -> Option<u64> {
-    None
+    Ok(profile)
 }
 
 #[cfg(not(windows))]
