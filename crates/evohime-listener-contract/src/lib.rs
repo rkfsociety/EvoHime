@@ -66,10 +66,13 @@ pub use policy::{
     AmbientPolicy, QuietHours, DEFAULT_RETENTION_DAYS, MAX_BLOCKLIST_ENTRIES, MAX_PATTERN_BYTES,
     MAX_PATTERN_WILDCARDS, MAX_QUIET_HOURS, MAX_RETENTION_DAYS, MINUTES_PER_DAY,
 };
-/// Immutable proactivity ceilings and decision counters.
+/// Immutable proactivity ceilings, decision counters, and capability wire types.
 pub use proactivity::{
-    ProactivityBudget, ProactivityCounters, ProactivityDenial, MAX_PROPOSALS_PER_DAY,
-    MAX_PROPOSALS_PER_HOUR, MIN_PROPOSAL_INTERVAL_MS,
+    authorize_proactive, effect_of, mute_key, proposal_key, subject_key, AuthorizedEffect,
+    ProactiveEffect, ProactivityBudget, ProactivityCounters, ProactivityDecideRequest,
+    ProactivityDecideResponse, ProactivityDenial, ProactivityRejectionPayload, ProposalRejection,
+    RollingCounters, MAX_PROPOSALS_PER_DAY, MAX_PROPOSALS_PER_HOUR, MAX_SUBJECT_KEY_BYTES,
+    MIN_PROPOSAL_INTERVAL_MS, PROPOSAL_BUCKET_MS, PROPOSAL_LIFETIME_MS,
 };
 /// Listening lifecycle states and their user-visible reason codes.
 pub use state::{ListeningReason, ListeningState};

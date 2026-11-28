@@ -12,81 +12,17 @@ pub mod temporal_signal_intelligence;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use evohime_listener_contract::{AmbientPolicy, ProactivityBudget, ProactivityDenial};
+pub use evohime_listener_contract::{
+    ProactivityDecideRequest, ProactivityDecideResponse, ProactivityRejectionPayload,
+};
 use evohime_service_contract::{
     ServiceCapabilityDescriptor, ServiceContractError, ServiceDescriptor, ServiceHandler,
     ServiceHealthReport, ServiceHealthStatus, SERVICE_CONTRACT_VERSION,
 };
 
-use crate::ambient_proactivity::{ProactiveEffect, ProposalRejection, RollingCounters};
-
-/// Bounded input of the `ambient.proactivity_decide` capability.
-///
-/// Все входы считает ядро: политика читается из его каталога, счётчики — из его
-/// журнала, время приходит параметром. Сервис отвечает только за чистое
-/// решение по закрытому автомату [`ambient_proactivity`].
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ProactivityDecideRequest {
-    /// Effect the proposal would produce, in [`ProactiveEffect::as_str`] form.
-    pub effect: String,
-    /// Whether the subject is muted by a prior user choice.
-    pub muted: bool,
-    /// Immutable user policy read by Core from its data directory.
-    pub policy: AmbientPolicy,
-    /// Immutable proactivity ceilings from the listener contract.
-    pub budget: ProactivityBudget,
-    /// Rolling counters loaded from Core's journal.
-    pub counters: RollingCounters,
-    /// Current wall-clock time in milliseconds.
-    pub now_ms: u64,
-    /// Current local minute of day (0..=1439), computed by Core.
-    pub minute_of_day: u32,
-}
-
-/// Bounded output of the `ambient.proactivity_decide` capability.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ProactivityDecideResponse {
-    /// `true` when the proposal may be shown to the user.
-    pub authorized: bool,
-    /// Authorized effect in [`ProactiveEffect::as_str`] form; set when
-    /// [`Self::authorized`] is `true`.
-    pub effect: Option<String>,
-    /// Typed rejection reason; set when [`Self::authorized`] is `false`.
-    pub rejection: Option<ProactivityRejectionPayload>,
-}
-
-/// Typed rejection reason crossing the process boundary.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ProactivityRejectionPayload {
-    /// The effect is outside the closed proactively-allowed list.
-    Forbidden {
-        /// Rejected effect in [`ProactiveEffect::as_str`] form.
-        effect: String,
-    },
-    /// The subject was muted by a prior user choice.
-    Muted,
-    /// Policy or ceiling denial from the listener contract.
-    Denied {
-        /// Typed denial with its bounded payload.
-        denial: ProactivityDenial,
-    },
-}
-
-impl ProactivityRejectionPayload {
-    fn from_rejection(rejection: ProposalRejection) -> Option<Self> {
-        match rejection {
-            ProposalRejection::Forbidden(effect) => Some(Self::Forbidden {
-                effect: effect.as_str().to_owned(),
-            }),
-            ProposalRejection::Muted => Some(Self::Muted),
-            ProposalRejection::Denied(denial) => Some(Self::Denied { denial }),
-            // `ServiceUnavailable` never leaves `decide_proposal`; a transport
-            // failure is reported by the transport layer, not by this payload.
-            ProposalRejection::ServiceUnavailable => None,
-        }
-    }
-}
+use crate::ambient_proactivity::ProactiveEffect;
+#[cfg(test)]
+use evohime_listener_contract::{AmbientPolicy, ProactivityBudget};
 
 fn parse_proactive_effect(value: &str) -> Result<ProactiveEffect, ServiceContractError> {
     ProactiveEffect::parse(value).ok_or_else(|| {

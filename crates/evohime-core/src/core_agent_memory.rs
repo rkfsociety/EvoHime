@@ -2823,7 +2823,7 @@ impl ToolAgent {
         episode_id: &str,
         candidate: &crate::memory_extraction::Candidate,
     ) {
-        use evohime_ambient::ambient_proactivity as proactivity;
+        use evohime_listener_contract as proactivity;
         use evohime_local_storage::ambient_store::ProposalInsert;
 
         let (Some(journal), Some(registry)) = (self.journal.as_ref(), self.proactivity.as_ref())

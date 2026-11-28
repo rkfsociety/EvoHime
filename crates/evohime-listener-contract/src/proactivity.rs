@@ -130,6 +130,312 @@ impl Default for ProactivityBudget {
     }
 }
 
+/// Default proposal lifetime before user silence counts as expiration.
+pub const PROPOSAL_LIFETIME_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// Width of the deduplication time bucket in `proposal_key`.
+pub const PROPOSAL_BUCKET_MS: u64 = 60 * 60 * 1000;
+
+const ROLLING_HOUR_MS: u64 = 60 * 60 * 1000;
+const ROLLING_DAY_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// Maximum byte length of a normalized subject key.
+pub const MAX_SUBJECT_KEY_BYTES: usize = 64;
+
+/// Closed set of effects proactivity may attempt to produce.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProactiveEffect {
+    /// Proposal card shown in the UI.
+    ProposalCard,
+    /// Non-executable reminder item.
+    PendingReminder,
+    /// Autonomous task launch (never allowed proactively).
+    StartTask,
+    /// Tool invocation (never allowed proactively).
+    ToolCall,
+    /// File modification (never allowed proactively).
+    FileWrite,
+    /// Network egress (never allowed proactively).
+    NetworkRequest,
+}
+
+impl ProactiveEffect {
+    /// Canonical list of all defined effects.
+    pub const ALL: [ProactiveEffect; 6] = [
+        ProactiveEffect::ProposalCard,
+        ProactiveEffect::PendingReminder,
+        ProactiveEffect::StartTask,
+        ProactiveEffect::ToolCall,
+        ProactiveEffect::FileWrite,
+        ProactiveEffect::NetworkRequest,
+    ];
+
+    /// Canonical wire string for traces and JSON capability payloads.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ProactiveEffect::ProposalCard => "proposal_card",
+            ProactiveEffect::PendingReminder => "pending_reminder",
+            ProactiveEffect::StartTask => "start_task",
+            ProactiveEffect::ToolCall => "tool_call",
+            ProactiveEffect::FileWrite => "file_write",
+            ProactiveEffect::NetworkRequest => "network_request",
+        }
+    }
+
+    /// Whether the effect is allowed without an explicit user click.
+    pub const fn is_proactively_allowed(self) -> bool {
+        matches!(
+            self,
+            ProactiveEffect::ProposalCard | ProactiveEffect::PendingReminder
+        )
+    }
+
+    /// Parses an effect from its canonical [`Self::as_str`] representation.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|effect| effect.as_str() == value)
+    }
+}
+
+/// Reason why a proactive proposal attempt was rejected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProposalRejection {
+    /// Effect is outside the closed proactively-allowed list.
+    Forbidden(ProactiveEffect),
+    /// Subject was muted by a prior user choice.
+    Muted,
+    /// Policy or ceiling denial from the proactivity budget.
+    Denied(ProactivityDenial),
+    /// Decision service did not respond or returned an invalid payload.
+    ServiceUnavailable,
+}
+
+impl ProposalRejection {
+    /// Canonical string code for trace and log events.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProposalRejection::Forbidden(_) => "effect_forbidden",
+            ProposalRejection::Muted => "muted",
+            ProposalRejection::Denied(ProactivityDenial::Paused) => "paused",
+            ProposalRejection::Denied(ProactivityDenial::QuietHours) => "quiet_hours",
+            ProposalRejection::Denied(ProactivityDenial::HourlyCapReached) => "hourly_cap",
+            ProposalRejection::Denied(ProactivityDenial::DailyCapReached) => "daily_cap",
+            ProposalRejection::Denied(ProactivityDenial::TooSoon { .. }) => "too_soon",
+            ProposalRejection::ServiceUnavailable => "service_unavailable",
+        }
+    }
+}
+
+/// Proof token representing an effect authorized for proactive presentation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuthorizedEffect(ProactiveEffect);
+
+impl AuthorizedEffect {
+    /// Returns the authorized effect.
+    pub const fn effect(self) -> ProactiveEffect {
+        self.0
+    }
+}
+
+/// Authorizes an effect only if it belongs to the closed proactive subset.
+pub fn authorize_proactive(effect: ProactiveEffect) -> Result<AuthorizedEffect, ProposalRejection> {
+    if effect.is_proactively_allowed() {
+        Ok(AuthorizedEffect(effect))
+    } else {
+        Err(ProposalRejection::Forbidden(effect))
+    }
+}
+
+/// Maps a proposal kind to the proactive effect it produces.
+pub const fn effect_of(kind: crate::log::ProposalKind) -> ProactiveEffect {
+    match kind {
+        crate::log::ProposalKind::Suggestion => ProactiveEffect::ProposalCard,
+        crate::log::ProposalKind::Reminder => ProactiveEffect::PendingReminder,
+    }
+}
+
+/// Normalizes a canonical subject string into a bounded [`crate::ids::SubjectKey`].
+pub fn subject_key(subject: &str) -> crate::ids::SubjectKey {
+    let mut slug = String::new();
+    let mut pending_separator = false;
+    for character in subject.trim().chars() {
+        if character.is_ascii_alphanumeric() {
+            if pending_separator && !slug.is_empty() {
+                slug.push('-');
+            }
+            pending_separator = false;
+            slug.push(character.to_ascii_lowercase());
+        } else {
+            pending_separator = true;
+        }
+        if slug.len() >= MAX_SUBJECT_KEY_BYTES {
+            break;
+        }
+    }
+    if slug.is_empty() {
+        slug = subject_fingerprint(subject);
+    }
+    match crate::ids::SubjectKey::new(slug) {
+        Ok(key) => key,
+        Err(_) => match crate::ids::SubjectKey::new(subject_fingerprint(subject)) {
+            Ok(key) => key,
+            Err(_) => match crate::ids::SubjectKey::new("invalid-subject") {
+                Ok(key) => key,
+                Err(_) => unreachable!("static subject key is part of the contract"),
+            },
+        },
+    }
+}
+
+fn subject_fingerprint(value: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(value.trim().to_lowercase().as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// Deduplication key: proposal kind + normalized subject + time bucket.
+pub fn proposal_key(
+    kind: crate::log::ProposalKind,
+    subject: &crate::ids::SubjectKey,
+    now_ms: u64,
+) -> String {
+    format!(
+        "{}:{}:{}",
+        kind.as_str(),
+        subject.as_str(),
+        now_ms / PROPOSAL_BUCKET_MS
+    )
+}
+
+/// Permanent mute key: proposal kind + normalized subject without time bucket.
+pub fn mute_key(kind: crate::log::ProposalKind, subject: &crate::ids::SubjectKey) -> String {
+    format!("{}:{}", kind.as_str(), subject.as_str())
+}
+
+/// Rolling hour/day counter state persisted by Core and sent to `ambient`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RollingCounters {
+    /// Start of the current hourly window in Unix milliseconds.
+    pub hour_started_at_ms: u64,
+    /// Proposals shown in the current hourly window.
+    pub hour_count: u32,
+    /// Start of the current daily window in Unix milliseconds.
+    pub day_started_at_ms: u64,
+    /// Proposals shown in the current daily window.
+    pub day_count: u32,
+    /// Timestamp of the last shown proposal in Unix milliseconds.
+    pub last_proposed_at_ms: Option<u64>,
+}
+
+impl RollingCounters {
+    /// Advances rolling windows to `now_ms`.
+    pub fn rolled(mut self, now_ms: u64) -> Self {
+        if now_ms.saturating_sub(self.hour_started_at_ms) >= ROLLING_HOUR_MS {
+            self.hour_started_at_ms = now_ms;
+            self.hour_count = 0;
+        }
+        if now_ms.saturating_sub(self.day_started_at_ms) >= ROLLING_DAY_MS {
+            self.day_started_at_ms = now_ms;
+            self.day_count = 0;
+        }
+        self
+    }
+
+    /// Converts rolling counters into a bounded [`ProactivityCounters`] snapshot.
+    pub fn snapshot(self) -> ProactivityCounters {
+        ProactivityCounters {
+            hour_count: self.hour_count,
+            day_count: self.day_count,
+            last_proposed_at_ms: self.last_proposed_at_ms,
+        }
+    }
+
+    /// Records a shown proposal at `now_ms`.
+    pub fn record(mut self, now_ms: u64) -> Self {
+        self = self.rolled(now_ms);
+        if self.hour_count == 0 {
+            self.hour_started_at_ms = now_ms;
+        }
+        if self.day_count == 0 {
+            self.day_started_at_ms = now_ms;
+        }
+        self.hour_count = self.hour_count.saturating_add(1);
+        self.day_count = self.day_count.saturating_add(1);
+        self.last_proposed_at_ms = Some(now_ms);
+        self
+    }
+}
+
+/// Bounded input of the `ambient.proactivity_decide` capability.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProactivityDecideRequest {
+    /// Effect the proposal would produce, in [`ProactiveEffect::as_str`] form.
+    pub effect: String,
+    /// Whether the subject is muted by a prior user choice.
+    pub muted: bool,
+    /// Immutable user policy read by Core from its data directory.
+    pub policy: AmbientPolicy,
+    /// Immutable proactivity ceilings from the listener contract.
+    pub budget: ProactivityBudget,
+    /// Rolling counters loaded from Core's journal.
+    pub counters: RollingCounters,
+    /// Current wall-clock time in milliseconds.
+    pub now_ms: u64,
+    /// Current local minute of day (0..=1439), computed by Core.
+    pub minute_of_day: u32,
+}
+
+/// Bounded output of the `ambient.proactivity_decide` capability.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProactivityDecideResponse {
+    /// `true` when the proposal may be shown to the user.
+    pub authorized: bool,
+    /// Authorized effect in [`ProactiveEffect::as_str`] form; set when
+    /// [`Self::authorized`] is `true`.
+    pub effect: Option<String>,
+    /// Typed rejection reason; set when [`Self::authorized`] is `false`.
+    pub rejection: Option<ProactivityRejectionPayload>,
+}
+
+/// Typed rejection reason crossing the process boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ProactivityRejectionPayload {
+    /// The effect is outside the closed proactively-allowed list.
+    Forbidden {
+        /// Rejected effect in [`ProactiveEffect::as_str`] form.
+        effect: String,
+    },
+    /// The subject was muted by a prior user choice.
+    Muted,
+    /// Policy or ceiling denial from the listener contract.
+    Denied {
+        /// Typed denial with its bounded payload.
+        denial: ProactivityDenial,
+    },
+}
+
+impl ProactivityRejectionPayload {
+    /// Converts a [`ProposalRejection`] into its wire payload, if representable.
+    pub fn from_rejection(rejection: ProposalRejection) -> Option<Self> {
+        match rejection {
+            ProposalRejection::Forbidden(effect) => Some(Self::Forbidden {
+                effect: effect.as_str().to_owned(),
+            }),
+            ProposalRejection::Muted => Some(Self::Muted),
+            ProposalRejection::Denied(denial) => Some(Self::Denied { denial }),
+            ProposalRejection::ServiceUnavailable => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

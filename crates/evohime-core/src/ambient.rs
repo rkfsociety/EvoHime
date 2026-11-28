@@ -21,7 +21,7 @@ use evohime_local_storage::ambient_store::{
     ProposalInsert, REASON_USER_REQUEST, SPEAKER_UNVERIFIED,
 };
 
-use evohime_ambient::ambient_proactivity::{
+use evohime_listener_contract::{
     effect_of, AuthorizedEffect, ProactiveEffect, ProposalRejection, RollingCounters,
     PROPOSAL_LIFETIME_MS,
 };
@@ -740,8 +740,8 @@ impl AmbientProactivityRegistry {
 fn parse_proactivity_decide_response(
     response: serde_json::Value,
 ) -> Result<AuthorizedEffect, ProposalRejection> {
-    use evohime_ambient::ProactivityRejectionPayload;
-    let parsed: evohime_ambient::ProactivityDecideResponse =
+    use evohime_listener_contract::ProactivityRejectionPayload;
+    let parsed: evohime_listener_contract::ProactivityDecideResponse =
         serde_json::from_value(response).map_err(|_| ProposalRejection::ServiceUnavailable)?;
     if !parsed.authorized {
         let rejection = match parsed.rejection {
@@ -763,7 +763,7 @@ fn parse_proactivity_decide_response(
         .as_deref()
         .and_then(ProactiveEffect::parse)
         .ok_or(ProposalRejection::ServiceUnavailable)?;
-    evohime_ambient::ambient_proactivity::authorize_proactive(effect)
+    evohime_listener_contract::authorize_proactive(effect)
         .map_err(|_| ProposalRejection::ServiceUnavailable)
 }
 
@@ -1230,11 +1230,9 @@ mod tests {
     /// Внутрипроцессный транспорт к настоящему обработчику
     /// `evohime-ambient`: тесты реестра гоняют реальное сервисное решение
     /// без запуска дочернего процесса.
-    struct AmbientServiceTransport {
-        handler: evohime_ambient::AmbientService,
-    }
+    struct MockAmbientServiceTransport;
 
-    impl crate::module_registry::ServiceTransport for AmbientServiceTransport {
+    impl crate::module_registry::ServiceTransport for MockAmbientServiceTransport {
         fn send(
             &self,
             request: evohime_service_contract::ServiceRequest,
@@ -1251,23 +1249,72 @@ mod tests {
                         request_id,
                         capability,
                         payload,
-                        caller_session_id,
-                    } => match self.handler.invoke(
-                        &capability,
-                        payload,
-                        caller_session_id.as_deref(),
-                    ) {
-                        Ok(payload) => {
-                            Ok(evohime_service_contract::ServiceResponse::InvokeResult {
-                                request_id,
-                                payload,
-                            })
-                        }
-                        Err(error) => Ok(evohime_service_contract::ServiceResponse::Error {
-                            request_id: Some(request_id),
-                            error,
-                        }),
-                    },
+                        ..
+                    } if capability == "ambient.proactivity_decide" => {
+                        let req: evohime_listener_contract::ProactivityDecideRequest =
+                            serde_json::from_value(payload).map_err(|error| {
+                                evohime_service_contract::ServiceContractError::invalid_input(
+                                    error.to_string(),
+                                )
+                            })?;
+                        let effect = evohime_listener_contract::ProactiveEffect::parse(&req.effect)
+                            .ok_or_else(|| {
+                                evohime_service_contract::ServiceContractError::invalid_input(
+                                    format!("unknown proactive effect: {}", req.effect),
+                                )
+                            })?;
+                        let decision = evohime_listener_contract::authorize_proactive(effect)
+                            .and_then(|authorized| {
+                                if req.muted {
+                                    Err(evohime_listener_contract::ProposalRejection::Muted)
+                                } else {
+                                    req.budget
+                                        .decide(
+                                            &req.policy,
+                                            req.counters.rolled(req.now_ms).snapshot(),
+                                            req.now_ms,
+                                            req.minute_of_day,
+                                        )
+                                        .map(|()| authorized)
+                                        .map_err(
+                                            evohime_listener_contract::ProposalRejection::Denied,
+                                        )
+                                }
+                            });
+                        let response = match decision {
+                            Ok(authorized) => evohime_listener_contract::ProactivityDecideResponse {
+                                authorized: true,
+                                effect: Some(authorized.effect().as_str().to_owned()),
+                                rejection: None,
+                            },
+                            Err(rejection) => evohime_listener_contract::ProactivityDecideResponse {
+                                authorized: false,
+                                effect: None,
+                                rejection:
+                                    evohime_listener_contract::ProactivityRejectionPayload::from_rejection(
+                                        rejection,
+                                    ),
+                            },
+                        };
+                        Ok(evohime_service_contract::ServiceResponse::InvokeResult {
+                            request_id,
+                            payload: serde_json::to_value(response).map_err(|error| {
+                                evohime_service_contract::ServiceContractError::internal(
+                                    error.to_string(),
+                                )
+                            })?,
+                        })
+                    }
+                    evohime_service_contract::ServiceRequest::Invoke {
+                        request_id,
+                        capability,
+                        ..
+                    } => Ok(evohime_service_contract::ServiceResponse::Error {
+                        request_id: Some(request_id),
+                        error: evohime_service_contract::ServiceContractError::unknown_capability(
+                            capability,
+                        ),
+                    }),
                     _ => Ok(evohime_service_contract::ServiceResponse::Pong {
                         contract_version: evohime_service_contract::SERVICE_CONTRACT_VERSION,
                     }),
@@ -1276,16 +1323,21 @@ mod tests {
         }
     }
 
-    /// Реестр модулей с настоящим ambient-сервисом, как после discovery.
+    /// Тестовый реестр модулей с mock ambient-сервисом.
     fn ambient_module_registry() -> crate::module_registry::ModuleRegistry {
         let module_registry = crate::module_registry::ModuleRegistry::new();
+        let descriptor = evohime_service_contract::ServiceDescriptor {
+            contract_version: evohime_service_contract::SERVICE_CONTRACT_VERSION,
+            service_id: "ambient".to_owned(),
+            service_version: "0.1.0".to_owned(),
+            capabilities: vec![evohime_service_contract::ServiceCapabilityDescriptor {
+                name: "ambient.proactivity_decide".to_owned(),
+                summary: "Pure proactivity decision".to_owned(),
+                requires_session: false,
+            }],
+        };
         module_registry
-            .register(
-                evohime_ambient::AmbientService::new().descriptor(),
-                std::sync::Arc::new(AmbientServiceTransport {
-                    handler: evohime_ambient::AmbientService::new(),
-                }),
-            )
+            .register(descriptor, std::sync::Arc::new(MockAmbientServiceTransport))
             .expect("ambient service registers");
         module_registry
     }
@@ -1549,10 +1601,9 @@ mod tests {
         now_ms: u64,
     ) -> AmbientProposalRecord {
         let kind = ProposalKind::Reminder;
-        let subject_key = evohime_ambient::ambient_proactivity::subject_key(subject);
-        let proposal_key =
-            evohime_ambient::ambient_proactivity::proposal_key(kind, &subject_key, now_ms);
-        let mute_key = evohime_ambient::ambient_proactivity::mute_key(kind, &subject_key);
+        let subject_key = evohime_listener_contract::subject_key(subject);
+        let proposal_key = evohime_listener_contract::proposal_key(kind, &subject_key, now_ms);
+        let mute_key = evohime_listener_contract::mute_key(kind, &subject_key);
         proposal_record(ProposalRecordInput {
             proposal_id,
             proposal_key: &proposal_key,
@@ -1576,9 +1627,9 @@ mod tests {
         let mut now = NOW_MS;
         for index in 0..3 {
             let subject = format!("тема {index}");
-            let key = evohime_ambient::ambient_proactivity::mute_key(
+            let key = evohime_listener_contract::mute_key(
                 ProposalKind::Reminder,
-                &evohime_ambient::ambient_proactivity::subject_key(&subject),
+                &evohime_listener_contract::subject_key(&subject),
             );
             registry
                 .decide(&journal, ProposalKind::Reminder, &key, now)
@@ -1594,19 +1645,17 @@ mod tests {
             .attach_module_registry(ambient_module_registry())
             .await;
         restarted.ensure_loaded(&journal).await;
-        let key = evohime_ambient::ambient_proactivity::mute_key(
+        let key = evohime_listener_contract::mute_key(
             ProposalKind::Reminder,
-            &evohime_ambient::ambient_proactivity::subject_key("четвёртая тема"),
+            &evohime_listener_contract::subject_key("четвёртая тема"),
         );
         assert_eq!(
             restarted
                 .decide(&journal, ProposalKind::Reminder, &key, now)
                 .await,
-            Err(
-                evohime_ambient::ambient_proactivity::ProposalRejection::Denied(
-                    evohime_listener_contract::ProactivityDenial::HourlyCapReached
-                )
-            ),
+            Err(evohime_listener_contract::ProposalRejection::Denied(
+                evohime_listener_contract::ProactivityDenial::HourlyCapReached
+            )),
             "перезапуск не обнуляет часовой потолок"
         );
         // И отброшенное не копится: через час доступен ровно один слот, а не
@@ -1689,7 +1738,7 @@ mod tests {
             "prop-stale",
             "хлеб",
             None,
-            NOW_MS - 2 * evohime_ambient::ambient_proactivity::PROPOSAL_LIFETIME_MS,
+            NOW_MS - 2 * evohime_listener_contract::PROPOSAL_LIFETIME_MS,
         );
         let fresh = seed_proposal_record("prop-fresh", "отчёт", None, NOW_MS);
         journal

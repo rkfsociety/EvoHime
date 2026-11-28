@@ -836,7 +836,6 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "criterion",
- "evohime-ambient",
  "evohime-cli-contract",
  "evohime-context-budget",
  "evohime-desktop-ipc",
@@ -983,6 +982,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
