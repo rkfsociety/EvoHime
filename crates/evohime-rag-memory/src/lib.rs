@@ -8,6 +8,8 @@
 
 /// Bounded episodic experience replay records and context projection.
 pub mod experience_replay_library;
+/// Deterministic memory candidate ranking and citation validation.
+pub mod memory_retrieval;
 /// Bounded metadata contracts for offline experience consolidation.
 pub mod offline_experience_consolidation;
 /// Project-scoped knowledge notebook validation and pinning contracts.
@@ -110,6 +112,29 @@ impl ServiceHandler for RagMemoryService {
                     input_schema: serde_json::json!({
                         "type": "object",
                         "required": ["records"]
+                    }),
+                    required_permissions: vec!["memory.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "memory.rank_candidates".to_owned(),
+                    description: "Ranks memory retrieval candidates within a workspace scope."
+                        .to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["candidates", "workspace_scope", "now"]
+                    }),
+                    required_permissions: vec!["memory.read".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "memory.validate_citation".to_owned(),
+                    description:
+                        "Validates a memory citation against candidate evidence and generation."
+                            .to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["candidate", "evidence_id", "current_generation", "candidate_generation"]
                     }),
                     required_permissions: vec!["memory.read".to_owned()],
                     supports_streaming: false,
@@ -297,6 +322,49 @@ impl ServiceHandler for RagMemoryService {
                     "max_bytes": experience_replay_library::MAX_CONTEXT_BYTES
                 }))
             }
+            "memory.rank_candidates" => {
+                #[derive(serde::Deserialize)]
+                struct RankRequest {
+                    candidates: Vec<memory_retrieval::MemoryRetrievalCandidate>,
+                    workspace_scope: String,
+                    now: u64,
+                }
+                let req: RankRequest = serde_json::from_value(payload).map_err(|err| {
+                    ServiceContractError::invalid_input(format!("invalid_rank_request: {err}"))
+                })?;
+                let ranked = memory_retrieval::rank_candidates(
+                    req.candidates,
+                    &req.workspace_scope,
+                    req.now,
+                )
+                .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
+                Ok(serde_json::json!({ "candidates": ranked }))
+            }
+            "memory.validate_citation" => {
+                #[derive(serde::Deserialize)]
+                struct CitationRequest {
+                    candidate: memory_retrieval::MemoryRetrievalCandidate,
+                    evidence_id: String,
+                    current_generation: u64,
+                    candidate_generation: u64,
+                }
+                let req: CitationRequest = serde_json::from_value(payload).map_err(|err| {
+                    ServiceContractError::invalid_input(format!("invalid_citation_request: {err}"))
+                })?;
+                let cited = memory_retrieval::citation(
+                    &req.candidate,
+                    &req.evidence_id,
+                    req.current_generation,
+                    req.candidate_generation,
+                )
+                .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
+                serde_json::to_value(&cited).map_err(|err| {
+                    ServiceContractError::new(
+                        evohime_service_contract::ServiceErrorCode::Internal,
+                        format!("failed to serialize memory citation: {err}"),
+                    )
+                })
+            }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown rag-memory capability: {other}"
             ))),
@@ -370,5 +438,29 @@ mod tests {
             },
         );
         assert!(matches!(resp, ServiceResponse::InvokeResult { .. }));
+
+        let ranked = dispatch_request(
+            &svc,
+            ServiceRequest::Invoke {
+                request_id: "rm2".to_owned(),
+                capability: "memory.rank_candidates".to_owned(),
+                payload: serde_json::json!({
+                    "workspace_scope": "ws-1",
+                    "now": 100,
+                    "candidates": [{
+                        "record_id": "rec-1",
+                        "evidence_ids": ["ev-1"],
+                        "workspace_scope": "ws-1",
+                        "privacy": "private",
+                        "source_text": "hello",
+                        "score_millis": 10,
+                        "ranking_freshness": 5,
+                        "citation_freshness": 5
+                    }]
+                }),
+                caller_session_id: None,
+            },
+        );
+        assert!(matches!(ranked, ServiceResponse::InvokeResult { .. }));
     }
 }

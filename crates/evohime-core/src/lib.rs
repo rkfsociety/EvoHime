@@ -217,7 +217,6 @@ pub(crate) mod memory_api;
 pub(crate) mod memory_domain;
 pub(crate) mod memory_extraction;
 pub(crate) mod memory_governance;
-pub(crate) mod memory_retrieval;
 pub mod memory_views_and_adaptive_recall;
 pub mod message_intervention_policies;
 pub mod model_edit_protocol_registry;

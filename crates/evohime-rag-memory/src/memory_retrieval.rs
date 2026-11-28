@@ -4,48 +4,73 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// Maximum number of memory retrieval candidates accepted in one ranking request.
 pub const MAX_MEMORY_CANDIDATES: usize = 64;
+/// Maximum number of reason strings associated with a memory retrieval item.
 pub const MAX_MEMORY_REASONS: usize = 32;
 
+/// Memory record candidate considered during retrieval ranking and citation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryRetrievalCandidate {
+    /// Stable memory record identifier.
     pub record_id: String,
+    /// Evidence identifiers backing this memory candidate.
     pub evidence_ids: Vec<String>,
+    /// Workspace scope owning the memory record.
     pub workspace_scope: String,
+    /// Privacy classification label for the candidate.
     pub privacy: String,
+    /// Source text projected for retrieval ranking.
     pub source_text: String,
+    /// Ranking score in thousandths.
     pub score_millis: i64,
+    /// Freshness timestamp used during ranking.
     pub ranking_freshness: u64,
+    /// Freshness timestamp used when confirming citations.
     pub citation_freshness: u64,
 }
 
+/// Verified citation binding a memory record to an evidence item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryCitation {
+    /// Cited memory record identifier.
     pub record_id: String,
+    /// Cited evidence identifier.
     pub evidence_id: String,
+    /// Lifecycle status of the citation.
     pub status: CitationStatus,
 }
 
+/// Lifecycle state of a memory citation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CitationStatus {
+    /// Citation matches the current generation.
     Valid,
+    /// Citation was refreshed from newer evidence.
     Updated,
+    /// Citation references an outdated generation.
     Stale,
 }
 
+/// Errors produced during memory candidate ranking and citation validation.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum MemoryRetrievalError {
+    /// Candidate does not contain the requested evidence identifier.
     #[error("memory candidate has no resolvable evidence")]
     UnknownEvidence,
+    /// Candidate belongs to a different workspace scope or misses required fields.
     #[error("memory candidate belongs to another workspace scope")]
     CrossScope,
+    /// Candidate generation does not match the current generation.
     #[error("memory candidate is stale for citation confirmation")]
     StaleCitation,
+    /// Ranking input exceeds bounds or specifies an empty workspace scope.
     #[error("memory retrieval input is invalid")]
     InvalidInput,
 }
 
+/// Deterministically ranks bounded memory candidates within a workspace scope.
 pub fn rank_candidates(
     mut candidates: Vec<MemoryRetrievalCandidate>,
     workspace_scope: &str,
@@ -75,6 +100,7 @@ pub fn rank_candidates(
     Ok(candidates)
 }
 
+/// Validates a memory citation against its candidate evidence list and generation.
 pub fn citation(
     candidate: &MemoryRetrievalCandidate,
     evidence_id: &str,
