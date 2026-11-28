@@ -6,8 +6,9 @@
 //! Bounded ambient-listening contract shared by Core, the listener process and
 //! the shell.
 //!
-//! This crate is deliberately side-effect free: no filesystem, no clock, no
-//! processes, no logging sink.  It describes the listening state machine, the
+//! This crate is deliberately side-effect free: no filesystem, no processes,
+//! no channels, no logging sink; the only environment dependency is the wall
+//! clock behind `clock`, which every domain participant must share anyway.  It describes the listening state machine, the
 //! immutable capture limits, the ambient policy schema, the proactivity budget
 //! snapshot, the closed set of error codes and the typed logging facade.
 //!
@@ -37,6 +38,8 @@
 //! );
 //! ```
 
+mod clock;
+mod control;
 mod error;
 mod ids;
 mod limits;
@@ -44,6 +47,15 @@ mod log;
 mod policy;
 mod proactivity;
 mod state;
+
+/// Unified ambient time format, retention clocks, and journal addressing.
+pub use clock::{
+    cutoff_at, event_task_id, expires_at, local_minute_of_day, parse_retention_days,
+    retention_days_from_env, timestamp_ms, EPISODE_METADATA_RETENTION_DAYS, EVENT_RETENTION_DAYS,
+    PURGE_INTERVAL_SECONDS, RETENTION_DAYS_ENV, SESSION_TASK_ID, TOMBSTONE_RETENTION_DAYS,
+};
+/// Listening intent, listener commands, and status snapshots shared with UI.
+pub use control::{AmbientControl, AmbientDeviceInfo, AmbientStatusSnapshot, ListenerControl};
 
 /// Closed ambient error-code and contract-error types.
 pub use error::{AmbientErrorCode, ContractError};

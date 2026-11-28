@@ -151,7 +151,8 @@ pub mod agent_benchmark_matrix;
 pub mod agent_middleware_pipeline;
 pub mod agent_role_profiles;
 pub(crate) mod agentic_browser_session;
-pub mod ambient;
+pub mod ambient_policy_store;
+pub mod ambient_registry;
 pub(crate) mod analysis_kernel;
 pub(crate) mod analysis_kernel_host;
 pub use analysis_kernel_host::CoreKernelHost;
@@ -289,6 +290,9 @@ pub(crate) mod workspace_rag;
 pub use core_protocol::*;
 mod core_journal;
 pub use core_journal::*;
+/// Ambient persistence port of the durable journal (episodes, utterances,
+/// proposals, retention passes).
+pub mod core_journal_ambient;
 mod core_lifecycle;
 pub use core_lifecycle::{
     attach_permission_audit_sink, spawn_ambient_retention, spawn_approval_gc,

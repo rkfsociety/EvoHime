@@ -801,7 +801,7 @@ pub(crate) fn listening_result(
 
 /// Разбирает отметку времени ambient-строки в миллисекунды эпохи.
 ///
-/// Формат задаёт `crate::ambient::timestamp_ms`; неразбираемое значение
+/// Формат задаёт `evohime_listener_contract::timestamp_ms`; неразбираемое значение
 /// становится нулём, а не «сейчас»: выдуманное время выглядело бы как
 /// свежий эпизод.
 pub(crate) fn parse_timestamp_ms(value: &str) -> i64 {

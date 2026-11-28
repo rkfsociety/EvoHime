@@ -6,6 +6,8 @@
 
 //! Isolated `media-voice` service module implementing `evohime-service-contract`.
 
+/// Provider-side execution of admitted image-generation requests.
+pub mod image_generation;
 /// Bounded image container validation and Windows WIC decoding.
 pub mod image_validation;
 pub mod optional_voice_output_adapter;
@@ -134,17 +136,19 @@ impl ServiceHandler for MediaVoiceService {
     ) -> Result<serde_json::Value, ServiceContractError> {
         match capability {
             "media.generate_image" => {
-                let prompt = payload
-                    .get("prompt")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.trim().is_empty())
-                    .ok_or_else(|| {
-                        ServiceContractError::invalid_input("prompt must be a non-empty string")
+                let request: image_generation::ImageGenerationServiceRequest =
+                    serde_json::from_value(payload).map_err(|error| {
+                        ServiceContractError::invalid_input(format!(
+                            "invalid image generation request: {error}"
+                        ))
                     })?;
-                Ok(serde_json::json!({
-                    "prompt": prompt,
-                    "status": "queued"
-                }))
+                let outputs = image_generation::run_image_generation(request)?;
+                serde_json::to_value(serde_json::json!({ "outputs": outputs })).map_err(|error| {
+                    ServiceContractError::new(
+                        evohime_service_contract::ServiceErrorCode::Internal,
+                        format!("failed to serialize image outputs: {error}"),
+                    )
+                })
             }
             "media.describe_vision" => {
                 let image_path = payload

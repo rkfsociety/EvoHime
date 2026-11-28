@@ -896,7 +896,7 @@ pub struct ToolAgent {
     ///
     /// `None` означает, что в этой сборке проактивности нет вовсе: предложение
     /// не создаётся, а не создаётся «без потолка».
-    proactivity: Option<crate::ambient::AmbientProactivityRegistry>,
+    proactivity: Option<crate::ambient_registry::AmbientProactivityRegistry>,
     workflow_registry: Arc<crate::workflow_registry::WorkflowRegistry>,
     workflow_state: Arc<WorkflowRuntimeState>,
 }

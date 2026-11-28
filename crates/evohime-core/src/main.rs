@@ -328,7 +328,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Один реестр проактивности на процесс: производитель предложений внутри
     // агента и мост, отвечающий на клик, обязаны считать один и тот же
     // потолок. Координатор подключается ниже — он рождается позже агента.
-    let proactivity = evohime_core::ambient::AmbientProactivityRegistry::default();
+    let proactivity = evohime_core::ambient_registry::AmbientProactivityRegistry::default();
     proactivity.set_data_dir(data_dir.clone()).await;
     proactivity
         .attach_module_registry(module_registry.clone())

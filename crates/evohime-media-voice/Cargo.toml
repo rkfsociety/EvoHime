@@ -13,12 +13,14 @@ path = "src/main.rs"
 
 [dependencies]
 base64 = "0.23"
+evohime-model-gateway = { path = "../model-gateway" }
 evohime-service-contract = { path = "../evohime-service-contract" }
 hex = "0.4"
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.11"
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt", "time"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = ["Win32_Graphics_Imaging", "Win32_System_Com"] }

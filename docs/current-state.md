@@ -1529,7 +1529,7 @@ bundle, shell-host, CLI, compatible manifest и остальные module releas
 
 ## Plan 203 — Перенос вызовов в сервисы и очистка микроядра (волны 1–2 выполнены, активен 2026-11-28)
 
-- Волна 1 (`computer-use`, `research`, `media-voice`, `ambient`) и волна 2 (`evals`, `analysis-worker`, `verifier`, `hive`) реализованы по существу; поэтапные статусы — в `docs/plans/203-1*.md` и `203-2*.md`.
+- Волна 1 (`computer-use`, `research`, `media-voice`, `ambient`) завершена полностью (2026-11-28): `ambient.rs` удалён и разобран на `ambient_policy_store.rs`/`ambient_registry.rs`/`core_journal_ambient.rs`, общие ambient-типы и time-хелперы переехали в `evohime-listener-contract`, `proposal_record` — в `evohime-local-storage`; провайдерский вызов генерации изображений переехал в `evohime-media-voice` (capability `media.generate_image`), в ядре остались durable-состояние заявки и публикация артефактов. Волна 2 (`evals`, `analysis-worker`, `verifier`, `hive`) реализована по существу; поэтапные статусы — в `docs/plans/203-1*.md` и `203-2*.md`.
 - Рецензирование и правка планов исполняются внешним процессом `evohime-verify.exe --serve` (`verifier.plan_review_run`, `verifier.plan_revision_run` через `ModuleRegistry`); ключ провайдера не покидает окружение сервиса.
 - Детерминированный набор оценок перенесён из ядра в CLI-крейт `evohime-eval`; контракты ядра (`doctor`, `memory_domain`, `workflow_runner`, `workflow_registry`, `workflow_runtime`, `workflow_templates`) подняты до публичного API с документацией.
-- Волны 3–4 (`workspace_rag*`, `memory_extraction`, `workflow*`, `local_model_*`, `free_provider_reliability_routing`, зачистка `Cargo.toml`) остаются незавершёнными; `ambient.rs` и `image_generation.rs` ждут persistence-порт.
+- Волны 3–4 (`workspace_rag*`, `memory_extraction`, `workflow*`, `local_model_*`, `free_provider_reliability_routing`, зачистка `Cargo.toml`) остаются незавершёнными.

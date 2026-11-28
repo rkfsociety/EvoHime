@@ -774,7 +774,7 @@ async fn saving_a_policy_without_the_voice_fields_keeps_the_stored_value() {
 /// Подключает фиктивный листенер: команда уезжает в канал и остаётся там.
 fn attach_fake_listener(
     bridge: &IpcBridge,
-) -> tokio::sync::mpsc::Receiver<crate::ambient::ListenerControl> {
+) -> tokio::sync::mpsc::Receiver<evohime_listener_contract::ListenerControl> {
     let (tx, rx) = tokio::sync::mpsc::channel(8);
     let registry = bridge.ambient();
     tokio::task::block_in_place(|| {
@@ -802,7 +802,7 @@ async fn enabling_without_a_listener_reports_that_the_listener_is_missing() {
     assert_eq!(payload["state"], "engine_unavailable");
     // Намерение всё равно сохранено: следующее подключение листенера его
     // применит, а не начнёт с выключенного микрофона.
-    assert!(crate::ambient::load_control(directory.path()).enabled);
+    assert!(crate::ambient_policy_store::load_control(directory.path()).enabled);
 }
 
 /// Движок не готов — включение отвечает `ENGINE_NOT_READY`, а не молчит.
@@ -823,7 +823,7 @@ async fn enabling_without_an_engine_reports_engine_not_ready() {
     assert_eq!(payload["state"], "starting");
     assert!(matches!(
         control.try_recv(),
-        Ok(crate::ambient::ListenerControl::Policy(_))
+        Ok(evohime_listener_contract::ListenerControl::Policy(_))
     ));
 }
 
@@ -923,7 +923,7 @@ async fn text_is_absent_from_the_listing_and_present_only_on_demand() {
         .expect("episode opens");
     journal
         .insert_ambient_utterance(
-            &crate::ambient::AmbientUtteranceInput {
+            &crate::core_journal_ambient::AmbientUtteranceInput {
                 utterance_id: "ep-1-0".into(),
                 episode_id: "ep-1".into(),
                 sequence: 0,
@@ -1017,7 +1017,7 @@ async fn deleting_removes_the_text_and_its_journal_rows() {
         .expect("episode opens");
     journal
         .insert_ambient_utterance(
-            &crate::ambient::AmbientUtteranceInput {
+            &crate::core_journal_ambient::AmbientUtteranceInput {
                 utterance_id: "ep-2-0".into(),
                 episode_id: "ep-2".into(),
                 sequence: 0,
@@ -1139,7 +1139,7 @@ async fn an_invalid_policy_is_refused_whole() {
     assert_eq!(payload["applied"], true);
     assert!(matches!(
         control.try_recv(),
-        Ok(crate::ambient::ListenerControl::Policy(_))
+        Ok(evohime_listener_contract::ListenerControl::Policy(_))
     ));
 
     let (_, refused) = ambient_call(
@@ -1176,7 +1176,7 @@ async fn an_invalid_policy_is_refused_whole() {
     assert_eq!(over_retention["error_code"], "POLICY_INVALID");
 
     // Отвергнутая политика не затёрла сохранённую.
-    let stored = crate::ambient::load_policy(directory.path());
+    let stored = crate::ambient_policy_store::load_policy(directory.path());
     assert_eq!(stored.retention_days, 14);
     assert_eq!(stored.process_blocklist, vec!["zoom*.exe".to_string()]);
 
@@ -1203,17 +1203,19 @@ async fn seed_proposal(
     let subject_key = proactivity::subject_key(subject);
     let proposal_key = proactivity::proposal_key(kind, &subject_key, now_ms);
     let mute_key = proactivity::mute_key(kind, &subject_key);
-    let record = crate::ambient::proposal_record(crate::ambient::ProposalRecordInput {
-        proposal_id,
-        proposal_key: &proposal_key,
-        mute_key: &mute_key,
-        kind,
-        subject_key: &subject_key,
-        subject,
-        title: "Напомнить купить хлеб",
-        source_episode_id: episode_id,
-        now_ms,
-    });
+    let record = evohime_local_storage::ambient_store::proposal_record(
+        evohime_local_storage::ambient_store::ProposalRecordInput {
+            proposal_id,
+            proposal_key: &proposal_key,
+            mute_key: &mute_key,
+            kind,
+            subject_key: &subject_key,
+            subject,
+            title: "Напомнить купить хлеб",
+            source_episode_id: episode_id,
+            now_ms,
+        },
+    );
     bridge
         .journal()
         .record_ambient_proposal(&record)
@@ -1397,17 +1399,19 @@ async fn muting_a_subject_survives_a_core_restart() {
         &subject_key,
         later_now_ms,
     );
-    let later = crate::ambient::proposal_record(crate::ambient::ProposalRecordInput {
-        proposal_id: "prop-2",
-        proposal_key: &later_key,
-        mute_key: &mute_key,
-        kind: evohime_listener_contract::ProposalKind::Reminder,
-        subject_key: &subject_key,
-        subject: "хлеб",
-        title: "Напомнить купить хлеб",
-        source_episode_id: None,
-        now_ms: later_now_ms,
-    });
+    let later = evohime_local_storage::ambient_store::proposal_record(
+        evohime_local_storage::ambient_store::ProposalRecordInput {
+            proposal_id: "prop-2",
+            proposal_key: &later_key,
+            mute_key: &mute_key,
+            kind: evohime_listener_contract::ProposalKind::Reminder,
+            subject_key: &subject_key,
+            subject: "хлеб",
+            title: "Напомнить купить хлеб",
+            source_episode_id: None,
+            now_ms: later_now_ms,
+        },
+    );
     assert_eq!(
         journal.record_ambient_proposal(&later).await,
         Ok(evohime_local_storage::ambient_store::ProposalInsert::Muted)
@@ -1523,7 +1527,7 @@ async fn forgetting_a_window_removes_only_that_window() {
     for (sequence, offset_ms) in [(0i64, 60 * 60 * 1000u64), (1, 60 * 1000)] {
         journal
             .insert_ambient_utterance(
-                &crate::ambient::AmbientUtteranceInput {
+                &crate::core_journal_ambient::AmbientUtteranceInput {
                     utterance_id: format!("ep-3-{sequence}"),
                     episode_id: "ep-3".into(),
                     sequence,

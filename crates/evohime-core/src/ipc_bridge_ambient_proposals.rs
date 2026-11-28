@@ -288,7 +288,7 @@ impl IpcBridge {
         request: generated::ListVoiceCommands,
     ) -> serde_json::Value {
         let now_ms = crate::task_memory::now_millis();
-        let policy = crate::ambient::load_policy(&self.ambient_data_dir());
+        let policy = crate::ambient_policy_store::load_policy(&self.ambient_data_dir());
         let limit = usize::try_from(request.limit)
             .unwrap_or(VOICE_COMMAND_MAX_PENDING)
             .clamp(1, VOICE_COMMAND_MAX_PENDING);

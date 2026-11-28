@@ -1,7 +1,7 @@
 use super::*;
 
 use evohime_core::workflow::{
-    BatchPolicy, ChildActionProfile, ChildDelegationPolicy, ConcurrencyClass,
+    BatchPolicy, ChildActionProfile, ConcurrencyClass,
     ContextProviderProfile, FailurePolicy, JoinMode, McpActionProfile, NodeAcceptance, NodeBudget,
     NodeType, WorkflowBudget, WORKFLOW_CONTRACT_VERSION,
 };

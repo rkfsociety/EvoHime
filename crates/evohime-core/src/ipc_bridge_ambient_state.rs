@@ -58,12 +58,12 @@ impl IpcBridge {
                 .await;
         }
 
-        let mut policy = crate::ambient::load_policy(&data_dir);
+        let mut policy = crate::ambient_policy_store::load_policy(&data_dir);
         policy.paused = request.paused;
-        if crate::ambient::save_policy(&data_dir, &policy).is_err() {
+        if crate::ambient_policy_store::save_policy(&data_dir, &policy).is_err() {
             return listening_result(snapshot.state, Some(Code::StorageFailed));
         }
-        let control = crate::ambient::AmbientControl {
+        let control = evohime_listener_contract::AmbientControl {
             enabled: request.enabled,
             device_id: if request.device_id.is_empty() {
                 snapshot.active_device_id.clone()
@@ -71,16 +71,15 @@ impl IpcBridge {
                 request.device_id.clone()
             },
         };
-        if crate::ambient::save_control(&data_dir, &control).is_err() {
+        if crate::ambient_policy_store::save_control(&data_dir, &control).is_err() {
             return listening_result(snapshot.state, Some(Code::StorageFailed));
         }
 
         let mut sent = self
             .ambient
-            .send(crate::ambient::ListenerControl::Policy(Box::new((
-                policy.clone(),
-                control.clone(),
-            ))))
+            .send(evohime_listener_contract::ListenerControl::Policy(
+                Box::new((policy.clone(), control.clone())),
+            ))
             .await;
         if sent.is_err() && request.enabled {
             // Supervisor starts `evohime-listener` on demand once `ambient-control.json`
@@ -89,10 +88,9 @@ impl IpcBridge {
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 sent = self
                     .ambient
-                    .send(crate::ambient::ListenerControl::Policy(Box::new((
-                        policy.clone(),
-                        control.clone(),
-                    ))))
+                    .send(evohime_listener_contract::ListenerControl::Policy(
+                        Box::new((policy.clone(), control.clone())),
+                    ))
                     .await;
                 if sent.is_ok() {
                     break;
@@ -369,7 +367,7 @@ impl IpcBridge {
     }
 
     pub(crate) async fn dispatch_get_ambient_policy(&self) -> serde_json::Value {
-        let policy = crate::ambient::load_policy(&self.ambient_data_dir());
+        let policy = crate::ambient_policy_store::load_policy(&self.ambient_data_dir());
         Self::ambient_policy_json(&policy)
     }
 
@@ -384,7 +382,7 @@ impl IpcBridge {
             return serde_json::json!({ "applied": false, "error_code": Code::InvalidArgument.as_str() });
         };
         let data_dir = self.ambient_data_dir();
-        let previous = crate::ambient::load_policy(&data_dir);
+        let previous = crate::ambient_policy_store::load_policy(&data_dir);
         let mut quiet_hours = Vec::new();
         for window in &incoming.quiet_hours {
             let (Ok(start), Ok(end)) = (
@@ -429,17 +427,17 @@ impl IpcBridge {
                 "error_code": error.code().as_str(),
             });
         }
-        if crate::ambient::save_policy(&data_dir, &policy).is_err() {
+        if crate::ambient_policy_store::save_policy(&data_dir, &policy).is_err() {
             return serde_json::json!({ "applied": false, "error_code": Code::StorageFailed.as_str() });
         }
         // Сохранённая политика ничего не значит, пока листенер её не получил:
         // недоступный листенер называется своим кодом, а не «применено».
-        let control = crate::ambient::load_control(&data_dir);
+        let control = crate::ambient_policy_store::load_control(&data_dir);
         match self
             .ambient
-            .send(crate::ambient::ListenerControl::Policy(Box::new((
-                policy, control,
-            ))))
+            .send(evohime_listener_contract::ListenerControl::Policy(
+                Box::new((policy, control)),
+            ))
             .await
         {
             Ok(()) => serde_json::json!({ "applied": true, "error_code": "" }),

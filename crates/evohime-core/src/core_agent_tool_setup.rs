@@ -150,7 +150,7 @@ impl ToolAgent {
     /// Подключает реестр ограниченной проактивности.
     pub fn with_proactivity(
         mut self,
-        proactivity: crate::ambient::AmbientProactivityRegistry,
+        proactivity: crate::ambient_registry::AmbientProactivityRegistry,
     ) -> Self {
         self.proactivity = Some(proactivity);
         self

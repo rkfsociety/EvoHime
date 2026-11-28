@@ -686,7 +686,7 @@ pub struct IpcBridge {
     /// Трей, глобальный хоткей и панель «Слух» — три точки входа одной и той
     /// же команды `SetAmbientListening`; своей копии состояния у них нет, и
     /// обновляются они только событием `ambient.state`.
-    ambient: crate::ambient::AmbientListeningRegistry,
+    ambient: crate::ambient_registry::AmbientListeningRegistry,
     /// Каталог, в котором лежат политика и намерение слушания.
     ///
     /// `None` означает продовый путь из окружения. Поле существует ради
@@ -696,7 +696,7 @@ pub struct IpcBridge {
     /// Потолок и счётчики ограниченной проактивности (04.7). Тот же реестр,
     /// что держит агент: иначе мост и производитель предложений считали бы
     /// разные бюджеты.
-    proactivity: crate::ambient::AmbientProactivityRegistry,
+    proactivity: crate::ambient_registry::AmbientProactivityRegistry,
     /// Реестр подтверждений узлов workflow (план 06.3).
     ///
     /// Отдельной команды approval для workflow нет: карточка решается той же

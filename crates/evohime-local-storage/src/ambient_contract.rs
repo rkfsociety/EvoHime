@@ -340,3 +340,97 @@ pub(crate) fn validate_reason(reason: &str) -> Result<(), AmbientStoreError> {
         Err(AmbientStoreError::InvalidReason)
     }
 }
+
+/// Входные данные новой карточки предложения — всё, кроме сроков.
+///
+/// Времена (`created_at`, `updated_at`, `expires_at`) строит хранилище, а не
+/// вызывающий: срок жизни карточки — политика домена, а не решение точки
+/// вызова.
+pub struct ProposalRecordInput<'a> {
+    /// Stable identifier assigned to the proposal.
+    pub proposal_id: &'a str,
+    /// Deduplication key for equivalent proposals.
+    pub proposal_key: &'a str,
+    /// Key used to mute this subject after a user choice.
+    pub mute_key: &'a str,
+    /// Kind of action being proposed.
+    pub kind: ProposalKind,
+    /// Typed identity of the proposal subject.
+    pub subject_key: &'a evohime_listener_contract::SubjectKey,
+    /// Stable subject reference used by storage and policy.
+    pub subject: &'a str,
+    /// Short user-facing proposal title.
+    pub title: &'a str,
+    /// Optional source episode that motivated the proposal.
+    pub source_episode_id: Option<&'a str>,
+    /// Current Unix time in milliseconds for persistence timestamps.
+    pub now_ms: u64,
+}
+
+/// Builds a persisted proposal row with storage-owned timestamps and expiry.
+///
+/// Срок жизни карточки фиксируется здесь из [`evohime_listener_contract::PROPOSAL_LIFETIME_MS`]:
+/// 24 часа молчания — это ответ «нет».
+pub fn proposal_record(input: ProposalRecordInput<'_>) -> AmbientProposalRecord {
+    let created_at = evohime_listener_contract::timestamp_ms(input.now_ms);
+    let expires_at = evohime_listener_contract::timestamp_ms(
+        input
+            .now_ms
+            .saturating_add(evohime_listener_contract::PROPOSAL_LIFETIME_MS),
+    );
+    AmbientProposalRecord {
+        proposal_id: input.proposal_id.to_owned(),
+        proposal_key: input.proposal_key.to_owned(),
+        mute_key: input.mute_key.to_owned(),
+        kind: input.kind,
+        subject_key: input.subject_key.as_str().to_owned(),
+        subject: input.subject.to_owned(),
+        title: input.title.to_owned(),
+        source_episode_id: input.source_episode_id.map(str::to_owned),
+        source_deleted_at: None,
+        source_deleted_reason: None,
+        created_at: created_at.clone(),
+        updated_at: created_at,
+        expires_at,
+        occurrences: 1,
+        state: ProposalState::Proposed,
+        accepted_task_id: None,
+        idempotency_key: None,
+    }
+}
+
+#[cfg(test)]
+mod proposal_record_tests {
+    use super::*;
+    use evohime_listener_contract::{SubjectKey, PROPOSAL_LIFETIME_MS};
+
+    /// Сроки карточки строит хранилище: createdAt/updatedAt — «сейчас»,
+    /// expires_at — ровно через контрактный срок жизни.
+    #[test]
+    fn proposal_record_owns_its_timestamps() {
+        let subject = SubjectKey::new("example-page").expect("subject key");
+        let now_ms: u64 = 1_770_000_000_000;
+        let record = proposal_record(ProposalRecordInput {
+            proposal_id: "prop-1",
+            proposal_key: "key-1",
+            mute_key: "mute-1",
+            kind: ProposalKind::Reminder,
+            subject_key: &subject,
+            subject: "https://example.com/a",
+            title: "title",
+            source_episode_id: Some("ep-1"),
+            now_ms,
+        });
+        assert_eq!(record.proposal_id, "prop-1");
+        assert_eq!(record.kind, ProposalKind::Reminder);
+        assert_eq!(record.occurrences, 1);
+        assert_eq!(record.state, ProposalState::Proposed);
+        assert_eq!(record.created_at, record.updated_at);
+        assert_eq!(
+            record.expires_at,
+            evohime_listener_contract::timestamp_ms(now_ms + PROPOSAL_LIFETIME_MS)
+        );
+        assert_eq!(record.source_episode_id.as_deref(), Some("ep-1"));
+        assert!(record.source_deleted_at.is_none());
+    }
+}

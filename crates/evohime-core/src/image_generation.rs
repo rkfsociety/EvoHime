@@ -72,6 +72,20 @@ pub struct ValidatedImage {
     pub bytes: Vec<u8>,
 }
 
+/// One provider output already validated by `evohime-media-voice` and decoded
+/// from its service response; kept separate from [`ValidatedImage`] until
+/// Core-side bounds and metadata checks pass.
+struct ServiceValidatedOutput {
+    /// Provider-declared output MIME type; re-checked against the request.
+    mime_type: String,
+    /// Provider-decoded width in pixels; re-checked against the request.
+    width: u32,
+    /// Provider-decoded height in pixels; re-checked against the request.
+    height: u32,
+    /// Original encoded image bytes, held only until ArtifactStore publication.
+    bytes: Vec<u8>,
+}
+
 /// Typed refusal from Core-side image validation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageValidationError {
@@ -321,8 +335,12 @@ mod tests {
         ));
         let runtime = ImageGenerationRuntime::new(journal.clone(), gateway.clone())
             .with_module_registry({
-                struct MockValidateImageTransport;
-                impl crate::module_registry::ServiceTransport for MockValidateImageTransport {
+                struct MockMediaVoiceTransport {
+                    png_base64: String,
+                    calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+                    input_image_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+                }
+                impl crate::module_registry::ServiceTransport for MockMediaVoiceTransport {
                     fn send(
                         &self,
                         request: evohime_service_contract::ServiceRequest,
@@ -350,6 +368,40 @@ mod tests {
                                         }),
                                     })
                                 }
+                                evohime_service_contract::ServiceRequest::Invoke {
+                                    request_id,
+                                    capability,
+                                    payload,
+                                    ..
+                                } if capability == "media.generate_image" => {
+                                    self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                    let inputs = payload
+                                        .get("input_images")
+                                        .and_then(serde_json::Value::as_array)
+                                        .map(|items| items.len())
+                                        .unwrap_or(0);
+                                    let mask = usize::from(
+                                        payload
+                                            .get("mask_image")
+                                            .map(serde_json::Value::is_object)
+                                            .unwrap_or(false),
+                                    );
+                                    self.input_image_calls.fetch_add(
+                                        inputs + mask,
+                                        std::sync::atomic::Ordering::SeqCst,
+                                    );
+                                    Ok(evohime_service_contract::ServiceResponse::InvokeResult {
+                                        request_id,
+                                        payload: serde_json::json!({
+                                            "outputs": [{
+                                                "mime_type": "image/png",
+                                                "width": 1,
+                                                "height": 1,
+                                                "bytes_base64": self.png_base64,
+                                            }],
+                                        }),
+                                    })
+                                }
                                 _ => Ok(evohime_service_contract::ServiceResponse::Pong {
                                     contract_version:
                                         evohime_service_contract::SERVICE_CONTRACT_VERSION,
@@ -363,16 +415,32 @@ mod tests {
                     service_id: "media-voice".to_owned(),
                     version: "0.0.4".to_owned(),
                     contract_version: evohime_service_contract::SERVICE_CONTRACT_VERSION,
-                    capabilities: vec![evohime_service_contract::ServiceCapabilityDescriptor {
-                        name: "media.validate_image".to_owned(),
-                        description: "Mock validate_image".to_owned(),
-                        input_schema: serde_json::json!({ "type": "object" }),
-                        required_permissions: vec!["media.read".to_owned()],
-                        supports_streaming: false,
-                    }],
+                    capabilities: vec![
+                        evohime_service_contract::ServiceCapabilityDescriptor {
+                            name: "media.validate_image".to_owned(),
+                            description: "Mock validate_image".to_owned(),
+                            input_schema: serde_json::json!({ "type": "object" }),
+                            required_permissions: vec!["media.read".to_owned()],
+                            supports_streaming: false,
+                        },
+                        evohime_service_contract::ServiceCapabilityDescriptor {
+                            name: "media.generate_image".to_owned(),
+                            description: "Mock generate_image".to_owned(),
+                            input_schema: serde_json::json!({ "type": "object" }),
+                            required_permissions: vec!["media.generate".to_owned()],
+                            supports_streaming: false,
+                        },
+                    ],
                 };
                 registry
-                    .register(descriptor, std::sync::Arc::new(MockValidateImageTransport))
+                    .register(
+                        descriptor,
+                        std::sync::Arc::new(MockMediaVoiceTransport {
+                            png_base64: base64::engine::general_purpose::STANDARD.encode(&png),
+                            calls: calls.clone(),
+                            input_image_calls: input_image_calls.clone(),
+                        }),
+                    )
                     .expect("mock media-voice registers");
                 registry
             });
@@ -1123,7 +1191,7 @@ impl ImageGenerationRuntime {
         client_id: &str,
         inputs: &[&ImageArtifactInput],
         mask: Option<&ImageArtifactInput>,
-    ) -> Result<Vec<Vec<u8>>, ImageGenerationError> {
+    ) -> Result<Vec<(String, Vec<u8>)>, ImageGenerationError> {
         let mut ordered = inputs.to_vec();
         if let Some(mask) = mask {
             ordered.push(mask);
@@ -1183,9 +1251,125 @@ impl ImageGenerationRuntime {
                 .validate_image_via_service(&mime, encoded)
                 .await
                 .map_err(|_| ImageGenerationError::InvalidRequest("input_decode_failed"))?;
-            decoded_inputs.push(image.bytes);
+            decoded_inputs.push((mime, image.bytes));
         }
         Ok(decoded_inputs)
+    }
+
+    /// Делегирует исполнение одной допущенной заявки внешнему
+    /// `evohime-media-voice` (план 203.1): провайдерский вызов и валидация
+    /// вывода выполняются в сервисе, ядро владеет только durable-состоянием
+    /// заявки и публикацией артефактов.
+    async fn generate_via_service(
+        &self,
+        request: &ImageGenerationRequest,
+        capability_epoch: u64,
+        inputs: &[(String, Vec<u8>)],
+        mask_index: Option<usize>,
+    ) -> Result<Vec<ServiceValidatedOutput>, ImageGenerationError> {
+        use base64::Engine;
+        let encode = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
+        let input_images = inputs[..mask_index.unwrap_or(inputs.len())]
+            .iter()
+            .map(|(mime, bytes)| {
+                serde_json::json!({ "mime_type": mime, "bytes_base64": encode(bytes) })
+            })
+            .collect::<Vec<_>>();
+        let mask_image = mask_index.and_then(|index| inputs.get(index)).map(
+            |(mime, bytes)| serde_json::json!({ "mime_type": mime, "bytes_base64": encode(bytes) }),
+        );
+        let payload = serde_json::json!({
+            "route": self.route_id,
+            "operation": request.operation,
+            "prompt": request.prompt,
+            "width": request.width,
+            "height": request.height,
+            "count": request.count,
+            "mime_type": request.mime_type,
+            "deadline_ms": request.deadline_ms.unwrap_or(MAX_PROVIDER_DEADLINE_MS),
+            "capability_epoch": capability_epoch,
+            "input_images": input_images,
+            "mask_image": mask_image,
+        });
+        let request_id = format!(
+            "media-generate-{}",
+            crate::sha256_hex(payload.to_string().as_bytes())
+        );
+        let outcome =
+            match &self.module_registry {
+                Some(registry) => {
+                    registry
+                        .invoke_if_ready(request_id, "media.generate_image", payload, None, |_| {
+                            Ok(())
+                        })
+                        .await
+                }
+                // Реестр сервисов не подключён: исполнение недоступно, как и при
+                // остановленном сервисе.
+                None => None,
+            };
+        let response = match outcome {
+            Some(Ok(value)) => value,
+            Some(Err(error)) if error.message == "image_capability_or_route_stale" => {
+                return Err(ImageGenerationError::Unsupported(
+                    "image_capability_or_route_stale",
+                ));
+            }
+            // Ошибки валидации вывода сервис возвращает кодом причины;
+            // неизвестные причины маскируются под недоступность провайдера.
+            Some(Err(error)) => {
+                let reason: &'static str = match error.message.as_str() {
+                    "provider_output_decode_failed" => "provider_output_decode_failed",
+                    "provider_output_bytes_limit" => "provider_output_bytes_limit",
+                    "provider_output_count_mismatch" => "provider_output_count_mismatch",
+                    "provider_output_validation_failed" => "provider_output_validation_failed",
+                    _ => return Err(ImageGenerationError::UnknownOutcome),
+                };
+                return Err(ImageGenerationError::InvalidRequest(reason));
+            }
+            // Сервис не зарегистрирован, не готов, время вышло или ответил
+            // неожиданно — исход неизвестен.
+            None => {
+                return Err(ImageGenerationError::UnknownOutcome);
+            }
+        };
+        let outputs = response
+            .get("outputs")
+            .and_then(serde_json::Value::as_array)
+            .ok_or(ImageGenerationError::UnknownOutcome)?;
+        let mut validated = Vec::with_capacity(outputs.len());
+        for output in outputs {
+            let mime_type = output
+                .get("mime_type")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(ImageGenerationError::UnknownOutcome)?;
+            let width = output
+                .get("width")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|value| u32::try_from(value).ok())
+                .ok_or(ImageGenerationError::UnknownOutcome)?;
+            let height = output
+                .get("height")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|value| u32::try_from(value).ok())
+                .ok_or(ImageGenerationError::UnknownOutcome)?;
+            let bytes_base64 = output
+                .get("bytes_base64")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(ImageGenerationError::UnknownOutcome)?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(bytes_base64)
+                .map_err(|_| {
+                    ImageGenerationError::InvalidRequest("provider_output_decode_failed")
+                })?;
+            validated.push(ServiceValidatedOutput {
+                mime_type: mime_type.to_owned(),
+                width,
+                height,
+                bytes,
+            });
+        }
+        Ok(validated)
     }
 
     /// Runs one validated generation/edit request and persists only bounded metadata.
@@ -1455,29 +1639,26 @@ impl ImageGenerationRuntime {
         };
         let provider_request = evohime_model_gateway::ImageProviderRequest {
             operation: request.operation,
-            prompt: request.prompt,
+            prompt: String::new(),
             width: request.width,
             height: request.height,
             count: request.count,
             mime_type: request.mime_type.clone(),
             required_privacy: evohime_model_gateway::PrivacyClass::Restricted,
             allow_cloud: false,
-            input_images: input_bytes[..mask_index.unwrap_or(input_bytes.len())].to_vec(),
-            mask_image: mask_index.and_then(|index| input_bytes.get(index).cloned()),
+            input_images: Vec::new(),
+            mask_image: None,
         };
-        if let Err(error) = self.gateway.preflight_image_output_for_route(
-            &self.route_id,
-            Some(capability.capability_epoch),
-            &provider_request,
-        ) {
-            let reason = if matches!(
-                error,
-                evohime_model_gateway::providers::ProviderError::ImageCapabilityStale
-            ) {
-                "image_capability_stale"
-            } else {
-                "image_route_preflight_rejected"
-            };
+        if self
+            .gateway
+            .preflight_image_output_for_route(
+                &self.route_id,
+                Some(capability.capability_epoch),
+                &provider_request,
+            )
+            .is_err()
+        {
+            let reason = "image_route_preflight_rejected";
             let _ = transition_job(
                 &self.journal,
                 &job_id,
@@ -1507,23 +1688,32 @@ impl ImageGenerationRuntime {
             drop(permit);
             return Err(ImageGenerationError::Persistence);
         }
-        let provider_outputs = tokio::time::timeout(
-            std::time::Duration::from_millis(
-                request.deadline_ms.unwrap_or(MAX_PROVIDER_DEADLINE_MS),
-            ),
-            self.gateway.generate_image_for_route_at_epoch(
-                &self.route_id,
-                Some(capability.capability_epoch),
-                provider_request,
-            ),
-        )
-        .await;
-        let provider_outputs = match provider_outputs {
-            Ok(Ok(outputs)) if !token.is_cancelled() => outputs,
-            Ok(Err(
-                evohime_model_gateway::providers::ProviderError::ImageCapabilityStale
-                | evohime_model_gateway::providers::ProviderError::ImagePreflightRejected,
-            )) => {
+        let validated = match self
+            .generate_via_service(
+                &request,
+                capability.capability_epoch,
+                &input_bytes,
+                mask_index,
+            )
+            .await
+        {
+            Ok(outputs) if !token.is_cancelled() => outputs,
+            Ok(_) => {
+                let _ = transition_job(
+                    &self.journal,
+                    &job_id,
+                    record.revision + 2,
+                    evohime_local_storage::image_generation_store::ImageJobState::UnknownOutcome,
+                    &record.snapshot_json,
+                    None,
+                    Some("provider_outcome_unknown"),
+                    image_now_ms(),
+                )
+                .await?;
+                drop(permit);
+                return Err(ImageGenerationError::UnknownOutcome);
+            }
+            Err(ImageGenerationError::Unsupported(reason)) => {
                 let _ = transition_job(
                     &self.journal,
                     &job_id,
@@ -1531,16 +1721,29 @@ impl ImageGenerationRuntime {
                     evohime_local_storage::image_generation_store::ImageJobState::Failed,
                     &record.snapshot_json,
                     None,
-                    Some("image_capability_or_route_stale"),
+                    Some(reason),
                     image_now_ms(),
                 )
                 .await?;
                 drop(permit);
-                return Err(ImageGenerationError::Unsupported(
-                    "image_capability_or_route_stale",
-                ));
+                return Err(ImageGenerationError::Unsupported(reason));
             }
-            _ => {
+            Err(ImageGenerationError::InvalidRequest(reason)) => {
+                let _ = transition_job(
+                    &self.journal,
+                    &job_id,
+                    record.revision + 2,
+                    evohime_local_storage::image_generation_store::ImageJobState::Failed,
+                    &record.snapshot_json,
+                    None,
+                    Some(reason),
+                    image_now_ms(),
+                )
+                .await?;
+                drop(permit);
+                return Err(ImageGenerationError::InvalidRequest(reason));
+            }
+            Err(_) => {
                 let _ = transition_job(
                     &self.journal,
                     &job_id,
@@ -1556,7 +1759,7 @@ impl ImageGenerationRuntime {
                 return Err(ImageGenerationError::UnknownOutcome);
             }
         };
-        if provider_outputs.len() != usize::from(request.count) {
+        if validated.len() != usize::from(request.count) {
             let _ = transition_job(
                 &self.journal,
                 &job_id,
@@ -1573,9 +1776,9 @@ impl ImageGenerationRuntime {
                 "provider_output_count_mismatch",
             ));
         }
-        let mut validated = Vec::with_capacity(provider_outputs.len());
+        let mut checked = Vec::with_capacity(validated.len());
         let mut total_output_bytes = 0usize;
-        for output in provider_outputs {
+        for output in validated {
             total_output_bytes = total_output_bytes.saturating_add(output.bytes.len());
             if output.bytes.len() as u64 > capability.max_bytes.min(MAX_OUTPUT_BYTES as u64)
                 || total_output_bytes
@@ -1597,33 +1800,10 @@ impl ImageGenerationRuntime {
                     "provider_output_bytes_limit",
                 ));
             }
-            let requested_mime = request.mime_type.clone();
-            let decoded = self
-                .validate_image_via_service(&output.mime_type, output.bytes)
-                .await;
-            let validated_image = match decoded {
-                Ok(image) => image,
-                Err(_) => {
-                    let _ = transition_job(
-                        &self.journal,
-                        &job_id,
-                        record.revision + 2,
-                        evohime_local_storage::image_generation_store::ImageJobState::Failed,
-                        &record.snapshot_json,
-                        None,
-                        Some("provider_output_decode_failed"),
-                        image_now_ms(),
-                    )
-                    .await?;
-                    drop(permit);
-                    return Err(ImageGenerationError::InvalidRequest(
-                        "provider_output_decode_failed",
-                    ));
-                }
-            };
-            if validated_image.mime_type.as_str() != requested_mime
-                || validated_image.width != request.width
-                || validated_image.height != request.height
+            if output.mime_type != request.mime_type
+                || ImageMimeType::parse(&output.mime_type).is_none()
+                || output.width != request.width
+                || output.height != request.height
             {
                 let _ = transition_job(
                     &self.journal,
@@ -1641,8 +1821,15 @@ impl ImageGenerationRuntime {
                     "provider_output_validation_failed",
                 ));
             }
-            validated.push(validated_image);
+            checked.push(ValidatedImage {
+                mime_type: ImageMimeType::parse(&output.mime_type).unwrap_or(ImageMimeType::Png),
+                width: output.width,
+                height: output.height,
+                sha256: hex::encode(Sha256::digest(&output.bytes)),
+                bytes: output.bytes,
+            });
         }
+        let validated = checked;
         let publication = {
             let database = self.journal.database().lock().await;
             let store =

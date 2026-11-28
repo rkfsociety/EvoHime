@@ -1087,9 +1087,9 @@ impl IpcBridge {
             revision_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             analysis_kernels: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-            ambient: crate::ambient::AmbientListeningRegistry::default(),
+            ambient: crate::ambient_registry::AmbientListeningRegistry::default(),
             ambient_data_dir: None,
-            proactivity: crate::ambient::AmbientProactivityRegistry::default(),
+            proactivity: crate::ambient_registry::AmbientProactivityRegistry::default(),
             workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
             voice_commands: Arc::new(
                 crate::ipc_bridge_ambient_proposals::VoiceCommandRegistry::new(),
@@ -1145,9 +1145,9 @@ impl IpcBridge {
             revision_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             analysis_kernels: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-            ambient: crate::ambient::AmbientListeningRegistry::default(),
+            ambient: crate::ambient_registry::AmbientListeningRegistry::default(),
             ambient_data_dir: None,
-            proactivity: crate::ambient::AmbientProactivityRegistry::default(),
+            proactivity: crate::ambient_registry::AmbientProactivityRegistry::default(),
             workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
             voice_commands: Arc::new(
                 crate::ipc_bridge_ambient_proposals::VoiceCommandRegistry::new(),
@@ -1210,9 +1210,9 @@ impl IpcBridge {
             revision_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             analysis_kernels: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-            ambient: crate::ambient::AmbientListeningRegistry::default(),
+            ambient: crate::ambient_registry::AmbientListeningRegistry::default(),
             ambient_data_dir: None,
-            proactivity: crate::ambient::AmbientProactivityRegistry::default(),
+            proactivity: crate::ambient_registry::AmbientProactivityRegistry::default(),
             workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
             voice_commands: Arc::new(
                 crate::ipc_bridge_ambient_proposals::VoiceCommandRegistry::new(),
@@ -1236,7 +1236,7 @@ impl IpcBridge {
     }
 
     /// Разделяемый реестр состояния слушания.
-    pub fn ambient(&self) -> crate::ambient::AmbientListeningRegistry {
+    pub fn ambient(&self) -> crate::ambient_registry::AmbientListeningRegistry {
         self.ambient.clone()
     }
 
@@ -1247,7 +1247,10 @@ impl IpcBridge {
 
     /// Подключает готовый реестр: `main.rs` создаёт его до моста, чтобы
     /// endpoint листенера и мост говорили об одном и том же состоянии.
-    pub fn with_ambient(mut self, ambient: crate::ambient::AmbientListeningRegistry) -> Self {
+    pub fn with_ambient(
+        mut self,
+        ambient: crate::ambient_registry::AmbientListeningRegistry,
+    ) -> Self {
         self.ambient = ambient;
         self
     }
@@ -1274,7 +1277,7 @@ impl IpcBridge {
     }
 
     /// Разделяемый реестр проактивности.
-    pub fn proactivity(&self) -> crate::ambient::AmbientProactivityRegistry {
+    pub fn proactivity(&self) -> crate::ambient_registry::AmbientProactivityRegistry {
         self.proactivity.clone()
     }
 
@@ -1282,7 +1285,7 @@ impl IpcBridge {
     /// агента и до моста, чтобы обе стороны считали один и тот же потолок.
     pub fn with_proactivity(
         mut self,
-        proactivity: crate::ambient::AmbientProactivityRegistry,
+        proactivity: crate::ambient_registry::AmbientProactivityRegistry,
     ) -> Self {
         self.proactivity = proactivity;
         self
@@ -1298,7 +1301,7 @@ impl IpcBridge {
     pub(crate) fn ambient_data_dir(&self) -> std::path::PathBuf {
         self.ambient_data_dir
             .clone()
-            .unwrap_or_else(crate::ambient::data_dir)
+            .unwrap_or_else(crate::ambient_policy_store::data_dir)
     }
 
     /// Пишет ambient-событие в durable journal и будит push к оболочке.

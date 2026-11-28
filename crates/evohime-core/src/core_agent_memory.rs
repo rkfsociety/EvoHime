@@ -2861,17 +2861,19 @@ impl ToolAgent {
         );
 
         let proposal_id = uuid::Uuid::new_v4().to_string();
-        let record = crate::ambient::proposal_record(crate::ambient::ProposalRecordInput {
-            proposal_id: &proposal_id,
-            proposal_key: &proposal_key,
-            mute_key: &mute_key,
-            kind,
-            subject_key: &subject_key,
-            subject: &candidate.canonical_subject,
-            title: &candidate.statement,
-            source_episode_id: Some(episode_id),
-            now_ms,
-        });
+        let record = evohime_local_storage::ambient_store::proposal_record(
+            evohime_local_storage::ambient_store::ProposalRecordInput {
+                proposal_id: &proposal_id,
+                proposal_key: &proposal_key,
+                mute_key: &mute_key,
+                kind,
+                subject_key: &subject_key,
+                subject: &candidate.canonical_subject,
+                title: &candidate.statement,
+                source_episode_id: Some(episode_id),
+                now_ms,
+            },
+        );
         match journal.record_ambient_proposal(&record).await {
             Ok(ProposalInsert::Created) => {
                 // Счётчик поднимается только после появления карточки:

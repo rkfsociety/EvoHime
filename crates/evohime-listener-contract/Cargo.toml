@@ -5,6 +5,7 @@ publish = false
 edition = "2021"
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 serde = { workspace = true }
 sha2 = "0.11"
 

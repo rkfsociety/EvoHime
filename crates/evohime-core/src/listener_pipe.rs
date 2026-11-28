@@ -6,12 +6,10 @@
 //! journal: состояние слушания имеет ровно один источник истины, и это не
 //! Electron, а `AmbientListeningRegistry`.
 
-use crate::{
-    ambient::{AmbientDeviceInfo, AmbientUtteranceInput, ListenerControl},
-    IpcBridge, StructuredLogger,
-};
+use crate::{core_journal_ambient::AmbientUtteranceInput, IpcBridge, StructuredLogger};
 use evohime_listener_contract::{
-    AmbientLogEvent, EngineStatus, EngineVersion, EpisodeId, ListeningReason, ListeningState,
+    AmbientDeviceInfo, AmbientLogEvent, EngineStatus, EngineVersion, EpisodeId, ListenerControl,
+    ListeningReason, ListeningState,
 };
 use evohime_listener_ipc::{envelope, generated, read_frame, write_frame};
 use std::sync::Arc;
@@ -203,9 +201,9 @@ pub async fn run_windows_listener_pipe(
         if verifier.verify(&request, now_ms()).is_err() {
             continue;
         }
-        let data_dir = crate::ambient::data_dir();
-        let ambient_policy = crate::ambient::load_policy(&data_dir);
-        let control = crate::ambient::load_control(&data_dir);
+        let data_dir = crate::ambient_policy_store::data_dir();
+        let ambient_policy = crate::ambient_policy_store::load_policy(&data_dir);
+        let control = crate::ambient_policy_store::load_control(&data_dir);
         write_frame(
             &mut server,
             &envelope(generated::envelope::Payload::Policy(policy_update(
@@ -306,7 +304,7 @@ pub async fn run_windows_listener_pipe(
                             .await;
                         }
                         Some(generated::envelope::Payload::Utterance(utterance)) => {
-                            let policy = crate::ambient::load_policy(&data_dir);
+                            let policy = crate::ambient_policy_store::load_policy(&data_dir);
                             let journal = bridge.journal();
                             // Разбор команды идёт до сохранения: дальше по
                             // конвейеру текст уходит в хранилище по значению,
@@ -462,7 +460,7 @@ async fn close_episode(bridge: &IpcBridge, episode_id: &str, now_ms: u64) {
 /// Собирает `PolicyUpdate` из политики 04.1 и намерения пользователя.
 fn policy_update(
     policy: &evohime_listener_contract::AmbientPolicy,
-    control: &crate::ambient::AmbientControl,
+    control: &evohime_listener_contract::AmbientControl,
 ) -> generated::PolicyUpdate {
     generated::PolicyUpdate {
         paused: policy.paused,

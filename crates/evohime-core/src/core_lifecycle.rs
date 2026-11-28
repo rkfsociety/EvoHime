@@ -117,7 +117,7 @@ pub fn spawn_ambient_retention(journal: EventJournal) -> tokio::task::JoinHandle
                 .unwrap_or_default();
             let _ = journal.purge_ambient(now_ms).await;
             tokio::time::sleep(std::time::Duration::from_secs(
-                crate::ambient::PURGE_INTERVAL_SECONDS,
+                evohime_listener_contract::PURGE_INTERVAL_SECONDS,
             ))
             .await;
         }

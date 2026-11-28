@@ -900,6 +900,7 @@ dependencies = [
  "evohime-local-storage",
  "evohime-model-gateway",
  "evohime-permissions",
+ "evohime-tool-runtime",
  "serde",
  "serde_json",
  "sha2",
@@ -987,6 +988,7 @@ dependencies = [
 name = "evohime-listener-contract"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "serde",
  "serde_json",
  "sha2",
@@ -1025,12 +1027,14 @@ name = "evohime-media-voice"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
+ "evohime-model-gateway",
  "evohime-service-contract",
  "hex",
  "serde",
  "serde_json",
  "sha2",
  "thiserror 2.0.21",
+ "tokio",
  "windows",
 ]
 
