@@ -10,6 +10,10 @@ path = "src/main.rs"
 
 [dependencies]
 evohime-core = { path = "../evohime-core" }
+evohime-desktop-ipc = { path = "../desktop-ipc" }
+evohime-local-storage = { path = "../evohime-local-storage" }
+evohime-model-gateway = { path = "../model-gateway" }
+evohime-permissions = { path = "../permissions" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.11"

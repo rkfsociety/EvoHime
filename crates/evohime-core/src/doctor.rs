@@ -6,19 +6,28 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Maximum checks accepted in one doctor report.
 pub const MAX_CHECKS: usize = 16;
+/// Maximum characters for a check id, summary, or action.
 pub const MAX_TEXT_CHARS: usize = 256;
+/// Maximum characters for the optional bounded check details field.
 pub const MAX_DETAILS_CHARS: usize = 1_024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+/// Severity of one doctor check outcome.
 pub enum CheckStatus {
+    /// The probe is healthy; no action is needed.
     Ok,
+    /// The probe works, but with a limitation worth attention.
     Warn,
+    /// The probe failed and likely needs user action.
     Fail,
+    /// The probe could not run or is intentionally unavailable.
     Blocked,
 }
 
+/// One bounded, actionable diagnostic entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DoctorCheck {
     pub id: String,
@@ -28,6 +37,7 @@ pub struct DoctorCheck {
     pub details: Option<String>,
 }
 
+/// Bounded doctor report assembled from probe facts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DoctorReport {
     pub contract_version: u16,
@@ -36,9 +46,13 @@ pub struct DoctorReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Bounded contract violations rejected while assembling a report.
 pub enum DoctorError {
+    /// More checks were supplied than the report allows.
     TooManyChecks,
+    /// A text field exceeded its documented character bound.
     TextTooLong(&'static str),
+    /// A probe value violated its documented invariant.
     InvalidProbe(&'static str),
 }
 
@@ -49,11 +63,14 @@ pub enum DoctorError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum DetailLevel {
+    /// Include only id, status, summary, and action per check.
     #[default]
     Summary,
+    /// Also include the bounded, already-redacted `details` field.
     Detailed,
 }
 
+/// Raw probe facts collected by a Core adapter before report assembly.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoctorSnapshot {
     pub storage: StorageProbe,
@@ -66,6 +83,7 @@ pub struct DoctorSnapshot {
     pub codebase: CodebaseProbe,
 }
 
+/// SQLite data-directory health facts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageProbe {
     pub path_label: String,
@@ -75,6 +93,7 @@ pub struct StorageProbe {
     pub expected_schema_version: u32,
 }
 
+/// Named-pipe reachability and protocol negotiation facts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PipeProbe {
     pub pipe_label: String,
@@ -94,6 +113,7 @@ pub struct ProviderProbe {
     pub metadata_valid: bool,
 }
 
+/// Supervisor recovery state facts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecoveryProbe {
     pub state: String,
@@ -102,6 +122,7 @@ pub struct RecoveryProbe {
     pub resumable_runs: u32,
 }
 
+/// Workspace permission and protected-path facts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionsProbe {
     pub workspace_readable: bool,
@@ -156,6 +177,7 @@ impl Default for CodebaseProbe {
 }
 
 impl DoctorReport {
+    /// Builds a detailed report from collected probe facts.
     pub fn from_snapshot(snapshot: &DoctorSnapshot) -> Result<Self, DoctorError> {
         Self::from_snapshot_with_detail(snapshot, DetailLevel::Detailed)
     }
@@ -187,6 +209,7 @@ impl DoctorReport {
         Self::new(checks)
     }
 
+    /// Validates and bounds the supplied checks into a report.
     pub fn new(checks: Vec<DoctorCheck>) -> Result<Self, DoctorError> {
         if checks.len() > MAX_CHECKS {
             return Err(DoctorError::TooManyChecks);
@@ -206,12 +229,14 @@ impl DoctorReport {
         })
     }
 
+    /// Reports whether any check needs user attention.
     pub fn is_actionable(&self) -> bool {
         self.checks
             .iter()
             .any(|check| !matches!(check.status, CheckStatus::Ok))
     }
 
+    /// Serializes the report to bounded JSON.
     pub fn to_bounded_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
     }

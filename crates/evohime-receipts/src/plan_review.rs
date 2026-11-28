@@ -56,7 +56,7 @@ pub struct ContextDocument {
 }
 
 /// Bounded request for multi-model review of one or more plan files.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewRequest {
     /// Stable identifier for this review operation.
     pub review_id: String,
@@ -107,7 +107,7 @@ pub struct ReviewResult {
 }
 
 /// Progress event emitted while reviewers and synthesis are running.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewProgress {
     /// Review operation identifier.
     pub review_id: String,
@@ -392,7 +392,7 @@ pub async fn run_review_with_progress(
 }
 
 /// Request to revise a reviewed plan while preserving linked-plan context.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RevisionRequest {
     /// Stable identifier for this revision operation.
     pub revision_id: String,
@@ -433,7 +433,7 @@ pub struct RevisionResult {
 }
 
 /// Progress event for a single-model plan revision.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RevisionProgress {
     /// Revision operation identifier.
     pub revision_id: String,

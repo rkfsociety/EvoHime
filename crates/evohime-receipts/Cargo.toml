@@ -19,8 +19,9 @@ uuid = { version = "1", features = ["v7"] }
 zeroize = "1"
 rusqlite = { version = "0.43", features = ["bundled"] }
 evohime-model-gateway = { path = "../model-gateway" }
+evohime-service-contract = { path = "../evohime-service-contract" }
 futures-util = "0.3"
-tokio = { workspace = true, features = ["macros"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 
 [target.'cfg(windows)'.dependencies]

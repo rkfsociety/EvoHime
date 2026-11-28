@@ -74,7 +74,7 @@ struct RegistryState {
 
 /// Canonical list of isolated service module executables discovered beside
 /// `evohime-core.exe`.
-pub const SERVICE_MODULE_EXECUTABLES: [&str; 12] = [
+pub const SERVICE_MODULE_EXECUTABLES: [&str; 13] = [
     "evohime-evals.exe",
     "evohime-media-voice.exe",
     "evohime-research.exe",
@@ -87,7 +87,20 @@ pub const SERVICE_MODULE_EXECUTABLES: [&str; 12] = [
     "evohime-tools-exec.exe",
     "evohime-model-adapters.exe",
     "evohime-model-router.exe",
+    "evohime-verify.exe",
 ];
+
+/// Launch arguments passed to a service-module executable when Core spawns it
+/// as a child. Executables not listed here are started without arguments.
+pub const SERVICE_MODULE_LAUNCH_ARGS: &[(&str, &[&str])] = &[("evohime-verify.exe", &["--serve"])];
+
+/// Returns the launch arguments for `exe_name`, or an empty slice.
+pub fn service_module_launch_args(exe_name: &str) -> &'static [&'static str] {
+    SERVICE_MODULE_LAUNCH_ARGS
+        .iter()
+        .find(|(name, _)| *name == exe_name)
+        .map_or(&[], |(_, args)| args)
+}
 
 /// Thread-safe registry and invocation proxy for external service modules.
 #[derive(Clone, Default)]
@@ -106,15 +119,30 @@ pub struct ModuleRegistry {
 /// request spawns a new child and retries the handshake.
 pub struct StdioProcessTransport {
     executable: PathBuf,
-    process: Mutex<Option<Child>>,
+    launch_args: Vec<String>,
+    process: Arc<Mutex<Option<Child>>>,
+}
+
+impl Clone for StdioProcessTransport {
+    fn clone(&self) -> Self {
+        Self {
+            executable: self.executable.clone(),
+            launch_args: self.launch_args.clone(),
+            process: Arc::clone(&self.process),
+        }
+    }
 }
 
 impl StdioProcessTransport {
     /// Creates a lazy process transport for `executable`.
-    pub fn new(executable: impl AsRef<Path>) -> Self {
+    ///
+    /// `launch_args` are passed to every spawned child (service executables
+    /// such as `evohime-verify.exe` select their serving mode through them).
+    pub fn new(executable: impl AsRef<Path>, launch_args: &[&str]) -> Self {
         Self {
             executable: executable.as_ref().to_path_buf(),
-            process: Mutex::new(None),
+            launch_args: launch_args.iter().map(|arg| (*arg).to_string()).collect(),
+            process: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -169,6 +197,7 @@ impl StdioProcessTransport {
             ))
         })?;
         let mut child = Command::new(&self.executable)
+            .args(&self.launch_args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -267,7 +296,18 @@ impl ServiceTransport for StdioProcessTransport {
         &self,
         request: ServiceRequest,
     ) -> ServiceFuture<'_, Result<ServiceResponse, ServiceContractError>> {
-        Box::pin(async move { self.send_blocking(request) })
+        // Blocking process I/O must not stall a Core worker thread: long
+        // capabilities (plan review, grounded research) run for minutes.
+        let this = self.clone();
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || this.send_blocking(request))
+                .await
+                .map_err(|error| {
+                    ServiceContractError::unavailable(format!(
+                        "service module task failed: {error}"
+                    ))
+                })?
+        })
     }
 }
 
@@ -287,8 +327,10 @@ impl ModuleRegistry {
             if !exe_path.is_file() {
                 continue;
             }
-            let transport: Arc<dyn ServiceTransport> =
-                Arc::new(StdioProcessTransport::new(&exe_path));
+            let transport: Arc<dyn ServiceTransport> = Arc::new(StdioProcessTransport::new(
+                exe_path,
+                service_module_launch_args(exe_name),
+            ));
             let Ok(ServiceResponse::Capabilities(descriptor)) =
                 transport.send(ServiceRequest::DescribeCapabilities).await
             else {

@@ -11,29 +11,41 @@ use std::collections::{BTreeMap, BTreeSet};
 /// callers (e.g. `workflow_execution`) that historically imported the
 /// planner's own names instead of `crate::workflow` directly.
 pub type PlanGraph = WorkflowGraph;
+/// Alias for `crate::workflow::WorkflowNode`, kept for planner callers.
 pub type PlanNode = WorkflowNode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Approval state observed for one node.
 pub enum ApprovalDecision {
+    /// The node's policy does not require approval.
     NotRequested,
+    /// Approval has been requested but not yet decided.
     Pending,
+    /// Approval was granted.
     Approved,
+    /// Approval was denied.
     Denied,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Cancellation state observed for one node.
 pub enum CancellationDecision {
+    /// The node is not cancelled.
     NotCancelled,
+    /// The node was cancelled.
     Cancelled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Caller-supplied decision inputs for planning one node.
 pub struct NodeDecision {
     /// Номер попытки, которую планируется выполнить: первая попытка равна 1.
     pub retry_attempt: u32,
     /// Уже затраченное время, используемое только для детерминированной проверки deadline.
     pub elapsed_ms: u64,
+    /// Observed cancellation state of the node.
     pub cancellation: CancellationDecision,
+    /// Observed approval state of the node.
     pub approval: ApprovalDecision,
 }
 
@@ -49,16 +61,24 @@ impl Default for NodeDecision {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What the planner decided for one node.
 pub enum StepDecision {
+    /// Run the node now.
     Execute,
+    /// Retry the node on the given attempt number.
     Retry { attempt: u32 },
+    /// Wait for an approval decision.
     AwaitApproval,
+    /// Approval was denied; the node will not run.
     Denied,
+    /// The node was cancelled.
     Cancelled,
+    /// The node exceeded its deadline.
     TimedOut,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One planned step with its execution policy and decision.
 pub struct PlannedStep {
     pub ordinal: usize,
     pub node_id: String,
@@ -68,6 +88,7 @@ pub struct PlannedStep {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Deterministic execution plan for a validated workflow graph.
 pub struct ExecutionPlan {
     pub graph_id: String,
     pub version: u64,
@@ -75,9 +96,13 @@ pub struct ExecutionPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Planner failures.
 pub enum RunnerError {
+    /// The graph failed contract validation.
     InvalidGraph(Vec<ValidationError>),
+    /// A decision referenced a node absent from the graph.
     UnknownDecision(String),
+    /// A retry attempt exceeded the node policy's maximum.
     InvalidRetryAttempt {
         node_id: String,
         actual: u32,

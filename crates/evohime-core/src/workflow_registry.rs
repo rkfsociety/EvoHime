@@ -35,8 +35,11 @@ pub const MCP_TOOL_NAME: &str = "mcp_call";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum McpTransport {
+    /// Remote JSON-RPC over HTTPS.
     RemoteJsonRpc,
+    /// Local JSON-RPC over the server's stdio streams.
     Stdio,
+    /// JSON-RPC over a WebSocket endpoint.
     WebSocket,
 }
 
@@ -106,6 +109,7 @@ impl ContextSourceKind {
     }
 }
 
+/// Registered bounded context provider available to workflow nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextProviderEntry {
     pub provider_id: String,
@@ -140,6 +144,7 @@ pub struct BlockFixture {
     pub output_json: String,
 }
 
+/// Registered workflow block: identity, ports, fixtures, and action kind.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockDescriptor {
     pub block_id: String,
@@ -197,7 +202,9 @@ impl ParentCapabilities {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Failures raised while binding workflow nodes to registered blocks.
 pub enum BindingError {
+    /// The node references a block id absent from the registry.
     UnknownBlock {
         node_id: String,
         block_id: String,

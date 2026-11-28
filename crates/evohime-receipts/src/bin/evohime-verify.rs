@@ -22,6 +22,9 @@ struct Args {
 }
 
 fn main() -> ExitCode {
+    if env::args().nth(1).as_deref() == Some("--serve") {
+        return serve_verifier_service();
+    }
     if env::args().nth(1).as_deref() == Some("provenance") {
         return verify_provenance_bundle();
     }
@@ -235,6 +238,20 @@ fn main() -> ExitCode {
     };
     emit(&args.format, name, verification.code.unwrap_or(""));
     ExitCode::from(code)
+}
+
+/// Runs the read-only verifier as a `evohime-service-contract` service over
+/// stdio. In this mode the process executes plan reviews and revisions for
+/// Core; the receipt-export checks below stay CLI-only.
+fn serve_verifier_service() -> ExitCode {
+    let service = evohime_receipts::verifier_service::VerifierService::new();
+    match evohime_service_contract::serve_stdio(&service) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("evohime-verify --serve exited with error: {err}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Минимальный offline boundary для `evohime-provenance-export-v1`: verifier

@@ -790,8 +790,6 @@ impl IpcBridge {
         let gateway_config = self
             .gateway_config_snapshot()
             .ok_or_else(|| FrameError::Io("provider is not configured".into()))?;
-        let gateway = evohime_model_gateway::ModelGateway::from_config(&gateway_config)
-            .map_err(|error| FrameError::Io(error.to_string()))?;
         let route = gateway_config
             .routes
             .get(&gateway_config.default_route)
@@ -824,65 +822,75 @@ impl IpcBridge {
         let results = Arc::clone(&self.review_results);
         let journal = self.journal.clone();
         let coordinator = self.coordinator.clone();
+        let registry = self.module_registry.clone();
+        let default_route = gateway_config.default_route.clone();
         let task_review_id = review_id.clone();
-        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
-        let progress = Arc::new(move |progress: crate::plan_review::ReviewProgress| {
-            let _ = progress_tx.send(progress);
-        });
-        let review_event_id = task_review_id.clone();
         tokio::spawn(async move {
             let _background_permit = background_permit;
-            let progress_journal = journal.clone();
-            let progress_coordinator = coordinator.clone();
-            let progress_writer = async move {
-                while let Some(progress) = progress_rx.recv().await {
-                    publish_review_event(
-                        &progress_coordinator,
-                        &progress_journal,
-                        CoreEvent::ReviewProgress {
-                            review_id: progress.review_id,
-                            stage: progress.stage,
-                            status: progress.status,
-                            model: progress.model,
-                            completed: progress.completed,
-                            total: progress.total,
-                        },
-                    )
-                    .await;
-                }
-            };
-            let review = async move {
-                match crate::plan_review::run_review_with_progress(
-                    Arc::new(gateway),
-                    review,
-                    cancellation,
-                    progress,
+            let payload = serde_json::json!({ "review": review, "route": default_route });
+            let outcome = registry
+                .invoke_if_ready(
+                    format!("verifier-review-{task_review_id}"),
+                    "verifier.plan_review_run",
+                    payload,
+                    None,
+                    |_| Ok(()),
                 )
-                .await
-                {
-                    Ok(result) => {
-                        let payload = serde_json::to_string(&result).unwrap_or_default();
-                        results
-                            .write()
-                            .await
-                            .insert(result.review_id.clone(), result.clone());
-                        CoreEvent::TaskCompleted {
-                            task_id: result.review_id,
-                            final_message: payload,
-                        }
-                    }
-                    Err(crate::plan_review::ReviewError::Cancelled) => CoreEvent::TaskStopped {
-                        task_id: review_event_id.clone(),
+                .await;
+            let event = if cancellation.is_cancelled() {
+                CoreEvent::TaskStopped {
+                    task_id: task_review_id.clone(),
+                }
+            } else {
+                match outcome {
+                    None => CoreEvent::TaskFailed {
+                        task_id: task_review_id.clone(),
+                        error: "service_module_unavailable:verifier.plan_review_run".into(),
                     },
-                    Err(error) => CoreEvent::TaskFailed {
-                        task_id: review_event_id.clone(),
+                    Some(Err(error)) => CoreEvent::TaskFailed {
+                        task_id: task_review_id.clone(),
                         error: error.to_string(),
                     },
+                    Some(Ok(value)) => {
+                        match serde_json::from_value::<
+                            evohime_receipts::verifier_service::PlanReviewRunResponse,
+                        >(value)
+                        {
+                            Ok(response) => {
+                                for progress in response.progress {
+                                    publish_review_event(
+                                        &coordinator,
+                                        &journal,
+                                        CoreEvent::ReviewProgress {
+                                            review_id: progress.review_id,
+                                            stage: progress.stage,
+                                            status: progress.status,
+                                            model: progress.model,
+                                            completed: progress.completed,
+                                            total: progress.total,
+                                        },
+                                    )
+                                    .await;
+                                }
+                                let result = response.result;
+                                let payload = serde_json::to_string(&result).unwrap_or_default();
+                                results
+                                    .write()
+                                    .await
+                                    .insert(result.review_id.clone(), result.clone());
+                                CoreEvent::TaskCompleted {
+                                    task_id: result.review_id,
+                                    final_message: payload,
+                                }
+                            }
+                            Err(error) => CoreEvent::TaskFailed {
+                                task_id: task_review_id.clone(),
+                                error: error.to_string(),
+                            },
+                        }
+                    }
                 }
             };
-            // The outer task already owns the detached lifetime; join! keeps
-            // progress publication concurrent without a nested task.
-            let (event, _) = tokio::join!(review, progress_writer);
             let terminal_progress = match &event {
                 CoreEvent::TaskCompleted { .. } => Some(CoreEvent::ReviewProgress {
                     review_id: task_review_id.clone(),
@@ -968,8 +976,6 @@ impl IpcBridge {
         let gateway_config = self
             .gateway_config_snapshot()
             .ok_or_else(|| FrameError::Io("provider is not configured".into()))?;
-        let gateway = evohime_model_gateway::ModelGateway::from_config(&gateway_config)
-            .map_err(|error| FrameError::Io(error.to_string()))?;
         let route = gateway_config
             .routes
             .get(&gateway_config.default_route)
@@ -997,62 +1003,72 @@ impl IpcBridge {
         let results = Arc::clone(&self.revision_results);
         let journal = self.journal.clone();
         let coordinator = self.coordinator.clone();
+        let registry = self.module_registry.clone();
+        let default_route = gateway_config.default_route.clone();
         let task_revision_id = revision_id.clone();
-        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
-        let progress = Arc::new(move |progress: crate::plan_review::RevisionProgress| {
-            let _ = progress_tx.send(progress);
-        });
-        let revision_event_id = task_revision_id.clone();
         tokio::spawn(async move {
             let _background_permit = background_permit;
-            let progress_journal = journal.clone();
-            let progress_coordinator = coordinator.clone();
-            let progress_writer = async move {
-                while let Some(progress) = progress_rx.recv().await {
-                    publish_review_event(
-                        &progress_coordinator,
-                        &progress_journal,
-                        CoreEvent::RevisionProgress {
-                            revision_id: progress.revision_id,
-                            status: progress.status,
-                            model: progress.model,
-                        },
-                    )
-                    .await;
-                }
-            };
-            let revision = async move {
-                match crate::plan_review::run_revision(
-                    Arc::new(gateway),
-                    revision,
-                    cancellation,
-                    progress,
+            let payload = serde_json::json!({ "revision": revision, "route": default_route });
+            let outcome = registry
+                .invoke_if_ready(
+                    format!("verifier-revision-{task_revision_id}"),
+                    "verifier.plan_revision_run",
+                    payload,
+                    None,
+                    |_| Ok(()),
                 )
-                .await
-                {
-                    Ok(result) => {
-                        let payload = serde_json::to_string(&result).unwrap_or_default();
-                        results
-                            .lock()
-                            .await
-                            .insert(result.revision_id.clone(), result.clone());
-                        CoreEvent::TaskCompleted {
-                            task_id: result.revision_id,
-                            final_message: payload,
-                        }
-                    }
-                    Err(crate::plan_review::ReviewError::Cancelled) => CoreEvent::TaskStopped {
-                        task_id: revision_event_id.clone(),
+                .await;
+            let event = if cancellation.is_cancelled() {
+                CoreEvent::TaskStopped {
+                    task_id: task_revision_id.clone(),
+                }
+            } else {
+                match outcome {
+                    None => CoreEvent::TaskFailed {
+                        task_id: task_revision_id.clone(),
+                        error: "service_module_unavailable:verifier.plan_revision_run".into(),
                     },
-                    Err(error) => CoreEvent::TaskFailed {
-                        task_id: revision_event_id.clone(),
+                    Some(Err(error)) => CoreEvent::TaskFailed {
+                        task_id: task_revision_id.clone(),
                         error: error.to_string(),
                     },
+                    Some(Ok(value)) => {
+                        match serde_json::from_value::<
+                            evohime_receipts::verifier_service::PlanRevisionRunResponse,
+                        >(value)
+                        {
+                            Ok(response) => {
+                                for progress in response.progress {
+                                    publish_review_event(
+                                        &coordinator,
+                                        &journal,
+                                        CoreEvent::RevisionProgress {
+                                            revision_id: progress.revision_id,
+                                            status: progress.status,
+                                            model: progress.model,
+                                        },
+                                    )
+                                    .await;
+                                }
+                                let result = response.result;
+                                let payload = serde_json::to_string(&result).unwrap_or_default();
+                                results
+                                    .lock()
+                                    .await
+                                    .insert(result.revision_id.clone(), result.clone());
+                                CoreEvent::TaskCompleted {
+                                    task_id: result.revision_id,
+                                    final_message: payload,
+                                }
+                            }
+                            Err(error) => CoreEvent::TaskFailed {
+                                task_id: task_revision_id.clone(),
+                                error: error.to_string(),
+                            },
+                        }
+                    }
                 }
             };
-            // The outer task already owns the detached lifetime; join! keeps
-            // progress publication concurrent without a nested task.
-            let (event, _) = tokio::join!(revision, progress_writer);
             publish_review_event(&coordinator, &journal, event).await;
             tasks.lock().await.remove(&task_revision_id);
         });

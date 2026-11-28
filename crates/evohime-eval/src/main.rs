@@ -20,6 +20,10 @@ use evohime_core::agent_benchmark_matrix::{
     UnavailableBenchmarkExecutor,
 };
 
+/// Deterministic eval suite over real Core contracts.
+#[path = "evals.rs"]
+pub mod evals;
+
 const SCHEMA_VERSION: &str = "1.0";
 const MAX_CASE_BYTES: usize = 256 * 1024;
 const MAX_TRACE_BYTES: u64 = 1_048_576;
@@ -399,7 +403,7 @@ fn execute(fixture: &Fixture, mode: &str) -> Result<Verdict, String> {
         return Err("case обязан содержать assertions".into());
     }
     if mode == "deterministic" {
-        let summary = evohime_core::evals::run_all();
+        let summary = evals::run_all();
         if !summary.all_passed() {
             return Err(format!(
                 "Core deterministic eval: {}/{} passed",

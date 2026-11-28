@@ -178,10 +178,10 @@ pub(crate) mod continuation;
 pub(crate) mod conversation_event_log;
 pub(crate) mod conversation_workbench;
 pub(crate) mod conversational_workflow_composer;
-pub(crate) mod doctor;
+/// Core diagnostics report contract consumed by the doctor and eval surfaces.
+pub mod doctor;
 /// Defines the bounded typed boundary between EvaPulse and the Hive.
 pub use evohime_hive_contract::pulse_boundary as eva_pulse_boundary;
-pub mod evals;
 pub(crate) mod event_trigger_runtime;
 pub(crate) mod execution_backend_registry;
 pub mod execution_environment_profiles;
@@ -210,7 +210,8 @@ mod listener_pipe;
 pub mod local_model_performance_calibration;
 pub(crate) mod local_model_runtime_manager;
 pub(crate) mod memory_api;
-pub(crate) mod memory_domain;
+/// Bounded workspace memory contract exercised by the eval suite.
+pub mod memory_domain;
 pub(crate) use evohime_rag_memory::memory_extraction;
 pub(crate) mod memory_governance;
 pub mod memory_views_and_adaptive_recall;
@@ -274,10 +275,14 @@ pub mod workflow;
 pub(crate) mod workflow_adapters;
 pub(crate) mod workflow_execution;
 pub(crate) mod workflow_package;
-pub(crate) mod workflow_registry;
-pub(crate) mod workflow_runner;
-pub(crate) mod workflow_runtime;
-pub(crate) mod workflow_templates;
+/// Bounded workflow block registry contract exercised by the eval suite.
+pub mod workflow_registry;
+/// Deterministic workflow execution planner exercised by the eval suite.
+pub mod workflow_runner;
+/// Workflow runtime stepping primitives exercised by the eval suite.
+pub mod workflow_runtime;
+/// Bounded built-in workflow templates exercised by the eval suite.
+pub mod workflow_templates;
 /// Models workspace operations available to the Core.
 pub mod workspace;
 pub(crate) mod workspace_rag;

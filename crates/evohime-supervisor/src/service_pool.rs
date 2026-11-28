@@ -52,7 +52,7 @@ pub struct ServicePool {
 /// Canonical image names of the isolated service-module executables that Core
 /// spawns as its own children and that the supervisor is allowed to observe
 /// and hot-restart. Nothing outside this list may ever be terminated.
-const SERVICE_MODULE_EXECUTABLES: [&str; 12] = [
+const SERVICE_MODULE_EXECUTABLES: [&str; 13] = [
     "evohime-evals.exe",
     "evohime-media-voice.exe",
     "evohime-research.exe",
@@ -65,9 +65,10 @@ const SERVICE_MODULE_EXECUTABLES: [&str; 12] = [
     "evohime-tools-exec.exe",
     "evohime-model-adapters.exe",
     "evohime-model-router.exe",
+    "evohime-verify.exe",
 ];
 
-/// Returns `true` only for the twelve isolated service-module image names
+/// Returns `true` only for the isolated service-module image names
 /// (case-insensitive, exact match including the `.exe` suffix). Everything
 /// else — including `EvoHime.exe`, `evohime-core.exe`, `evohime-supervisor.exe`,
 /// `evohime-transaction.exe`, `eva.exe` and any renamed or suffixed copy — is
@@ -260,6 +261,7 @@ mod tests {
             "evohime-tools-exec.exe",
             "evohime-model-adapters.exe",
             "evohime-model-router.exe",
+            "evohime-verify.exe",
         ] {
             assert!(is_service_module_executable(name), "{name} must match");
             assert!(

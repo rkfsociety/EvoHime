@@ -126,6 +126,7 @@ pub struct NodeInvocation<'a> {
     pub registry: &'a WorkflowRegistry,
 }
 
+/// Future returned by [`NodeAdapter::execute`] for one node invocation.
 pub type NodeFuture<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<NodeSuccess, NodeError>> + Send + 'a>,
 >;
@@ -133,25 +134,29 @@ pub type NodeFuture<'a> = std::pin::Pin<
 /// Выполняет реальную работу узла: child request, tool call, `mcp_call`,
 /// контекстный провайдер или deterministic-операция Core.
 pub trait NodeAdapter: Send + Sync {
+    /// Executes one node invocation and reports success or a node error.
     fn execute<'a>(&'a self, invocation: NodeInvocation<'a>) -> NodeFuture<'a>;
 }
 
 /// Результат запроса подтверждения.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApprovalOutcome {
+    /// The approval was granted.
     Approved,
+    /// The approval was denied.
     Denied,
     /// Решение ещё не принято. `approval_id` — тот же идентификатор, который
     /// разрешает существующая команда `ResolveApproval`.
-    Pending {
-        approval_id: String,
-    },
+    Pending { approval_id: String },
 }
 
+/// Future returned by [`WorkflowApprovalGate::decide`] for one node.
 pub type ApprovalFuture<'a> =
     std::pin::Pin<Box<dyn std::future::Future<Output = ApprovalOutcome> + Send + 'a>>;
 
+/// Source of approval decisions for workflow nodes.
 pub trait WorkflowApprovalGate: Send + Sync {
+    /// Resolves the approval outcome for one node of a run.
     fn decide<'a>(&'a self, run_id: &'a str, node: &'a WorkflowNode) -> ApprovalFuture<'a>;
 }
 
@@ -324,17 +329,20 @@ pub struct WorkflowRunProjection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Failures raised by the workflow runtime.
 pub enum RuntimeError {
+    /// The referenced run does not exist.
     UnknownRun(String),
+    /// The graph failed contract validation.
     InvalidGraph(String),
     /// Snapshot графа в базе не совпадает со своим hash: запись повреждена
     /// или подменена, запускать по ней нельзя.
-    GraphHashMismatch {
-        expected: String,
-        actual: String,
-    },
+    GraphHashMismatch { expected: String, actual: String },
+    /// The node's capability profile was rejected by policy.
     CapabilityRejected(Vec<String>),
+    /// The run or subsystem is busy and cannot accept work now.
     Busy(String),
+    /// Persistence-layer failure.
     Storage(String),
 }
 
@@ -560,6 +568,7 @@ impl EventJournal {
 // Runtime.
 // ---------------------------------------------------------------------------
 
+/// Bounded runtime that dispatches validated workflow graphs.
 #[derive(Clone)]
 pub struct WorkflowRuntime {
     journal: EventJournal,
@@ -581,6 +590,7 @@ pub struct WorkflowRuntimeMetrics {
     pub max_ready_nodes: AtomicU64,
 }
 
+/// Point-in-time copy of the bounded runtime health counters.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WorkflowRuntimeMetricsSnapshot {
     pub admissions_total: u64,

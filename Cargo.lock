@@ -896,6 +896,10 @@ name = "evohime-eval"
 version = "0.1.0"
 dependencies = [
  "evohime-core",
+ "evohime-desktop-ipc",
+ "evohime-local-storage",
+ "evohime-model-gateway",
+ "evohime-permissions",
  "serde",
  "serde_json",
  "sha2",
@@ -1119,6 +1123,7 @@ dependencies = [
  "chrono",
  "evohime-model-gateway",
  "evohime-permissions",
+ "evohime-service-contract",
  "futures-util",
  "hex",
  "ring",

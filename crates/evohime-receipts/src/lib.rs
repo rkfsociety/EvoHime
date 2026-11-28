@@ -43,6 +43,8 @@ mod runtime_signing;
 mod runtime_transaction;
 /// Verification evidence ledger and readiness evaluation contracts.
 pub mod verification_evidence_ledger;
+/// Plan-review execution service for `evohime-verify.exe --serve`.
+pub mod verifier_service;
 
 /// Schema version accepted by the canonical receipt payload validator.
 pub const RECEIPT_VERSION: u64 = 1;

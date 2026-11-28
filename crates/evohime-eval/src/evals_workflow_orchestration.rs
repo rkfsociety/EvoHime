@@ -1,15 +1,15 @@
 use super::*;
 
-use crate::workflow::{
+use evohime_core::workflow::{
     BatchPolicy, ChildActionProfile, ChildDelegationPolicy, ConcurrencyClass,
     ContextProviderProfile, FailurePolicy, JoinMode, McpActionProfile, NodeAcceptance, NodeBudget,
     NodeType, WorkflowBudget, WORKFLOW_CONTRACT_VERSION,
 };
-use crate::workflow_registry::{
+use evohime_core::workflow_registry::{
     BindingError, ContextProviderEntry, ContextSourceKind, McpServerEntry, McpTransport,
     ParentCapabilities, WorkflowRegistry,
 };
-use crate::workflow_runtime::{
+use evohime_core::workflow_runtime::{
     check_acceptance, collect_inputs, is_retryable, ready_nodes, select_batch, terminal_state,
     NodeError, NodeSuccess,
 };
@@ -443,7 +443,7 @@ pub fn context_provider_freshness_and_scope_are_enforced() -> Result<(), String>
         source: ContextSourceKind::WorkspaceKnowledge,
         max_items: 4,
         max_age_ms: 60_000,
-        evidence_schema: crate::workflow_registry::EVIDENCE_SCHEMA.into(),
+        evidence_schema: evohime_core::workflow_registry::EVIDENCE_SCHEMA.into(),
     });
     let node = |items: u32, age: u64| {
         WorkflowNode::new(
@@ -517,10 +517,10 @@ pub fn context_provider_freshness_and_scope_are_enforced() -> Result<(), String>
 pub fn escalation_and_unbounded_shapes_are_rejected_before_any_effect() -> Result<(), String> {
     let mut looping = transform("loop");
     looping.node_type = NodeType::Loop {
-        max_iterations: crate::workflow::MAX_LOOP_ITERATIONS + 1,
+        max_iterations: evohime_core::workflow::MAX_LOOP_ITERATIONS + 1,
     };
     looping.batch = Some(BatchPolicy {
-        max_items: crate::workflow::MAX_BATCH_ITEMS + 1,
+        max_items: evohime_core::workflow::MAX_BATCH_ITEMS + 1,
     });
     let errors = graph(vec![looping], vec![], "loop")
         .validate()
@@ -558,7 +558,7 @@ pub fn escalation_and_unbounded_shapes_are_rejected_before_any_effect() -> Resul
                     max_tool_calls: 10_000,
                 },
                 max_revisions: 1,
-                delegation: crate::workflow::ChildDelegationPolicy::default(),
+                delegation: evohime_core::workflow::ChildDelegationPolicy::default(),
             },
         },
         policy(),
@@ -630,8 +630,8 @@ pub fn an_unconnected_failure_blocks_downstream_but_a_declared_branch_continues(
 /// 14. Запущенный snapshot не меняется вместе с библиотекой шаблонов, а
 ///     неподдержанное расписание называется явно.
 pub fn a_started_snapshot_ignores_library_changes() -> Result<(), String> {
-    let template =
-        crate::workflow_templates::template("repository-research").ok_or("template must exist")?;
+    let template = evohime_core::workflow_templates::template("repository-research")
+        .ok_or("template must exist")?;
     let inputs = BTreeMap::from([("question".to_string(), "вопрос".to_string())]);
     let snapshot = template
         .instantiate(&inputs)
@@ -652,11 +652,11 @@ pub fn a_started_snapshot_ignores_library_changes() -> Result<(), String> {
         "изменение метаданных шаблона не должно менять граф запуска",
     )?;
 
-    let approval_bearing = crate::workflow_templates::template("plan-implement-review")
+    let approval_bearing = evohime_core::workflow_templates::template("plan-implement-review")
         .ok_or("template must exist")?;
     require(
         approval_bearing.schedule_eligibility
-            == crate::workflow_templates::ScheduleEligibility::Unavailable,
+            == evohime_core::workflow_templates::ScheduleEligibility::Unavailable,
         "шаблон с подтверждением не может уходить в расписание молча",
     )
 }

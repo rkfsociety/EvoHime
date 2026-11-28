@@ -19,20 +19,20 @@
 
 use std::collections::BTreeMap;
 
-use crate::capability_registry::{
+use evohime_core::capability_registry::{
     match_capabilities, CapabilityManifest, InstallPolicy, InstallSource, MatchQuery, RiskClass,
     RoleRef, SkillRef,
 };
-use crate::doctor::{DoctorReport, ProviderProbe};
-use crate::memory_domain::{
+use evohime_core::doctor::{DoctorReport, ProviderProbe};
+use evohime_core::memory_domain::{
     CreateMemory, ListMemory, MemoryDomain, MemoryScope, PrivacyLabel, ProvenanceRef,
 };
-use crate::workflow::{
+use evohime_core::workflow::{
     ApprovalPolicy, CancellationPolicy, ExecutionPolicy, NodeType, Port, PortType, RetryPolicy,
     ToolActionProfile, ValidationError, WorkflowBudget, WorkflowEdge, WorkflowGraph, WorkflowNode,
     WORKFLOW_CONTRACT_VERSION,
 };
-use crate::workflow_runner::{
+use evohime_core::workflow_runner::{
     plan_workflow, ApprovalDecision, CancellationDecision, NodeDecision, StepDecision,
 };
 
@@ -42,6 +42,18 @@ use evohime_model_gateway::routing_policy::{
 };
 use evohime_permissions::{glob_match, PolicyRule, PolicyRuleSet};
 use evohime_permissions::{Permission, PermissionMode};
+
+/// Hex-encodes the SHA-256 digest of `bytes` for eval fixtures.
+fn evals_sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
 
 /// The ten categories named in the master plan's Stage 7 eval checklist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -417,8 +429,11 @@ mod skill_selection {
         risk: RiskClass,
     ) -> CapabilityManifest {
         let content_hash = "0123456789abcdef0123456789abcdef".to_string();
-        let signature =
-            crate::capability_registry::test_sign_with_trusted_key(name, "1.0.0", &content_hash);
+        let signature = evohime_core::capability_registry::test_sign_with_trusted_key(
+            name,
+            "1.0.0",
+            &content_hash,
+        );
         CapabilityManifest {
             name: name.into(),
             version: "1.0.0".into(),
@@ -1197,7 +1212,7 @@ mod citations {
                 "retrieved_at_ms": 1_700_000_000_000u64,
             },
             "excerpt": excerpt,
-            "excerpt_sha256": crate::sha256_hex(excerpt.as_bytes()),
+            "excerpt_sha256": evals_sha256_hex(excerpt.as_bytes()),
             "captured_at_ms": 2_000_000u64,
             "ttl_ms": 60_000u64,
         })
@@ -1315,7 +1330,7 @@ mod memory_retrieval {
         seed(&mut domain, "note-b", scope_b, "rollout plan beta")?;
 
         let hits = domain
-            .search(crate::memory_domain::SearchMemory {
+            .search(evohime_core::memory_domain::SearchMemory {
                 query: "rollout plan".into(),
                 scope: Some(
                     MemoryScope::workspace("proj-1", "workspace-b").map_err(|e| e.to_string())?,
@@ -1470,7 +1485,9 @@ mod routing {
 
 mod ui_truthfulness {
     use super::*;
-    use crate::doctor::{DoctorSnapshot, PermissionsProbe, PipeProbe, RecoveryProbe, StorageProbe};
+    use evohime_core::doctor::{
+        DoctorSnapshot, PermissionsProbe, PipeProbe, RecoveryProbe, StorageProbe,
+    };
 
     fn healthy_snapshot() -> DoctorSnapshot {
         DoctorSnapshot {
@@ -1506,17 +1523,17 @@ mod ui_truthfulness {
                 protected_paths_intact: true,
                 approval_required: false,
             },
-            tools: crate::doctor::ToolsProbe {
+            tools: evohime_core::doctor::ToolsProbe {
                 registered_tools: 12,
                 expected_tools: 12,
                 unavailable_tools: Vec::new(),
             },
-            scheduler: crate::doctor::SchedulerProbe {
+            scheduler: evohime_core::doctor::SchedulerProbe {
                 heartbeat_label: "core-heartbeat".into(),
                 heartbeat_age_ms: Some(500),
                 stale_threshold_ms: 5_000,
             },
-            codebase: crate::doctor::CodebaseProbe {
+            codebase: evohime_core::doctor::CodebaseProbe {
                 available: true,
                 largest_source_file_lines: 1_000,
                 max_source_file_lines: 2_000,
@@ -1566,7 +1583,7 @@ mod ui_truthfulness {
                 .map_err(|error| format!("{error:?}"))?
                 .checks
                 .iter()
-                .all(|check| check.status == crate::doctor::CheckStatus::Ok),
+                .all(|check| check.status == evohime_core::doctor::CheckStatus::Ok),
             "the fully healthy fixture must report every check as Ok",
         )?;
 
@@ -1579,7 +1596,7 @@ mod ui_truthfulness {
             .find(|check| check.id == "storage")
             .ok_or("expected a storage check")?;
         require(
-            storage_check.status != crate::doctor::CheckStatus::Ok,
+            storage_check.status != evohime_core::doctor::CheckStatus::Ok,
             "a schema-version mismatch must never be reported as Ok",
         )?;
         require(

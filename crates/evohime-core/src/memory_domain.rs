@@ -8,26 +8,45 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
+/// Maximum characters for a memory identifier.
 pub const MAX_MEMORY_ID_CHARS: usize = 128;
+/// Maximum characters for a scope identifier component.
 pub const MAX_SCOPE_ID_CHARS: usize = 128;
+/// Maximum characters for a memory title.
 pub const MAX_TITLE_CHARS: usize = 256;
+/// Maximum characters for memory content.
 pub const MAX_CONTENT_CHARS: usize = 8_192;
+/// Maximum characters for a provenance kind label.
 pub const MAX_PROVENANCE_KIND_CHARS: usize = 64;
+/// Maximum characters for a provenance identifier.
 pub const MAX_PROVENANCE_ID_CHARS: usize = 256;
+/// Maximum characters for an optional provenance locator.
 pub const MAX_LOCATOR_CHARS: usize = 512;
+/// Maximum characters for a lexical search query.
 pub const MAX_QUERY_CHARS: usize = 512;
+/// Maximum number of records returned by list or search.
 pub const MAX_RESULTS: usize = 128;
+/// Maximum allowed record time-to-live in milliseconds (31 days).
 pub const MAX_TTL_MS: u64 = 31 * 24 * 60 * 60 * 1_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Bounded contract violations of the Memory domain.
 pub enum MemoryError {
+    /// A required text field was empty.
     EmptyField(&'static str),
+    /// A memory identifier collided with an existing record.
     DuplicateId,
+    /// A text field exceeded its documented character bound.
     FieldTooLong { field: &'static str, max: usize },
+    /// A timestamp was not a positive Unix timestamp.
     InvalidTimestamp,
+    /// A TTL was outside the allowed range.
     InvalidTtl,
+    /// A list or search limit was outside the allowed range.
     InvalidLimit,
+    /// A search query contained no lexical token.
     EmptyQuery,
+    /// A search query exceeded the allowed length.
     QueryTooLong,
 }
 
@@ -48,16 +67,15 @@ impl fmt::Display for MemoryError {
 
 impl std::error::Error for MemoryError {}
 
+/// Scope a memory record belongs to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MemoryScope {
-    Project {
-        project_id: String,
-    },
-    Task {
-        project_id: String,
-        task_id: String,
-    },
+    /// Visible across one project.
+    Project { project_id: String },
+    /// Visible inside one task of a project.
+    Task { project_id: String, task_id: String },
+    /// Visible inside one workspace of a project.
     Workspace {
         project_id: String,
         workspace_id: String,
@@ -65,6 +83,7 @@ pub enum MemoryScope {
 }
 
 impl MemoryScope {
+    /// Builds a validated project scope.
     pub fn project(project_id: impl Into<String>) -> Result<Self, MemoryError> {
         let scope = Self::Project {
             project_id: project_id.into(),
@@ -73,6 +92,7 @@ impl MemoryScope {
         Ok(scope)
     }
 
+    /// Builds a validated task scope.
     pub fn task(
         project_id: impl Into<String>,
         task_id: impl Into<String>,
@@ -85,6 +105,7 @@ impl MemoryScope {
         Ok(scope)
     }
 
+    /// Builds a validated workspace scope.
     pub fn workspace(
         project_id: impl Into<String>,
         workspace_id: impl Into<String>,
@@ -144,6 +165,7 @@ impl MemoryScope {
     }
 }
 
+/// Reference to the artifact a memory record was derived from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProvenanceRef {
     pub kind: String,
@@ -153,6 +175,7 @@ pub struct ProvenanceRef {
 }
 
 impl ProvenanceRef {
+    /// Builds a validated provenance reference.
     pub fn new(
         kind: impl Into<String>,
         id: impl Into<String>,
@@ -172,23 +195,33 @@ impl ProvenanceRef {
     }
 }
 
+/// Sensitivity tier controlling where a record may surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrivacyLabel {
+    /// Safe to surface anywhere.
     Public,
+    /// Safe inside the product, not for export.
     Internal,
+    /// Restricted to the owning user.
     Private,
+    /// Never surfaced in logs, exports, or model context.
     Secret,
 }
 
+/// Lifecycle state of a memory record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryStatus {
+    /// Visible in normal list and search operations.
     Active,
+    /// Kept but excluded from normal operations.
     Archived,
+    /// Content erased; only the record identifier remains.
     Forgotten,
 }
 
+/// A stored bounded memory record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryRecord {
     pub id: String,
@@ -203,11 +236,13 @@ pub struct MemoryRecord {
 }
 
 impl MemoryRecord {
+    /// Reports whether the record expired at the given instant.
     pub fn is_expired_at(&self, now_ms: u64) -> bool {
         now_ms >= self.expires_at_ms
     }
 }
 
+/// Bounded request to store one memory record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateMemory {
     pub id: String,
@@ -220,6 +255,7 @@ pub struct CreateMemory {
     pub ttl_ms: u64,
 }
 
+/// Bounded request to list memory records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListMemory {
     pub scope: Option<MemoryScope>,
@@ -229,6 +265,7 @@ pub struct ListMemory {
     pub limit: usize,
 }
 
+/// Bounded request for a lexical memory search.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchMemory {
     pub query: String,
@@ -237,6 +274,7 @@ pub struct SearchMemory {
     pub limit: usize,
 }
 
+/// One search hit with its lexical relevance score.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemorySearchHit {
     pub record: MemoryRecord,

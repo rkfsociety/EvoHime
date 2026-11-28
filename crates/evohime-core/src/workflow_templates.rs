@@ -16,7 +16,9 @@ use crate::workflow::{
     WORKFLOW_CONTRACT_VERSION,
 };
 
+/// Maximum number of inputs accepted by one template.
 pub const MAX_TEMPLATE_INPUTS: usize = 16;
+/// Maximum characters for one template input value.
 pub const MAX_INPUT_VALUE_CHARS: usize = MAX_TEXT_CHARS;
 
 /// Пригодность к расписанию. Supervisor-контракт сегодня умеет только
@@ -50,6 +52,7 @@ pub struct TemplateInput {
     pub max_chars: usize,
 }
 
+/// Built-in bounded workflow template with a fixed safe graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowTemplate {
     pub template_id: String,
@@ -66,10 +69,15 @@ pub struct WorkflowTemplate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Failures raised while instantiating a workflow template.
 pub enum TemplateError {
+    /// The template id is absent from the catalog.
     UnknownTemplate(String),
+    /// An input name is not declared by the template.
     UnknownInput(String),
+    /// A required input was not supplied.
     MissingInput(String),
+    /// An input value exceeded its bound.
     InputTooLong {
         name: String,
         actual: usize,
@@ -481,6 +489,7 @@ pub fn catalog() -> Vec<WorkflowTemplate> {
     ]
 }
 
+/// Returns the built-in template with the given id, if present.
 pub fn template(template_id: &str) -> Option<WorkflowTemplate> {
     catalog()
         .into_iter()
