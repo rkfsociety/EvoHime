@@ -243,9 +243,9 @@ pub use provider_resilience::{
 };
 pub(crate) mod recovery;
 pub mod run_policy;
-pub use recovery::{classify_tool_outcome, DenialSource, ToolFailureKind, ToolOutcome};
 /// Replay-safe termination condition algebra re-exported from `evohime-hive-contract`.
 pub use evohime_hive_contract::composable_termination_conditions;
+pub use recovery::{classify_tool_outcome, DenialSource, ToolFailureKind, ToolOutcome};
 pub(crate) mod refinement;
 pub(crate) mod scope;
 pub mod skill_registry;
