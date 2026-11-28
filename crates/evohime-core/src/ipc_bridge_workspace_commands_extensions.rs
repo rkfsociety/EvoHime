@@ -1203,6 +1203,42 @@ impl IpcBridge {
                 .map_err(|error| FrameError::Io(error.to_string()))
                 .map_err(IpcBridgeError::from);
         }
+        if matches!(
+            operation.as_str(),
+            "research_session" | "research_artifact" | "research_session_transition"
+        ) {
+            let parsed: serde_json::Value = serde_json::from_slice(&payload)
+                .map_err(|_| FrameError::Io(format!("invalid_{operation}")))?;
+            let validate_op = match operation.as_str() {
+                "research_session" => "session",
+                "research_artifact" => "artifact",
+                _ => "transition_session",
+            };
+            self.invoke_required_service(
+                "research.validate_grounded",
+                serde_json::json!({
+                    "operation": validate_op,
+                    "payload": parsed,
+                }),
+            )
+            .await?;
+        }
+        if operation == "research_artifact_promote" {
+            let parsed: serde_json::Value = serde_json::from_slice(&payload)
+                .map_err(|_| FrameError::Io("invalid_research_promotion".into()))?;
+            let artifact = parsed
+                .get("artifact")
+                .cloned()
+                .ok_or_else(|| FrameError::Io("invalid_research_promotion".into()))?;
+            self.invoke_required_service(
+                "research.validate_grounded",
+                serde_json::json!({
+                    "operation": "artifact",
+                    "payload": artifact,
+                }),
+            )
+            .await?;
+        }
         coordinator
             .dispatch(CoreCommand::KnowledgeSourceRegistryProjectRole {
                 operation,

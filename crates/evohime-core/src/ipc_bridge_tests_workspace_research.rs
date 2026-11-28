@@ -1317,6 +1317,7 @@ async fn serves_task_crud_and_replays_deduplicated_create() {
     let journal = EventJournal::open(&path).expect("journal opens");
     let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
     let bridge = IpcBridge::with_coordinator(journal, coordinator);
+    register_mock_research_service(&bridge, None);
     let (mut client, server) = duplex(16 * 1024);
     let (mut server_reader, mut server_writer) = tokio::io::split(server);
     let command = generated::CommandEnvelope {
@@ -1477,6 +1478,7 @@ async fn serves_run_doctor_with_real_storage_and_pipe_state() {
     let journal = EventJournal::open(&path).expect("journal opens");
     let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
     let bridge = IpcBridge::with_coordinator(journal, coordinator);
+    register_mock_research_service(&bridge, None);
     let (mut client, server) = duplex(16 * 1024);
     let (mut server_reader, mut server_writer) = tokio::io::split(server);
     let command = generated::CommandEnvelope {
@@ -1534,6 +1536,7 @@ async fn saves_and_lists_research_evidence_against_real_storage() {
     let journal = EventJournal::open(&path).expect("journal opens");
     let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
     let bridge = IpcBridge::with_coordinator(journal, coordinator);
+    register_mock_research_service(&bridge, None);
     let (mut client, server) = duplex(16 * 1024);
     let (mut server_reader, mut server_writer) = tokio::io::split(server);
 
@@ -1673,28 +1676,61 @@ impl crate::module_registry::ServiceTransport for MockResearchTransport {
                             evohime_service_contract::ServiceContractError::invalid_input(msg),
                         );
                     }
+                    if capability == "research.capture_evidence" {
+                        let url = payload["url"]
+                            .as_str()
+                            .unwrap_or("https://example.test/article");
+                        let title = payload["title"].as_str().unwrap_or("Example Article");
+                        let publisher = payload["publisher"].as_str().unwrap_or("Example Org");
+                        let content_type = payload["content_type"].as_str().unwrap_or("text/html");
+                        let retrieved_at_ms = payload["retrieved_at_ms"].as_u64().unwrap_or(1);
+                        let captured_at_ms = payload["captured_at_ms"].as_u64().unwrap_or(2);
+                        let ttl_ms = payload["ttl_ms"].as_u64().unwrap_or(3_600_000);
+                        let raw = payload["raw_excerpt"].as_str().unwrap_or_default();
+                        let redacted = raw
+                            .replace("sk-secret", "[REDACTED]")
+                            .replace("alice@example.test", "[REDACTED]");
+                        let excerpt_sha256 = crate::sha256_hex(redacted.as_bytes());
+                        return Ok(evohime_service_contract::ServiceResponse::InvokeResult {
+                            request_id,
+                            payload: serde_json::json!({
+                                "evidence": {
+                                    "source": {
+                                        "url": url,
+                                        "title": title,
+                                        "publisher": publisher,
+                                        "content_type": content_type,
+                                        "retrieved_at_ms": retrieved_at_ms,
+                                    },
+                                    "excerpt": redacted,
+                                    "excerpt_sha256": excerpt_sha256,
+                                    "captured_at_ms": captured_at_ms,
+                                    "ttl_ms": ttl_ms,
+                                }
+                            }),
+                        });
+                    }
                     assert_eq!(capability, "research.fetch_url");
                     let url = payload["url"]
                         .as_str()
                         .unwrap_or("https://example.invalid/article");
                     let title = payload["title"].as_str().unwrap_or("Example Article");
                     let ttl_ms = payload["ttl_ms"].as_u64().unwrap_or(3_600_000);
-                    let source = crate::research::SourceMetadata::new(
-                        url,
-                        title,
-                        "example.invalid",
-                        "text/plain",
-                        1_700_000_000_000,
-                    )
-                    .expect("source metadata valid");
-                    let evidence = crate::research::ResearchEvidence::capture(
-                        source,
-                        "Useful finding sk-secret alice@example.test",
-                        1_700_000_000_100,
-                        ttl_ms,
-                    )
-                    .expect("evidence captures");
-                    let source_hash = evidence.excerpt_sha256.clone();
+                    let excerpt = "Useful finding [REDACTED] [REDACTED]";
+                    let source_hash = crate::sha256_hex(excerpt.as_bytes());
+                    let evidence = serde_json::json!({
+                        "source": {
+                            "url": url,
+                            "title": title,
+                            "publisher": "example.invalid",
+                            "content_type": "text/plain",
+                            "retrieved_at_ms": 1_700_000_000_000u64,
+                        },
+                        "excerpt": excerpt,
+                        "excerpt_sha256": source_hash,
+                        "captured_at_ms": 1_700_000_000_100u64,
+                        "ttl_ms": ttl_ms,
+                    });
                     Ok(evohime_service_contract::ServiceResponse::InvokeResult {
                         request_id,
                         payload: serde_json::json!({
@@ -1723,13 +1759,22 @@ fn register_mock_research_service(bridge: &IpcBridge, fail_with: Option<String>)
         service_id: "research".to_owned(),
         version: "0.0.2".to_owned(),
         contract_version: evohime_service_contract::SERVICE_CONTRACT_VERSION,
-        capabilities: vec![evohime_service_contract::ServiceCapabilityDescriptor {
-            name: "research.fetch_url".to_owned(),
-            description: "Mock fetch_url".to_owned(),
-            input_schema: serde_json::json!({"type": "object"}),
-            required_permissions: vec!["network.fetch".to_owned()],
-            supports_streaming: false,
-        }],
+        capabilities: vec![
+            evohime_service_contract::ServiceCapabilityDescriptor {
+                name: "research.fetch_url".to_owned(),
+                description: "Mock fetch_url".to_owned(),
+                input_schema: serde_json::json!({"type": "object"}),
+                required_permissions: vec!["network.fetch".to_owned()],
+                supports_streaming: false,
+            },
+            evohime_service_contract::ServiceCapabilityDescriptor {
+                name: "research.capture_evidence".to_owned(),
+                description: "Mock capture_evidence".to_owned(),
+                input_schema: serde_json::json!({"type": "object"}),
+                required_permissions: vec!["network.fetch".to_owned()],
+                supports_streaming: false,
+            },
+        ],
     };
     bridge
         .module_registry()

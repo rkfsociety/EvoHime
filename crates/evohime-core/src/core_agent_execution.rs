@@ -2839,7 +2839,7 @@ impl ToolAgent {
                                 content_hash: String::new(),
                             };
                             let idempotency_key = format!("agent-create:{task_id}:{goal_id}");
-                            let command_hash = crate::research::sha256_hex(
+                            let command_hash = crate::sha256_hex(
                                 format!("{task_id}:{goal_id}:{}", parsed.objective).as_bytes(),
                             );
                             let runtime = crate::goal::GoalRuntime::new(journal.clone());
@@ -2896,7 +2896,7 @@ impl ToolAgent {
                                     ))
                                 })?;
                             let summary_digest =
-                                crate::research::sha256_hex(parsed.evidence_summary.as_bytes());
+                                crate::sha256_hex(parsed.evidence_summary.as_bytes());
                             let short_digest =
                                 summary_digest.get(..16).unwrap_or(summary_digest.as_str());
                             let evidence_ref = format!("task:{task_id}:{short_digest}");
@@ -2904,7 +2904,7 @@ impl ToolAgent {
                                 "agent-verify:{task_id}:{}:{}:{}",
                                 parsed.goal_id, parsed.criterion_id, current.version
                             );
-                            let command_hash = crate::research::sha256_hex(
+                            let command_hash = crate::sha256_hex(
                                 format!(
                                     "{}:{}:{}",
                                     parsed.goal_id, parsed.criterion_id, parsed.evidence_summary

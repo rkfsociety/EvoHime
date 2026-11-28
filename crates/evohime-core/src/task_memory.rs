@@ -1,4 +1,4 @@
-use crate::research::sha256_hex;
+use crate::sha256_hex;
 use evohime_local_storage::domains::memory::{
     MemoryPrivacy, MemoryRecord, MemoryRecordInput, MemoryScope,
 };

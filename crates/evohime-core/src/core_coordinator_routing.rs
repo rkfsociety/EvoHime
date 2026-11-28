@@ -264,7 +264,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             };
             tokio::spawn(async move {
                 let _background_permit = background_permit;
-                let intent_hash = crate::research::sha256_hex(prompt.as_bytes());
+                let intent_hash = crate::sha256_hex(prompt.as_bytes());
                 if let Some(journal) = &journal {
                     let checkpoint_runtime =
                         crate::task_checkpoint::TaskCheckpointRuntime::new(journal.clone());
@@ -769,7 +769,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                         stagnation_count = stagnation_count.saturating_add(1);
                                         if stagnation_count >= 3 {
                                             goal_stagnated = true;
-                                            let cmd_hash = crate::research::sha256_hex(
+                                            let cmd_hash = crate::sha256_hex(
                                                 format!(
                                                     "stagnation:{gid}:{}:{}",
                                                     goal_after.version, continuation_index
@@ -857,7 +857,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                     if goal_now.status
                                         == evohime_local_storage::goal::GoalStatus::Active
                                     {
-                                        let cmd_hash = crate::research::sha256_hex(
+                                        let cmd_hash = crate::sha256_hex(
                                             format!(
                                                 "budget:{gid}:{}:{}",
                                                 goal_now.version, continuation_index
@@ -1131,8 +1131,7 @@ pub(crate) async fn ensure_goal_continuation_run(
             | evohime_local_storage::goal::GoalStatus::Blocked
             | evohime_local_storage::goal::GoalStatus::BudgetLimited
     ) {
-        let cmd_hash =
-            crate::research::sha256_hex(format!("resume:{goal_id}:{task_id}").as_bytes());
+        let cmd_hash = crate::sha256_hex(format!("resume:{goal_id}:{task_id}").as_bytes());
         if let Ok(resumed) = store.transition(
             goal_id,
             goal.version,
@@ -1434,7 +1433,7 @@ mod timeout_tests {
                     crate::goal::GoalCommand::new(
                         "core",
                         "create-goal-cont-1",
-                        &crate::research::sha256_hex(b"create-goal-cont-1"),
+                        &crate::sha256_hex(b"create-goal-cont-1"),
                     ),
                 )
                 .expect("goal creates");
@@ -1706,7 +1705,7 @@ mod timeout_tests {
                     crate::goal::GoalCommand::new(
                         "core",
                         "create-goal-fail-2",
-                        &crate::research::sha256_hex(b"create-goal-fail-2"),
+                        &crate::sha256_hex(b"create-goal-fail-2"),
                     ),
                 )
                 .expect("goal creates");
@@ -1880,7 +1879,7 @@ mod timeout_tests {
                                 crate::goal::GoalCommand::new(
                                     "agent",
                                     "create-goal-dynamic-1",
-                                    &crate::research::sha256_hex(b"create-goal-dynamic-1"),
+                                    &crate::sha256_hex(b"create-goal-dynamic-1"),
                                 ),
                             )
                             .expect("dynamic goal creates");
@@ -1901,7 +1900,7 @@ mod timeout_tests {
                                 crate::goal::GoalCommand::new(
                                     "agent",
                                     "verify-goal-dynamic-1",
-                                    &crate::research::sha256_hex(b"verify-goal-dynamic-1"),
+                                    &crate::sha256_hex(b"verify-goal-dynamic-1"),
                                 ),
                             )
                             .expect("dynamic goal verifies");

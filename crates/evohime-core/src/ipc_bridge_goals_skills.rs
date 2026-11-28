@@ -60,7 +60,7 @@ impl IpcBridge {
             content_hash: String::new(),
         };
         let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
-        let goal_command_hash = crate::research::sha256_hex(command_hash.as_bytes());
+        let goal_command_hash = crate::sha256_hex(command_hash.as_bytes());
         match runtime
             .create(
                 &goal,
@@ -192,7 +192,7 @@ impl IpcBridge {
             );
         }
         let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
-        let goal_command_hash = crate::research::sha256_hex(command_hash.as_bytes());
+        let goal_command_hash = crate::sha256_hex(command_hash.as_bytes());
         match runtime
             .transition(
                 &request.goal_id,
@@ -261,7 +261,7 @@ impl IpcBridge {
             );
         }
         let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
-        let goal_command_hash = crate::research::sha256_hex(command_hash.as_bytes());
+        let goal_command_hash = crate::sha256_hex(command_hash.as_bytes());
         match runtime
             .update(
                 &request.goal_id,
@@ -308,7 +308,7 @@ impl IpcBridge {
             );
         }
         let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
-        let goal_command_hash = crate::research::sha256_hex(command_hash.as_bytes());
+        let goal_command_hash = crate::sha256_hex(command_hash.as_bytes());
         let goal = match runtime.get(&request.goal_id).await {
             Ok(Some(goal)) => goal,
             Ok(None) => {
@@ -341,7 +341,7 @@ impl IpcBridge {
                 "Этот критерий подтверждается только Core runtime.",
             );
         }
-        let evidence_digest = crate::research::sha256_hex(
+        let evidence_digest = crate::sha256_hex(
             format!(
                 "{}:{}:{}",
                 request.goal_id, request.criterion_id, goal_command_hash
@@ -400,7 +400,7 @@ impl IpcBridge {
             );
         }
         let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
-        let goal_command_hash = crate::research::sha256_hex(command_hash.as_bytes());
+        let goal_command_hash = crate::sha256_hex(command_hash.as_bytes());
         match runtime
             .link_reference(
                 &request.goal_id,

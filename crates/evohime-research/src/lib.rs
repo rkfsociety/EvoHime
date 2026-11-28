@@ -112,6 +112,26 @@ impl ServiceHandler for ResearchService {
                     required_permissions: vec![],
                     supports_streaming: false,
                 },
+                ServiceCapabilityDescriptor {
+                    name: "research.capture_evidence".to_owned(),
+                    description: "Validates source metadata and captures redacted research evidence.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["url", "title", "publisher", "content_type", "retrieved_at_ms", "raw_excerpt", "captured_at_ms", "ttl_ms"]
+                    }),
+                    required_permissions: vec!["network.fetch".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "research.validate_grounded".to_owned(),
+                    description: "Validates grounded research evidence items, sessions, artifacts, or session transitions.".to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["operation", "payload"]
+                    }),
+                    required_permissions: vec![],
+                    supports_streaming: false,
+                },
             ],
         }
     }
@@ -364,6 +384,146 @@ impl ServiceHandler for ResearchService {
                     "status": format!("{decision:?}"),
                 }))
             }
+            "research.capture_evidence" => {
+                #[derive(serde::Deserialize)]
+                struct CaptureRequest {
+                    url: String,
+                    title: String,
+                    publisher: String,
+                    content_type: String,
+                    retrieved_at_ms: u64,
+                    raw_excerpt: String,
+                    captured_at_ms: u64,
+                    ttl_ms: u64,
+                }
+                let req: CaptureRequest = serde_json::from_value(payload).map_err(|err| {
+                    ServiceContractError::invalid_input(format!(
+                        "invalid capture_evidence payload: {err}"
+                    ))
+                })?;
+                let source = research_types::SourceMetadata::new(
+                    req.url,
+                    req.title,
+                    req.publisher,
+                    req.content_type,
+                    req.retrieved_at_ms,
+                )
+                .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
+                let evidence = research_types::ResearchEvidence::capture(
+                    source,
+                    req.raw_excerpt,
+                    req.captured_at_ms,
+                    req.ttl_ms,
+                )
+                .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
+                Ok(serde_json::json!({ "evidence": evidence }))
+            }
+            "research.validate_grounded" => {
+                #[derive(serde::Deserialize)]
+                struct ValidateGroundedRequest {
+                    operation: String,
+                    payload: serde_json::Value,
+                }
+                let req: ValidateGroundedRequest =
+                    serde_json::from_value(payload).map_err(|err| {
+                        ServiceContractError::invalid_input(format!(
+                            "invalid validate_grounded payload: {err}"
+                        ))
+                    })?;
+                match req.operation.as_str() {
+                    "session" => {
+                        let session: research_types::ResearchSession =
+                            serde_json::from_value(req.payload).map_err(|_| {
+                                ServiceContractError::invalid_input("invalid_research_session")
+                            })?;
+                        session
+                            .validate()
+                            .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                        Ok(serde_json::json!({ "valid": true, "session": session }))
+                    }
+                    "artifact" => {
+                        let artifact: research_types::ResearchArtifact =
+                            serde_json::from_value(req.payload).map_err(|_| {
+                                ServiceContractError::invalid_input("invalid_research_artifact")
+                            })?;
+                        artifact
+                            .validate()
+                            .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                        Ok(serde_json::json!({ "valid": true, "artifact": artifact }))
+                    }
+                    "transition_session" => {
+                        #[derive(serde::Deserialize)]
+                        struct TransitionPayload {
+                            from_state: research_types::ResearchSessionState,
+                            next_state: research_types::ResearchSessionState,
+                        }
+                        let tr: TransitionPayload =
+                            serde_json::from_value(req.payload).map_err(|_| {
+                                ServiceContractError::invalid_input(
+                                    "invalid_research_session_transition",
+                                )
+                            })?;
+                        let next = research_types::transition_research_session(
+                            tr.from_state,
+                            tr.next_state,
+                        )
+                        .map_err(|_| {
+                            ServiceContractError::invalid_input(
+                                "invalid_research_session_transition",
+                            )
+                        })?;
+                        Ok(serde_json::json!({ "valid": true, "next_state": next }))
+                    }
+                    "citation" => {
+                        #[derive(serde::Deserialize)]
+                        struct CitationPayload {
+                            citation: research_types::ResearchCitation,
+                            claim: research_types::ResearchClaim,
+                            evidence: research_types::EvidenceItem,
+                            revision: research_types::ResearchSourceRevision,
+                        }
+                        let c: CitationPayload =
+                            serde_json::from_value(req.payload).map_err(|_| {
+                                ServiceContractError::invalid_input("invalid_research_citation")
+                            })?;
+                        research_types::validate_research_citation(
+                            &c.citation,
+                            &c.claim,
+                            &c.evidence,
+                            &c.revision,
+                        )
+                        .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                        Ok(serde_json::json!({ "valid": true }))
+                    }
+                    "delta" => {
+                        #[derive(serde::Deserialize)]
+                        struct DeltaPayload {
+                            previous: research_types::ResearchArtifact,
+                            current: research_types::ResearchArtifact,
+                            delta_id: String,
+                        }
+                        let d: DeltaPayload =
+                            serde_json::from_value(req.payload).map_err(|_| {
+                                ServiceContractError::invalid_input("invalid_research_delta")
+                            })?;
+                        let delta = research_types::derive_research_delta(
+                            &d.previous,
+                            &d.current,
+                            d.delta_id,
+                        )
+                        .map_err(|e| ServiceContractError::invalid_input(e.to_string()))?;
+                        serde_json::to_value(&delta).map_err(|err| {
+                            ServiceContractError::new(
+                                evohime_service_contract::ServiceErrorCode::Internal,
+                                format!("failed to serialize research delta: {err}"),
+                            )
+                        })
+                    }
+                    _ => Err(ServiceContractError::invalid_input(
+                        "unsupported_validate_grounded_operation",
+                    )),
+                }
+            }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown research capability: {other}"
             ))),
@@ -399,6 +559,31 @@ mod tests {
             } => {
                 assert_eq!(request_id, "q1");
                 assert_eq!(payload["query"], "rust ipc");
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+
+        let captured = dispatch_request(
+            &svc,
+            ServiceRequest::Invoke {
+                request_id: "q2".to_owned(),
+                capability: "research.capture_evidence".to_owned(),
+                payload: serde_json::json!({
+                    "url": "https://example.test/doc",
+                    "title": "Doc",
+                    "publisher": "Example",
+                    "content_type": "text/plain",
+                    "retrieved_at_ms": 1_000,
+                    "raw_excerpt": "Token sk-secret",
+                    "captured_at_ms": 2_000,
+                    "ttl_ms": 60_000
+                }),
+                caller_session_id: None,
+            },
+        );
+        match captured {
+            ServiceResponse::InvokeResult { payload, .. } => {
+                assert_eq!(payload["evidence"]["excerpt"], "Token [REDACTED]");
             }
             other => panic!("unexpected response: {other:?}"),
         }

@@ -230,6 +230,26 @@ impl IpcBridge {
         &self,
         request: generated::SaveResearchEvidence,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let captured_at_ms = crate::task_memory::now_millis();
+        let captured = self
+            .invoke_required_service(
+                "research.capture_evidence",
+                serde_json::json!({
+                    "url": request.source_ref,
+                    "title": request.title,
+                    "publisher": request.publisher,
+                    "content_type": request.content_type,
+                    "retrieved_at_ms": request.retrieved_at_ms,
+                    "raw_excerpt": request.raw_excerpt,
+                    "captured_at_ms": captured_at_ms,
+                    "ttl_ms": request.ttl_ms,
+                }),
+            )
+            .await?;
+        let redacted_excerpt = captured["evidence"]["excerpt"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
         let coordinator = self
             .coordinator
             .as_ref()
@@ -243,7 +263,7 @@ impl IpcBridge {
                 title: request.title,
                 publisher: request.publisher,
                 content_type: request.content_type,
-                raw_excerpt: request.raw_excerpt,
+                raw_excerpt: redacted_excerpt,
                 retrieved_at_ms: request.retrieved_at_ms,
                 ttl_ms: request.ttl_ms,
                 reply,

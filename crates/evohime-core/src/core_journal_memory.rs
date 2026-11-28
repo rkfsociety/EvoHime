@@ -285,18 +285,40 @@ impl EventJournal {
     /// Persists one evidence item associated with a grounded research session.
     pub async fn save_grounded_research_evidence_item(
         &self,
-        evidence: &crate::research::EvidenceItem,
+        evidence: &serde_json::Value,
     ) -> Result<bool, String> {
-        let locator_json =
-            serde_json::to_vec(&evidence.locator).map_err(|error| error.to_string())?;
+        let evidence_id = evidence
+            .get("evidence_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing evidence_id".to_owned())?;
+        let revision_id = evidence
+            .get("revision_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing revision_id".to_owned())?;
+        let content_hash = evidence
+            .get("content_hash")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing content_hash".to_owned())?;
+        let locator_json = serde_json::to_vec(
+            evidence
+                .get("locator")
+                .ok_or_else(|| "missing locator".to_owned())?,
+        )
+        .map_err(|error| error.to_string())?;
+        let trust_json = serde_json::to_string(
+            evidence
+                .get("trust")
+                .ok_or_else(|| "missing trust".to_owned())?,
+        )
+        .map_err(|error| error.to_string())?;
         let database = self.database.lock().await;
         evohime_local_storage::grounded_research_store::GroundedResearchStore::insert_evidence_item(
             database.connection(),
-            &evidence.evidence_id,
-            &evidence.revision_id,
+            evidence_id,
+            revision_id,
             &locator_json,
-            &evidence.content_hash,
-            &serde_json::to_string(&evidence.trust).map_err(|error| error.to_string())?,
+            content_hash,
+            &trust_json,
         )
         .map_err(str::to_owned)
     }
@@ -319,18 +341,38 @@ impl EventJournal {
     /// Stores the computed delta for a grounded research revision.
     pub async fn save_grounded_research_delta(
         &self,
-        delta: &crate::research::ResearchDelta,
+        delta: &serde_json::Value,
     ) -> Result<bool, String> {
-        let added =
-            serde_json::to_vec(&delta.added_evidence_ids).map_err(|error| error.to_string())?;
-        let stale =
-            serde_json::to_vec(&delta.stale_evidence_ids).map_err(|error| error.to_string())?;
+        let delta_id = delta
+            .get("delta_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing delta_id".to_owned())?;
+        let previous_artifact_id = delta
+            .get("previous_artifact_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing previous_artifact_id".to_owned())?;
+        let current_artifact_id = delta
+            .get("current_artifact_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing current_artifact_id".to_owned())?;
+        let added = serde_json::to_vec(
+            delta
+                .get("added_evidence_ids")
+                .ok_or_else(|| "missing added_evidence_ids".to_owned())?,
+        )
+        .map_err(|error| error.to_string())?;
+        let stale = serde_json::to_vec(
+            delta
+                .get("stale_evidence_ids")
+                .ok_or_else(|| "missing stale_evidence_ids".to_owned())?,
+        )
+        .map_err(|error| error.to_string())?;
         let database = self.database.lock().await;
         evohime_local_storage::grounded_research_store::GroundedResearchStore::insert_delta(
             database.connection(),
-            &delta.delta_id,
-            &delta.previous_artifact_id,
-            &delta.current_artifact_id,
+            delta_id,
+            previous_artifact_id,
+            current_artifact_id,
             &added,
             &stale,
         )
@@ -342,18 +384,16 @@ impl EventJournal {
         &self,
         session_id: &str,
         expected_revision: i64,
-        from: crate::research::ResearchSessionState,
-        next: crate::research::ResearchSessionState,
+        from: &str,
+        next: &str,
     ) -> Result<bool, String> {
-        crate::research::transition_research_session(from, next)
-            .map_err(|error| error.to_string())?;
         let database = self.database.lock().await;
         evohime_local_storage::grounded_research_store::GroundedResearchStore::transition_session(
             database.connection(),
             session_id,
             expected_revision,
-            &serde_json::to_string(&from).map_err(|error| error.to_string())?,
-            &serde_json::to_string(&next).map_err(|error| error.to_string())?,
+            &serde_json::to_string(from).map_err(|error| error.to_string())?,
+            &serde_json::to_string(next).map_err(|error| error.to_string())?,
         )
         .map_err(str::to_owned)
     }

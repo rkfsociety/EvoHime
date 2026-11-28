@@ -1758,7 +1758,7 @@ impl IpcBridge {
             Some(_) => (true, "", "Состояние checkpoint подтверждено пользователем."),
         };
         let request_id = format!("{task_id}:{idempotency_key}");
-        let command_hash = crate::research::sha256_hex(
+        let command_hash = crate::sha256_hex(
             format!(
                 "{task_id}|{checkpoint_id}|{}|{}",
                 request.expected_source_event_seq, action

@@ -267,8 +267,8 @@ fn build_checkpoint(
     reason: CheckpointCaptureReason,
     ledger: Option<&ContextLedgerEntry>,
 ) -> Result<TaskCheckpointV1, TaskCheckpointError> {
-    let task_ref_hash = crate::research::sha256_hex(task_id.as_bytes());
-    let policy_hash = crate::research::sha256_hex(TASK_CHECKPOINT_POLICY_ID.as_bytes());
+    let task_ref_hash = crate::sha256_hex(task_id.as_bytes());
+    let policy_hash = crate::sha256_hex(TASK_CHECKPOINT_POLICY_ID.as_bytes());
     let mut workflow_refs = vec![
         CheckpointRef {
             id: format!("task-scope-{task_ref_hash}"),

@@ -25,6 +25,8 @@ pub const MAX_REVISION_ID_CHARS: usize = 128;
 pub const MAX_LOCATOR_CHARS: usize = 1_024;
 /// Maximum JSON snapshot metadata length in Unicode scalar values.
 pub const MAX_JSON_METADATA_CHARS: usize = 32 * 1024;
+/// Maximum number of sources in one grounded collection.
+pub const MAX_COLLECTION_SOURCES: usize = 256;
 
 /// Validation failures for the offline research evidence contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -575,6 +577,10 @@ pub enum GroundedResearchError {
     LimitExceeded(&'static str),
     /// A referenced revision is not current or available.
     StaleReference,
+    /// A citation's claim/evidence/revision lineage is invalid.
+    InvalidCitation,
+    /// A requested session state transition is not permitted.
+    InvalidTransition,
 }
 
 impl fmt::Display for GroundedResearchError {
@@ -587,6 +593,8 @@ impl fmt::Display for GroundedResearchError {
             Self::InvalidLocator => write!(f, "invalid evidence locator"),
             Self::LimitExceeded(field) => write!(f, "{field} exceeds its bound"),
             Self::StaleReference => write!(f, "research reference is stale or unavailable"),
+            Self::InvalidCitation => write!(f, "invalid research citation lineage"),
+            Self::InvalidTransition => write!(f, "invalid research session transition"),
         }
     }
 }
@@ -609,4 +617,271 @@ fn validate_grounded_text(
 
 fn is_hex_hash(value: &str) -> bool {
     !value.is_empty() && value.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Relationship declared between a claim and its evidence.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CitationKind {
+    /// Evidence directly supports the claim.
+    DirectSupport,
+    /// Evidence supports only part of the claim.
+    PartialSupport,
+    /// Evidence provides relevant context without direct support.
+    Context,
+    /// Evidence contradicts the claim.
+    Contradiction,
+    /// Claim is derived from multiple evidence items.
+    DerivedFromMultiple,
+}
+
+/// Citation binding one research claim to one evidence item.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchCitation {
+    /// Stable citation identifier.
+    pub citation_id: String,
+    /// Claim identifier supported or qualified by this citation.
+    pub claim_id: String,
+    /// Identifier of the cited evidence item.
+    pub evidence_id: String,
+    /// Declared relationship between claim and evidence.
+    pub kind: CitationKind,
+    /// Validation state; `verified_locator` establishes lineage and addressability only.
+    pub validation: String,
+}
+
+/// Bounded claim metadata; the claim's text is represented by a digest.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchClaim {
+    /// Stable identifier for the claim.
+    pub claim_id: String,
+    /// Digest of claim text stored outside this metadata record.
+    pub text_hash: String,
+    /// Whether the claim is an inference rather than a direct source statement.
+    pub inference: bool,
+}
+
+/// Immutable research output linking claims to cited source evidence.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchArtifact {
+    /// Stable artifact identifier.
+    pub artifact_id: String,
+    /// Monotonically increasing artifact revision.
+    pub revision: u64,
+    /// Research session that produced this artifact.
+    pub session_id: String,
+    /// Digest of the canonical artifact content.
+    pub content_hash: String,
+    /// Coverage level achieved by the research session.
+    pub coverage: ResearchCoverage,
+    /// Claims contained in the artifact.
+    pub claims: Vec<ResearchClaim>,
+    /// Evidence citations associated with those claims.
+    pub citations: Vec<ResearchCitation>,
+    /// Whether this artifact revision is immutable.
+    pub immutable: bool,
+}
+
+impl ResearchArtifact {
+    /// Validates artifact identity, immutable digest shape, and bounded lineage.
+    pub fn validate(&self) -> Result<(), GroundedResearchError> {
+        validate_grounded_text("artifact_id", &self.artifact_id, 128)?;
+        validate_grounded_text("session_id", &self.session_id, 128)?;
+        validate_grounded_text("content_hash", &self.content_hash, 128)?;
+        if self.revision == 0 || !self.immutable || !is_hex_hash(&self.content_hash) {
+            return Err(GroundedResearchError::InvalidIdentity);
+        }
+        if self.claims.len() > 256 || self.citations.len() > 256 {
+            return Err(GroundedResearchError::LimitExceeded("artifact lineage"));
+        }
+        for claim in &self.claims {
+            validate_grounded_text("claim_id", &claim.claim_id, 128)?;
+            validate_grounded_text("claim.text_hash", &claim.text_hash, 128)?;
+        }
+        for citation in &self.citations {
+            validate_grounded_text("citation_id", &citation.citation_id, 128)?;
+            validate_grounded_text("citation.claim_id", &citation.claim_id, 128)?;
+            validate_grounded_text("citation.evidence_id", &citation.evidence_id, 128)?;
+            validate_grounded_text("citation.validation", &citation.validation, 64)?;
+        }
+        Ok(())
+    }
+}
+
+/// Validates lineage before a citation can be exposed as verified.
+pub fn validate_research_citation(
+    citation: &ResearchCitation,
+    claim: &ResearchClaim,
+    evidence: &EvidenceItem,
+    revision: &ResearchSourceRevision,
+) -> Result<(), GroundedResearchError> {
+    validate_grounded_text("citation_id", &citation.citation_id, 128)?;
+    validate_grounded_text("claim_id", &citation.claim_id, 128)?;
+    validate_grounded_text("evidence_id", &citation.evidence_id, 128)?;
+    validate_grounded_text("validation", &citation.validation, 64)?;
+    validate_grounded_text("claim.text_hash", &claim.text_hash, 128)?;
+    if citation.claim_id != claim.claim_id
+        || citation.evidence_id != evidence.evidence_id
+        || citation.validation != "verified_locator"
+    {
+        return Err(GroundedResearchError::InvalidCitation);
+    }
+    evidence.validate_against_revision(revision)
+}
+
+/// Policy snapshots and source revisions bound to one research session.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchSession {
+    /// Stable session identifier.
+    pub session_id: String,
+    /// Workspace that owns the session.
+    pub workspace_id: String,
+    /// Source collection used by the session.
+    pub collection_id: String,
+    /// Research workflow profile.
+    pub mode: ResearchMode,
+    /// Permitted source-acquisition boundary.
+    pub source_policy: SourcePolicy,
+    /// Immutable source revision identifiers pinned at session start.
+    pub pinned_revision_ids: Vec<String>,
+    /// Serialized snapshot of the effective tool policy.
+    pub tool_policy_snapshot: String,
+    /// Serialized snapshot of the effective model policy.
+    pub model_policy_snapshot: String,
+    /// Resource bounds captured for this session.
+    pub budget: ResearchBudget,
+    /// Current lifecycle state.
+    pub state: ResearchSessionState,
+}
+
+impl ResearchSession {
+    /// Validates session identifiers, policy snapshots, revision references, and budget.
+    pub fn validate(&self) -> Result<(), GroundedResearchError> {
+        validate_grounded_text("session_id", &self.session_id, 128)?;
+        validate_grounded_text("workspace_id", &self.workspace_id, 256)?;
+        validate_grounded_text("collection_id", &self.collection_id, 128)?;
+        validate_grounded_text(
+            "tool_policy_snapshot",
+            &self.tool_policy_snapshot,
+            MAX_JSON_METADATA_CHARS,
+        )?;
+        validate_grounded_text(
+            "model_policy_snapshot",
+            &self.model_policy_snapshot,
+            MAX_JSON_METADATA_CHARS,
+        )?;
+        serde_json::from_str::<serde_json::Value>(&self.tool_policy_snapshot)
+            .map_err(|_| GroundedResearchError::InvalidSnapshot)?;
+        serde_json::from_str::<serde_json::Value>(&self.model_policy_snapshot)
+            .map_err(|_| GroundedResearchError::InvalidSnapshot)?;
+        if self.pinned_revision_ids.len() > MAX_COLLECTION_SOURCES {
+            return Err(GroundedResearchError::LimitExceeded("pinned revisions"));
+        }
+        self.budget.validate()
+    }
+}
+
+/// Applies one of the allowed grounded research session state transitions.
+pub fn transition_research_session(
+    from: ResearchSessionState,
+    to: ResearchSessionState,
+) -> Result<ResearchSessionState, GroundedResearchError> {
+    let valid = matches!(
+        (from, to),
+        (ResearchSessionState::Queued, ResearchSessionState::Running)
+            | (
+                ResearchSessionState::Running,
+                ResearchSessionState::Cancelling
+            )
+            | (
+                ResearchSessionState::Running,
+                ResearchSessionState::Completed
+            )
+            | (ResearchSessionState::Running, ResearchSessionState::Partial)
+            | (ResearchSessionState::Running, ResearchSessionState::Failed)
+            | (
+                ResearchSessionState::Running,
+                ResearchSessionState::Interrupted
+            )
+            | (
+                ResearchSessionState::Cancelling,
+                ResearchSessionState::Partial
+            )
+            | (
+                ResearchSessionState::Cancelling,
+                ResearchSessionState::Failed
+            )
+            | (
+                ResearchSessionState::Interrupted,
+                ResearchSessionState::Running
+            )
+    );
+    if valid {
+        Ok(to)
+    } else {
+        Err(GroundedResearchError::InvalidTransition)
+    }
+}
+
+/// Evidence additions and stale references between two artifact revisions.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchDelta {
+    /// Stable identifier for this delta record.
+    pub delta_id: String,
+    /// Identifier of the older artifact revision.
+    pub previous_artifact_id: String,
+    /// Identifier of the newer artifact revision.
+    pub current_artifact_id: String,
+    /// Evidence identifiers present only in the current artifact.
+    pub added_evidence_ids: Vec<String>,
+    /// Evidence identifiers present only in the previous artifact.
+    pub stale_evidence_ids: Vec<String>,
+}
+
+/// Computes evidence additions and removals between two validated artifacts.
+pub fn derive_research_delta(
+    previous: &ResearchArtifact,
+    current: &ResearchArtifact,
+    delta_id: impl Into<String>,
+) -> Result<ResearchDelta, GroundedResearchError> {
+    previous.validate()?;
+    current.validate()?;
+    let previous_ids = previous
+        .citations
+        .iter()
+        .map(|citation| citation.evidence_id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let current_ids = current
+        .citations
+        .iter()
+        .map(|citation| citation.evidence_id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    Ok(ResearchDelta {
+        delta_id: delta_id.into(),
+        previous_artifact_id: previous.artifact_id.clone(),
+        current_artifact_id: current.artifact_id.clone(),
+        added_evidence_ids: current_ids.difference(&previous_ids).cloned().collect(),
+        stale_evidence_ids: previous_ids.difference(&current_ids).cloned().collect(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grounded_session_transitions_are_fail_closed() {
+        assert!(transition_research_session(
+            ResearchSessionState::Queued,
+            ResearchSessionState::Running
+        )
+        .is_ok());
+        assert!(matches!(
+            transition_research_session(
+                ResearchSessionState::Queued,
+                ResearchSessionState::Completed
+            ),
+            Err(GroundedResearchError::InvalidTransition)
+        ));
+    }
 }

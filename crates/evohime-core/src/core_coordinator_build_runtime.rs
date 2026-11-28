@@ -342,34 +342,36 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 if work_item_id.trim().is_empty() {
                     return Err("work_item_id must not be empty".to_string());
                 }
-                let source = crate::research::SourceMetadata::new(
-                    source_ref,
-                    title,
-                    publisher,
-                    content_type,
-                    retrieved_at_ms,
-                )
-                .map_err(|error| error.to_string())?;
+                if source_ref.trim().is_empty() || title.trim().is_empty() || ttl_ms == 0 {
+                    return Err("invalid research evidence fields".to_string());
+                }
                 let captured_at_ms = SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_millis() as u64;
-                let evidence = crate::research::ResearchEvidence::capture(
-                    source,
-                    raw_excerpt,
-                    captured_at_ms,
-                    ttl_ms,
-                )
-                .map_err(|error| error.to_string())?;
+                let excerpt_sha256 = crate::sha256_hex(raw_excerpt.as_bytes());
+                let evidence = serde_json::json!({
+                    "source": {
+                        "url": source_ref,
+                        "title": title,
+                        "publisher": publisher,
+                        "content_type": content_type,
+                        "retrieved_at_ms": retrieved_at_ms,
+                    },
+                    "excerpt": raw_excerpt,
+                    "excerpt_sha256": excerpt_sha256,
+                    "captured_at_ms": captured_at_ms,
+                    "ttl_ms": ttl_ms,
+                });
                 let id = uuid::Uuid::new_v4().to_string();
                 let record = evohime_local_storage::research_store::ResearchEvidenceRecord {
                     id: id.clone(),
                     source_kind: source_kind.clone(),
-                    source_ref: evidence.source.url.clone(),
-                    redacted_excerpt: evidence.excerpt.clone(),
-                    source_hash: evidence.excerpt_sha256.clone(),
-                    fetched_at: evidence.captured_at_ms.to_string(),
-                    ttl_seconds: evidence.ttl_ms.div_ceil(1_000),
+                    source_ref,
+                    redacted_excerpt: raw_excerpt,
+                    source_hash: excerpt_sha256.clone(),
+                    fetched_at: captured_at_ms.to_string(),
+                    ttl_seconds: ttl_ms.div_ceil(1_000),
                     provenance_link: Some(work_item_id.clone()),
                 };
                 journal.save_research_evidence(&record).await?;
@@ -381,7 +383,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     [
                         ("evidence_id".to_owned(), id.clone()),
                         ("source_kind".to_owned(), source_kind),
-                        ("source_hash".to_owned(), evidence.excerpt_sha256.clone()),
+                        ("source_hash".to_owned(), excerpt_sha256),
                     ],
                 )
                 .await;
@@ -425,34 +427,51 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 if work_item_id.trim().is_empty() {
                     return Err("work_item_id must not be empty".to_string());
                 }
-                let evidence: crate::research::ResearchEvidence = serde_json::from_value(
-                    outcome_json
-                        .get("evidence")
-                        .cloned()
-                        .ok_or_else(|| "missing evidence in research.fetch_url response".to_string())?,
-                )
-                .map_err(|err| format!("invalid evidence in research.fetch_url response: {err}"))?;
+                let evidence = outcome_json
+                    .get("evidence")
+                    .ok_or_else(|| "missing evidence in research.fetch_url response".to_string())?;
+                let source_url = evidence
+                    .get("source")
+                    .and_then(|s| s.get("url"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "invalid evidence.source.url in research.fetch_url response".to_string())?;
+                let excerpt = evidence
+                    .get("excerpt")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "invalid evidence.excerpt in research.fetch_url response".to_string())?;
+                let excerpt_sha256 = evidence
+                    .get("excerpt_sha256")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "invalid evidence.excerpt_sha256 in research.fetch_url response".to_string())?;
+                let captured_at_ms = evidence
+                    .get("captured_at_ms")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let ttl_ms = evidence
+                    .get("ttl_ms")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 let citation_url = outcome_json
                     .get("citation")
                     .and_then(|c| c.get("url"))
                     .and_then(|v| v.as_str())
-                    .unwrap_or(&evidence.source.url)
+                    .unwrap_or(source_url)
                     .to_owned();
                 let source_hash = outcome_json
                     .get("citation")
                     .and_then(|c| c.get("source_hash"))
                     .and_then(|v| v.as_str())
-                    .unwrap_or(&evidence.excerpt_sha256)
+                    .unwrap_or(excerpt_sha256)
                     .to_owned();
                 let id = uuid::Uuid::new_v4().to_string();
                 let record = evohime_local_storage::research_store::ResearchEvidenceRecord {
                     id: id.clone(),
                     source_kind: "url".to_string(),
-                    source_ref: evidence.source.url.clone(),
-                    redacted_excerpt: evidence.excerpt.clone(),
-                    source_hash: evidence.excerpt_sha256.clone(),
-                    fetched_at: evidence.captured_at_ms.to_string(),
-                    ttl_seconds: evidence.ttl_ms.div_ceil(1_000),
+                    source_ref: source_url.to_owned(),
+                    redacted_excerpt: excerpt.to_owned(),
+                    source_hash: excerpt_sha256.to_owned(),
+                    fetched_at: captured_at_ms.to_string(),
+                    ttl_seconds: ttl_ms.div_ceil(1_000),
                     provenance_link: Some(work_item_id.clone()),
                 };
                 journal.save_research_evidence(&record).await?;

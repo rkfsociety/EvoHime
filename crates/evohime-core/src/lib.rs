@@ -245,7 +245,6 @@ pub mod run_policy;
 pub use recovery::{classify_tool_outcome, DenialSource, ToolFailureKind, ToolOutcome};
 pub mod composable_termination_conditions;
 pub(crate) mod refinement;
-pub mod research;
 pub(crate) mod scope;
 pub mod skill_registry;
 pub mod skill_trust_pipeline;

@@ -3026,7 +3026,7 @@ impl ToolAgent {
                         )
                         .await
                         {
-                            Ok(Ok(bytes)) => Some(crate::research::sha256_hex(&bytes)),
+                            Ok(Ok(bytes)) => Some(crate::sha256_hex(&bytes)),
                             _ => None,
                         }
                     }

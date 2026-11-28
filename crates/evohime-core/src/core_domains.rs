@@ -511,11 +511,16 @@ pub(crate) async fn verify_https_capability_archive(
     verify_capability_archive_hash(&body, expected_content_hash)
 }
 
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    hex::encode(sha2::Sha256::digest(bytes))
+}
+
 pub(crate) fn verify_capability_archive_hash(
     bytes: &[u8],
     expected_content_hash: &str,
 ) -> Result<(), String> {
-    let observed = crate::research::sha256_hex(bytes);
+    let observed = sha256_hex(bytes);
     if !observed.eq_ignore_ascii_case(expected_content_hash) {
         return Err(format!(
             "capability archive SHA-256 mismatch: expected {expected_content_hash}, observed {observed}"

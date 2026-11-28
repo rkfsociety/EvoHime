@@ -115,132 +115,125 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             serde_json::to_vec(&serde_json::json!({"schema_version":1,"revision_id":record.revision_id,"inserted":inserted,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "research_evidence_item" => {
-                            let item: crate::research::EvidenceItem = serde_json::from_slice(&payload)
+                            let item: serde_json::Value = serde_json::from_slice(&payload)
                                 .map_err(|_| "invalid_research_evidence_item".to_string())?;
-                            item.validate().map_err(|_| "invalid_research_evidence_item".to_string())?;
+                            let evidence_id = item.get("evidence_id").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+                                .ok_or_else(|| "invalid_research_evidence_item".to_string())?;
+                            let revision_id = item.get("revision_id").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+                                .ok_or_else(|| "invalid_research_evidence_item".to_string())?;
+                            let content_hash = item.get("content_hash").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+                                .ok_or_else(|| "invalid_research_evidence_item".to_string())?;
+                            let locator = item.get("locator")
+                                .ok_or_else(|| "invalid_research_evidence_item".to_string())?;
+                            let trust = item.get("trust")
+                                .ok_or_else(|| "invalid_research_evidence_item".to_string())?;
                             let revision = evohime_local_storage::grounded_research_store::GroundedResearchStore::get_revision(
-                                database.connection(), &item.revision_id,
+                                database.connection(), revision_id,
                             )
                             .map_err(|_| "storage_failed".to_string())?
                             .ok_or_else(|| "research_revision_not_found".to_string())?;
-                            if item.revision_id.is_empty() || revision.source_id != source_id {
+                            if revision.source_id != source_id {
                                 return Err("research_evidence_source_mismatch".into());
                             }
-                            let revision: crate::research::ResearchSourceRevision =
-                                serde_json::from_value(serde_json::json!({
-                                    "revision_id": revision.revision_id,
-                                    "source_id": revision.source_id,
-                                    "revision": revision.revision as u64,
-                                    "content_hash": revision.content_hash,
-                                    "origin_snapshot": revision.origin_snapshot,
-                                    "parser_version": revision.parser_version,
-                                    "index_profile": revision.index_profile,
-                                    "status": revision.status,
-                                    "trust": revision.trust,
-                                    "locator_root": revision.locator_root,
-                                }))
-                                .map_err(|_| "corrupt_research_revision".to_string())?;
-                            item.validate_against_revision(&revision)
-                                .map_err(|_| "stale_research_evidence_item".to_string())?;
-                            let locator_json = serde_json::to_vec(&item.locator).map_err(|_| "serialization_failed".to_string())?;
+                            if revision.status != "ready" {
+                                return Err("stale_research_evidence_item".to_string());
+                            }
+                            let locator_json = serde_json::to_vec(locator).map_err(|_| "serialization_failed".to_string())?;
+                            let trust_json = serde_json::to_string(trust).unwrap_or_default();
                             let inserted = evohime_local_storage::grounded_research_store::GroundedResearchStore::insert_evidence_item(
-                                database.connection(), &item.evidence_id, &item.revision_id, &locator_json,
-                                &item.content_hash, &serde_json::to_string(&item.trust).unwrap_or_default(),
+                                database.connection(), evidence_id, revision_id, &locator_json,
+                                content_hash, &trust_json,
                             ).map_err(|_| "invalid_research_evidence_item".to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"evidence_id":item.evidence_id,"inserted":inserted,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"evidence_id":evidence_id,"inserted":inserted,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "research_session" => {
-                            let session: crate::research::ResearchSession = serde_json::from_slice(&payload)
+                            let session: serde_json::Value = serde_json::from_slice(&payload)
                                 .map_err(|_| "invalid_research_session".to_string())?;
-                            session.validate().map_err(|_| "invalid_research_session".to_string())?;
-                            if session.collection_id != source_id {
+                            let session_id = session.get("session_id").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+                                .ok_or_else(|| "invalid_research_session".to_string())?;
+                            let workspace_id = session.get("workspace_id").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+                                .ok_or_else(|| "invalid_research_session".to_string())?;
+                            let collection_id = session.get("collection_id").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+                                .ok_or_else(|| "invalid_research_session".to_string())?;
+                            if collection_id != source_id {
                                 return Err("research_collection_mismatch".into());
                             }
-                            let pinned = serde_json::to_vec(&session.pinned_revision_ids)
+                            let pinned = serde_json::to_vec(session.get("pinned_revision_ids").unwrap_or(&serde_json::json!([])))
                                 .map_err(|_| "serialization_failed".to_string())?;
-                            let budget = serde_json::to_vec(&session.budget)
+                            let budget = serde_json::to_vec(session.get("budget").unwrap_or(&serde_json::json!({})))
                                 .map_err(|_| "serialization_failed".to_string())?;
+                            let mode = serde_json::to_string(session.get("mode").unwrap_or(&serde_json::Value::Null)).unwrap_or_default();
+                            let source_policy = serde_json::to_string(session.get("source_policy").unwrap_or(&serde_json::Value::Null)).unwrap_or_default();
+                            let tool_policy_snapshot = session.get("tool_policy_snapshot").and_then(|v| v.as_str()).unwrap_or("{}");
+                            let model_policy_snapshot = session.get("model_policy_snapshot").and_then(|v| v.as_str()).unwrap_or("{}");
+                            let state_val = session.get("state").cloned().unwrap_or(serde_json::Value::Null);
+                            let state_str = serde_json::to_string(&state_val).unwrap_or_default();
                             let inserted = evohime_local_storage::grounded_research_store::GroundedResearchStore::insert_session(
                                 database.connection(),
-                                &session.session_id,
-                                &session.workspace_id,
-                                &session.collection_id,
+                                session_id,
+                                workspace_id,
+                                collection_id,
                                 1,
-                                &serde_json::to_string(&session.mode).unwrap_or_default(),
-                                &serde_json::to_string(&session.source_policy).unwrap_or_default(),
+                                &mode,
+                                &source_policy,
                                 &pinned,
-                                session.tool_policy_snapshot.as_bytes(),
-                                session.model_policy_snapshot.as_bytes(),
+                                tool_policy_snapshot.as_bytes(),
+                                model_policy_snapshot.as_bytes(),
                                 &budget,
-                                &serde_json::to_string(&session.state).unwrap_or_default(),
+                                &state_str,
                             ).map_err(|_| "invalid_research_session".to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"session_id":session.session_id,"inserted":inserted,"state":session.state,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"session_id":session_id,"inserted":inserted,"state":state_val,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "research_artifact" => {
-                            let artifact: crate::research::ResearchArtifact = serde_json::from_slice(&payload)
+                            let artifact: serde_json::Value = serde_json::from_slice(&payload)
                                 .map_err(|_| "invalid_research_artifact".to_string())?;
-                            artifact.validate().map_err(|_| "invalid_research_artifact".to_string())?;
-                            for citation in &artifact.citations {
-                                let claim = artifact
-                                    .claims
-                                    .iter()
-                                    .find(|claim| claim.claim_id == citation.claim_id)
-                                    .ok_or_else(|| "invalid_research_citation".to_string())?;
-                                let (revision_id, locator_json, content_hash, trust) =
+                            let artifact_id = artifact.get("artifact_id").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+                                .ok_or_else(|| "invalid_research_artifact".to_string())?;
+                            let revision = artifact.get("revision").and_then(|v| v.as_i64()).filter(|r| *r > 0)
+                                .ok_or_else(|| "invalid_research_artifact".to_string())?;
+                            let session_id = artifact.get("session_id").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+                                .ok_or_else(|| "invalid_research_artifact".to_string())?;
+                            let content_hash = artifact.get("content_hash").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+                                .ok_or_else(|| "invalid_research_artifact".to_string())?;
+                            let empty = Vec::new();
+                            let claims_arr = artifact.get("claims").and_then(|v| v.as_array()).unwrap_or(&empty);
+                            let citations_arr = artifact.get("citations").and_then(|v| v.as_array()).unwrap_or(&empty);
+                            for citation in citations_arr {
+                                let claim_id = citation.get("claim_id").and_then(|v| v.as_str()).unwrap_or_default();
+                                let evidence_id = citation.get("evidence_id").and_then(|v| v.as_str()).unwrap_or_default();
+                                if !claims_arr.iter().any(|c| c.get("claim_id").and_then(|v| v.as_str()) == Some(claim_id)) {
+                                    return Err("invalid_research_citation".to_string());
+                                }
+                                let (revision_id, _, _, _) =
                                     evohime_local_storage::grounded_research_store::GroundedResearchStore::get_evidence(
-                                        database.connection(), &citation.evidence_id,
+                                        database.connection(), evidence_id,
                                     )
                                     .map_err(|_| "storage_failed".to_string())?
                                     .ok_or_else(|| "research_evidence_not_found".to_string())?;
-                                let evidence = crate::research::EvidenceItem {
-                                    evidence_id: citation.evidence_id.clone(),
-                                    revision_id: revision_id.clone(),
-                                    locator: serde_json::from_slice(&locator_json)
-                                        .map_err(|_| "corrupt_research_locator".to_string())?,
-                                    content_hash,
-                                    trust: serde_json::from_str(&trust)
-                                        .map_err(|_| "corrupt_research_trust".to_string())?,
-                                };
                                 let revision_record = evohime_local_storage::grounded_research_store::GroundedResearchStore::get_revision(
                                     database.connection(), &revision_id,
                                 )
                                 .map_err(|_| "storage_failed".to_string())?
                                 .ok_or_else(|| "research_revision_not_found".to_string())?;
-                                let revision: crate::research::ResearchSourceRevision =
-                                    serde_json::from_value(serde_json::json!({
-                                        "revision_id": revision_record.revision_id,
-                                        "source_id": revision_record.source_id,
-                                        "revision": revision_record.revision as u64,
-                                        "content_hash": revision_record.content_hash,
-                                        "origin_snapshot": revision_record.origin_snapshot,
-                                        "parser_version": revision_record.parser_version,
-                                        "index_profile": revision_record.index_profile,
-                                        "status": revision_record.status,
-                                        "trust": revision_record.trust,
-                                        "locator_root": revision_record.locator_root,
-                                    }))
-                                    .map_err(|_| "corrupt_research_revision".to_string())?;
-                                crate::research::validate_research_citation(
-                                    citation, claim, &evidence, &revision,
-                                )
-                                .map_err(|_| "invalid_research_citation".to_string())?;
+                                if revision_record.status != "ready" {
+                                    return Err("invalid_research_citation".to_string());
+                                }
                             }
-                            let claims = serde_json::to_vec(&artifact.claims)
-                                .map_err(|_| "serialization_failed".to_string())?;
-                            let citations = serde_json::to_vec(&artifact.citations)
-                                .map_err(|_| "serialization_failed".to_string())?;
+                            let claims = serde_json::to_vec(claims_arr).map_err(|_| "serialization_failed".to_string())?;
+                            let citations = serde_json::to_vec(citations_arr).map_err(|_| "serialization_failed".to_string())?;
+                            let coverage = serde_json::to_string(artifact.get("coverage").unwrap_or(&serde_json::Value::Null)).unwrap_or_default();
                             let inserted = evohime_local_storage::grounded_research_store::GroundedResearchStore::insert_artifact(
                                 database.connection(),
-                                &artifact.artifact_id,
-                                artifact.revision as i64,
-                                &artifact.session_id,
-                                &artifact.content_hash,
-                                &serde_json::to_string(&artifact.coverage).unwrap_or_default(),
+                                artifact_id,
+                                revision,
+                                session_id,
+                                content_hash,
+                                &coverage,
                                 &claims,
                                 &citations,
                                 crate::task_memory::now_millis() as i64,
                             ).map_err(|_| "invalid_research_artifact".to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"artifact_id":artifact.artifact_id,"revision":artifact.revision,"inserted":inserted,"immutable":true,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"artifact_id":artifact_id,"revision":revision,"inserted":inserted,"immutable":true,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "research_artifact_get" => {
                             let request: serde_json::Value = serde_json::from_slice(&payload)
@@ -266,43 +259,53 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             })).map_err(|_| "serialization_failed".to_string())
                         }
                         "research_delta" => {
-                            let delta: crate::research::ResearchDelta = serde_json::from_slice(&payload)
+                            let delta: serde_json::Value = serde_json::from_slice(&payload)
                                 .map_err(|_| "invalid_research_delta".to_string())?;
-                            let added = serde_json::to_vec(&delta.added_evidence_ids).map_err(|_| "serialization_failed".to_string())?;
-                            let stale = serde_json::to_vec(&delta.stale_evidence_ids).map_err(|_| "serialization_failed".to_string())?;
+                            let delta_id = delta.get("delta_id").and_then(|v| v.as_str())
+                                .ok_or_else(|| "invalid_research_delta".to_string())?;
+                            let previous_artifact_id = delta.get("previous_artifact_id").and_then(|v| v.as_str())
+                                .ok_or_else(|| "invalid_research_delta".to_string())?;
+                            let current_artifact_id = delta.get("current_artifact_id").and_then(|v| v.as_str())
+                                .ok_or_else(|| "invalid_research_delta".to_string())?;
+                            let added = serde_json::to_vec(delta.get("added_evidence_ids").unwrap_or(&serde_json::json!([]))).map_err(|_| "serialization_failed".to_string())?;
+                            let stale = serde_json::to_vec(delta.get("stale_evidence_ids").unwrap_or(&serde_json::json!([]))).map_err(|_| "serialization_failed".to_string())?;
                             let inserted = evohime_local_storage::grounded_research_store::GroundedResearchStore::insert_delta(
-                                database.connection(), &delta.delta_id, &delta.previous_artifact_id,
-                                &delta.current_artifact_id, &added, &stale)
+                                database.connection(), delta_id, previous_artifact_id,
+                                current_artifact_id, &added, &stale)
                                 .map_err(|_| "invalid_research_delta".to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"delta_id":delta.delta_id,"inserted":inserted,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"delta_id":delta_id,"inserted":inserted,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "research_artifact_promote" => {
                             let request: serde_json::Value = serde_json::from_slice(&payload)
                                 .map_err(|_| "invalid_research_promotion".to_string())?;
-                            let artifact: crate::research::ResearchArtifact = serde_json::from_value(
-                                request.get("artifact").cloned().ok_or_else(|| "invalid_research_promotion".to_string())?,
-                            ).map_err(|_| "invalid_research_artifact".to_string())?;
-                            artifact.validate().map_err(|_| "invalid_research_artifact".to_string())?;
+                            let artifact = request.get("artifact").ok_or_else(|| "invalid_research_promotion".to_string())?;
+                            let artifact_id = artifact.get("artifact_id").and_then(|v| v.as_str())
+                                .ok_or_else(|| "invalid_research_artifact".to_string())?;
+                            let revision = artifact.get("revision").and_then(|v| v.as_u64())
+                                .ok_or_else(|| "invalid_research_artifact".to_string())?;
+                            let session_id = artifact.get("session_id").and_then(|v| v.as_str()).unwrap_or_default();
+                            let content_hash = artifact.get("content_hash").and_then(|v| v.as_str())
+                                .ok_or_else(|| "invalid_research_artifact".to_string())?;
                             let project_id = request.get("project_id").and_then(|value| value.as_str())
                                 .ok_or_else(|| "project_id_required".to_string())?;
                             let locator = request.get("content_locator").and_then(|value| value.as_str())
                                 .ok_or_else(|| "content_locator_required".to_string())?;
                             let row = crate::artifact_handoff_registry::ProjectArtifactRevision {
                                 schema_version: crate::artifact_handoff_registry::CONTRACT_VERSION,
-                                artifact_id: artifact.artifact_id.clone(),
+                                artifact_id: artifact_id.to_string(),
                                 project_id: project_id.to_string(),
-                                revision: artifact.revision,
+                                revision,
                                 state: crate::artifact_handoff_registry::ArtifactState::Produced,
                                 content_locator: locator.to_string(),
-                                content_hash: artifact.content_hash.clone(),
+                                content_hash: content_hash.to_string(),
                                 producer_identity: "core:grounded-research".to_string(),
                                 workspace_fingerprint: None,
                                 parent_fingerprints: Vec::new(),
                                 metadata: serde_json::json!({
-                                    "research_session_id": artifact.session_id,
-                                    "coverage": artifact.coverage,
-                                    "claims": artifact.claims.len(),
-                                    "citations": artifact.citations.len(),
+                                    "research_session_id": session_id,
+                                    "coverage": artifact.get("coverage").cloned().unwrap_or(serde_json::Value::Null),
+                                    "claims": artifact.get("claims").and_then(|v| v.as_array()).map_or(0, Vec::len),
+                                    "citations": artifact.get("citations").and_then(|v| v.as_array()).map_or(0, Vec::len),
                                 }),
                             };
                             crate::artifact_handoff_registry::validate(&row).map_err(|error| error.to_string())?;
@@ -317,7 +320,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 },
                                 &[],
                             ).map(|_| true).map_err(|_| "artifact_promotion_failed".to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"artifact_id":artifact.artifact_id,"revision":artifact.revision,"promoted":inserted,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"artifact_id":artifact_id,"revision":revision,"promoted":inserted,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "research_session_transition" => {
                             let request: serde_json::Value = serde_json::from_slice(&payload)
@@ -326,14 +329,10 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 .ok_or_else(|| "session_id_required".to_string())?;
                             let expected_revision = request.get("expected_revision").and_then(|value| value.as_i64())
                                 .ok_or_else(|| "expected_revision_required".to_string())?;
-                            let from: crate::research::ResearchSessionState = serde_json::from_value(
-                                request.get("from_state").cloned().ok_or_else(|| "from_state_required".to_string())?,
-                            ).map_err(|_| "invalid_research_session_transition".to_string())?;
-                            let next: crate::research::ResearchSessionState = serde_json::from_value(
-                                request.get("next_state").cloned().ok_or_else(|| "next_state_required".to_string())?,
-                            ).map_err(|_| "invalid_research_session_transition".to_string())?;
-                            crate::research::transition_research_session(from, next)
-                                .map_err(|_| "invalid_research_session_transition".to_string())?;
+                            let from = request.get("from_state").cloned()
+                                .ok_or_else(|| "from_state_required".to_string())?;
+                            let next = request.get("next_state").cloned()
+                                .ok_or_else(|| "next_state_required".to_string())?;
                             let changed = evohime_local_storage::grounded_research_store::GroundedResearchStore::transition_session(
                                 database.connection(), session_id, expected_revision,
                                 &serde_json::to_string(&from).unwrap_or_default(),
