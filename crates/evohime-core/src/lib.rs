@@ -232,7 +232,6 @@ pub(crate) mod prd;
 pub mod project_quality_contract;
 pub mod prompt_cache_planner;
 pub(crate) mod provider_resilience;
-pub mod remote_conversation_channels;
 pub(crate) mod retained_child;
 /// Models trust and lifecycle for skill sources.
 pub mod skill_source_lifecycle;

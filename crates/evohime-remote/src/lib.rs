@@ -30,6 +30,8 @@
 pub mod durable_remote_task_bridge;
 /// Bounded remote client control-plane contract.
 pub mod remote_client_control_plane;
+/// Authenticated, bounded remote conversation channel contracts.
+pub mod remote_conversation_channels;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

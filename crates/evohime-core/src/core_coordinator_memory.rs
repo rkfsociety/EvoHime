@@ -392,7 +392,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let event_operation = operation.clone();
             let event_connection_id = connection_id.clone();
             let result = async {
-                    use crate::remote_conversation_channels as v; use evohime_local_storage::remote_conversation_channels_store as store;
+                    use evohime_remote::remote_conversation_channels as v; use evohime_local_storage::remote_conversation_channels_store as store;
                     if connection_id.is_empty() || idempotency_key.is_empty() || idempotency_key.len() > 128 { return Err("invalid_remote_channel_request".into()); }
                     let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?; let db = journal.database().lock().await;
                     let request: RemoteChannelRequest = serde_json::from_slice(&payload).map_err(|_| "invalid_remote_channel_payload".to_string())?;

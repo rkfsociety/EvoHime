@@ -372,13 +372,13 @@ pub(crate) struct ModelEditRequest {
 #[serde(deny_unknown_fields)]
 pub(crate) struct RemoteChannelRequest {
     #[serde(default)]
-    pub(crate) connection: Option<crate::remote_conversation_channels::ChannelConnection>,
+    pub(crate) connection: Option<evohime_remote::remote_conversation_channels::ChannelConnection>,
     #[serde(default)]
     pub(crate) code: Option<String>,
     #[serde(default)]
     pub(crate) external_identity: Option<String>,
     #[serde(default)]
-    pub(crate) message: Option<crate::remote_conversation_channels::InboundMessage>,
+    pub(crate) message: Option<evohime_remote::remote_conversation_channels::InboundMessage>,
 }
 
 /// Типизированный запрос сохранения memory view.
