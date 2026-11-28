@@ -27,10 +27,13 @@ impl IpcBridge {
                 config,
                 self.provider_catalog_snapshots.clone(),
             );
-        let runtime = std::sync::Arc::new(crate::image_generation::ImageGenerationRuntime::new(
-            self.journal.clone(),
-            std::sync::Arc::new(gateway.with_route_preflight(std::sync::Arc::new(preflight))),
-        ));
+        let runtime = std::sync::Arc::new(
+            crate::image_generation::ImageGenerationRuntime::new(
+                self.journal.clone(),
+                std::sync::Arc::new(gateway.with_route_preflight(std::sync::Arc::new(preflight))),
+            )
+            .with_module_registry(self.module_registry()),
+        );
         let _ = self.image_generation_runtime.set(runtime.clone());
         Some(
             self.image_generation_runtime

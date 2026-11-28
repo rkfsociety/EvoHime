@@ -89,41 +89,28 @@ pub enum ImageValidationError {
     DimensionsExceeded,
 }
 
-/// Validates a provider image by declared MIME, byte signature, decoded dimensions and pixels.
-///
-/// The full raster is decoded into a bounded RGBA buffer before the encoded bytes
-/// can be published through ArtifactStore.
+#[cfg(test)]
+/// Validates a provider image by declared MIME, byte signature, and bounds (unit test helper).
 pub fn validate_output(
     declared_mime: &str,
     bytes: Vec<u8>,
 ) -> Result<ValidatedImage, ImageValidationError> {
+    validate_header(declared_mime, &bytes)?;
+    Err(ImageValidationError::DecoderUnavailable)
+}
+
+fn validate_header(
+    declared_mime: &str,
+    bytes: &[u8],
+) -> Result<ImageMimeType, ImageValidationError> {
     if bytes.is_empty() || bytes.len() > MAX_OUTPUT_BYTES {
         return Err(ImageValidationError::LimitExceeded);
     }
     let mime = ImageMimeType::parse(declared_mime).ok_or(ImageValidationError::MimeMismatch)?;
-    if signature_mime(&bytes) != Some(mime) {
+    if signature_mime(bytes) != Some(mime) {
         return Err(ImageValidationError::InvalidSignature);
     }
-    let (width, height) = decode_dimensions(&bytes, mime)?;
-    if width == 0 || height == 0 || width > MAX_DIMENSION || height > MAX_DIMENSION {
-        return Err(ImageValidationError::DimensionsExceeded);
-    }
-    let pixels = u64::from(width)
-        .checked_mul(u64::from(height))
-        .ok_or(ImageValidationError::DimensionsExceeded)?;
-    let decoded_bytes = pixels
-        .checked_mul(4)
-        .ok_or(ImageValidationError::DimensionsExceeded)?;
-    if pixels > MAX_PIXELS || decoded_bytes > MAX_DECODED_BYTES as u64 {
-        return Err(ImageValidationError::DimensionsExceeded);
-    }
-    Ok(ValidatedImage {
-        mime_type: mime,
-        width,
-        height,
-        sha256: hex::encode(Sha256::digest(&bytes)),
-        bytes,
-    })
+    Ok(mime)
 }
 
 fn signature_mime(bytes: &[u8]) -> Option<ImageMimeType> {
@@ -134,117 +121,6 @@ fn signature_mime(bytes: &[u8]) -> Option<ImageMimeType> {
     } else {
         None
     }
-}
-
-#[cfg(windows)]
-fn decode_dimensions(
-    bytes: &[u8],
-    mime: ImageMimeType,
-) -> Result<(u32, u32), ImageValidationError> {
-    use windows::Win32::Graphics::Imaging::{
-        CLSID_WICImagingFactory, GUID_ContainerFormatJpeg, GUID_ContainerFormatPng,
-        GUID_WICPixelFormat32bppRGBA, IWICImagingFactory, WICBitmapDitherTypeNone,
-        WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnDemand,
-    };
-    use windows::Win32::System::Com::{
-        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
-        COINIT_MULTITHREADED,
-    };
-
-    let initialized = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }
-        .ok()
-        .is_ok();
-    if !initialized {
-        return Err(ImageValidationError::DecodeFailed);
-    }
-    let result = (|| unsafe {
-        let factory: IWICImagingFactory =
-            CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)
-                .map_err(|_| ImageValidationError::DecodeFailed)?;
-        let stream = factory
-            .CreateStream()
-            .map_err(|_| ImageValidationError::DecodeFailed)?;
-        stream
-            .InitializeFromMemory(bytes)
-            .map_err(|_| ImageValidationError::DecodeFailed)?;
-        let decoder = factory
-            .CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand)
-            .map_err(|_| ImageValidationError::DecodeFailed)?;
-        let expected_container = match mime {
-            ImageMimeType::Png => GUID_ContainerFormatPng,
-            ImageMimeType::Jpeg => GUID_ContainerFormatJpeg,
-        };
-        if decoder
-            .GetContainerFormat()
-            .map_err(|_| ImageValidationError::DecodeFailed)?
-            != expected_container
-        {
-            return Err(ImageValidationError::MimeMismatch);
-        }
-        if decoder
-            .GetFrameCount()
-            .map_err(|_| ImageValidationError::DecodeFailed)?
-            != 1
-        {
-            return Err(ImageValidationError::DecodeFailed);
-        }
-        let frame = decoder
-            .GetFrame(0)
-            .map_err(|_| ImageValidationError::DecodeFailed)?;
-        let mut width = 0;
-        let mut height = 0;
-        frame
-            .GetSize(&mut width, &mut height)
-            .map_err(|_| ImageValidationError::DecodeFailed)?;
-        let pixels = u64::from(width)
-            .checked_mul(u64::from(height))
-            .ok_or(ImageValidationError::DimensionsExceeded)?;
-        let rgba_bytes = pixels
-            .checked_mul(4)
-            .ok_or(ImageValidationError::DimensionsExceeded)?;
-        if width == 0
-            || height == 0
-            || width > MAX_DIMENSION
-            || height > MAX_DIMENSION
-            || pixels > MAX_PIXELS
-            || rgba_bytes > MAX_DECODED_BYTES as u64
-        {
-            return Err(ImageValidationError::DimensionsExceeded);
-        }
-        let converter = factory
-            .CreateFormatConverter()
-            .map_err(|_| ImageValidationError::DecodeFailed)?;
-        converter
-            .Initialize(
-                &frame,
-                &GUID_WICPixelFormat32bppRGBA,
-                WICBitmapDitherTypeNone,
-                None,
-                0.0,
-                WICBitmapPaletteTypeCustom,
-            )
-            .map_err(|_| ImageValidationError::DecodeFailed)?;
-        let stride = width
-            .checked_mul(4)
-            .ok_or(ImageValidationError::DimensionsExceeded)?;
-        let buffer_len =
-            usize::try_from(rgba_bytes).map_err(|_| ImageValidationError::DimensionsExceeded)?;
-        let mut rgba = vec![0u8; buffer_len];
-        converter
-            .CopyPixels(std::ptr::null(), stride, &mut rgba)
-            .map_err(|_| ImageValidationError::DecodeFailed)?;
-        Ok((width, height))
-    })();
-    unsafe { CoUninitialize() };
-    result
-}
-
-#[cfg(not(windows))]
-fn decode_dimensions(
-    _bytes: &[u8],
-    _mime: ImageMimeType,
-) -> Result<(u32, u32), ImageValidationError> {
-    Err(ImageValidationError::DecoderUnavailable)
 }
 
 /// Bounded request metadata used to compute a privacy-preserving request digest.
@@ -443,7 +319,63 @@ mod tests {
                 input_image_calls: input_image_calls.clone(),
             }),
         ));
-        let runtime = ImageGenerationRuntime::new(journal.clone(), gateway.clone());
+        let runtime = ImageGenerationRuntime::new(journal.clone(), gateway.clone())
+            .with_module_registry({
+                struct MockValidateImageTransport;
+                impl crate::module_registry::ServiceTransport for MockValidateImageTransport {
+                    fn send(
+                        &self,
+                        request: evohime_service_contract::ServiceRequest,
+                    ) -> crate::module_registry::ServiceFuture<
+                        '_,
+                        Result<
+                            evohime_service_contract::ServiceResponse,
+                            evohime_service_contract::ServiceContractError,
+                        >,
+                    > {
+                        Box::pin(async move {
+                            match request {
+                                evohime_service_contract::ServiceRequest::Invoke {
+                                    request_id,
+                                    capability,
+                                    ..
+                                } if capability == "media.validate_image" => {
+                                    Ok(evohime_service_contract::ServiceResponse::InvokeResult {
+                                        request_id,
+                                        payload: serde_json::json!({
+                                            "mime_type": "image/png",
+                                            "width": 1,
+                                            "height": 1,
+                                            "sha256": "0".repeat(64),
+                                        }),
+                                    })
+                                }
+                                _ => Ok(evohime_service_contract::ServiceResponse::Pong {
+                                    contract_version:
+                                        evohime_service_contract::SERVICE_CONTRACT_VERSION,
+                                }),
+                            }
+                        })
+                    }
+                }
+                let registry = crate::module_registry::ModuleRegistry::new();
+                let descriptor = evohime_service_contract::ServiceDescriptor {
+                    service_id: "media-voice".to_owned(),
+                    version: "0.0.4".to_owned(),
+                    contract_version: evohime_service_contract::SERVICE_CONTRACT_VERSION,
+                    capabilities: vec![evohime_service_contract::ServiceCapabilityDescriptor {
+                        name: "media.validate_image".to_owned(),
+                        description: "Mock validate_image".to_owned(),
+                        input_schema: serde_json::json!({ "type": "object" }),
+                        required_permissions: vec!["media.read".to_owned()],
+                        supports_streaming: false,
+                    }],
+                };
+                registry
+                    .register(descriptor, std::sync::Arc::new(MockValidateImageTransport))
+                    .expect("mock media-voice registers");
+                registry
+            });
         let projection = runtime
             .start(
                 "client-image-test",
@@ -867,6 +799,7 @@ pub struct ImageGenerationRuntime {
     active: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, ActiveImageJob>>>,
     verified_artifacts: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<(String, u64)>>>,
     slots: std::sync::Arc<tokio::sync::Semaphore>,
+    module_registry: Option<crate::module_registry::ModuleRegistry>,
 }
 
 impl ImageGenerationRuntime {
@@ -896,7 +829,65 @@ impl ImageGenerationRuntime {
                 std::collections::HashSet::new(),
             )),
             slots: std::sync::Arc::new(tokio::sync::Semaphore::new(4)),
+            module_registry: None,
         }
+    }
+
+    /// Attaches the runtime [`crate::module_registry::ModuleRegistry`] used to
+    /// delegate image decoding and validation to `evohime-media-voice`.
+    pub fn with_module_registry(
+        mut self,
+        module_registry: crate::module_registry::ModuleRegistry,
+    ) -> Self {
+        self.module_registry = Some(module_registry);
+        self
+    }
+
+    async fn validate_image_via_service(
+        &self,
+        declared_mime: &str,
+        bytes: Vec<u8>,
+    ) -> Result<ValidatedImage, ImageValidationError> {
+        use base64::Engine;
+        let mime = validate_header(declared_mime, &bytes)?;
+        let Some(registry) = &self.module_registry else {
+            return Err(ImageValidationError::DecoderUnavailable);
+        };
+        let bytes_base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        let response = registry
+            .invoke_if_ready(
+                format!("media-validate-{}", crate::sha256_hex(&bytes)),
+                "media.validate_image",
+                serde_json::json!({
+                    "declared_mime": declared_mime,
+                    "bytes_base64": bytes_base64,
+                }),
+                None,
+                |_| Ok(()),
+            )
+            .await
+            .ok_or(ImageValidationError::DecoderUnavailable)?
+            .map_err(|_| ImageValidationError::DecodeFailed)?;
+        let width = response
+            .get("width")
+            .and_then(|v| v.as_u64())
+            .and_then(|v| u32::try_from(v).ok())
+            .ok_or(ImageValidationError::DecodeFailed)?;
+        let height = response
+            .get("height")
+            .and_then(|v| v.as_u64())
+            .and_then(|v| u32::try_from(v).ok())
+            .ok_or(ImageValidationError::DecodeFailed)?;
+        if width == 0 || height == 0 || width > MAX_DIMENSION || height > MAX_DIMENSION {
+            return Err(ImageValidationError::DimensionsExceeded);
+        }
+        Ok(ValidatedImage {
+            mime_type: mime,
+            width,
+            height,
+            sha256: hex::encode(Sha256::digest(&bytes)),
+            bytes,
+        })
     }
 
     /// Returns capability metadata without exposing provider endpoints or credentials.
@@ -1188,9 +1179,9 @@ impl ImageGenerationRuntime {
                 return Err(ImageGenerationError::InvalidRequest("input_bytes_limit"));
             }
             let mime = input.mime_type.clone();
-            let image = tokio::task::spawn_blocking(move || validate_output(&mime, encoded))
+            let image = self
+                .validate_image_via_service(&mime, encoded)
                 .await
-                .map_err(|_| ImageGenerationError::InvalidRequest("input_decode_failed"))?
                 .map_err(|_| ImageGenerationError::InvalidRequest("input_decode_failed"))?;
             decoded_inputs.push(image.bytes);
         }
@@ -1607,13 +1598,12 @@ impl ImageGenerationRuntime {
                 ));
             }
             let requested_mime = request.mime_type.clone();
-            let decoded = tokio::task::spawn_blocking(move || {
-                validate_output(&output.mime_type, output.bytes)
-            })
-            .await;
+            let decoded = self
+                .validate_image_via_service(&output.mime_type, output.bytes)
+                .await;
             let validated_image = match decoded {
-                Ok(Ok(image)) => image,
-                _ => {
+                Ok(image) => image,
+                Err(_) => {
                     let _ = transition_job(
                         &self.journal,
                         &job_id,

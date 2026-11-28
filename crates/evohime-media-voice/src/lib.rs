@@ -6,6 +6,8 @@
 
 //! Isolated `media-voice` service module implementing `evohime-service-contract`.
 
+/// Bounded image container validation and Windows WIC decoding.
+pub mod image_validation;
 pub mod optional_voice_output_adapter;
 pub mod vision_contract;
 /// Deterministic parser for wake-word voice commands.
@@ -93,6 +95,21 @@ impl ServiceHandler for MediaVoiceService {
                         "properties": { "text": { "type": "string" } }
                     }),
                     required_permissions: vec!["voice.input".to_owned()],
+                    supports_streaming: false,
+                },
+                ServiceCapabilityDescriptor {
+                    name: "media.validate_image".to_owned(),
+                    description: "Validates and decodes an encoded PNG/JPEG image within bounds."
+                        .to_owned(),
+                    input_schema: serde_json::json!({
+                        "type": "object",
+                        "required": ["declared_mime", "bytes_base64"],
+                        "properties": {
+                            "declared_mime": { "type": "string" },
+                            "bytes_base64": { "type": "string" }
+                        }
+                    }),
+                    required_permissions: vec!["media.read".to_owned()],
                     supports_streaming: false,
                 },
             ],
@@ -221,6 +238,32 @@ impl ServiceHandler for MediaVoiceService {
                         "matched": false,
                     })),
                 }
+            }
+            "media.validate_image" => {
+                use base64::Engine;
+                let declared_mime = payload
+                    .get("declared_mime")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        ServiceContractError::invalid_input("declared_mime must be a string")
+                    })?;
+                let bytes_b64 = payload
+                    .get("bytes_base64")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        ServiceContractError::invalid_input("bytes_base64 must be a string")
+                    })?;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(bytes_b64)
+                    .map_err(|_| ServiceContractError::invalid_input("invalid_base64_image"))?;
+                let validated = image_validation::validate_output(declared_mime, bytes)
+                    .map_err(|err| ServiceContractError::invalid_input(err.to_string()))?;
+                Ok(serde_json::json!({
+                    "mime_type": validated.mime_type.as_str(),
+                    "width": validated.width,
+                    "height": validated.height,
+                    "sha256": validated.sha256,
+                }))
             }
             other => Err(ServiceContractError::not_found(format!(
                 "unknown media-voice capability: {other}"
