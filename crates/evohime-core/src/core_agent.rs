@@ -379,9 +379,16 @@ impl ModelAgent {
         let content_privacy = messages
             .iter()
             .map(|message| {
-                sensitive_data_guardrails::classify_text(&message.content)
+                sensitive_data_guardrails::classify_text_chunked(&message.content)
                     .map(|summary| sensitive_data_guardrails::required_privacy(&summary))
-                    .map_err(|_| AgentRunError::Internal("egress_guardrail_unavailable".into()))
+                    .map_err(|err| match err {
+                        sensitive_data_guardrails::GuardrailError::InputTooLarge => {
+                            AgentRunError::Provider(ProviderError::Api(
+                                "egress_payload_too_large".into(),
+                            ))
+                        }
+                        _ => AgentRunError::Internal("egress_guardrail_unavailable".into()),
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()

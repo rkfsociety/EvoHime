@@ -247,9 +247,16 @@ fn classify_messages_privacy(messages: &[ChatMessage]) -> Result<PrivacyClass, A
     messages
         .iter()
         .map(|message| {
-            sensitive_data_guardrails::classify_text(&message.content)
+            sensitive_data_guardrails::classify_text_chunked(&message.content)
                 .map(|summary| sensitive_data_guardrails::required_privacy(&summary))
-                .map_err(|_| AgentRunError::Internal("egress_guardrail_unavailable".into()))
+                .map_err(|err| match err {
+                    sensitive_data_guardrails::GuardrailError::InputTooLarge => {
+                        AgentRunError::Provider(ProviderError::Api(
+                            "egress_payload_too_large".into(),
+                        ))
+                    }
+                    _ => AgentRunError::Internal("egress_guardrail_unavailable".into()),
+                })
         })
         .collect::<Result<Vec<_>, _>>()
         .map(|levels| levels.into_iter().max().unwrap_or(PrivacyClass::Public))
@@ -305,7 +312,7 @@ fn guarded_provider_messages(
         .map(|message| {
             let mut message = message.clone();
             let snapshot = sensitive_data_guardrails::default_policy("model");
-            match sensitive_data_guardrails::evaluate_egress(
+            match sensitive_data_guardrails::evaluate_egress_chunked(
                 &snapshot,
                 sensitive_data_guardrails::DestinationClass::Provider,
                 "model",
@@ -1984,5 +1991,68 @@ mod prompt_strategy_fanout_tests {
         .expect_err("private key must stay blocked");
 
         assert!(err.to_string().contains("sensitive_data_blocked"));
+    }
+
+    #[test]
+    fn route_snapshot_handles_large_multiline_output_and_reports_oversized_single_line() {
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            "hive".to_owned(),
+            evohime_model_gateway::config::ModelRouteConfig::openai_compatible(
+                "test-key",
+                "https://api.example.test/v1",
+                "test-model",
+            ),
+        );
+        let gateway =
+            ModelGateway::from_config(&evohime_model_gateway::config::ModelGatewayConfig {
+                default_route: "hive".to_owned(),
+                routes,
+            })
+            .expect("gateway");
+
+        let mut large_output = "test passed\n".repeat(6_000);
+        large_output.push_str("contact alice@example.com\n");
+        assert!(large_output.len() > sensitive_data_guardrails::MAX_INPUT_BYTES);
+        let messages = vec![ChatMessage::text(ChatRole::Tool, large_output)];
+        let mut routing_request = RoutingRequest {
+            required_capabilities: vec!["chat".into()],
+            max_cost_micros_per_1k_tokens: None,
+            max_latency_ms: None,
+            required_privacy: PrivacyClass::Internal,
+            allow_fallback: true,
+            preferred_route: Some("hive".into()),
+            task_class: Some("complex".into()),
+            offline: false,
+            allow_cloud: true,
+            estimated_input_tokens: 100,
+            quality_delta: 0.05,
+        };
+
+        let (hash, pre_redacted) = resolve_route_snapshot_with_redaction_fallback(
+            &gateway,
+            "eva-pulse-test",
+            &messages,
+            &mut routing_request,
+            None,
+        )
+        .expect("large multiline output should be chunk-classified and redacted");
+        assert!(!hash.is_empty());
+        let redacted = pre_redacted.expect("messages should be pre-redacted");
+        assert!(!redacted[0].content.contains("alice@example.com"));
+
+        let oversized_single_line = vec![ChatMessage::text(
+            ChatRole::Tool,
+            "x".repeat(sensitive_data_guardrails::MAX_INPUT_BYTES + 1),
+        )];
+        let err = resolve_route_snapshot_with_redaction_fallback(
+            &gateway,
+            "eva-pulse-test",
+            &oversized_single_line,
+            &mut routing_request,
+            None,
+        )
+        .expect_err("single line exceeding MAX_INPUT_BYTES must return payload too large");
+        assert!(err.to_string().contains("egress_payload_too_large"));
     }
 }

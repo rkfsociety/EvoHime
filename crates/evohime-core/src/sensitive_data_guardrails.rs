@@ -363,6 +363,52 @@ pub fn detector_pack_hash() -> String {
     hex::encode(hasher.finalize())
 }
 
+fn required_privacy_label(findings: &[SensitiveFinding]) -> &'static str {
+    if findings.iter().any(|finding| {
+        matches!(
+            finding.kind,
+            SensitiveEntityKind::Credential | SensitiveEntityKind::PrivateKey
+        )
+    }) {
+        "restricted"
+    } else if findings.is_empty() {
+        "public"
+    } else {
+        "sensitive"
+    }
+}
+
+fn sha256_hex(input: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+fn for_each_line_chunk<F>(
+    input: &str,
+    chunk_limit: usize,
+    mut visit: F,
+) -> Result<(), GuardrailError>
+where
+    F: FnMut(&str) -> Result<(), GuardrailError>,
+{
+    let mut chunk = String::new();
+    for segment in input.split_inclusive('\n') {
+        if segment.len() > chunk_limit {
+            return Err(GuardrailError::InputTooLarge);
+        }
+        if !chunk.is_empty() && chunk.len() + segment.len() > chunk_limit {
+            visit(&chunk)?;
+            chunk.clear();
+        }
+        chunk.push_str(segment);
+    }
+    if !chunk.is_empty() {
+        visit(&chunk)?;
+    }
+    Ok(())
+}
+
 /// Classifies bounded text without returning values, offsets, or context.
 ///
 /// The summary is safe to persist and is keyed by the exact payload hash. A
@@ -411,23 +457,42 @@ pub fn classify_text(input: &str) -> Result<ClassificationSummary, GuardrailErro
             FindingConfidence::Medium,
         );
     }
-    let required_privacy = if findings.iter().any(|finding| {
-        matches!(
-            finding.kind,
-            SensitiveEntityKind::Credential | SensitiveEntityKind::PrivateKey
-        )
-    }) {
-        "restricted"
-    } else if findings.is_empty() {
-        "public"
-    } else {
-        "sensitive"
-    };
-    let mut hasher = Sha256::new();
-    hasher.update(input.as_bytes());
+    let required_privacy = required_privacy_label(&findings);
     Ok(ClassificationSummary {
         detector_pack_version: DETECTOR_PACK_VERSION,
-        payload_hash: hex::encode(hasher.finalize()),
+        payload_hash: sha256_hex(input),
+        findings,
+        required_privacy: required_privacy.into(),
+        complete: true,
+    })
+}
+
+/// Classifies arbitrarily long line-delimited text across [`MAX_INPUT_BYTES`]
+/// chunks without returning values, offsets, or context.
+///
+/// Returns [`GuardrailError::InputTooLarge`] when a single line alone exceeds
+/// [`MAX_INPUT_BYTES`].
+pub fn classify_text_chunked(input: &str) -> Result<ClassificationSummary, GuardrailError> {
+    if input.len() <= MAX_INPUT_BYTES {
+        return classify_text(input);
+    }
+    let mut findings: Vec<SensitiveFinding> = Vec::new();
+    for_each_line_chunk(input, MAX_INPUT_BYTES, |chunk| {
+        let summary = classify_text(chunk)?;
+        for finding in summary.findings {
+            if !findings
+                .iter()
+                .any(|existing| existing.kind == finding.kind)
+            {
+                findings.push(finding);
+            }
+        }
+        Ok(())
+    })?;
+    let required_privacy = required_privacy_label(&findings);
+    Ok(ClassificationSummary {
+        detector_pack_version: DETECTOR_PACK_VERSION,
+        payload_hash: sha256_hex(input),
         findings,
         required_privacy: required_privacy.into(),
         complete: true,
@@ -453,8 +518,41 @@ pub fn evaluate_egress(
     route_ref: &str,
     payload: &str,
 ) -> Result<(EgressDecision, Option<String>), GuardrailError> {
-    let summary = classify_text(payload)?;
-    let result = match redact_text(snapshot, payload) {
+    evaluate_egress_with_mode(snapshot, destination, route_ref, payload, false)
+}
+
+/// Scans an arbitrarily long line-delimited payload across [`MAX_INPUT_BYTES`]
+/// chunks immediately before an external effect.
+///
+/// Returns [`GuardrailError::InputTooLarge`] when a single line alone exceeds
+/// the policy chunk bound.
+pub fn evaluate_egress_chunked(
+    snapshot: &PolicySnapshot,
+    destination: DestinationClass,
+    route_ref: &str,
+    payload: &str,
+) -> Result<(EgressDecision, Option<String>), GuardrailError> {
+    evaluate_egress_with_mode(snapshot, destination, route_ref, payload, true)
+}
+
+fn evaluate_egress_with_mode(
+    snapshot: &PolicySnapshot,
+    destination: DestinationClass,
+    route_ref: &str,
+    payload: &str,
+    chunked: bool,
+) -> Result<(EgressDecision, Option<String>), GuardrailError> {
+    let summary = if chunked {
+        classify_text_chunked(payload)?
+    } else {
+        classify_text(payload)?
+    };
+    let redaction = if chunked {
+        redact_text_chunked(snapshot, payload)
+    } else {
+        redact_text(snapshot, payload)
+    };
+    let result = match redaction {
         Ok(result) => result,
         Err(GuardrailError::Blocked(_metadata)) => {
             return Ok((
@@ -890,32 +988,16 @@ pub fn redact_text_chunked(
     let mut action: Option<Action> = None;
     let mut rule_ids: Vec<String> = Vec::new();
     let mut match_count = 0usize;
-    let mut chunk = String::new();
-    for segment in input.split_inclusive('\n') {
-        if segment.len() > chunk_limit {
-            return Err(GuardrailError::InputTooLarge);
-        }
-        if !chunk.is_empty() && chunk.len() + segment.len() > chunk_limit {
-            merge_redaction(
-                &mut value,
-                &mut action,
-                &mut rule_ids,
-                &mut match_count,
-                redact_text(snapshot, &chunk)?,
-            );
-            chunk.clear();
-        }
-        chunk.push_str(segment);
-    }
-    if !chunk.is_empty() {
+    for_each_line_chunk(input, chunk_limit, |chunk| {
         merge_redaction(
             &mut value,
             &mut action,
             &mut rule_ids,
             &mut match_count,
-            redact_text(snapshot, &chunk)?,
+            redact_text(snapshot, chunk)?,
         );
-    }
+        Ok(())
+    })?;
     let output_bytes = value.len();
     Ok(RedactionResult {
         value,
@@ -977,7 +1059,7 @@ pub fn redact_json(
         }
         match value {
             serde_json::Value::String(text) => {
-                let result = redact_text(snapshot, text)?;
+                let result = redact_text_chunked(snapshot, text)?;
                 metadata.push(result.metadata);
                 Ok(serde_json::Value::String(result.value))
             }
@@ -1396,5 +1478,32 @@ mod tests {
         drop(first);
         let second = StreamingRedactor::new(default_policy("one"));
         assert!(second.carry.is_empty());
+    }
+
+    #[test]
+    fn classify_text_chunked_and_redact_json_handle_large_multiline_outputs() {
+        let mut large = "test line ok\n".repeat(6_000);
+        large.push_str("contact alice@example.com\n");
+        assert!(large.len() > MAX_INPUT_BYTES);
+
+        let summary = classify_text_chunked(&large).expect("chunked classification succeeds");
+        assert_eq!(summary.required_privacy, "sensitive");
+        assert!(summary
+            .findings
+            .iter()
+            .any(|finding| finding.kind == SensitiveEntityKind::Email));
+
+        let single_long_line = "x".repeat(MAX_INPUT_BYTES + 1);
+        assert!(matches!(
+            classify_text_chunked(&single_long_line),
+            Err(GuardrailError::InputTooLarge)
+        ));
+
+        let policy = default_policy("local-trace");
+        let payload = serde_json::json!({ "output": large });
+        let (redacted, _) =
+            redact_json(&policy, &payload).expect("chunked json redaction succeeds");
+        let output = redacted["output"].as_str().expect("string output");
+        assert!(!output.contains("alice@example.com"));
     }
 }
