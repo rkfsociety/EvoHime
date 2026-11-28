@@ -382,8 +382,8 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     .clone()
                     .ok_or_else(|| "storage journal is not configured".to_string())?;
                 let database = journal.database().lock().await;
-                use crate::durable_remote_task_bridge as bridge;
                 use evohime_local_storage::durable_remote_task_bridge_store as store;
+                use evohime_remote::durable_remote_task_bridge as bridge;
                 let policy = bridge::default_policy();
                 match operation.as_str() {
                     "submit" => {

@@ -26,6 +26,8 @@
 //! assert!(frame.validate().is_ok());
 //! ```
 
+/// Durable lifecycle state machine for remote tool operations.
+pub mod durable_remote_task_bridge;
 /// Bounded remote client control-plane contract.
 pub mod remote_client_control_plane;
 

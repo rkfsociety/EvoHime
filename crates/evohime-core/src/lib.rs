@@ -41,7 +41,6 @@ pub mod core_topic_subscription_event_bus;
 pub(crate) mod customization_inventory;
 pub mod declarative_agent_component_registry;
 pub mod declarative_runtime_components;
-pub mod durable_remote_task_bridge;
 pub(crate) mod event_visualizer_registry;
 pub mod free_access_probe;
 /// Models guarded publication operations for Git remotes.

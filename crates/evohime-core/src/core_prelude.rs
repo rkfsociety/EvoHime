@@ -490,7 +490,7 @@ pub(crate) struct AssignmentTerminationRequest {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RemoteTaskSubmitRequest {
-    pub(crate) toolset: crate::durable_remote_task_bridge::RemoteTaskToolset,
+    pub(crate) toolset: evohime_remote::durable_remote_task_bridge::RemoteTaskToolset,
     #[serde(default)]
     pub(crate) request: serde_json::Value,
     #[serde(default = "default_remote_provenance")]
@@ -515,7 +515,7 @@ pub(crate) struct RemoteTaskPollRequest {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RemoteTaskResultRequest {
-    pub(crate) status: crate::durable_remote_task_bridge::RemoteTaskStatus,
+    pub(crate) status: evohime_remote::durable_remote_task_bridge::RemoteTaskStatus,
     #[serde(default = "default_remote_transport_status")]
     pub(crate) transport_status: String,
     #[serde(default)]
