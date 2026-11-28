@@ -1299,7 +1299,8 @@ mod tests {
                         Ok(evohime_service_contract::ServiceResponse::InvokeResult {
                             request_id,
                             payload: serde_json::to_value(response).map_err(|error| {
-                                evohime_service_contract::ServiceContractError::internal(
+                                evohime_service_contract::ServiceContractError::new(
+                                    evohime_service_contract::ServiceErrorCode::Internal,
                                     error.to_string(),
                                 )
                             })?,
@@ -1329,11 +1330,13 @@ mod tests {
         let descriptor = evohime_service_contract::ServiceDescriptor {
             contract_version: evohime_service_contract::SERVICE_CONTRACT_VERSION,
             service_id: "ambient".to_owned(),
-            service_version: "0.1.0".to_owned(),
+            version: "0.1.0".to_owned(),
             capabilities: vec![evohime_service_contract::ServiceCapabilityDescriptor {
                 name: "ambient.proactivity_decide".to_owned(),
-                summary: "Pure proactivity decision".to_owned(),
-                requires_session: false,
+                description: "Pure proactivity decision".to_owned(),
+                input_schema: serde_json::json!({}),
+                required_permissions: Vec::new(),
+                supports_streaming: false,
             }],
         };
         module_registry
