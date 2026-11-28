@@ -28,6 +28,8 @@
 
 /// Durable lifecycle state machine for remote tool operations.
 pub mod durable_remote_task_bridge;
+/// Bounded contract for supervised external coding-agent executors.
+pub mod external_coding_agent_adapter;
 /// Bounded remote client control-plane contract.
 pub mod remote_client_control_plane;
 /// Authenticated, bounded remote conversation channel contracts.

@@ -18,8 +18,8 @@ use crate::external_agent_a2a::{
     RemoteAgentCardSnapshot, RemoteAgentProfile, RemoteAgentSkill, RemoteTaskBinding,
     RemoteTaskState, SCHEMA_VERSION,
 };
-use crate::external_coding_agent_adapter::A2A_PROTOCOL_VERSION;
 use evohime_model_gateway::PrivacyClass;
+use evohime_remote::external_coding_agent_adapter::A2A_PROTOCOL_VERSION;
 
 /// Maximum bytes accepted from a discovery/card response.
 pub const MAX_CARD_RESPONSE_BYTES: usize = 128 * 1024;
@@ -561,9 +561,10 @@ mod tests {
             id: "runtime.agent".into(),
             revision: 1,
             display_name: "Runtime agent".into(),
-            protocol_kind: crate::external_coding_agent_adapter::ExternalAgentProtocolKind::A2a {
-                protocol_version: A2A_PROTOCOL_VERSION,
-            },
+            protocol_kind:
+                evohime_remote::external_coding_agent_adapter::ExternalAgentProtocolKind::A2a {
+                    protocol_version: A2A_PROTOCOL_VERSION,
+                },
             endpoint: crate::external_agent_a2a::RemoteAgentEndpoint {
                 origin: "https://agents.example.com".into(),
                 allow_loopback: false,
@@ -756,9 +757,10 @@ mod tests {
             id: "loopback.agent".into(),
             revision: 1,
             display_name: "Loopback agent".into(),
-            protocol_kind: crate::external_coding_agent_adapter::ExternalAgentProtocolKind::A2a {
-                protocol_version: A2A_PROTOCOL_VERSION,
-            },
+            protocol_kind:
+                evohime_remote::external_coding_agent_adapter::ExternalAgentProtocolKind::A2a {
+                    protocol_version: A2A_PROTOCOL_VERSION,
+                },
             endpoint: crate::external_agent_a2a::RemoteAgentEndpoint {
                 origin: format!("http://127.0.0.1:{port}"),
                 allow_loopback: true,

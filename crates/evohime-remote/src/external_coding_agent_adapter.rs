@@ -6,49 +6,84 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+/// Stable contract identifier for external coding-agent adapters.
 pub const CONTRACT_ID: &str = "evohime.external-agent/v1";
+/// Current contract schema version.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Maximum byte length for adapter, preset, and run identifiers.
 pub const MAX_ID_BYTES: usize = 96;
+/// Maximum serialized frame size in bytes.
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
+/// Maximum number of declared capabilities per adapter preset.
 pub const MAX_CAPABILITIES: usize = 32;
+/// Maximum number of declared credential slots per adapter preset.
 pub const MAX_CREDENTIAL_SLOTS: usize = 16;
+/// Supported ACP protocol version.
 pub const ACP_PROTOCOL_VERSION: u32 = 1;
+/// Supported A2A protocol version.
 pub const A2A_PROTOCOL_VERSION: u32 = 1;
+/// Protocol label identifying A2A-capable adapter presets.
+pub const A2A_PROTOCOL_LABEL: &str = "a2a";
 
+/// Wire protocol family supported by an external coding-agent adapter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ExternalAgentProtocolKind {
+    /// Native EvoHime v1 supervised protocol.
     EvoHimeV1,
-    Acp { protocol_version: u32 },
-    A2a { protocol_version: u32 },
+    /// Agent Client Protocol (ACP) with explicit version.
+    Acp {
+        /// ACP protocol version number.
+        protocol_version: u32,
+    },
+    /// Agent-to-Agent (A2A) protocol with explicit version.
+    A2a {
+        /// A2A protocol version number.
+        protocol_version: u32,
+    },
 }
 
+/// Authentication mode used by an external coding-agent adapter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExternalAgentAuthMode {
+    /// Reuse an already-authenticated local CLI/agent session.
     ExistingLocalSession,
+    /// Require explicitly declared Core credential slots.
     DeclaredCredentialSlots,
+    /// No authentication required.
     Unauthenticated,
 }
 
+/// Classification of the external backend execution model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExternalAgentBackendClass {
+    /// Full autonomous external coding-agent backend.
     ExternalAgentBackend,
+    /// Model-like backend exposing structured turn execution.
     ModelLikeBackend,
 }
 
+/// Observed executable identity metadata for an external adapter binary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutableIdentity {
+    /// Logical executable reference (never a raw host secret path).
     pub executable_ref: String,
+    /// Reported executable version string, if known.
     pub version: Option<String>,
+    /// Observed content hash of the executable, if known.
     pub hash: Option<String>,
+    /// Observation timestamp in Unix milliseconds.
     pub observed_at_ms: u64,
 }
 
+/// In-memory registry of configured adapter presets and active run states.
 #[derive(Debug)]
 pub struct ExternalAgentRegistry {
+    /// Registered adapter presets keyed by preset identifier.
     pub presets: BTreeMap<String, AdapterPreset>,
+    /// Active or recent run states keyed by run identifier.
     pub runs: BTreeMap<String, AgentState>,
 }
 impl Default for ExternalAgentRegistry {
@@ -77,55 +112,86 @@ impl Default for ExternalAgentRegistry {
     }
 }
 impl ExternalAgentRegistry {
+    /// Returns a redacted status projection for the external agent registry.
     pub fn status(&self) -> serde_json::Value {
         serde_json::json!({"contract_id": CONTRACT_ID, "contract_version": CONTRACT_VERSION, "preset_count": self.presets.len(), "active_runs": self.runs.len(), "core_control_level": "supervised_opaque", "raw_payload": false, "credentials": "declared_slots_only"})
     }
 }
 
+/// Lifecycle state of an external coding-agent run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentState {
+    /// Adapter preset is registered.
     Registered,
+    /// Process launch has been initiated.
     Starting,
+    /// Protocol handshake is in progress.
     Handshaking,
+    /// External agent is actively running.
     Running,
+    /// Cancellation has been requested.
     Cancelling,
+    /// Run completed successfully.
     Completed,
+    /// Run failed.
     Failed,
+    /// Outcome could not be determined safely.
     Unknown,
+    /// Adapter or backend is unavailable.
     Unavailable,
 }
 
+/// Supervision and mediation level enforced over an external agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlLevel {
+    /// Full Core-mediated control.
     Full,
+    /// Supervised opaque execution with bounded metadata.
     SupervisedOpaque,
+    /// Adapter is unavailable.
     Unavailable,
 }
 
+/// Named credential slot declared by an adapter preset.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CredentialSlot {
+    /// Stable slot identifier.
     pub id: String,
+    /// Whether this credential slot must be supplied before launch.
     pub required: bool,
 }
 
+/// Validated configuration preset for an external coding-agent adapter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdapterPreset {
+    /// Stable preset identifier.
     pub id: String,
+    /// Monotonic preset revision.
     pub revision: u64,
+    /// Protocol identifier string.
     pub protocol: String,
+    /// Logical executable reference.
     pub executable_ref: String,
+    /// Capabilities declared by the adapter.
     pub capabilities: Vec<String>,
+    /// Credential slots required or supported by the adapter.
     pub credential_slots: Vec<CredentialSlot>,
+    /// Supervision control level.
     pub control_level: ControlLevel,
+    /// Whether this preset is enabled.
     pub enabled: bool,
+    /// Typed protocol kind.
     #[serde(default = "default_protocol_kind")]
     pub protocol_kind: ExternalAgentProtocolKind,
+    /// Authentication mode for the adapter.
     #[serde(default = "default_auth_mode")]
     pub auth_mode: ExternalAgentAuthMode,
+    /// Backend execution class.
     #[serde(default = "default_backend_class")]
     pub backend_class: ExternalAgentBackendClass,
+    /// Optional observed executable identity.
     #[serde(default)]
     pub executable_identity: Option<ExecutableIdentity>,
 }
@@ -140,120 +206,200 @@ fn default_backend_class() -> ExternalAgentBackendClass {
     ExternalAgentBackendClass::ExternalAgentBackend
 }
 
+/// Immutable provenance snapshot captured for a validated adapter preset.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSnapshot {
+    /// Identifier of the source preset.
     pub preset_id: String,
+    /// Revision of the source preset.
     pub preset_revision: u64,
+    /// Protocol label.
     pub protocol: String,
+    /// Canonical hash of sorted capabilities.
     pub capability_hash: String,
+    /// Hash of the governing Core policy snapshot.
     pub policy_hash: String,
+    /// Typed protocol kind.
     pub protocol_kind: ExternalAgentProtocolKind,
+    /// Backend execution class.
     pub backend_class: ExternalAgentBackendClass,
+    /// Hash of the observed executable identity, if present.
     pub executable_identity_hash: String,
 }
 
+/// Opaque, bounded run specification handed to the supervisor boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunSpec {
+    /// Stable run identifier.
     pub run_id: String,
+    /// Conversation identifier associated with the run.
     pub conversation_id: String,
+    /// Immutable preset and policy snapshot.
     pub snapshot: AgentSnapshot,
+    /// Approved credential slot identifiers for this run.
     pub credential_slot_ids: Vec<String>,
+    /// Maximum execution duration in milliseconds.
     pub timeout_ms: u64,
 }
 
+/// Bounded wire frame exchanged over the EvoHime external-agent protocol.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ExternalAgentFrame {
+    /// Initial handshake message from an external agent.
     Hello {
+        /// Protocol identifier.
         protocol: String,
+        /// Agent identifier.
         agent_id: String,
+        /// Advertised capabilities.
         capabilities: Vec<String>,
     },
+    /// Handshake acknowledgement from Core.
     HelloAck {
+        /// Protocol identifier.
         protocol: String,
+        /// Capabilities accepted by Core.
         accepted_capabilities: Vec<String>,
     },
+    /// Request to start a run.
     Run {
+        /// Run identifier.
         run_id: String,
     },
+    /// Progress event emitted during a run.
     Event {
+        /// Run identifier.
         run_id: String,
+        /// Event kind label.
         kind: String,
     },
+    /// Terminal result notification for a run.
     Result {
+        /// Run identifier.
         run_id: String,
+        /// Outcome summary label.
         outcome: String,
     },
+    /// Request to cancel an active run.
     Cancel {
+        /// Run identifier.
         run_id: String,
     },
 }
 
+/// Immutable, hashed snapshot of negotiated ACP capabilities.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AcpCapabilitySnapshot {
+    /// Negotiated ACP protocol version.
     pub protocol_version: u32,
+    /// Reported agent identity.
     pub agent_identity: String,
+    /// Reported agent version, if any.
     pub agent_version: Option<String>,
+    /// Whether streaming output is supported.
     pub supports_streaming: bool,
+    /// Whether cooperative cancellation is supported.
     pub supports_cancel: bool,
+    /// Whether session resumption is supported.
     pub supports_resume: bool,
+    /// Whether model selection is supported.
     pub supports_model_selection: bool,
+    /// Whether image inputs are supported.
     pub supports_images: bool,
+    /// Whether tool-activity events are emitted.
     pub supports_tool_activity: bool,
+    /// Whether file-activity events are emitted.
     pub supports_file_activity: bool,
+    /// Whether terminal-activity events are emitted.
     pub supports_terminal_activity: bool,
+    /// Sorted list of supported session modes.
     pub session_modes: Vec<String>,
+    /// Negotiation timestamp in Unix milliseconds.
     pub negotiated_at_ms: u64,
+    /// SHA-256 digest of the canonical capability fields.
     pub content_hash: String,
 }
 
+/// Authentication readiness state for an ACP session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AcpAuthState {
+    /// Authentication state has not been determined.
     AuthUnknown,
+    /// Session is authenticated and ready.
     Ready,
+    /// Interactive login is required.
     LoginRequired,
+    /// Credentials or session expired.
     Expired,
+    /// Authentication was rejected.
     Rejected,
+    /// Authentication mechanism is unavailable.
     Unavailable,
 }
 
+/// Lifecycle state machine for an ACP session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AcpSessionState {
+    /// Process is being spawned.
     Spawn,
+    /// Initialization handshake is running.
     Initialize,
+    /// Capabilities are being negotiated.
     Negotiating,
+    /// Session is ready for work.
     Ready,
+    /// Session is actively executing.
     Running,
+    /// Session completed cleanly.
     Completed,
+    /// Session was cancelled.
     Cancelled,
+    /// Session failed.
     Failed,
+    /// Session was interrupted.
     Interrupted,
+    /// Session requires human review.
     NeedsReview,
 }
 
+/// Tool mediation mode for an ACP session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AcpToolControl {
+    /// Tools run inside the external agent without Core mediation.
     Opaque,
+    /// Tools are observed via activity events.
     Observed,
+    /// Tools are mediated by Core permissions.
     CoreMediated,
 }
 
+/// Bounded JSON-RPC 2.0 frame exchanged with an ACP agent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AcpJsonRpcFrame {
+    /// JSON-RPC version string (must be `"2.0"`).
     pub jsonrpc: String,
+    /// Optional request/response identifier.
     pub id: Option<String>,
+    /// Optional RPC method name.
     pub method: Option<String>,
+    /// Optional RPC parameters payload.
     pub params: Option<serde_json::Value>,
+    /// Optional RPC result payload.
     pub result: Option<serde_json::Value>,
+    /// Optional RPC error payload.
     pub error: Option<serde_json::Value>,
 }
 
+/// Maximum serialized ACP JSON-RPC frame size in bytes.
 pub const MAX_ACP_FRAME_BYTES: usize = 64 * 1024;
+/// Maximum number of session modes permitted in an ACP capability snapshot.
 pub const MAX_ACP_SESSION_MODES: usize = 16;
 
+/// Validates a raw ACP JSON-RPC frame against size and schema bounds.
 pub fn validate_acp_frame(bytes: &[u8]) -> Result<AcpJsonRpcFrame, AdapterError> {
     if bytes.len() > MAX_ACP_FRAME_BYTES {
         return Err(AdapterError::FrameTooLarge);
@@ -269,6 +415,7 @@ pub fn validate_acp_frame(bytes: &[u8]) -> Result<AcpJsonRpcFrame, AdapterError>
     Ok(frame)
 }
 
+/// Builds and hashes an immutable [`AcpCapabilitySnapshot`].
 pub fn capability_snapshot(
     protocol_version: u32,
     agent_identity: String,
@@ -320,6 +467,7 @@ pub fn capability_snapshot(
     })
 }
 
+/// Validates and advances an [`AcpSessionState`] transition.
 pub fn transition_acp(
     current: AcpSessionState,
     next: AcpSessionState,
@@ -350,13 +498,20 @@ pub fn transition_acp(
     }
 }
 
+/// Validation or protocol failure returned by external-agent adapter contracts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdapterError {
+    /// Generic validation error with a static reason code.
     Invalid(&'static str),
+    /// Protocol or handshake fields are unsupported.
     UnsupportedProtocol,
+    /// Requested capability is denied.
     CapabilityDenied,
+    /// Requested credential slot is not permitted by the preset.
     CredentialSlotDenied,
+    /// Frame exceeds the maximum byte limit.
     FrameTooLarge,
+    /// Transport outcome could not be determined.
     UnknownOutcome,
 }
 impl std::fmt::Display for AdapterError {
@@ -385,13 +540,12 @@ fn valid_id(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-' || b == b'_')
 }
 
+/// Validates and canonicalizes an [`AdapterPreset`].
 pub fn validate_preset(mut preset: AdapterPreset) -> Result<AdapterPreset, AdapterError> {
     let protocol_valid = match preset.protocol_kind {
         ExternalAgentProtocolKind::EvoHimeV1 => preset.protocol == CONTRACT_ID,
         ExternalAgentProtocolKind::Acp { .. } => preset.protocol == "acp",
-        ExternalAgentProtocolKind::A2a { .. } => {
-            preset.protocol == crate::external_agent_a2a::A2A_PROTOCOL_LABEL
-        }
+        ExternalAgentProtocolKind::A2a { .. } => preset.protocol == A2A_PROTOCOL_LABEL,
     };
     if !valid_id(&preset.id)
         || !protocol_valid
@@ -431,6 +585,7 @@ pub fn validate_preset(mut preset: AdapterPreset) -> Result<AdapterPreset, Adapt
     Ok(preset)
 }
 
+/// Validates an [`ExternalAgentFrame`] against size and handshake bounds.
 pub fn validate_frame(frame: &ExternalAgentFrame) -> Result<(), AdapterError> {
     let bytes = serde_json::to_vec(frame).map_err(|_| AdapterError::Invalid("serialization"))?;
     if bytes.len() > MAX_FRAME_BYTES {
@@ -451,6 +606,7 @@ pub fn validate_frame(frame: &ExternalAgentFrame) -> Result<(), AdapterError> {
     }
 }
 
+/// Computes a canonical SHA-256 hash of sorted, deduplicated capabilities.
 pub fn capability_hash(capabilities: &[String]) -> Result<String, AdapterError> {
     let mut values = capabilities.to_vec();
     values.sort();
@@ -460,6 +616,7 @@ pub fn capability_hash(capabilities: &[String]) -> Result<String, AdapterError> 
         .map_err(|_| AdapterError::Invalid("hash"))
 }
 
+/// Validates a preset and builds an immutable [`AgentSnapshot`].
 pub fn snapshot(
     preset: &AdapterPreset,
     policy_hash: impl Into<String>,
@@ -485,6 +642,7 @@ pub fn snapshot(
     })
 }
 
+/// Validates a [`RunSpec`] against its governing [`AdapterPreset`].
 pub fn validate_run_spec(spec: &RunSpec, preset: &AdapterPreset) -> Result<(), AdapterError> {
     if !valid_id(&spec.run_id)
         || !valid_id(&spec.conversation_id)
@@ -618,7 +776,7 @@ mod tests {
     #[test]
     fn a2a_preset_is_typed_and_rejects_wrong_protocol_version() {
         let mut p = preset();
-        p.protocol = crate::external_agent_a2a::A2A_PROTOCOL_LABEL.into();
+        p.protocol = A2A_PROTOCOL_LABEL.into();
         p.protocol_kind = ExternalAgentProtocolKind::A2a {
             protocol_version: A2A_PROTOCOL_VERSION,
         };

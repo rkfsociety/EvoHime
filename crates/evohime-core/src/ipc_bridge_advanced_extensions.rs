@@ -170,7 +170,9 @@ impl IpcBridge {
         &self,
         request: generated::ExternalCodingAgentAdapterCommand,
     ) -> serde_json::Value {
-        use crate::external_coding_agent_adapter::{AgentState, CONTRACT_ID, CONTRACT_VERSION};
+        use evohime_remote::external_coding_agent_adapter::{
+            AgentState, CONTRACT_ID, CONTRACT_VERSION,
+        };
         if request.schema_version != CONTRACT_VERSION
             || request.request_id.is_empty()
             || request.owner_scope.is_empty()
@@ -190,7 +192,7 @@ impl IpcBridge {
                 let a2a = self.a2a_runtime.lock().await;
                 projection = serde_json::json!({
                     "protocol": "a2a",
-                    "protocol_version": crate::external_coding_agent_adapter::A2A_PROTOCOL_VERSION,
+                    "protocol_version": evohime_remote::external_coding_agent_adapter::A2A_PROTOCOL_VERSION,
                     "profile_count": a2a.profiles.len(),
                     "card_count": a2a.cards.len(),
                     "binding_count": a2a.bindings.len(),
@@ -627,7 +629,7 @@ impl IpcBridge {
         &self,
         request: generated::AgentClientProtocolBridgeCommand,
     ) -> serde_json::Value {
-        use crate::external_coding_agent_adapter::{
+        use evohime_remote::external_coding_agent_adapter::{
             capability_snapshot, validate_acp_frame, AcpSessionState, ACP_PROTOCOL_VERSION,
         };
         let invalid = || serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","state":"failed","error_code":"invalid_request","projection_json":{"raw_payload":false}});
@@ -739,7 +741,7 @@ impl IpcBridge {
                         } else {
                             registry.runs.insert(
                                 payload.session_id.clone(),
-                                crate::external_coding_agent_adapter::AgentState::Handshaking,
+                                evohime_remote::external_coding_agent_adapter::AgentState::Handshaking,
                             );
                             state = AcpSessionState::Initialize;
                             projection["session_id"] = serde_json::json!(payload.session_id);
@@ -1423,12 +1425,14 @@ mod a2a_ipc_tests {
     use crate::external_agent_a2a::{
         build_profile, RemoteAgentEndpoint, RemoteAgentProfile, SCHEMA_VERSION,
     };
-    use crate::external_coding_agent_adapter::{ExternalAgentProtocolKind, A2A_PROTOCOL_VERSION};
     use evohime_model_gateway::PrivacyClass;
+    use evohime_remote::external_coding_agent_adapter::{
+        ExternalAgentProtocolKind, A2A_PROTOCOL_VERSION,
+    };
 
     fn cmd(op: &str, payload: Vec<u8>, key: &str) -> generated::ExternalCodingAgentAdapterCommand {
         generated::ExternalCodingAgentAdapterCommand {
-            schema_version: crate::external_coding_agent_adapter::CONTRACT_VERSION,
+            schema_version: evohime_remote::external_coding_agent_adapter::CONTRACT_VERSION,
             request_id: format!("req-{key}"),
             owner_scope: "external-coding-agent-adapter".into(),
             operation: op.into(),

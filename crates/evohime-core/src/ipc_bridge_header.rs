@@ -714,7 +714,7 @@ pub struct IpcBridge {
     voice_commands: Arc<crate::ipc_bridge_ambient_proposals::VoiceCommandRegistry>,
     tool_simulation: Arc<tokio::sync::Mutex<crate::tool_simulation_runtime::ToolSimulationRuntime>>,
     external_agents:
-        Arc<tokio::sync::Mutex<crate::external_coding_agent_adapter::ExternalAgentRegistry>>,
+        Arc<tokio::sync::Mutex<evohime_remote::external_coding_agent_adapter::ExternalAgentRegistry>>,
     /// A2A lifecycle state is a protocol extension of the external-agent owner;
     /// it never creates a second scheduler or credential authority.
     a2a_runtime:

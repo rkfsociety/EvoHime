@@ -33,7 +33,7 @@
 - [План 202](../architecture/core-services.md) — базовая инфраструктура микроядра и `ModuleRegistry` (готова, контракт перенесён в доменный документ).
 
 ## Критерии готовности плана
-- [ ] Все перечисленные в этапах 1–4 прикладные файлы и их тесты удалены из `crates/evohime-core/src` (прогресс: перенесены и удалены из `evohime-core` 42 модуля — к 41 модулю добавлен `automation_simulation`).
+- [ ] Все перечисленные в этапах 1–4 прикладные файлы и их тесты удалены из `crates/evohime-core/src` (прогресс: перенесены и удалены из `evohime-core` 43 модуля — к 42 модулям добавлен `external_coding_agent_adapter`).
 - [ ] Все соответствующие вызовы в `core_coordinator_*`, `core_agent_*` и `ipc_bridge_*` работают через `ModuleRegistry` (прогресс: `ModuleRegistry` подключён в `IpcBridge`, переключены `voice_input_dictation`, `voice.command_parse`, `project_knowledge_notebook`, `offline_experience_consolidation`, `experience_replay_library`, `research.fetch_url`, `research.grounded_session`, `workflow.task_graph_*`, `workflow.batch_*`, `evals.review_plan_*`, `evals.ensemble_*`, `tools.diagnostics_*`, `tools.analysis_pack_*`, `tools_exec.cache_*`, `model_router.operator_*`, `model_router.guardrail_*`, `ambient.proactivity_decide`).
 - [ ] Неиспользуемые зависимости удалены из `crates/evohime-core/Cargo.toml`.
 - [ ] Полный прогон CI всех 26 модулей и `Rust documentation` зелёный; время сборки/тестов `core.yml` заметно сокращено и зафиксировано в `docs/release-evidence.md`.

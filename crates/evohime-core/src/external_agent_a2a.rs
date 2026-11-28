@@ -1,7 +1,7 @@
 //! Bounded Core-owned contract for the outbound A2A remote-agent backend.
 //!
 //! This module is a protocol/backend extension of the existing external-agent
-//! owner in `crate::external_coding_agent_adapter`: it introduces no second
+//! owner in `evohime_remote::external_coding_agent_adapter`: it introduces no second
 //! runtime, scheduler, storage or team-roster authority. It defines the
 //! untrusted profile/card/delegation/capsule/task-binding data contracts and
 //! their deterministic validation, hashing and state transitions. It performs
@@ -23,7 +23,7 @@ use evohime_model_gateway::PrivacyClass;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::external_coding_agent_adapter::{
+use evohime_remote::external_coding_agent_adapter::{
     ExternalAgentProtocolKind, A2A_PROTOCOL_VERSION, MAX_ID_BYTES,
 };
 
